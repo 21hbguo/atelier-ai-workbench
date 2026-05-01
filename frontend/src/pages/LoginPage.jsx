@@ -35,7 +35,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'var(--bg-primary)' }}>
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>AI 图像生成</h1>
+          <h1 style={{ color: 'var(--text-primary)', fontFamily: "'Alex Brush', cursive", fontSize: '3rem' }}>Atelier</h1>
           <p className="text-sm mt-2" style={{ color: 'var(--text-secondary)' }}>
             {isRegister ? '创建账号开始创作' : '登录以继续'}
           </p>

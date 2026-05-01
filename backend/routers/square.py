@@ -36,10 +36,12 @@ async def list_square_images(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     query: str = Query(None),
+    sort: str = Query("likes", regex="^(likes|time)$"),
     user=Depends(get_optional_user),
 ):
     with get_db() as conn:
         offset = (page - 1) * size
+        order = "si.likes_count DESC" if sort == "likes" else "si.created_at DESC"
         if query:
             q = f"%{query}%"
             total = conn.execute(
@@ -47,12 +49,12 @@ async def list_square_images(
                 (q, q, q),
             ).fetchone()[0]
             rows = conn.execute(
-                """
+                f"""
                 SELECT si.*, u.username, u.nickname, u.avatar
                 FROM square_images si
                 JOIN users u ON si.user_id = u.id
                 WHERE si.prompt LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?
-                ORDER BY si.created_at DESC
+                ORDER BY {order}
                 LIMIT ? OFFSET ?
                 """,
                 (q, q, q, size, offset),
@@ -60,11 +62,11 @@ async def list_square_images(
         else:
             total = conn.execute("SELECT COUNT(*) FROM square_images").fetchone()[0]
             rows = conn.execute(
-                """
+                f"""
                 SELECT si.*, u.username, u.nickname, u.avatar
                 FROM square_images si
                 JOIN users u ON si.user_id = u.id
-                ORDER BY si.created_at DESC
+                ORDER BY {order}
                 LIMIT ? OFFSET ?
                 """,
                 (size, offset),

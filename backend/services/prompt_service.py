@@ -18,20 +18,26 @@ class PromptService:
         return d
 
     @classmethod
-    def get_all(cls, scope: str = "public", user_id: int = None) -> List[Dict[str, Any]]:
+    def get_all(cls, scope: str = "public", user_id: int = None, sort: str = "likes") -> List[Dict[str, Any]]:
         with get_db() as conn:
+            order = "p.likes_count DESC" if sort == "likes" else "p.created_at DESC"
             if scope == "private" and user_id is not None:
-                rows = conn.execute("SELECT * FROM prompts WHERE user_id = ? ORDER BY created_at DESC", (user_id,)).fetchall()
+                rows = conn.execute(f"SELECT * FROM prompts WHERE user_id = ? ORDER BY created_at DESC", (user_id,)).fetchall()
             elif scope == "all":
-                rows = conn.execute("""
+                rows = conn.execute(f"""
                     SELECT p.*, u.username, u.nickname
                     FROM prompts p
                     LEFT JOIN users u ON p.user_id = u.id
-                    ORDER BY p.created_at DESC
+                    ORDER BY {order}
                 """).fetchall()
             else:
-                rows = conn.execute("SELECT * FROM prompts WHERE user_id IS NULL ORDER BY created_at DESC").fetchall()
-            return [cls._row_to_dict(r) for r in rows]
+                rows = conn.execute(f"SELECT * FROM prompts WHERE user_id IS NULL ORDER BY {order}").fetchall()
+            results = [cls._row_to_dict(r) for r in rows]
+            if user_id:
+                for p in results:
+                    like = conn.execute("SELECT id FROM prompt_likes WHERE prompt_id = ? AND user_id = ?", (p["id"], user_id)).fetchone()
+                    p["is_liked"] = like is not None
+            return results
 
     @classmethod
     def get_by_id(cls, prompt_id: str) -> Optional[Dict[str, Any]]:
@@ -94,8 +100,9 @@ class PromptService:
             return cur.rowcount
 
     @classmethod
-    def search(cls, query: str, tags: Optional[List[str]] = None, scope: str = "public", user_id: int = None) -> List[Dict[str, Any]]:
+    def search(cls, query: str, tags: Optional[List[str]] = None, scope: str = "public", user_id: int = None, sort: str = "likes") -> List[Dict[str, Any]]:
         with get_db() as conn:
+            order = "p.likes_count DESC" if sort == "likes" else "p.created_at DESC"
             if scope == "private" and user_id is not None:
                 scope_sql = "p.user_id = ?"
                 scope_params = [user_id]
@@ -115,13 +122,13 @@ class PromptService:
             if query:
                 q = f"%{query}%"
                 if scope == "all":
-                    sql = f"SELECT p.*{select_extra} FROM prompts p {join_sql} WHERE ({scope_sql}) AND (p.name LIKE ? OR p.prompt LIKE ? OR p.tags LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?) ORDER BY p.created_at DESC"
+                    sql = f"SELECT p.*{select_extra} FROM prompts p {join_sql} WHERE ({scope_sql}) AND (p.name LIKE ? OR p.prompt LIKE ? OR p.tags LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?) ORDER BY {order}"
                     rows = conn.execute(sql, scope_params + [q, q, q, q, q]).fetchall()
                 else:
-                    sql = f"SELECT p.* FROM prompts p WHERE ({scope_sql}) AND (p.name LIKE ? OR p.prompt LIKE ? OR p.tags LIKE ?) ORDER BY p.created_at DESC"
+                    sql = f"SELECT p.* FROM prompts p WHERE ({scope_sql}) AND (p.name LIKE ? OR p.prompt LIKE ? OR p.tags LIKE ?) ORDER BY {order}"
                     rows = conn.execute(sql, scope_params + [q, q, q]).fetchall()
             else:
-                sql = f"SELECT p.*{select_extra} FROM prompts p {join_sql} WHERE {scope_sql} ORDER BY p.created_at DESC"
+                sql = f"SELECT p.*{select_extra} FROM prompts p {join_sql} WHERE {scope_sql} ORDER BY {order}"
                 rows = conn.execute(sql, scope_params).fetchall()
 
             results = [cls._row_to_dict(r) for r in rows]
@@ -132,6 +139,11 @@ class PromptService:
                     p for p in results
                     if tag_set & set(t.lower() for t in p.get("tags", []))
                 ]
+
+            if user_id:
+                for p in results:
+                    like = conn.execute("SELECT id FROM prompt_likes WHERE prompt_id = ? AND user_id = ?", (p["id"], user_id)).fetchone()
+                    p["is_liked"] = like is not None
             return results
 
     @classmethod

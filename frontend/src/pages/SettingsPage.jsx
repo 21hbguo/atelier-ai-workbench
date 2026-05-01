@@ -68,7 +68,7 @@ export default function SettingsPage() {
         )}
 
         <div className="p-5 rounded-xl border mb-6" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
-          <h2 className="font-medium mb-4" style={{ color: 'var(--text-primary)' }}>AI 图像生成 API</h2>
+          <h2 className="font-medium mb-4" style={{ color: 'var(--text-primary)' }}>图像生成 API</h2>
           <div className="space-y-4">
             <div>
               <label className="block text-sm mb-1.5" style={{ color: 'var(--text-primary)' }}>API 地址 <span className="text-red-500">*</span></label>

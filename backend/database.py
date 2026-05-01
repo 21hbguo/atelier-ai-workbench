@@ -100,7 +100,18 @@ def init_db():
                 negative_prompt TEXT DEFAULT '',
                 tags TEXT DEFAULT '[]',
                 created_at TEXT,
-                user_id INTEGER
+                user_id INTEGER,
+                likes_count INTEGER DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS prompt_likes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                prompt_id TEXT NOT NULL,
+                user_id INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (prompt_id) REFERENCES prompts(id),
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                UNIQUE(prompt_id, user_id)
             );
 
             CREATE TABLE IF NOT EXISTS stats (
@@ -145,6 +156,8 @@ def init_db():
             conn.execute("ALTER TABLE users ADD COLUMN is_frozen INTEGER DEFAULT 0")
         if "last_ip" not in columns:
             conn.execute("ALTER TABLE users ADD COLUMN last_ip TEXT")
+        if "last_active" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN last_active TIMESTAMP")
 
         task_cols = [row[1] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()]
         if "user_id" not in task_cols:
@@ -160,6 +173,8 @@ def init_db():
         if "user_id" not in prompt_cols:
             conn.execute("ALTER TABLE prompts ADD COLUMN user_id INTEGER")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_prompts_user_id ON prompts(user_id)")
+        if "likes_count" not in prompt_cols:
+            conn.execute("ALTER TABLE prompts ADD COLUMN likes_count INTEGER DEFAULT 0")
 
         # 清理历史脏数据：删除已有终态记录的 processing 条目
         conn.execute("""

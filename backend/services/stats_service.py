@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any
 from backend.database import get_db
 
@@ -55,4 +55,56 @@ class StatsService:
         with get_db() as conn:
             cls._check_date_reset(conn)
             row = conn.execute("SELECT * FROM stats WHERE id = 1").fetchone()
-            return dict(row)
+            result = dict(row)
+
+            # 从 image_metadata 表统计实际图片数（更准确）
+            img_count = conn.execute("SELECT COUNT(*) as cnt FROM image_metadata").fetchone()
+            result["total_images"] = img_count["cnt"] if img_count else 0
+
+            # 用实际图片数覆盖 success 统计（之前的统计可能不完整）
+            result["total_success"] = result["total_images"]
+
+            # 今日成功数从 image_metadata 统计
+            today = datetime.now().strftime("%Y-%m-%d")
+            today_img = conn.execute(
+                "SELECT COUNT(*) as cnt FROM image_metadata WHERE created_at >= ?",
+                (today,)
+            ).fetchone()
+            result["today_success"] = today_img["cnt"] if today_img else 0
+
+            # 总用户数
+            user_count = conn.execute("SELECT COUNT(*) as cnt FROM users").fetchone()
+            result["total_users"] = user_count["cnt"] if user_count else 0
+
+            # 当日活跃用户数（今天登录或有任务的用户）
+            today_active = conn.execute(
+                """SELECT COUNT(DISTINCT user_id) as cnt FROM (
+                    SELECT id as user_id FROM users WHERE last_active >= ?
+                    UNION
+                    SELECT user_id FROM tasks WHERE user_id IS NOT NULL AND created_at >= ?
+                )""",
+                (today, today)
+            ).fetchone()
+            result["today_active_users"] = today_active["cnt"] if today_active else 0
+
+            # 当前在线用户数（最近30分钟内登录或有任务的用户）
+            thirty_min_ago = (datetime.now() - timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S")
+            recent_active = conn.execute(
+                """SELECT COUNT(DISTINCT user_id) as cnt FROM (
+                    SELECT id as user_id FROM users WHERE last_active >= ?
+                    UNION
+                    SELECT user_id FROM tasks WHERE user_id IS NOT NULL AND created_at >= ?
+                )""",
+                (thirty_min_ago, thirty_min_ago)
+            ).fetchone()
+            result["current_active_users"] = recent_active["cnt"] if recent_active else 0
+
+            # 前日新增用户数
+            yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+            yesterday_new = conn.execute(
+                "SELECT COUNT(*) as cnt FROM users WHERE created_at >= ? AND created_at < ?",
+                (yesterday, today)
+            ).fetchone()
+            result["yesterday_new_users"] = yesterday_new["cnt"] if yesterday_new else 0
+
+            return result

@@ -67,12 +67,13 @@ export const imageAPI = {
 }
 
 export const promptAPI = {
-  list: (query, tags, scope = 'private') => {
-    const params = { scope }
+  list: (query, tags, scope = 'private', sort = 'likes') => {
+    const params = { scope, sort }
     if (query) params.query = query
     if (tags) params.tags = tags
     return api.get('/prompts', { params })
   },
+  like: (promptId) => api.post(`/prompts/like?prompt_id=${promptId}`),
   create: (data) => api.post('/prompts', data),
   createPublic: (data) => api.post('/prompts/public', data),
   update: (id, data) => api.put(`/prompts/${id}`, data),
@@ -105,8 +106,8 @@ export const authAPI = {
 }
 
 export const squareAPI = {
-  list: (page = 1, size = 20, query) => {
-    const params = { page, size }
+  list: (page = 1, size = 20, query, sort = 'likes') => {
+    const params = { page, size, sort }
     if (query) params.query = query
     return api.get('/square', { params })
   },

@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Menu, Download, Trash2, Check } from 'lucide-react'
+import { Menu, Download, Trash2, Check, Image, Users, Activity, Zap } from 'lucide-react'
 import ChatInput from '../components/ChatInput'
 import GenerationCard from '../components/GenerationCard'
 import SearchInput from '../components/SearchInput'
 import Sidebar from '../components/Sidebar'
-import { generateAPI, uploadAPI, taskAPI, imageAPI, squareAPI, adminAPI } from '../api'
+import { generateAPI, uploadAPI, taskAPI, imageAPI, squareAPI, adminAPI, statsAPI } from '../api'
 
 function formatLocalTime(d) {
   const pad = n => String(n).padStart(2, '0')
@@ -25,6 +25,7 @@ export default function ChatPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [userList, setUserList] = useState([])
   const [selectedUserId, setSelectedUserId] = useState(null)
+  const [stats, setStats] = useState(null)
   const feedRef = useRef(null)
   const inputRef = useRef(null)
   const dragCounter = useRef(0)
@@ -66,6 +67,13 @@ export default function ChatPage() {
     if (!isAdmin) return
     adminAPI.users(1, 100).then(({ data }) => setUserList(data.users || [])).catch(() => {})
   }, [isAdmin])
+
+  useEffect(() => {
+    const fetchStats = () => statsAPI.get().then(({ data }) => setStats(data)).catch(() => {})
+    fetchStats()
+    const interval = setInterval(fetchStats, 30000)
+    return () => clearInterval(interval)
+  }, [])
 
   useEffect(() => {
     if (loaded && feedRef.current) {
@@ -278,9 +286,18 @@ export default function ChatPage() {
       )}
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex-1 flex flex-col min-w-0">
-        <div className="flex items-center gap-3 px-4 py-3 border-b lg:hidden" style={{ borderColor: 'var(--border-color)' }}>
+        <div className="flex items-center gap-3 px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
           <button onClick={() => setSidebarOpen(true)} style={{ color: 'var(--text-primary)' }}><Menu size={20} /></button>
-          <h1 className="font-medium" style={{ color: 'var(--text-primary)' }}>AI 图像生成</h1>
+          <h1 style={{ color: 'var(--text-primary)', fontFamily: "'Alex Brush', cursive", fontSize: '1.8rem' }}>Atelier</h1>
+          {stats && (
+            <div className="flex items-center gap-4 ml-auto text-xs" style={{ color: 'var(--text-secondary)' }}>
+              <span className="flex items-center gap-1.5" title="总图片数"><Image size={13} /><span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{stats.total_images || 0}</span><span>张图片</span></span>
+              <span className="flex items-center gap-1.5" title="总用户数"><Users size={13} /><span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{stats.total_users || 0}</span><span>位用户</span></span>
+              <span className="flex items-center gap-1.5" title="前日新增用户"><span style={{ color: 'var(--accent)' }}>+{stats.yesterday_new_users || 0}</span><span>前日新增</span></span>
+              <span className="flex items-center gap-1.5" title="今日活跃"><Activity size={13} /><span className="font-semibold" style={{ color: 'var(--accent)' }}>{stats.today_active_users || 0}</span><span>今日活跃</span></span>
+              <span className="flex items-center gap-1.5" title="当前活跃"><Zap size={13} /><span className="font-semibold" style={{ color: '#22c55e' }}>{stats.current_active_users || 0}</span><span>在线</span></span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2 px-4 pt-3">
           {[{ k: 'all', l: '全部' }, { k: 'completed', l: '已完成' }, { k: 'processing', l: '生成中' }, { k: 'failed', l: '失败' }].map(({ k, l }) => (

@@ -1,3 +1,4 @@
+from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 from backend.database import get_db
@@ -43,6 +44,7 @@ async def login(req: LoginRequest, request: Request):
             raise HTTPException(status_code=401, detail="用户名或密码错误")
 
         update_user_ip(user["id"], get_client_ip(request), conn=conn)
+        conn.execute("UPDATE users SET last_active = ? WHERE id = ?", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user["id"]))
         token = create_token(user["id"], user["username"], bool(user["is_admin"]))
         return {"token": token, "user": {"id": user["id"], "username": user["username"], "nickname": user["nickname"], "is_admin": bool(user["is_admin"])}}
 

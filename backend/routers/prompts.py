@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Query, Depends
 from fastapi.responses import Response
 
 from backend.services.prompt_service import PromptService
+from backend.database import get_db
 from backend.auth import get_current_user, require_admin
 from backend.models.schemas import (
     PromptItem,
@@ -32,15 +33,16 @@ async def get_prompts(
     query: Optional[str] = Query(None),
     tags: Optional[str] = Query(None),
     scope: str = Query("private"),
+    sort: str = Query("likes", regex="^(likes|time)$"),
     user=Depends(get_current_user),
 ):
     try:
         tag_list = [t.strip() for t in tags.split(",")] if tags else None
         uid = user["user_id"]
         if query or tag_list:
-            results = PromptService.search(query=query or "", tags=tag_list, scope=scope, user_id=uid)
+            results = PromptService.search(query=query or "", tags=tag_list, scope=scope, user_id=uid, sort=sort)
         else:
-            results = PromptService.get_all(scope=scope, user_id=uid)
+            results = PromptService.get_all(scope=scope, user_id=uid, sort=sort)
         return {"prompts": results, "total": len(results)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取提示词列表失败: {str(e)}")
@@ -107,6 +109,37 @@ async def batch_delete(request: BatchDeleteRequest, user=Depends(get_current_use
         return {"deleted": count, "message": f"已删除 {count} 条提示词"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"批量删除失败: {str(e)}")
+
+
+@router.post("/like")
+async def toggle_prompt_like(prompt_id: str, user=Depends(get_current_user)):
+    with get_db() as conn:
+        prompt = conn.execute("SELECT id FROM prompts WHERE id = ?", (prompt_id,)).fetchone()
+        if not prompt:
+            raise HTTPException(status_code=404, detail="提示词不存在")
+
+        existing = conn.execute(
+            "SELECT id FROM prompt_likes WHERE prompt_id = ? AND user_id = ?",
+            (prompt_id, user["user_id"]),
+        ).fetchone()
+
+        if existing:
+            conn.execute("DELETE FROM prompt_likes WHERE id = ?", (existing["id"],))
+            conn.execute(
+                "UPDATE prompts SET likes_count = MAX(0, likes_count - 1) WHERE id = ?",
+                (prompt_id,),
+            )
+            return {"liked": False, "message": "取消点赞"}
+        else:
+            conn.execute(
+                "INSERT INTO prompt_likes (prompt_id, user_id) VALUES (?, ?)",
+                (prompt_id, user["user_id"]),
+            )
+            conn.execute(
+                "UPDATE prompts SET likes_count = likes_count + 1 WHERE id = ?",
+                (prompt_id,),
+            )
+            return {"liked": True, "message": "点赞成功"}
 
 
 @router.post("/import")

@@ -45,6 +45,7 @@ function WorksTab() {
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [sort, setSort] = useState('likes')
 
   const handleUsePrompt = (prompt) => {
     localStorage.setItem('pending_prompt', prompt)
@@ -64,13 +65,13 @@ function WorksTab() {
     } catch {}
   }
 
-  useEffect(() => { setPage(1) }, [searchQuery])
-  useEffect(() => { fetchImages() }, [page, searchQuery])
+  useEffect(() => { setPage(1) }, [searchQuery, sort])
+  useEffect(() => { fetchImages() }, [page, searchQuery, sort])
 
   const fetchImages = async () => {
     setLoading(true)
     try {
-      const { data } = await squareAPI.list(page, 20, searchQuery || undefined)
+      const { data } = await squareAPI.list(page, 20, searchQuery || undefined, sort)
       setImages(data.images)
       setTotal(data.total)
     } catch {
@@ -107,6 +108,12 @@ function WorksTab() {
     <>
       <div className="flex items-center gap-3 mb-4">
         <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{total} 张作品</span>
+        <div className="flex gap-1 ml-auto">
+          <button onClick={() => setSort('likes')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${sort === 'likes' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
+            style={{ color: sort === 'likes' ? 'var(--accent)' : 'var(--text-secondary)' }}>最热</button>
+          <button onClick={() => setSort('time')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${sort === 'time' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
+            style={{ color: sort === 'time' ? 'var(--accent)' : 'var(--text-secondary)' }}>最新</button>
+        </div>
         <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="搜索提示词/作者..." />
       </div>
 
@@ -259,20 +266,41 @@ function PromptsTab({ isAdmin }) {
   const [detail, setDetail] = useState(null)
   const [editForm, setEditForm] = useState(null)
   const [selected, setSelected] = useState(new Set())
+  const [sort, setSort] = useState('likes')
   const fileRef = useRef(null)
 
-  useEffect(() => { fetchPrompts() }, [query])
+  useEffect(() => { fetchPrompts() }, [query, sort])
 
   const fetchPrompts = async () => {
     setLoading(true)
     try {
-      const { data } = await promptAPI.list(query, null, isAdmin ? 'all' : 'public')
+      const { data } = await promptAPI.list(query, null, isAdmin ? 'all' : 'public', sort)
       setPrompts(data.prompts)
     } catch {
       setPrompts([])
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleLike = async (promptId) => {
+    try {
+      const { data } = await promptAPI.like(promptId)
+      setPrompts(prev =>
+        prev.map(p =>
+          p.id === promptId
+            ? { ...p, is_liked: data.liked, likes_count: p.likes_count + (data.liked ? 1 : -1) }
+            : p
+        )
+      )
+      if (detail?.id === promptId) {
+        setDetail(prev => ({
+          ...prev,
+          is_liked: data.liked,
+          likes_count: prev.likes_count + (data.liked ? 1 : -1),
+        }))
+      }
+    } catch {}
   }
 
   const handleSubmit = async () => {
@@ -352,6 +380,12 @@ function PromptsTab({ isAdmin }) {
     <>
       <div className="flex items-center gap-3 mb-4">
         <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{prompts.length} 条提示词</span>
+        <div className="flex gap-1 ml-auto">
+          <button onClick={() => setSort('likes')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${sort === 'likes' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
+            style={{ color: sort === 'likes' ? 'var(--accent)' : 'var(--text-secondary)' }}>最热</button>
+          <button onClick={() => setSort('time')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${sort === 'time' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
+            style={{ color: sort === 'time' ? 'var(--accent)' : 'var(--text-secondary)' }}>最新</button>
+        </div>
         <SearchInput value={query} onChange={setQuery} placeholder="搜索提示词..." />
       </div>
 
@@ -425,6 +459,11 @@ function PromptsTab({ isAdmin }) {
                   <div className="flex items-center gap-2">
                     <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{p.created_at}</span>
                     <div className="ml-auto flex gap-1">
+                      <button onClick={(e) => { e.stopPropagation(); handleLike(p.id) }}
+                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium ${p.is_liked ? 'bg-red-50 dark:bg-red-900/20' : 'hover:bg-black/5'}`}
+                        style={{ color: p.is_liked ? '#ef4444' : 'var(--text-secondary)' }}>
+                        <Heart size={12} className={p.is_liked ? 'fill-current' : ''} />{p.likes_count || 0}
+                      </button>
                       <button onClick={() => { localStorage.setItem('pending_prompt', p.prompt); navigate('/') }} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-white" style={{ background: 'var(--accent)' }}><Send size={12} /> 使用</button>
                       <button onClick={() => navigator.clipboard.writeText(p.prompt)} className="p-1 rounded hover:bg-black/5 text-xs" style={{ color: 'var(--text-secondary)' }}>复制</button>
                       {isAdmin && (
@@ -486,6 +525,15 @@ function PromptsTab({ isAdmin }) {
             <div className="flex gap-2 px-5 py-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
               <button onClick={() => { localStorage.setItem('pending_prompt', editForm?.prompt ?? detail.prompt); navigate('/') }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}><Send size={14} /> 使用</button>
               <button onClick={() => navigator.clipboard.writeText(editForm?.prompt ?? detail.prompt)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>复制</button>
+              <button onClick={() => handleLike(detail.id)}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                style={{
+                  background: detail.is_liked ? '#ef444415' : 'var(--bg-primary)',
+                  color: detail.is_liked ? '#ef4444' : 'var(--text-primary)',
+                }}>
+                <Heart size={14} className={detail.is_liked ? 'fill-current' : ''} />
+                {detail.is_liked ? '已点赞' : '点赞'} ({detail.likes_count || 0})
+              </button>
               {editForm && (
                 <button onClick={handleSaveDetail} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}>保存</button>
               )}
