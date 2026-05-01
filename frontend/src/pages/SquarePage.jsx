@@ -15,10 +15,6 @@ export default function SquarePage() {
   return (
     <MainLayout>
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>广场</h1>
-        </div>
-
         <div className="flex gap-1 p-0.5 rounded-lg mb-4" style={{ background: 'var(--border-color)' }}>
           {[{ k: 'works', l: '用户作品库', i: Image }, { k: 'prompts', l: '提示词库', i: BookOpen }].map(({ k, l, i: Icon }) => (
             <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`}

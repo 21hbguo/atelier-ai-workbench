@@ -14,9 +14,16 @@ class StatsService:
 
     @classmethod
     def _check_date_reset(cls, conn):
-        row = conn.execute("SELECT last_date FROM stats WHERE id = 1").fetchone()
+        row = conn.execute("SELECT last_date, today_requests, today_success, today_failed FROM stats WHERE id = 1").fetchone()
         today = datetime.now().strftime("%Y-%m-%d")
         if row and row["last_date"] != today:
+            # 快照前一天数据到 daily_stats
+            yesterday = row["last_date"]
+            if yesterday:
+                conn.execute(
+                    "INSERT OR REPLACE INTO daily_stats (date, requests, success, failed) VALUES (?, ?, ?, ?)",
+                    (yesterday, row["today_requests"], row["today_success"], row["today_failed"]),
+                )
             conn.execute(
                 "UPDATE stats SET today_requests=0, today_success=0, today_failed=0, last_date=? WHERE id=1",
                 (today,),
@@ -106,5 +113,30 @@ class StatsService:
                 (yesterday, today)
             ).fetchone()
             result["yesterday_new_users"] = yesterday_new["cnt"] if yesterday_new else 0
+
+            # 当日成功率
+            today_req = result.get("today_requests", 0)
+            today_suc = result.get("today_success", 0)
+            result["today_success_rate"] = round(today_suc / today_req * 100, 1) if today_req > 0 else 0
+
+            return result
+
+    @classmethod
+    def get_daily_stats(cls) -> list:
+        today = datetime.now().strftime("%Y-%m-%d")
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT date, requests, success, failed FROM daily_stats ORDER BY date DESC LIMIT 7"
+            ).fetchall()
+            result = [dict(r) for r in reversed(rows)]
+
+            # 如果今天有数据也加上
+            today_row = conn.execute("SELECT today_requests, today_success, today_failed FROM stats WHERE id=1").fetchone()
+            if today_row and (today_row["today_requests"] > 0 or today_row["today_success"] > 0):
+                today_entry = {"date": today, "requests": today_row["today_requests"], "success": today_row["today_success"], "failed": today_row["today_failed"]}
+                if result and result[-1]["date"] == today:
+                    result[-1] = today_entry
+                else:
+                    result.append(today_entry)
 
             return result

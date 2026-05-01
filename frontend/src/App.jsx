@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ThemeProvider } from './ThemeContext'
+import ErrorBoundary from './components/ErrorBoundary'
 import ChatPage from './pages/ChatPage'
 import PromptsPage from './pages/PromptsPage'
 import SettingsPage from './pages/SettingsPage'
@@ -23,6 +24,7 @@ function AdminRoute({ children }) {
 
 export default function App() {
   return (
+    <ErrorBoundary>
     <ThemeProvider>
       <BrowserRouter>
         <Routes>
@@ -35,5 +37,6 @@ export default function App() {
         </Routes>
       </BrowserRouter>
     </ThemeProvider>
+    </ErrorBoundary>
   )
 }

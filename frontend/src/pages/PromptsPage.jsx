@@ -71,9 +71,6 @@ export default function PromptsPage() {
   return (
     <MainLayout>
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-        <div className="flex items-center gap-2 mb-6">
-          <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>我的提示词 ({prompts.length})</h1>
-        </div>
         <div className="flex flex-wrap gap-2 mb-4">
           <button onClick={() => { setForm({ name: '', prompt: '', tags: '' }); setShowNewForm(true) }}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}><Plus size={16} /> 新增</button>

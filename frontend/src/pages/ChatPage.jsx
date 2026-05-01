@@ -281,9 +281,6 @@ export default function ChatPage() {
           </div>
         </div>
       )}
-      <div className="flex items-center gap-3 px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
-        <h1 style={{ color: 'var(--text-primary)', fontFamily: "'Alex Brush', cursive", fontSize: '1.8rem' }}>Atelier</h1>
-      </div>
       <div className="flex items-center gap-2 px-4 pt-3">
         {[{ k: 'all', l: '全部' }, { k: 'completed', l: '已完成' }, { k: 'processing', l: '生成中' }, { k: 'failed', l: '失败' }].map(({ k, l }) => (
           <button key={k} onClick={() => setFilter(k)} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${filter === k ? 'bg-accent/10' : 'hover:bg-black/5'}`}

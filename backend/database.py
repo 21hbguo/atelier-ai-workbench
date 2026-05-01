@@ -125,6 +125,13 @@ def init_db():
                 last_date TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS daily_stats (
+                date TEXT PRIMARY KEY,
+                requests INTEGER DEFAULT 0,
+                success INTEGER DEFAULT 0,
+                failed INTEGER DEFAULT 0
+            );
+
             CREATE TABLE IF NOT EXISTS image_mappings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 local_path TEXT NOT NULL UNIQUE,

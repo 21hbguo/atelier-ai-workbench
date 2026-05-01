@@ -99,6 +99,7 @@ export const promptAPI = {
 export const statsAPI = {
   get: () => api.get('/stats'),
   system: () => api.get('/stats/system'),
+  daily: () => api.get('/stats/daily'),
   users: () => api.get('/stats/users'),
 }
 

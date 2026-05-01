@@ -17,11 +17,12 @@ async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
             rows = conn.execute(
                 """
                 SELECT u.id, u.username, u.nickname, u.is_admin, u.is_frozen, u.last_ip, u.last_active, u.created_at,
-                       COUNT(CASE WHEN ur.status = 'success' THEN 1 END) as success_count,
+                       COALESCE(img.cnt, 0) as success_count,
                        COUNT(CASE WHEN ur.status = 'failed' THEN 1 END) as failed_count,
                        COUNT(CASE WHEN ur.status = 'processing' THEN 1 END) as processing_count
                 FROM users u
                 LEFT JOIN user_requests ur ON u.id = ur.user_id
+                LEFT JOIN (SELECT user_id, COUNT(*) as cnt FROM image_metadata GROUP BY user_id) img ON u.id = img.user_id
                 WHERE u.username LIKE ? OR u.nickname LIKE ?
                 GROUP BY u.id
                 ORDER BY u.last_active DESC
@@ -34,11 +35,12 @@ async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
             rows = conn.execute(
                 """
                 SELECT u.id, u.username, u.nickname, u.is_admin, u.is_frozen, u.last_ip, u.last_active, u.created_at,
-                       COUNT(CASE WHEN ur.status = 'success' THEN 1 END) as success_count,
+                       COALESCE(img.cnt, 0) as success_count,
                        COUNT(CASE WHEN ur.status = 'failed' THEN 1 END) as failed_count,
                        COUNT(CASE WHEN ur.status = 'processing' THEN 1 END) as processing_count
                 FROM users u
                 LEFT JOIN user_requests ur ON u.id = ur.user_id
+                LEFT JOIN (SELECT user_id, COUNT(*) as cnt FROM image_metadata GROUP BY user_id) img ON u.id = img.user_id
                 GROUP BY u.id
                 ORDER BY u.last_active DESC
                 LIMIT ? OFFSET ?
