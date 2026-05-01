@@ -132,6 +132,12 @@ def init_db():
                 failed INTEGER DEFAULT 0
             );
 
+            CREATE TABLE IF NOT EXISTS banned_words (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                word TEXT NOT NULL UNIQUE,
+                created_at TEXT
+            );
+
             CREATE TABLE IF NOT EXISTS image_mappings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 local_path TEXT NOT NULL UNIQUE,

@@ -143,13 +143,19 @@ export const adminAPI = {
     return api.get('/admin/history', { params })
   },
   deleteHistory: (taskId) => api.delete(`/admin/history/${taskId}`),
-  imageStats: () => api.get('/admin/images/stats'),
-  images: (page = 1, size = 50, source = 'all') => {
-    const params = { page, size, source }
-    return api.get('/admin/images', { params })
+  imageStats: () => api.get('/admin/hosting/stats'),
+  hostingImages: (page = 1, size = 50) => {
+    const params = { page, size }
+    return api.get('/admin/hosting', { params })
   },
-  batchDeleteImages: (filenames) => api.post('/admin/images/batch-delete', { filenames }),
-  batchDownloadImages: (filenames) => api.post('/admin/images/batch-download', { filenames }, { responseType: 'blob' }),
+  batchDeleteHosting: (urls) => api.post('/admin/hosting/batch-delete', { urls }),
+  bannedWords: (page = 1, size = 20, query) => {
+    const params = { page, size }
+    if (query) params.query = query
+    return api.get('/admin/banned-words', { params })
+  },
+  addBannedWord: (word) => api.post('/admin/banned-words', { word }),
+  deleteBannedWord: (wordId) => api.delete(`/admin/banned-words/${wordId}`),
 }
 
 export default api

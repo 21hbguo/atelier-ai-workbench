@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 from backend.services.image_gen import ImageGenService
 from backend.services.task_manager import TaskManager
 from backend.services.stats_service import StatsService
+from backend.services.banned_words import BannedWordsService
 from backend.config import GENERATED_IMAGES_DIR
 from backend.models.schemas import (
     GenerateTextRequest,
@@ -42,6 +43,14 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
     try:
         StatsService.record_request()
         task_id = request.task_id or str(uuid.uuid4())
+
+        banned_word = BannedWordsService.check(request.prompt)
+        if banned_word:
+            await asyncio.sleep(10)
+            TaskManager.update_task(task_id, status="failed", error="提示词包含违禁词")
+            StatsService.record_failed()
+            record_request(user_id, "failed")
+            raise HTTPException(status_code=400, detail="提示词包含违禁词，请修改后重试")
 
         TaskManager.create_task(task_id, "text", {"prompt": request.prompt, "size": request.size}, user_id=user_id)
         TaskManager.update_task(task_id, status="processing", progress=10)
@@ -89,6 +98,14 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
     try:
         StatsService.record_request()
         task_id = request.task_id or str(uuid.uuid4())
+
+        banned_word = BannedWordsService.check(request.prompt)
+        if banned_word:
+            await asyncio.sleep(10)
+            TaskManager.update_task(task_id, status="failed", error="提示词包含违禁词")
+            StatsService.record_failed()
+            record_request(user_id, "failed")
+            raise HTTPException(status_code=400, detail="提示词包含违禁词，请修改后重试")
 
         TaskManager.create_task(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "image_urls": request.image_urls}, user_id=user_id)
         TaskManager.update_task(task_id, status="processing", progress=10)
