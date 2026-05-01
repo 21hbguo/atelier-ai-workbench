@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Trash2, Users, Image, Shield } from 'lucide-react'
+import { Trash2, Users, Image, Shield, Snowflake, Sun } from 'lucide-react'
 import { adminAPI } from '../api'
 import PageLayout from '../components/PageLayout'
 
@@ -32,6 +32,13 @@ export default function AdminPage() {
       setImages(data.images)
       setImageTotal(data.total)
     } catch {} finally { setLoading(false) }
+  }
+
+  const handleToggleFreeze = async (userId, username) => {
+    try {
+      const { data } = await adminAPI.toggleFreeze(userId)
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, is_frozen: data.is_frozen } : u))
+    } catch {}
   }
 
   const handleDeleteUser = async (userId, username) => {
@@ -88,43 +95,65 @@ export default function AdminPage() {
         ) : tab === 'users' ? (
           <div>
             <div className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>共 {userTotal} 个用户</div>
-            <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr style={{ background: 'var(--bg-ai-bubble)' }}>
-                    <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--text-secondary)' }}>ID</th>
-                    <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--text-secondary)' }}>用户名</th>
-                    <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--text-secondary)' }}>昵称</th>
-                    <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--text-secondary)' }}>角色</th>
-                    <th className="text-left px-4 py-3 font-medium" style={{ color: 'var(--text-secondary)' }}>注册时间</th>
-                    <th className="text-right px-4 py-3 font-medium" style={{ color: 'var(--text-secondary)' }}>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map(u => (
-                    <tr key={u.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
-                      <td className="px-4 py-3" style={{ color: 'var(--text-primary)' }}>{u.id}</td>
-                      <td className="px-4 py-3" style={{ color: 'var(--text-primary)' }}>{u.username}</td>
-                      <td className="px-4 py-3" style={{ color: 'var(--text-primary)' }}>{u.nickname}</td>
-                      <td className="px-4 py-3">
-                        {u.is_admin ? (
-                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">管理员</span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: 'var(--border-color)', color: 'var(--text-secondary)' }}>普通用户</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-secondary)' }}>{u.created_at}</td>
-                      <td className="px-4 py-3 text-right">
-                        {!u.is_admin && (
-                          <button onClick={() => handleDeleteUser(u.id, u.username)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500">
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="space-y-2">
+              {users.map(u => (
+                <div key={u.id} className="flex items-center gap-4 px-4 py-3 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>{u.nickname || u.username}</span>
+                      {u.is_admin ? (
+                        <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">管理员</span>
+                      ) : null}
+                      {u.is_frozen ? (
+                        <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">已冻结</span>
+                      ) : null}
+                    </div>
+                    <div className="flex items-center gap-4 mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                      <span>ID: {u.id}</span>
+                      <span>用户名: {u.username}</span>
+                      <span>IP: {u.last_ip || '未知'}</span>
+                      <span>注册: {u.created_at}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-6 text-center">
+                    <div>
+                      <div className="text-lg font-semibold text-green-500">{u.success_count}</div>
+                      <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>成功</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-semibold text-red-500">{u.failed_count}</div>
+                      <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>失败</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-semibold text-amber-500">{u.processing_count}</div>
+                      <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>进行中</div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    {!u.is_admin && (
+                      <>
+                        <button
+                          onClick={() => handleToggleFreeze(u.id, u.username)}
+                          className="p-2 rounded-lg hover:bg-black/5"
+                          style={{ color: u.is_frozen ? '#3b82f6' : 'var(--text-secondary)' }}
+                          title={u.is_frozen ? '启用' : '冻结'}
+                        >
+                          {u.is_frozen ? <Sun size={16} /> : <Snowflake size={16} />}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteUser(u.id, u.username)}
+                          className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"
+                          title="删除"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
             {userTotal > 20 && (
               <div className="flex justify-center gap-2 mt-4">

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X, Copy, Check, Download, Trash2, Plus, Maximize2 } from 'lucide-react'
+import { X, Copy, Download, Trash2, Plus, Maximize2 } from 'lucide-react'
 
 function InfoItem({ label, value }) {
   return (

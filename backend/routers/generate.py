@@ -2,7 +2,7 @@ import uuid
 import json
 import asyncio
 from datetime import datetime
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends, Request
 
 from backend.services.image_gen import ImageGenService
 from backend.services.task_manager import TaskManager
@@ -13,12 +13,17 @@ from backend.models.schemas import (
     GenerateTextImageRequest,
     GenerateResponse,
 )
+from backend.auth import get_current_user, record_request, update_user_ip
 
 router = APIRouter(prefix="/api/generate", tags=["generate"])
 
 
 @router.post("/text", response_model=GenerateResponse)
-async def generate_text(request: GenerateTextRequest):
+async def generate_text(request: GenerateTextRequest, req: Request, user=Depends(get_current_user)):
+    user_id = user["user_id"]
+    update_user_ip(user_id, req.client.host)
+    record_request(user_id, "processing")
+
     try:
         StatsService.record_request()
         task_id = request.task_id or str(uuid.uuid4())[:8]
@@ -31,6 +36,7 @@ async def generate_text(request: GenerateTextRequest):
         except Exception as e:
             TaskManager.update_task(task_id, status="failed", error=str(e))
             StatsService.record_failed()
+            record_request(user_id, "failed")
             raise HTTPException(status_code=500, detail=f"提交任务失败: {e}")
 
         external_task_id = result["task_id"]
@@ -40,21 +46,28 @@ async def generate_text(request: GenerateTextRequest):
         if urls:
             TaskManager.update_task(task_id, status="completed", progress=100, result_urls=urls)
             StatsService.record_success()
+            record_request(user_id, "success")
             return GenerateResponse(task_id=task_id, status="completed", message="生成完成")
         else:
             TaskManager.update_task(task_id, status="failed", error="未获取到图片结果")
             StatsService.record_failed()
+            record_request(user_id, "failed")
             raise HTTPException(status_code=500, detail="生成失败: 未获取到图片结果")
 
     except HTTPException:
         raise
     except Exception as e:
         TaskManager.update_task(task_id, status="failed", error=str(e))
+        record_request(user_id, "failed")
         raise HTTPException(status_code=500, detail=f"生成失败: {e}")
 
 
 @router.post("/text-image", response_model=GenerateResponse)
-async def generate_text_image(request: GenerateTextImageRequest):
+async def generate_text_image(request: GenerateTextImageRequest, req: Request, user=Depends(get_current_user)):
+    user_id = user["user_id"]
+    update_user_ip(user_id, req.client.host)
+    record_request(user_id, "processing")
+
     try:
         StatsService.record_request()
         task_id = request.task_id or str(uuid.uuid4())[:8]
@@ -67,6 +80,7 @@ async def generate_text_image(request: GenerateTextImageRequest):
         except Exception as e:
             TaskManager.update_task(task_id, status="failed", error=str(e))
             StatsService.record_failed()
+            record_request(user_id, "failed")
             raise HTTPException(status_code=500, detail=f"提交任务失败: {e}")
 
         external_task_id = result["task_id"]
@@ -76,16 +90,19 @@ async def generate_text_image(request: GenerateTextImageRequest):
         if urls:
             TaskManager.update_task(task_id, status="completed", progress=100, result_urls=urls)
             StatsService.record_success()
+            record_request(user_id, "success")
             return GenerateResponse(task_id=task_id, status="completed", message="生成完成")
         else:
             TaskManager.update_task(task_id, status="failed", error="未获取到图片结果")
             StatsService.record_failed()
+            record_request(user_id, "failed")
             raise HTTPException(status_code=500, detail="生成失败: 未获取到图片结果")
 
     except HTTPException:
         raise
     except Exception as e:
         TaskManager.update_task(task_id, status="failed", error=str(e))
+        record_request(user_id, "failed")
         raise HTTPException(status_code=500, detail=f"生成失败: {e}")
 
 

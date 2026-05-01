@@ -8,3 +8,4 @@ data/stats.json
 node_modules/
 dist/
 *.log
+data/app.db

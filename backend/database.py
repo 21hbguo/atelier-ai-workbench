@@ -37,7 +37,17 @@ def init_db():
                 nickname TEXT,
                 avatar TEXT,
                 is_admin INTEGER DEFAULT 0,
+                is_frozen INTEGER DEFAULT 0,
+                last_ip TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS user_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
             );
 
             CREATE TABLE IF NOT EXISTS square_images (
@@ -61,16 +71,22 @@ def init_db():
                 UNIQUE(image_id, user_id)
             );
 
+            CREATE INDEX IF NOT EXISTS idx_user_requests_user_id ON user_requests(user_id);
+            CREATE INDEX IF NOT EXISTS idx_user_requests_created_at ON user_requests(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_square_images_user_id ON square_images(user_id);
             CREATE INDEX IF NOT EXISTS idx_square_images_created_at ON square_images(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_square_likes_image_id ON square_likes(image_id);
             CREATE INDEX IF NOT EXISTS idx_square_likes_user_id ON square_likes(user_id);
         """)
 
-        # 检查 is_admin 列是否存在，不存在则添加
+        # 检查新列是否存在，不存在则添加
         columns = [row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()]
         if "is_admin" not in columns:
             conn.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0")
+        if "is_frozen" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN is_frozen INTEGER DEFAULT 0")
+        if "last_ip" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN last_ip TEXT")
 
 
 def create_admin_if_not_exists():

@@ -105,6 +105,7 @@ export const squareAPI = {
 export const adminAPI = {
   users: (page = 1, size = 20) => api.get(`/admin/users?page=${page}&size=${size}`),
   deleteUser: (userId) => api.delete(`/admin/users/${userId}`),
+  toggleFreeze: (userId) => api.post(`/admin/users/${userId}/freeze`),
   square: (page = 1, size = 20) => api.get(`/admin/square?page=${page}&size=${size}`),
   deleteSquare: (imageId) => api.delete(`/admin/square/${imageId}`),
 }

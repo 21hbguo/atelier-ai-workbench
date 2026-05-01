@@ -70,6 +70,16 @@ export default function ChatPage() {
     setTasks(prev => prev.map(t => t.task_id === taskId ? { ...t, ...updates } : t))
   }, [])
 
+  const shareImageToSquare = useCallback(async (filename, prompt, params, hasImages) => {
+    try {
+      await squareAPI.share({
+        filename,
+        prompt,
+        metadata: { size: params?.size, type: hasImages ? 'image' : 'text' },
+      })
+    } catch {}
+  }, [])
+
   const pollTask = useCallback(async (taskId, startTime, shareToSquare, prompt, params, hasImages) => {
     const maxAttempts = 80
     await new Promise(r => setTimeout(r, 10000))
@@ -96,16 +106,6 @@ export default function ChatPage() {
     }
     updateTask(taskId, { status: 'failed', error: '生成超时', _active: false })
   }, [updateTask, shareImageToSquare])
-
-  const shareImageToSquare = useCallback(async (filename, prompt, params, hasImages) => {
-    try {
-      await squareAPI.share({
-        filename,
-        prompt,
-        metadata: { size: params?.size, type: hasImages ? 'image' : 'text' },
-      })
-    } catch {}
-  }, [])
 
   const handleSubmit = useCallback(async ({ prompt, images, params, shareToSquare }) => {
     setLoading(true)

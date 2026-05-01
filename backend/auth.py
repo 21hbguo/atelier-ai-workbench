@@ -2,7 +2,7 @@ import os
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional
-from fastapi import HTTPException, Security, Depends
+from fastapi import HTTPException, Security, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import jwt
 import bcrypt
@@ -44,7 +44,15 @@ def decode_token(token: str) -> dict:
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security)) -> dict:
     payload = decode_token(credentials.credentials)
-    return {"user_id": payload["user_id"], "username": payload["username"], "is_admin": payload.get("is_admin", False)}
+    user_id = payload["user_id"]
+
+    # 检查用户是否被冻结
+    with get_db() as conn:
+        user = conn.execute("SELECT is_frozen FROM users WHERE id = ?", (user_id,)).fetchone()
+        if user and user["is_frozen"]:
+            raise HTTPException(status_code=403, detail="账号已被冻结")
+
+    return {"user_id": user_id, "username": payload["username"], "is_admin": payload.get("is_admin", False)}
 
 
 def get_optional_user(credentials: Optional[HTTPAuthorizationCredentials] = Security(security)) -> Optional[dict]:
@@ -60,3 +68,18 @@ def require_admin(user: dict = Depends(get_current_user)) -> dict:
     if not user.get("is_admin"):
         raise HTTPException(status_code=403, detail="需要管理员权限")
     return user
+
+
+def record_request(user_id: int, status: str):
+    """记录用户请求"""
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO user_requests (user_id, status) VALUES (?, ?)",
+            (user_id, status),
+        )
+
+
+def update_user_ip(user_id: int, ip: str):
+    """更新用户 IP"""
+    with get_db() as conn:
+        conn.execute("UPDATE users SET last_ip = ? WHERE id = ?", (ip, user_id))
