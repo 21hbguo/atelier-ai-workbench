@@ -1,9 +1,10 @@
-import { useLocation, Link } from 'react-router-dom'
-import { Sun, Moon, Image, BookOpen, MessageSquare, Menu, X, Settings } from 'lucide-react'
+import { useLocation, Link, useNavigate } from 'react-router-dom'
+import { Sun, Moon, Image, BookOpen, MessageSquare, X, Settings, Globe, LogOut, User, Shield } from 'lucide-react'
 import { useTheme } from '../ThemeContext'
 
 const navItems = [
   { path: '/', icon: MessageSquare, label: '生成' },
+  { path: '/square', icon: Globe, label: '广场' },
   { path: '/gallery', icon: Image, label: '图库' },
   { path: '/prompts', icon: BookOpen, label: '提示词' },
   { path: '/settings', icon: Settings, label: '设置' },
@@ -12,6 +13,14 @@ const navItems = [
 export default function Sidebar({ open, onClose }) {
   const { dark, toggle } = useTheme()
   const location = useLocation()
+  const navigate = useNavigate()
+  const user = JSON.parse(localStorage.getItem('user') || 'null')
+
+  const handleLogout = () => {
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
+    navigate('/login')
+  }
 
   return (
     <>
@@ -34,11 +43,29 @@ export default function Sidebar({ open, onClose }) {
               </Link>
             )
           })}
+          {user?.is_admin && (
+            <Link to="/admin"
+              className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-colors duration-150 ${location.pathname === '/admin' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
+              style={{ color: location.pathname === '/admin' ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: location.pathname === '/admin' ? 'var(--accent)15' : undefined }}
+              onClick={() => onClose?.()}>
+              <Shield size={15} />管理后台
+            </Link>
+          )}
         </nav>
-        <div className="px-2 py-2 border-t" style={{ borderColor: 'var(--border-color)' }}>
+        <div className="px-2 py-2 border-t space-y-0.5" style={{ borderColor: 'var(--border-color)' }}>
+          {user && (
+            <div className="flex items-center gap-2.5 px-2.5 py-2">
+              <User size={15} style={{ color: 'var(--text-secondary)' }} />
+              <span className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>{user.nickname || user.username}</span>
+            </div>
+          )}
           <button onClick={toggle} className="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-xs font-medium hover:bg-black/5 transition-colors"
             style={{ color: 'var(--text-primary)' }}>
             {dark ? <Sun size={15} /> : <Moon size={15} />}{dark ? '浅色' : '深色'}
+          </button>
+          <button onClick={handleLogout} className="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-xs font-medium hover:bg-black/5 transition-colors"
+            style={{ color: 'var(--text-primary)' }}>
+            <LogOut size={15} />退出登录
           </button>
         </div>
       </aside>

@@ -7,6 +7,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading }, ref) {
   const [images, setImages] = useState([])
   const [showParams, setShowParams] = useState(false)
   const [params, setParams] = useState({ size: 'auto' })
+  const [shareToSquare, setShareToSquare] = useState(true)
   const [lightbox, setLightbox] = useState(null)
   const fileRef = useRef(null)
   const textareaRef = useRef(null)
@@ -48,7 +49,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading }, ref) {
 
   const handleSend = () => {
     if (!prompt.trim() || loading) return
-    onSubmit({ prompt: prompt.trim(), images, params })
+    onSubmit({ prompt: prompt.trim(), images, params, shareToSquare })
     setPrompt('')
     setImages([])
   }
@@ -87,6 +88,16 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading }, ref) {
               style={{ color: showParams ? 'var(--accent)' : 'var(--text-secondary)' }}>
               <Settings size={16} />
             </button>
+            <label className="flex items-center gap-1.5 cursor-pointer flex-shrink-0 self-end p-2" title="分享到广场">
+              <input
+                type="checkbox"
+                checked={shareToSquare}
+                onChange={(e) => setShareToSquare(e.target.checked)}
+                className="w-3.5 h-3.5 rounded"
+                style={{ accentColor: 'var(--accent)' }}
+              />
+              <span className="text-xs whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>分享</span>
+            </label>
             <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
               placeholder="输入提示词..."

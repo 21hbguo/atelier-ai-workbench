@@ -3,7 +3,7 @@ import { Menu, Download, Trash2, Check } from 'lucide-react'
 import ChatInput from '../components/ChatInput'
 import GenerationCard from '../components/GenerationCard'
 import Sidebar from '../components/Sidebar'
-import { generateAPI, uploadAPI, taskAPI, imageAPI } from '../api'
+import { generateAPI, uploadAPI, taskAPI, imageAPI, squareAPI } from '../api'
 
 function formatLocalTime(d) {
   const pad = n => String(n).padStart(2, '0')
@@ -70,7 +70,7 @@ export default function ChatPage() {
     setTasks(prev => prev.map(t => t.task_id === taskId ? { ...t, ...updates } : t))
   }, [])
 
-  const pollTask = useCallback(async (taskId, startTime) => {
+  const pollTask = useCallback(async (taskId, startTime, shareToSquare, prompt, params, hasImages) => {
     const maxAttempts = 80
     await new Promise(r => setTimeout(r, 10000))
 
@@ -82,6 +82,9 @@ export default function ChatPage() {
         const { data: st } = await taskAPI.get(taskId)
         if (st.status === 'completed') {
           updateTask(taskId, { ...st, _active: false })
+          if (shareToSquare && st.result_urls?.length) {
+            shareImageToSquare(st.result_urls[0].split('/').pop(), prompt, params, hasImages)
+          }
           return
         }
         if (st.status === 'failed') {
@@ -92,9 +95,19 @@ export default function ChatPage() {
       } catch { continue }
     }
     updateTask(taskId, { status: 'failed', error: '生成超时', _active: false })
-  }, [updateTask])
+  }, [updateTask, shareImageToSquare])
 
-  const handleSubmit = useCallback(async ({ prompt, images, params }) => {
+  const shareImageToSquare = useCallback(async (filename, prompt, params, hasImages) => {
+    try {
+      await squareAPI.share({
+        filename,
+        prompt,
+        metadata: { size: params?.size, type: hasImages ? 'image' : 'text' },
+      })
+    } catch {}
+  }, [])
+
+  const handleSubmit = useCallback(async ({ prompt, images, params, shareToSquare }) => {
     setLoading(true)
     const tempId = 'pending-' + Date.now()
     const previewImages = images?.map(i => i.preview) || []
@@ -137,15 +150,18 @@ export default function ChatPage() {
 
       if (data.status === 'completed') {
         updateTask(realId, { status: 'completed', result_urls: data.result_urls, _active: false })
+        if (shareToSquare && data.result_urls?.length) {
+          shareImageToSquare(data.result_urls[0].split('/').pop(), prompt, params, hasImages)
+        }
         return
       }
 
-      pollTask(realId, Date.now())
+      pollTask(realId, Date.now(), shareToSquare, prompt, params, hasImages)
     } catch (e) {
       updateTask(tempId, { status: 'failed', error: '提交失败: ' + e.message, _active: false })
       setLoading(false)
     }
-  }, [scroll, updateTask, pollTask])
+  }, [scroll, updateTask, pollTask, shareImageToSquare])
 
   const handleRetry = useCallback(async (taskId) => {
     try {

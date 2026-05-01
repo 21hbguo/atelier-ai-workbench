@@ -1,0 +1,125 @@
+import { useState } from 'react'
+import { X, Copy, Check, Download, Trash2, Plus, Maximize2 } from 'lucide-react'
+
+function InfoItem({ label, value }) {
+  return (
+    <div>
+      <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>{label}</label>
+      <p className="text-sm truncate" style={{ color: 'var(--text-primary)' }}>{value}</p>
+    </div>
+  )
+}
+
+export default function ImageDetailModal({
+  image,
+  onClose,
+  onDelete,
+  onAddImage,
+  title = '生成详情',
+  detailContent,
+  downloadUrl,
+  downloadLabel = '下载',
+  downloadExternal = false,
+}) {
+  const [lightbox, setLightbox] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  if (!image) return null
+
+  const meta = image.metadata || {}
+  const url = downloadUrl || image.url
+
+  const handleCopy = (text) => {
+    navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
+        <div
+          className="bg-white dark:bg-gray-900 rounded-2xl overflow-hidden max-w-4xl w-full max-h-[90vh] flex flex-col md:flex-row shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="md:w-3/5 bg-black flex items-center justify-center min-h-[200px] md:min-h-0 relative group cursor-pointer" onClick={() => setLightbox(true)}>
+            <img src={image.url} alt="" className="max-w-full max-h-[60vh] md:max-h-[90vh] object-contain" />
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+              <Maximize2 size={24} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
+          </div>
+
+          <div className="md:w-2/5 p-5 flex flex-col gap-4 overflow-y-auto" style={{ color: 'var(--text-primary)' }}>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{title}</span>
+              <button onClick={onClose} className="p-1 rounded hover:bg-black/5"><X size={18} /></button>
+            </div>
+
+            {detailContent || (
+              <>
+                {meta.prompt && (
+                  <div>
+                    <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>提示词</label>
+                    <div className="relative">
+                      <p className="text-sm p-3 rounded-lg pr-9" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>{meta.prompt}</p>
+                      <button onClick={() => handleCopy(meta.prompt)} className="absolute right-2 top-2 p-1 rounded hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>
+                        <Copy size={14} />
+                      </button>
+                    </div>
+                    {copied && <span className="text-xs mt-1" style={{ color: 'var(--accent)' }}>已复制</span>}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  {meta.type && <InfoItem label="类型" value={meta.type === 'text' ? '纯文本' : '文本+图像'} />}
+                  {meta.size && <InfoItem label="尺寸" value={meta.size} />}
+                  {meta.task_id && <InfoItem label="任务ID" value={meta.task_id} />}
+                  {meta.created_at && <InfoItem label="创建时间" value={meta.created_at} />}
+                </div>
+
+                {meta.input_urls?.length > 0 && (
+                  <div>
+                    <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>输入图片</label>
+                    <div className="flex gap-2 flex-wrap">
+                      {meta.input_urls.map((url, i) => <img key={i} src={url} className="w-16 h-16 rounded-lg object-cover" />)}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            <div className="flex gap-2 mt-auto pt-2">
+              {downloadExternal ? (
+                <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}>
+                  <Download size={14} /> {downloadLabel}
+                </a>
+              ) : (
+                <a href={url} download className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}>
+                  <Download size={14} /> {downloadLabel}
+                </a>
+              )}
+
+              {onAddImage && (
+                <button onClick={() => onAddImage(image.url)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
+                  <Plus size={14} /> 添加
+                </button>
+              )}
+
+              {onDelete && (
+                <button onClick={() => onDelete(image.filename)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">
+                  <Trash2 size={14} /> 删除
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {lightbox && (
+        <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4" onClick={() => setLightbox(false)}>
+          <img src={image.url} alt="" className="max-w-full max-h-full rounded-lg" onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
+    </>
+  )
+}

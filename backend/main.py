@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from backend.routers import generate, upload, tasks, images, prompts, stats, config
+from backend.routers import generate, upload, tasks, images, prompts, stats, config, auth, square, admin
 from backend.config import GENERATED_IMAGES_DIR, UPLOAD_DIR
 
 app = FastAPI(title="AI Image Generator", version="1.0.0")
@@ -22,6 +22,9 @@ app.include_router(images.router)
 app.include_router(prompts.router)
 app.include_router(stats.router)
 app.include_router(config.router)
+app.include_router(auth.router)
+app.include_router(square.router)
+app.include_router(admin.router)
 
 app.mount("/generated_images", StaticFiles(directory=str(GENERATED_IMAGES_DIR)), name="generated_images")
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")

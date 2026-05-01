@@ -7,12 +7,19 @@ const api = axios.create({
 })
 
 api.interceptors.request.use(config => {
+  const token = localStorage.getItem('token')
+  if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
 
 api.interceptors.response.use(
   (res) => res,
   (err) => {
+    if (err.response?.status === 401) {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      window.location.href = '/login'
+    }
     const msg = err.response?.data?.detail || err.message || '请求失败'
     return Promise.reject(new Error(msg))
   }
@@ -80,6 +87,26 @@ export const promptAPI = {
 
 export const statsAPI = {
   get: () => api.get('/stats'),
+}
+
+export const authAPI = {
+  register: (data) => api.post('/auth/register', data),
+  login: (data) => api.post('/auth/login', data),
+  me: () => api.get('/auth/me'),
+}
+
+export const squareAPI = {
+  list: (page = 1, size = 20) => api.get(`/square?page=${page}&size=${size}`),
+  share: (data) => api.post('/square/share', data),
+  like: (imageId) => api.post(`/square/like?image_id=${imageId}`),
+  my: (page = 1, size = 20) => api.get(`/square/my?page=${page}&size=${size}`),
+}
+
+export const adminAPI = {
+  users: (page = 1, size = 20) => api.get(`/admin/users?page=${page}&size=${size}`),
+  deleteUser: (userId) => api.delete(`/admin/users/${userId}`),
+  square: (page = 1, size = 20) => api.get(`/admin/square?page=${page}&size=${size}`),
+  deleteSquare: (imageId) => api.delete(`/admin/square/${imageId}`),
 }
 
 export default api

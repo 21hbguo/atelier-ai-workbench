@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Maximize2, RefreshCw, Check } from 'lucide-react'
+import { Maximize2, RefreshCw, Check, Eye, Plus } from 'lucide-react'
+import ImageDetailModal from './ImageDetailModal'
 
 const statusConfig = {
   queued: { color: '#f59e0b', bg: '#f59e0b15', label: '排队中' },
@@ -18,7 +19,7 @@ function getProgress(startedAt, status) {
 }
 
 export default function GenerationCard({ task, onAddImage, onRetry, selectMode, checked, onToggleCheck }) {
-  const [lightbox, setLightbox] = useState(null)
+  const [showDetail, setShowDetail] = useState(false)
   const [progress, setProgress] = useState(() => getProgress(task.started_at, task.status))
 
   useEffect(() => {
@@ -39,6 +40,19 @@ export default function GenerationCard({ task, onAddImage, onRetry, selectMode, 
   const timestamp = task.created_at
   const prompt = task.params?.prompt || task.prompt || ''
 
+  const imageData = isCompleted ? {
+    url: images[0].full,
+    filename: images[0].full.split('/').pop(),
+    metadata: {
+      prompt,
+      task_id: task.task_id,
+      created_at: task.created_at,
+      type: task.params?.image_urls?.length ? 'image' : 'text',
+      size: task.params?.size,
+      input_urls: task.params?.image_urls,
+    },
+  } : null
+
   return (
     <>
       <div className={`rounded-xl border p-3 animate-fade-in-up relative ${checked ? 'ring-2 ring-accent/50' : ''}`}
@@ -51,17 +65,33 @@ export default function GenerationCard({ task, onAddImage, onRetry, selectMode, 
         )}
         {selectMode && checked && <div className="absolute inset-0 bg-accent/10 rounded-xl pointer-events-none z-10" />}
         {images.length > 0 && (
-          <div className="rounded-lg overflow-hidden mb-3 group relative" onClick={(e) => { if (!selectMode) { e.stopPropagation(); setLightbox(images[0].full) } }}>
+          <div className="rounded-lg overflow-hidden mb-3 group relative">
             <img src={images[0].thumb} alt="" className="w-full aspect-square object-cover cursor-pointer" />
-            {!selectMode && <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center gap-2">
-              <Maximize2 size={20} className="opacity-0 group-hover:opacity-100 transition-opacity text-white" />
-              {onAddImage && isCompleted && (
-                <button onClick={(e) => { e.stopPropagation(); onAddImage(images[0].full) }}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white">
-                  添加
-                </button>
-              )}
-            </div>}
+            {!selectMode && (
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center gap-2">
+                {isCompleted && (
+                  <>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setShowDetail(true) }}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"
+                    >
+                      <Eye size={14} /> 查看
+                    </button>
+                    {onAddImage && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onAddImage(images[0].full) }}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"
+                      >
+                        <Plus size={14} /> 添加
+                      </button>
+                    )}
+                  </>
+                )}
+                {!isCompleted && (
+                  <Maximize2 size={20} className="opacity-0 group-hover:opacity-100 transition-opacity text-white" />
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -87,10 +117,13 @@ export default function GenerationCard({ task, onAddImage, onRetry, selectMode, 
         {timestamp && <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>{timestamp}</div>}
       </div>
 
-      {lightbox && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setLightbox(null)}>
-          <img src={lightbox} alt="" className="max-w-full max-h-full rounded-lg" onClick={e => e.stopPropagation()} />
-        </div>
+      {showDetail && imageData && (
+        <ImageDetailModal
+          image={imageData}
+          onClose={() => setShowDetail(false)}
+          onAddImage={onAddImage}
+          title="生成详情"
+        />
       )}
     </>
   )
