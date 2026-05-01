@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Maximize2, RefreshCw, Check, Eye, Plus } from 'lucide-react'
+import { RefreshCw, Check, Plus } from 'lucide-react'
 import ImageDetailModal from './ImageDetailModal'
 
 const statusConfig = {
@@ -18,7 +18,7 @@ function getProgress(startedAt, status) {
   return Math.min(99 * (1 - Math.exp(-elapsed / 30)), 99)
 }
 
-export default function GenerationCard({ task, onAddImage, onRetry, selectMode, checked, onToggleCheck }) {
+export default function GenerationCard({ task, onAddImage, onRetry, selectMode, checked, onToggleCheck, showUsername, username }) {
   const [showDetail, setShowDetail] = useState(false)
   const [progress, setProgress] = useState(() => getProgress(task.started_at, task.status))
 
@@ -56,7 +56,10 @@ export default function GenerationCard({ task, onAddImage, onRetry, selectMode, 
     <>
       <div
         className={`group relative rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer ${checked ? 'ring-2 ring-accent/50' : ''}`}
-        onClick={() => selectMode && onToggleCheck?.()}
+        onClick={() => {
+          if (selectMode) { onToggleCheck?.(); return }
+          if (isCompleted) setShowDetail(true)
+        }}
       >
         {selectMode && (
           <div className={`absolute top-2 left-2 z-20 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${checked ? 'bg-accent border-accent' : 'bg-white/80 border-gray-300'}`}>
@@ -69,30 +72,22 @@ export default function GenerationCard({ task, onAddImage, onRetry, selectMode, 
           <img src={images[0].thumb} alt="" className="w-full aspect-square object-cover" />
         )}
 
+        {/* admin: username badge */}
+        {showUsername && username && isCompleted && !selectMode && (
+          <div className="absolute top-2 left-2 z-10 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-black/50 backdrop-blur-sm">
+            <span className="text-white text-xs truncate max-w-[80px]">{username}</span>
+          </div>
+        )}
+
         {/* hover actions */}
-        {!selectMode && (
-          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center gap-2">
-            {isCompleted && (
-              <>
-                <button
-                  onClick={(e) => { e.stopPropagation(); setShowDetail(true) }}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"
-                >
-                  <Eye size={14} /> 查看
-                </button>
-                {onAddImage && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onAddImage(images[0].full) }}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"
-                  >
-                    <Plus size={14} /> 添加
-                  </button>
-                )}
-              </>
-            )}
-            {!isCompleted && (
-              <Maximize2 size={20} className="opacity-0 group-hover:opacity-100 transition-opacity text-white" />
-            )}
+        {!selectMode && isCompleted && onAddImage && (
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+            <button
+              onClick={(e) => { e.stopPropagation(); onAddImage(images[0].full) }}
+              className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"
+            >
+              <Plus size={14} /> 添加
+            </button>
           </div>
         )}
 
