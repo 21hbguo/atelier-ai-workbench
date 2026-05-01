@@ -7,6 +7,9 @@ import SettingsPage from './pages/SettingsPage'
 import LoginPage from './pages/LoginPage'
 import SquarePage from './pages/SquarePage'
 import AdminPage from './pages/AdminPage'
+import AgreementPage from './pages/AgreementPage'
+import PrivacyPage from './pages/PrivacyPage'
+import RefundPage from './pages/RefundPage'
 
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem('token')
@@ -29,6 +32,9 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/agreement" element={<AgreementPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/refund" element={<RefundPage />} />
           <Route path="/" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
           <Route path="/square" element={<ProtectedRoute><SquarePage /></ProtectedRoute>} />
           <Route path="/prompts" element={<ProtectedRoute><PromptsPage /></ProtectedRoute>} />

@@ -25,9 +25,12 @@ export default function Sidebar({ open, onClose }) {
       {open && <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={onClose} />}
       <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-48 flex flex-col transition-transform duration-200 ease-out ${open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
         style={{ background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border-color)' }}>
-        <div className="flex items-center justify-between px-3 py-2.5 border-b" style={{ borderColor: 'var(--border-color)' }}>
-          <h1 className="text-base font-semibold truncate" style={{ color: 'var(--text-primary)' }}>Atelier</h1>
-          <button className="lg:hidden p-1 rounded-md hover:bg-black/10" onClick={onClose}><X size={16} /></button>
+        <div className="px-3 py-2.5 border-b" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="flex items-center justify-between">
+            <h1 className="text-base font-semibold truncate" style={{ color: 'var(--text-primary)' }}>Atelier</h1>
+            <button className="lg:hidden p-1 rounded-md hover:bg-black/10" onClick={onClose}><X size={16} /></button>
+          </div>
+          <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>v1.0.0</span>
         </div>
         <nav className="flex-1 px-2 py-2 space-y-0.5 overflow-y-auto">
           {navItems.map(({ path, icon: Icon, label }) => {
@@ -73,6 +76,13 @@ export default function Sidebar({ open, onClose }) {
             style={{ color: 'var(--text-primary)' }}>
             <LogOut size={16} />退出登录
           </button>
+        </div>
+        <div className="px-3 py-2 border-t flex flex-wrap gap-x-1 gap-y-0.5 text-xs opacity-50" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
+          <Link to="/agreement" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>用户协议</Link>
+          <span>|</span>
+          <Link to="/privacy" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>隐私政策</Link>
+          <span>|</span>
+          <Link to="/refund" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>充值退款规则</Link>
         </div>
       </aside>
     </>
