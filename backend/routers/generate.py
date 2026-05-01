@@ -1,0 +1,156 @@
+import uuid
+import json
+import asyncio
+from datetime import datetime
+from fastapi import APIRouter, HTTPException
+
+from backend.services.image_gen import ImageGenService
+from backend.services.task_manager import TaskManager
+from backend.services.stats_service import StatsService
+from backend.config import GENERATED_IMAGES_DIR
+from backend.models.schemas import (
+    GenerateTextRequest,
+    GenerateTextImageRequest,
+    GenerateResponse,
+)
+
+router = APIRouter(prefix="/api/generate", tags=["generate"])
+
+
+@router.post("/text", response_model=GenerateResponse)
+async def generate_text(request: GenerateTextRequest):
+    try:
+        StatsService.record_request()
+        task_id = request.task_id or str(uuid.uuid4())[:8]
+
+        TaskManager.create_task(task_id, "text", {"prompt": request.prompt, "size": request.size})
+        TaskManager.update_task(task_id, status="processing", progress=10)
+
+        try:
+            result = await ImageGenService.submit_task(prompt=request.prompt, size=request.size)
+        except Exception as e:
+            TaskManager.update_task(task_id, status="failed", error=str(e))
+            StatsService.record_failed()
+            raise HTTPException(status_code=500, detail=f"提交任务失败: {e}")
+
+        external_task_id = result["task_id"]
+        meta = {"prompt": request.prompt, "size": request.size, "type": "text", "task_id": task_id}
+        urls = await _poll_and_download(external_task_id, task_id, meta)
+
+        if urls:
+            TaskManager.update_task(task_id, status="completed", progress=100, result_urls=urls)
+            StatsService.record_success()
+            return GenerateResponse(task_id=task_id, status="completed", message="生成完成")
+        else:
+            TaskManager.update_task(task_id, status="failed", error="未获取到图片结果")
+            StatsService.record_failed()
+            raise HTTPException(status_code=500, detail="生成失败: 未获取到图片结果")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        TaskManager.update_task(task_id, status="failed", error=str(e))
+        raise HTTPException(status_code=500, detail=f"生成失败: {e}")
+
+
+@router.post("/text-image", response_model=GenerateResponse)
+async def generate_text_image(request: GenerateTextImageRequest):
+    try:
+        StatsService.record_request()
+        task_id = request.task_id or str(uuid.uuid4())[:8]
+
+        TaskManager.create_task(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "image_urls": request.image_urls})
+        TaskManager.update_task(task_id, status="processing", progress=10)
+
+        try:
+            result = await ImageGenService.submit_task(prompt=request.prompt, size=request.size, urls=request.image_urls)
+        except Exception as e:
+            TaskManager.update_task(task_id, status="failed", error=str(e))
+            StatsService.record_failed()
+            raise HTTPException(status_code=500, detail=f"提交任务失败: {e}")
+
+        external_task_id = result["task_id"]
+        meta = {"prompt": request.prompt, "size": request.size, "type": "text_image", "task_id": task_id, "input_urls": request.image_urls}
+        urls = await _poll_and_download(external_task_id, task_id, meta)
+
+        if urls:
+            TaskManager.update_task(task_id, status="completed", progress=100, result_urls=urls)
+            StatsService.record_success()
+            return GenerateResponse(task_id=task_id, status="completed", message="生成完成")
+        else:
+            TaskManager.update_task(task_id, status="failed", error="未获取到图片结果")
+            StatsService.record_failed()
+            raise HTTPException(status_code=500, detail="生成失败: 未获取到图片结果")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        TaskManager.update_task(task_id, status="failed", error=str(e))
+        raise HTTPException(status_code=500, detail=f"生成失败: {e}")
+
+
+async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = None) -> list:
+    max_attempts = 300
+    consecutive_errors = 0
+    start_time = datetime.now()
+    first_poll = True
+    for attempt in range(max_attempts):
+        if first_poll:
+            await asyncio.sleep(15)
+            first_poll = False
+        else:
+            elapsed = (datetime.now() - start_time).total_seconds()
+            await asyncio.sleep(3 if elapsed > 50 else 5)
+
+        try:
+            result = await ImageGenService.get_task_result(external_task_id)
+            consecutive_errors = 0
+        except Exception:
+            consecutive_errors += 1
+            if consecutive_errors >= 10:
+                return []
+            continue
+
+        if result is None:
+            continue
+
+        if isinstance(result, dict) and result.get("status") == 0:
+            continue
+
+        if isinstance(result, dict):
+            raw_urls = result.get("result") or result.get("urls") or result.get("images")
+            if raw_urls is None:
+                raw_urls = [result]
+        else:
+            raw_urls = [result]
+
+        if not isinstance(raw_urls, list):
+            raw_urls = [raw_urls]
+
+        local_paths = []
+        for i, item in enumerate(raw_urls):
+            if isinstance(item, dict):
+                url = item.get("url") or item.get("image") or item.get("img")
+            else:
+                url = str(item).strip().strip('`').strip()
+
+            if not url:
+                continue
+
+            if not url.startswith(("http://", "https://")):
+                url = "https://" + url
+
+            filename = f"{task_id}_{i}.png"
+            save_path = str(GENERATED_IMAGES_DIR / filename)
+
+            if await ImageGenService.download_image(url, save_path):
+                local_paths.append(save_path)
+                image_meta = meta or {}
+                image_meta["created_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                meta_path = save_path + ".meta.json"
+                with open(meta_path, "w", encoding="utf-8") as f:
+                    json.dump(image_meta, f, ensure_ascii=False, indent=2)
+
+        return local_paths
+
+    return []
