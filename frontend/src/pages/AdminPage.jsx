@@ -48,7 +48,7 @@ export default function AdminPage() {
   useEffect(() => { fetchUsers() }, [userPage, userQuery])
   useEffect(() => { fetchImages() }, [imagePage, imageQuery])
   useEffect(() => { fetchHistory() }, [historyPage, historyQuery])
-  useEffect(() => { fetchHostingImages() }, [hostingPage, hostingSource])
+  useEffect(() => { fetchHostingImages() }, [hostingPage])
   useEffect(() => { fetchHostingStats() }, [])
   useEffect(() => { fetchBannedWords() }, [bannedWordsPage, bannedWordsQuery])
 

@@ -54,8 +54,8 @@ async def _do_upload(file: UploadFile) -> UploadResponse:
     save_path = UPLOAD_DIR / filename
     await asyncio.to_thread(_write_file, save_path, content)
 
-    url = await ImageHostingService.upload_image(str(save_path))
-    ImageUrlMapping.save_url(str(save_path), url, content_hash)
+    url, delete_token = await ImageHostingService.upload_image(str(save_path))
+    ImageUrlMapping.save_url(str(save_path), url, content_hash, delete_token or "")
     return UploadResponse(url=url, is_duplicate=False)
 
 

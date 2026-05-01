@@ -272,8 +272,25 @@ async def batch_delete_hosting(body: dict, admin=Depends(require_admin)):
     urls = body.get("urls", [])
     if not urls:
         raise HTTPException(status_code=400, detail="未提供要删除的URL")
+
+    # 获取删除token
+    tokens = ImageUrlMapping.get_delete_tokens(urls)
+
+    # 删除图床上的图片
+    from backend.services.image_hosting import ImageHostingService
+    deleted_hosting = 0
+    for url, token in tokens.items():
+        if token:
+            try:
+                success = await ImageHostingService.delete_image(token)
+                if success:
+                    deleted_hosting += 1
+            except Exception:
+                pass
+
+    # 删除映射记录
     count = ImageUrlMapping.delete_urls(urls)
-    return {"deleted": count}
+    return {"deleted": count, "deleted_hosting": deleted_hosting}
 
 
 # ============ 违禁词管理 ============

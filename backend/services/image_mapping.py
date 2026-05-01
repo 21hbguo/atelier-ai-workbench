@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from backend.database import get_db
 
 
@@ -25,13 +25,21 @@ class ImageUrlMapping:
             return row["url"] if row else None
 
     @classmethod
-    def save_url(cls, local_path: str, url: str, content_hash: str = "") -> None:
+    def save_url(cls, local_path: str, url: str, content_hash: str = "", delete_token: str = "") -> None:
         abs_path = os.path.abspath(local_path)
         with get_db() as conn:
             conn.execute(
-                "INSERT OR IGNORE INTO image_mappings (local_path, url, upload_time, content_hash) VALUES (?, ?, ?, ?)",
-                (abs_path, url, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), content_hash),
+                "INSERT OR IGNORE INTO image_mappings (local_path, url, upload_time, content_hash, delete_token) VALUES (?, ?, ?, ?, ?)",
+                (abs_path, url, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), content_hash, delete_token),
             )
+
+    @classmethod
+    def get_delete_tokens(cls, urls: List[str]) -> Dict[str, str]:
+        """获取多个URL对应的删除token"""
+        with get_db() as conn:
+            placeholders = ",".join("?" for _ in urls)
+            rows = conn.execute(f"SELECT url, delete_token FROM image_mappings WHERE url IN ({placeholders}) AND delete_token != ''", urls).fetchall()
+            return {row["url"]: row["delete_token"] for row in rows}
 
     @classmethod
     def delete_urls(cls, urls: list) -> int:

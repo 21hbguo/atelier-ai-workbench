@@ -143,7 +143,8 @@ def init_db():
                 local_path TEXT NOT NULL UNIQUE,
                 url TEXT NOT NULL,
                 upload_time TEXT,
-                content_hash TEXT DEFAULT ''
+                content_hash TEXT DEFAULT '',
+                delete_token TEXT DEFAULT ''
             );
 
             CREATE TABLE IF NOT EXISTS image_metadata (
@@ -188,6 +189,10 @@ def init_db():
             conn.execute("CREATE INDEX IF NOT EXISTS idx_prompts_user_id ON prompts(user_id)")
         if "likes_count" not in prompt_cols:
             conn.execute("ALTER TABLE prompts ADD COLUMN likes_count INTEGER DEFAULT 0")
+
+        mapping_cols = [row[1] for row in conn.execute("PRAGMA table_info(image_mappings)").fetchall()]
+        if "delete_token" not in mapping_cols:
+            conn.execute("ALTER TABLE image_mappings ADD COLUMN delete_token TEXT DEFAULT ''")
 
         # 清理历史脏数据：删除已有终态记录的 processing 条目
         conn.execute("""
