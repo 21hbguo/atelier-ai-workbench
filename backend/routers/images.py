@@ -200,7 +200,7 @@ async def delete_image(filename: str, user=Depends(get_current_user)):
 
 
 @router.post("/images/{filename}/metadata")
-async def save_image_metadata_route(filename: str, metadata: dict):
+async def save_image_metadata_route(filename: str, metadata: dict, user=Depends(get_current_user)):
     image_path = GENERATED_IMAGES_DIR / filename
     if not image_path.exists():
         raise HTTPException(status_code=404, detail="图片不存在")
@@ -208,8 +208,8 @@ async def save_image_metadata_route(filename: str, metadata: dict):
     try:
         with get_db() as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO image_metadata (filename, metadata, created_at) VALUES (?, ?, ?)",
-                (filename, json.dumps(metadata, ensure_ascii=False), datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+                "INSERT OR REPLACE INTO image_metadata (filename, metadata, created_at, user_id) VALUES (?, ?, ?, ?)",
+                (filename, json.dumps(metadata, ensure_ascii=False), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user["user_id"]),
             )
         return {"filename": filename, "message": "元数据已保存"}
     except Exception as e:
