@@ -1,5 +1,6 @@
 import json
 import os
+import secrets
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends, Query
 from backend.database import get_db
@@ -7,6 +8,7 @@ from backend.auth import require_admin
 from backend.services.task_manager import TaskManager
 from backend.services.banned_words import BannedWordsService
 from backend.services.image_mapping import ImageUrlMapping
+from backend.services.points_service import PointsService
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -20,7 +22,7 @@ async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
             total = conn.execute("SELECT COUNT(*) FROM users WHERE username LIKE ? OR nickname LIKE ?", (q, q)).fetchone()[0]
             rows = conn.execute(
                 """
-                SELECT u.id, u.username, u.nickname, u.is_admin, u.is_frozen, u.last_ip, u.last_active, u.created_at,
+                SELECT u.id, u.username, u.nickname, u.is_admin, u.is_frozen, u.points, u.last_ip, u.last_active, u.created_at,
                        COALESCE(img.cnt, 0) as success_count,
                        COUNT(CASE WHEN ur.status = 'failed' THEN 1 END) as failed_count,
                        COUNT(CASE WHEN ur.status = 'processing' THEN 1 END) as processing_count
@@ -38,7 +40,7 @@ async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
             total = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
             rows = conn.execute(
                 """
-                SELECT u.id, u.username, u.nickname, u.is_admin, u.is_frozen, u.last_ip, u.last_active, u.created_at,
+                SELECT u.id, u.username, u.nickname, u.is_admin, u.is_frozen, u.points, u.last_ip, u.last_active, u.created_at,
                        COALESCE(img.cnt, 0) as success_count,
                        COUNT(CASE WHEN ur.status = 'failed' THEN 1 END) as failed_count,
                        COUNT(CASE WHEN ur.status = 'processing' THEN 1 END) as processing_count
@@ -90,6 +92,8 @@ async def delete_user(user_id: int, admin=Depends(require_admin)):
         conn.execute("DELETE FROM user_requests WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM square_likes WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM square_images WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM point_transactions WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM daily_checkins WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
         return {"message": "删除成功"}
 
@@ -329,3 +333,77 @@ async def batch_import_banned_words(body: dict, admin=Depends(require_admin)):
         raise HTTPException(status_code=400, detail="未解析到有效违禁词")
     result = BannedWordsService.batch_add(words)
     return {"message": f"导入完成：新增 {result['added']} 个，跳过 {result['skipped']} 个", **result}
+
+
+# ============ 兑换码管理 ============
+
+@router.get("/codes")
+async def list_codes(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), sort: str = Query("created_at"), order: str = Query("desc"), admin=Depends(require_admin)):
+    allowed_sorts = {"created_at", "is_used", "points"}
+    if sort not in allowed_sorts:
+        sort = "created_at"
+    order_dir = "ASC" if order.lower() == "asc" else "DESC"
+    offset = (page - 1) * size
+    with get_db() as conn:
+        total = conn.execute("SELECT COUNT(*) FROM redemption_codes").fetchone()[0]
+        rows = conn.execute(
+            f"""SELECT rc.*, u.username as used_by_name
+                FROM redemption_codes rc
+                LEFT JOIN users u ON rc.used_by = u.id
+                ORDER BY rc.{sort} {order_dir}
+                LIMIT ? OFFSET ?""",
+            (size, offset),
+        ).fetchall()
+        return {"items": [dict(r) for r in rows], "total": total, "page": page, "size": size}
+
+
+@router.post("/codes")
+async def generate_codes(body: dict, admin=Depends(require_admin)):
+    count = body.get("count", 1)
+    points = body.get("points")
+    custom_code = body.get("custom_code", "").strip().upper()
+    if not points or points <= 0:
+        raise HTTPException(status_code=400, detail="积分额度必须大于 0")
+    if count < 1 or count > 100:
+        raise HTTPException(status_code=400, detail="数量范围 1-100")
+    if custom_code and len(custom_code) > 20:
+        raise HTTPException(status_code=400, detail="自定义兑换码长度不能超过 20")
+    with get_db() as conn:
+        if custom_code:
+            existing = conn.execute("SELECT id FROM redemption_codes WHERE code = ?", (custom_code,)).fetchone()
+            if existing:
+                raise HTTPException(status_code=400, detail="兑换码已存在")
+            conn.execute("INSERT INTO redemption_codes (code, points) VALUES (?, ?)", (custom_code, points))
+            return {"generated": 1, "codes": [custom_code]}
+        codes = []
+        for _ in range(count):
+            while True:
+                code = secrets.token_urlsafe(8).upper()
+                if not conn.execute("SELECT id FROM redemption_codes WHERE code = ?", (code,)).fetchone():
+                    break
+            conn.execute("INSERT INTO redemption_codes (code, points) VALUES (?, ?)", (code, points))
+            codes.append(code)
+        return {"generated": len(codes), "codes": codes}
+
+
+@router.post("/users/{user_id}/points")
+async def adjust_points(user_id: int, body: dict, admin=Depends(require_admin)):
+    amount = body.get("amount", 0)
+    description = body.get("description", "管理员调整")
+    if amount == 0:
+        raise HTTPException(status_code=400, detail="积分调整量不能为 0")
+    with get_db() as conn:
+        user = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="用户不存在")
+    if amount > 0:
+        new_balance = PointsService.add_points(user_id, amount, "admin_grant", description)
+    else:
+        new_balance = PointsService.consume(user_id, -amount, description)
+    return {"message": "调整成功", "points": new_balance}
+
+
+@router.post("/migrate-points")
+async def migrate_points(admin=Depends(require_admin)):
+    result = PointsService.migrate_existing_users()
+    return {"message": f"已为 {result['migrated']} 个用户补发积分", **result}

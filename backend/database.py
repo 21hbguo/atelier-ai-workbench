@@ -154,12 +154,48 @@ def init_db():
                 created_at TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS redemption_codes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT UNIQUE NOT NULL,
+                points INTEGER NOT NULL,
+                is_used INTEGER DEFAULT 0,
+                used_by INTEGER,
+                used_by_ip TEXT,
+                used_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (used_by) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS point_transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                amount INTEGER NOT NULL,
+                balance_after INTEGER NOT NULL,
+                type TEXT NOT NULL,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS daily_checkins (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                checkin_date TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, checkin_date)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
             CREATE INDEX IF NOT EXISTS idx_tasks_updated_at ON tasks(updated_at DESC);
             CREATE INDEX IF NOT EXISTS idx_prompts_name ON prompts(name);
             CREATE INDEX IF NOT EXISTS idx_prompts_user_id ON prompts(user_id);
             CREATE INDEX IF NOT EXISTS idx_image_mappings_hash ON image_mappings(content_hash);
             CREATE INDEX IF NOT EXISTS idx_image_metadata_filename ON image_metadata(filename);
+            CREATE INDEX IF NOT EXISTS idx_redemption_codes_code ON redemption_codes(code);
+            CREATE INDEX IF NOT EXISTS idx_redemption_codes_is_used ON redemption_codes(is_used);
+            CREATE INDEX IF NOT EXISTS idx_point_tx_user_id ON point_transactions(user_id);
+            CREATE INDEX IF NOT EXISTS idx_point_tx_created_at ON point_transactions(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_daily_checkins_user_date ON daily_checkins(user_id, checkin_date);
         """)
 
         # 检查新列是否存在，不存在则添加
@@ -172,6 +208,8 @@ def init_db():
             conn.execute("ALTER TABLE users ADD COLUMN last_ip TEXT")
         if "last_active" not in columns:
             conn.execute("ALTER TABLE users ADD COLUMN last_active TIMESTAMP")
+        if "points" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN points INTEGER DEFAULT 0")
 
         task_cols = [row[1] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()]
         if "user_id" not in task_cols:

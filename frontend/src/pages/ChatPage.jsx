@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Download, Trash2, Check, RefreshCw } from 'lucide-react'
+import { Download, Trash2, Check, RefreshCw, Coins } from 'lucide-react'
 import ChatInput from '../components/ChatInput'
 import GenerationCard from '../components/GenerationCard'
 import SearchInput from '../components/SearchInput'
 import MainLayout from '../components/MainLayout'
-import { generateAPI, uploadAPI, taskAPI, imageAPI, squareAPI, adminAPI } from '../api'
+import { generateAPI, uploadAPI, taskAPI, imageAPI, squareAPI, adminAPI, pointsAPI } from '../api'
 
 function formatLocalTime(d) {
   const pad = n => String(n).padStart(2, '0')
@@ -25,6 +25,7 @@ export default function ChatPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [userList, setUserList] = useState([])
   const [selectedUserId, setSelectedUserId] = useState(null)
+  const [points, setPoints] = useState(user?.points ?? 0)
   const feedRef = useRef(null)
   const inputRef = useRef(null)
   const dragCounter = useRef(0)
@@ -66,6 +67,16 @@ export default function ChatPage() {
     if (!isAdmin) return
     adminAPI.users(1, 100).then(({ data }) => setUserList(data.users || [])).catch(() => {})
   }, [isAdmin])
+
+  useEffect(() => {
+    pointsAPI.balance().then(res => setPoints(res.data.points)).catch(() => {})
+    const handleUpdate = () => {
+      const u = JSON.parse(localStorage.getItem('user') || 'null')
+      if (u) setPoints(u.points ?? 0)
+    }
+    window.addEventListener('points-updated', handleUpdate)
+    return () => window.removeEventListener('points-updated', handleUpdate)
+  }, [])
 
   useEffect(() => {
     if (loaded && feedRef.current) {
@@ -119,6 +130,14 @@ export default function ChatPage() {
         }
         if (st.status === 'failed') {
           updateTask(taskId, { ...st, _active: false })
+          if (!isAdmin) {
+            pointsAPI.balance().then(res => {
+              setPoints(res.data.points)
+              const u = JSON.parse(localStorage.getItem('user') || 'null')
+              if (u) { u.points = res.data.points; localStorage.setItem('user', JSON.stringify(u)) }
+              window.dispatchEvent(new Event('points-updated'))
+            }).catch(() => {})
+          }
           return
         }
         updateTask(taskId, st)
@@ -166,6 +185,13 @@ export default function ChatPage() {
         ? (await generateAPI.submitTextImage({ prompt, image_urls: imageUrls, size: params?.size || 'auto', task_id: taskId })).data
         : (await generateAPI.submitText({ prompt, size: params?.size || 'auto', task_id: taskId })).data
 
+      if (!isAdmin) {
+        setPoints(p => Math.max(0, p - 10))
+        const u = JSON.parse(localStorage.getItem('user') || 'null')
+        if (u) { u.points = Math.max(0, (u.points ?? 0) - 10); localStorage.setItem('user', JSON.stringify(u)) }
+        window.dispatchEvent(new Event('points-updated'))
+      }
+
       const realId = data.task_id
       setTasks(prev => prev.map(t => t.task_id === tempId ? { ...t, task_id: realId } : t))
       setLoading(false)
@@ -180,6 +206,11 @@ export default function ChatPage() {
 
       pollTask(realId, Date.now(), shareToSquare, prompt, params, hasImages)
     } catch (e) {
+      if (e.message?.includes('积分不足') || e.message?.includes('402')) {
+        updateTask(tempId, { status: 'failed', error: '积分不足，请充值后重试', _active: false })
+        setLoading(false)
+        return
+      }
       const isTimeout = e.message?.includes('timeout') || e.message?.includes('超时')
       if (isTimeout) {
         setTasks(prev => prev.map(t => t.task_id === tempId ? { ...t, task_id: taskId } : t))
@@ -318,6 +349,12 @@ export default function ChatPage() {
           style={{ color: 'var(--text-secondary)' }}>
           <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
         </button>
+        {!isAdmin && (
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium" style={{ color: 'var(--accent)' }}>
+            <Coins size={14} />
+            <span>{points}</span>
+          </div>
+        )}
         {selectMode ? (
           <button onClick={exitSelectMode} className="ml-auto px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button>
         ) : (

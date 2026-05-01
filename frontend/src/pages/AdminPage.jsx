@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Trash2, Users, Image, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban } from 'lucide-react'
+import { Trash2, Users, Image, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { adminAPI } from '../api'
 import MainLayout from '../components/MainLayout'
@@ -44,6 +44,21 @@ export default function AdminPage() {
   const [batchImportText, setBatchImportText] = useState('')
   const [batchImporting, setBatchImporting] = useState(false)
 
+  // 兑换码管理
+  const [codes, setCodes] = useState([])
+  const [codesTotal, setCodesTotal] = useState(0)
+  const [codesPage, setCodesPage] = useState(1)
+  const [codesSort, setCodesSort] = useState('created_at')
+  const [codesOrder, setCodesOrder] = useState('desc')
+  const [codePoints, setCodePoints] = useState(10)
+  const [codeCount, setCodeCount] = useState(1)
+  const [customCode, setCustomCode] = useState('')
+  const [generatingCodes, setGeneratingCodes] = useState(false)
+  const [generatedCodes, setGeneratedCodes] = useState([])
+  const [adjustUserId, setAdjustUserId] = useState(null)
+  const [adjustAmount, setAdjustAmount] = useState('')
+  const [adjustDesc, setAdjustDesc] = useState('')
+
   useEffect(() => { setUserPage(1) }, [userQuery])
   useEffect(() => { setImagePage(1) }, [imageQuery])
   useEffect(() => { setHistoryPage(1) }, [historyQuery])
@@ -54,6 +69,7 @@ export default function AdminPage() {
   useEffect(() => { fetchHostingImages() }, [hostingPage])
   useEffect(() => { fetchHostingStats() }, [])
   useEffect(() => { fetchBannedWords() }, [bannedWordsPage, bannedWordsQuery])
+  useEffect(() => { fetchCodes() }, [codesPage, codesSort, codesOrder])
 
   const fetchUsers = async () => {
     setLoading(true)
@@ -125,6 +141,47 @@ export default function AdminPage() {
       await adminAPI.deleteBannedWord(wordId)
       fetchBannedWords()
     } catch {}
+  }
+
+  const fetchCodes = async () => {
+    setLoading(true)
+    try {
+      const { data } = await adminAPI.codes(codesPage, 20, codesSort, codesOrder)
+      setCodes(data.items)
+      setCodesTotal(data.total)
+    } catch {} finally { setLoading(false) }
+  }
+
+  const handleGenerateCodes = async () => {
+    if (codePoints <= 0) return
+    setGeneratingCodes(true)
+    try {
+      const { data } = await adminAPI.generateCodes({ count: codeCount, points: codePoints, custom_code: customCode.trim() || undefined })
+      setGeneratedCodes(data.codes)
+      setCustomCode('')
+      fetchCodes()
+    } catch (e) {
+      alert(e.message || '生成失败')
+    } finally { setGeneratingCodes(false) }
+  }
+
+  const handleAdjustPoints = async (userId) => {
+    const amount = parseInt(adjustAmount)
+    if (!amount) return
+    try {
+      await adminAPI.adjustPoints(userId, { amount, description: adjustDesc || '管理员调整' })
+      setAdjustUserId(null); setAdjustAmount(''); setAdjustDesc('')
+      fetchUsers()
+    } catch (e) { alert(e.message || '调整失败') }
+  }
+
+  const handleMigratePoints = async () => {
+    if (!confirm('确认给所有现有用户（积分=0）补发 50 积分？')) return
+    try {
+      const { data } = await adminAPI.migratePoints()
+      alert(data.message)
+      fetchUsers()
+    } catch (e) { alert(e.message || '操作失败') }
   }
 
   const handleBatchImport = async () => {
@@ -223,7 +280,7 @@ export default function AdminPage() {
     <MainLayout>
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="flex gap-1 p-0.5 rounded-lg mb-4" style={{ background: 'var(--border-color)' }}>
-          {[{ k: 'users', l: '用户管理', i: Users }, { k: 'images', l: '广场管理', i: Image }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }].map(({ k, l, i: Icon }) => (
+          {[{ k: 'users', l: '用户管理', i: Users }, { k: 'images', l: '广场管理', i: Image }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'codes', l: '兑换码管理', i: Ticket }].map(({ k, l, i: Icon }) => (
             <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
               <Icon size={14} />{l}
@@ -236,6 +293,7 @@ export default function AdminPage() {
             <div className="flex items-center gap-3 mb-4">
               <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>共 {userTotal} 个用户</span>
               <SearchInput value={userQuery} onChange={setUserQuery} placeholder="搜索用户名/昵称..." />
+              <button onClick={handleMigratePoints} className="ml-auto px-3 py-1.5 rounded-lg text-xs font-medium bg-accent text-white hover:opacity-90">补发积分</button>
             </div>
             {loading ? (
               <div className="flex justify-center py-20">
@@ -249,6 +307,7 @@ export default function AdminPage() {
                   <thead>
                     <tr style={{ background: 'var(--bg-primary)' }}>
                       <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>用户</th>
+                      <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>积分</th>
                       <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>成功</th>
                       <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>失败</th>
                       <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>处理中</th>
@@ -266,6 +325,12 @@ export default function AdminPage() {
                             {u.is_admin ? <span className="px-1 py-0.5 rounded text-[10px] font-medium" style={{ background: 'var(--accent)20', color: 'var(--accent)' }}>管</span> : null}
                             <span style={{ color: 'var(--text-primary)' }}>{u.nickname || u.username}</span>
                           </div>
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <button onClick={() => { setAdjustUserId(u.id); setAdjustAmount(''); setAdjustDesc('') }}
+                            className="px-1.5 py-0.5 rounded text-xs font-medium hover:bg-black/5" style={{ color: 'var(--accent)' }}>
+                            {u.is_admin ? '∞' : (u.points ?? 0)}
+                          </button>
                         </td>
                         <td className="px-3 py-2 text-center" style={{ color: '#22c55e' }}>{u.success_count}</td>
                         <td className="px-3 py-2 text-center" style={{ color: '#ef4444' }}>{u.failed_count}</td>
@@ -529,6 +594,113 @@ export default function AdminPage() {
             </>
             )}
           </div>
+        ) : tab === 'codes' ? (
+          <div>
+            <div className="p-4 rounded-xl border mb-4" style={{ borderColor: 'var(--border-color)' }}>
+              <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>生成兑换码</h3>
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="block text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>积分额度</label>
+                  <div className="flex gap-1.5 mb-1.5">
+                    {[10, 50, 100, 500].map(p => (
+                      <button key={p} onClick={() => { setCodePoints(p); setCustomCode('') }}
+                        className={`px-2 py-1 rounded text-xs font-medium ${codePoints === p && !customCode ? 'bg-accent text-white' : 'hover:bg-black/5'}`}
+                        style={{ color: codePoints === p && !customCode ? undefined : 'var(--text-secondary)' }}>{p}</button>
+                    ))}
+                  </div>
+                  <input type="number" value={customCode} onChange={e => { setCustomCode(e.target.value); setCodePoints(parseInt(e.target.value) || 0) }}
+                    placeholder="自定义额度" min={1}
+                    className="w-28 px-2 py-1.5 rounded-lg text-xs border outline-none"
+                    style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                </div>
+                <div>
+                  <label className="block text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>数量</label>
+                  <input type="number" value={codeCount} onChange={e => setCodeCount(Math.max(1, Math.min(100, parseInt(e.target.value) || 1)))}
+                    min={1} max={100}
+                    className="w-20 px-2 py-1.5 rounded-lg text-xs border outline-none"
+                    style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                </div>
+                <button onClick={handleGenerateCodes} disabled={generatingCodes || codePoints <= 0}
+                  className="px-4 py-1.5 rounded-lg text-xs font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50">
+                  {generatingCodes ? '生成中...' : '生成'}
+                </button>
+              </div>
+              {generatedCodes.length > 0 && (
+                <div className="mt-3 p-2 rounded-lg text-xs" style={{ background: 'var(--bg-secondary)' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>已生成 {generatedCodes.length} 个兑换码：</span>
+                  <div className="mt-1 font-mono break-all" style={{ color: 'var(--accent)' }}>{generatedCodes.join(', ')}</div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>共 {codesTotal} 个兑换码</span>
+              <select value={codesSort} onChange={e => setCodesSort(e.target.value)}
+                className="px-2 py-1 rounded-lg text-xs border-0 outline-none" style={{ background: 'var(--border-color)', color: 'var(--text-primary)' }}>
+                <option value="created_at">创建时间</option>
+                <option value="is_used">使用状态</option>
+                <option value="points">积分额度</option>
+              </select>
+              <button onClick={() => setCodesOrder(o => o === 'desc' ? 'asc' : 'desc')}
+                className="px-2 py-1 rounded-lg text-xs hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>
+                {codesOrder === 'desc' ? '↓' : '↑'}
+              </button>
+            </div>
+
+            {loading ? (
+              <div className="flex justify-center py-20">
+                <div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} />
+              </div>
+            ) : (
+            <>
+            <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr style={{ background: 'var(--bg-primary)' }}>
+                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>兑换码</th>
+                      <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>积分</th>
+                      <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>状态</th>
+                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>使用者</th>
+                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>使用IP</th>
+                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>创建时间</th>
+                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>使用时间</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {codes.map(c => (
+                      <tr key={c.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
+                        <td className="px-3 py-2 font-mono" style={{ color: 'var(--accent)' }}>{c.code}</td>
+                        <td className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-primary)' }}>{c.points}</td>
+                        <td className="px-3 py-2 text-center">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${c.is_used ? 'bg-gray-500/20 text-gray-500' : 'bg-green-500/20 text-green-500'}`}>
+                            {c.is_used ? '已使用' : '未使用'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{c.used_by_name || '-'}</td>
+                        <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{c.used_by_ip || '-'}</td>
+                        <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{c.created_at || '-'}</td>
+                        <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{c.used_at || '-'}</td>
+                      </tr>
+                    ))}
+                    {codes.length === 0 && (
+                      <tr><td colSpan={7} className="text-center py-10" style={{ color: 'var(--text-secondary)' }}>暂无兑换码</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            {codesTotal > 20 && (
+              <div className="flex justify-center gap-2 mt-4">
+                {Array.from({ length: Math.ceil(codesTotal / 20) }, (_, i) => i + 1).map(p => (
+                  <button key={p} onClick={() => setCodesPage(p)} className={`w-8 h-8 rounded-lg text-sm font-medium ${p === codesPage ? 'bg-accent text-white' : 'hover:bg-black/5'}`}
+                    style={{ color: p !== codesPage ? 'var(--text-primary)' : undefined }}>{p}</button>
+                ))}
+              </div>
+            )}
+            </>
+            )}
+          </div>
         ) : (
           <div>
             <div className="flex items-center gap-3 mb-4">
@@ -650,6 +822,39 @@ export default function AdminPage() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 调整积分弹窗 */}
+      {adjustUserId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setAdjustUserId(null)}>
+          <div className="absolute inset-0 bg-black/50" />
+          <div className="relative w-full max-w-sm rounded-2xl overflow-hidden" style={{ background: 'var(--bg-primary)' }} onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>调整积分</h3>
+            </div>
+            <div className="p-4 space-y-3">
+              <div>
+                <label className="block text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>积分数量（正数增加，负数扣除）</label>
+                <input type="number" value={adjustAmount} onChange={e => setAdjustAmount(e.target.value)}
+                  placeholder="例如: 100 或 -50"
+                  className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
+                  style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)', color: 'var(--text-primary)' }} />
+              </div>
+              <div>
+                <label className="block text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>备注</label>
+                <input type="text" value={adjustDesc} onChange={e => setAdjustDesc(e.target.value)}
+                  placeholder="管理员调整"
+                  className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
+                  style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)', color: 'var(--text-primary)' }} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
+              <button onClick={() => setAdjustUserId(null)} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button>
+              <button onClick={() => handleAdjustPoints(adjustUserId)} disabled={!adjustAmount}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50">确认</button>
             </div>
           </div>
         </div>

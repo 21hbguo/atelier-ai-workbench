@@ -10,6 +10,7 @@ import AdminPage from './pages/AdminPage'
 import AgreementPage from './pages/AgreementPage'
 import PrivacyPage from './pages/PrivacyPage'
 import RefundPage from './pages/RefundPage'
+import RedeemPage from './pages/RedeemPage'
 
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem('token')
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="/agreement" element={<AgreementPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/refund" element={<RefundPage />} />
+          <Route path="/redeem" element={<ProtectedRoute><RedeemPage /></ProtectedRoute>} />
           <Route path="/" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
           <Route path="/square" element={<ProtectedRoute><SquarePage /></ProtectedRoute>} />
           <Route path="/prompts" element={<ProtectedRoute><PromptsPage /></ProtectedRoute>} />

@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 from backend.database import get_db
 from backend.auth import hash_password, verify_password, create_token, get_current_user, update_user_ip, get_client_ip
+from backend.services.points_service import PointsService
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -69,8 +70,9 @@ async def register(req: RegisterRequest, request: Request):
         )
         user_id = cursor.lastrowid
         update_user_ip(user_id, get_client_ip(request), conn=conn)
+        PointsService.add_points(user_id, PointsService.REGISTER_BONUS, "register_bonus", "注册赠送")
         token = create_token(user_id, req.username)
-        return {"token": token, "user": {"id": user_id, "username": req.username, "nickname": req.nickname or req.username, "is_admin": False}}
+        return {"token": token, "user": {"id": user_id, "username": req.username, "nickname": req.nickname or req.username, "is_admin": False, "points": PointsService.REGISTER_BONUS}}
 
 
 @router.post("/login")
@@ -84,13 +86,13 @@ async def login(req: LoginRequest, request: Request):
         update_user_ip(user["id"], get_client_ip(request), conn=conn)
         conn.execute("UPDATE users SET last_active = ? WHERE id = ?", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user["id"]))
         token = create_token(user["id"], user["username"], bool(user["is_admin"]))
-        return {"token": token, "user": {"id": user["id"], "username": user["username"], "nickname": user["nickname"], "is_admin": bool(user["is_admin"])}}
+        return {"token": token, "user": {"id": user["id"], "username": user["username"], "nickname": user["nickname"], "is_admin": bool(user["is_admin"]), "points": user["points"]}}
 
 
 @router.get("/me")
 async def get_me(user=Depends(get_current_user)):
     with get_db() as conn:
-        u = conn.execute("SELECT id, username, nickname, avatar, is_admin, created_at FROM users WHERE id = ?", (user["user_id"],)).fetchone()
+        u = conn.execute("SELECT id, username, nickname, avatar, is_admin, points, created_at FROM users WHERE id = ?", (user["user_id"],)).fetchone()
         if not u:
             raise HTTPException(status_code=404, detail="用户不存在")
         return dict(u)

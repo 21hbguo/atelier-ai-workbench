@@ -157,6 +157,20 @@ export const adminAPI = {
   addBannedWord: (word) => api.post('/admin/banned-words', { word }),
   batchImportBannedWords: (text) => api.post('/admin/banned-words/batch-import', { text }),
   deleteBannedWord: (wordId) => api.delete(`/admin/banned-words/${wordId}`),
+  codes: (page = 1, size = 20, sort = 'created_at', order = 'desc') => {
+    const params = { page, size, sort, order }
+    return api.get('/admin/codes', { params })
+  },
+  generateCodes: (data) => api.post('/admin/codes', data),
+  adjustPoints: (userId, data) => api.post(`/admin/users/${userId}/points`, data),
+  migratePoints: () => api.post('/admin/migrate-points'),
+}
+
+export const pointsAPI = {
+  balance: () => api.get('/points/balance'),
+  checkin: () => api.post('/points/checkin'),
+  redeem: (code) => api.post('/points/redeem', { code }),
+  transactions: (page = 1, size = 20) => api.get('/points/transactions', { params: { page, size } }),
 }
 
 export default api

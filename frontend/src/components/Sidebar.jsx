@@ -1,6 +1,8 @@
+import { useState, useEffect } from 'react'
 import { useLocation, Link, useNavigate } from 'react-router-dom'
-import { Sun, Moon, BookOpen, MessageSquare, X, Settings, Globe, LogOut, User, Shield } from 'lucide-react'
+import { Sun, Moon, BookOpen, MessageSquare, X, Settings, Globe, LogOut, User, Shield, Coins } from 'lucide-react'
 import { useTheme } from '../ThemeContext'
+import { pointsAPI } from '../api'
 
 const navItems = [
   { path: '/', icon: MessageSquare, label: '生成' },
@@ -13,6 +15,37 @@ export default function Sidebar({ open, onClose }) {
   const location = useLocation()
   const navigate = useNavigate()
   const user = JSON.parse(localStorage.getItem('user') || 'null')
+  const [points, setPoints] = useState(user?.points ?? 0)
+  const [checkedIn, setCheckedIn] = useState(() => {
+    const last = localStorage.getItem('last_checkin_date')
+    return last === new Date().toISOString().slice(0, 10)
+  })
+
+  useEffect(() => {
+    pointsAPI.balance().then(res => {
+      setPoints(res.data.points)
+      const u = JSON.parse(localStorage.getItem('user') || 'null')
+      if (u) { u.points = res.data.points; localStorage.setItem('user', JSON.stringify(u)) }
+    }).catch(() => {})
+    const handleUpdate = () => {
+      const u = JSON.parse(localStorage.getItem('user') || 'null')
+      if (u) setPoints(u.points ?? 0)
+    }
+    window.addEventListener('points-updated', handleUpdate)
+    return () => window.removeEventListener('points-updated', handleUpdate)
+  }, [])
+
+  const handleCheckIn = async () => {
+    try {
+      const res = await pointsAPI.checkin()
+      setPoints(res.data.points)
+      setCheckedIn(true)
+      localStorage.setItem('last_checkin_date', new Date().toISOString().slice(0, 10))
+      const u = JSON.parse(localStorage.getItem('user') || 'null')
+      if (u) { u.points = res.data.points; localStorage.setItem('user', JSON.stringify(u)) }
+      window.dispatchEvent(new Event('points-updated'))
+    } catch {}
+  }
 
   const handleLogout = () => {
     localStorage.removeItem('token')
@@ -63,10 +96,24 @@ export default function Sidebar({ open, onClose }) {
         </nav>
         <div className="px-2 py-2 border-t space-y-0.5" style={{ borderColor: 'var(--border-color)' }}>
           {user && (
-            <div className="flex items-center gap-2.5 px-2.5 py-2">
-              <User size={16} style={{ color: 'var(--text-secondary)' }} />
-              <span className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{user.nickname || user.username}</span>
-            </div>
+            <>
+              <div className="flex items-center gap-2.5 px-2.5 py-2">
+                <User size={16} style={{ color: 'var(--text-secondary)' }} />
+                <span className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{user.nickname || user.username}</span>
+              </div>
+              <div className="flex items-center gap-2 px-2.5 py-1.5">
+                <Coins size={14} className="shrink-0" style={{ color: 'var(--accent)' }} />
+                <span className="text-xs font-medium" style={{ color: 'var(--accent)' }}>{user?.is_admin ? '∞' : points}</span>
+                {!user?.is_admin && (
+                  <button
+                    onClick={handleCheckIn}
+                    disabled={checkedIn}
+                    className="ml-auto text-xs px-2 py-0.5 rounded transition-colors disabled:opacity-40"
+                    style={{ background: checkedIn ? 'var(--bg-secondary)' : 'var(--accent)', color: checkedIn ? 'var(--text-secondary)' : '#fff' }}
+                  >{checkedIn ? '已签到' : '签到'}</button>
+                )}
+              </div>
+            </>
           )}
           <button onClick={toggle} className="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-sm font-medium hover:bg-black/5 transition-colors"
             style={{ color: 'var(--text-primary)' }}>
@@ -78,6 +125,8 @@ export default function Sidebar({ open, onClose }) {
           </button>
         </div>
         <div className="px-3 py-2 border-t flex flex-wrap gap-x-1 gap-y-0.5 text-xs opacity-50" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
+          {!user?.is_admin && <Link to="/redeem" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>兑换积分</Link>}
+          {!user?.is_admin && <span>|</span>}
           <Link to="/agreement" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>用户协议</Link>
           <span>|</span>
           <Link to="/privacy" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>隐私政策</Link>
