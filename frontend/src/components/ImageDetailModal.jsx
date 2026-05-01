@@ -87,6 +87,13 @@ export default function ImageDetailModal({
                   {meta.size && <InfoItem label="尺寸" value={meta.size} />}
                   {meta.task_id && <InfoItem label="任务ID" value={meta.task_id} />}
                   {meta.created_at && <InfoItem label="创建时间" value={meta.created_at} />}
+                  {meta.started_at && meta.completed_at && (() => {
+                    const s = meta.started_at.includes('T') ? meta.started_at : meta.started_at.replace(' ', 'T')
+                    const e = meta.completed_at.includes('T') ? meta.completed_at : meta.completed_at.replace(' ', 'T')
+                    const sec = Math.round((new Date(e) - new Date(s)) / 1000)
+                    const val = sec >= 60 ? `${Math.floor(sec / 60)}分${sec % 60}秒` : `${sec}秒`
+                    return <InfoItem label="耗时" value={val} />
+                  })()}
                 </div>
 
                 {meta.input_urls?.length > 0 && (

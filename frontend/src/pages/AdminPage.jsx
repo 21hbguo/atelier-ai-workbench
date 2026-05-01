@@ -307,6 +307,9 @@ export default function AdminPage() {
                 const st = { pending: { c: '#6b7280', l: '等待中' }, queued: { c: '#f59e0b', l: '排队中' }, processing: { c: '#f59e0b', l: '生成中' }, completed: { c: '#22c55e', l: '已完成' }, failed: { c: '#ef4444', l: '失败' } }
                 const s = st[item.status] || st.pending
                 const thumbFile = item.result_urls?.[0]?.split('/').pop()
+                const duration = item.started_at && item.completed_at
+                  ? Math.round((new Date(item.completed_at) - new Date(item.started_at)) / 1000)
+                  : null
                 return (
                   <div key={item.task_id} className="flex items-center gap-3 px-4 py-3 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
                     <div className="w-14 h-14 rounded-lg overflow-hidden flex-shrink-0" style={{ background: 'var(--border-color)' }}>
@@ -322,6 +325,7 @@ export default function AdminPage() {
                         <span>{item.nickname || item.username || '未知用户'}</span>
                         <span>IP: {item.last_ip || '未知'}</span>
                         <span>{item.created_at}</span>
+                        {duration !== null && <span>耗时 {duration}s</span>}
                       </div>
                     </div>
                     <span className="px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0" style={{ color: s.c, background: s.c + '20' }}>{s.l}</span>

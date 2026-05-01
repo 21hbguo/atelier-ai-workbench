@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Save, RotateCcw, Eye, EyeOff, BarChart3, TrendingUp, CheckCircle, XCircle, Clock } from 'lucide-react'
+import { Save, RotateCcw, Eye, EyeOff, BarChart3, TrendingUp, CheckCircle, XCircle, Clock, Image, Users, Activity, Zap } from 'lucide-react'
 import { statsAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 
@@ -15,7 +15,10 @@ export default function SettingsPage() {
     fetch('/api/config').then(r => r.json()).then(data => {
       setConfig(prev => ({ ...prev, ...data }))
     }).catch(() => {})
-    statsAPI.get().then(({ data }) => setStats(data)).catch(() => {})
+    const fetchStats = () => statsAPI.get().then(({ data }) => setStats(data)).catch(() => {})
+    fetchStats()
+    const interval = setInterval(fetchStats, 30000)
+    return () => clearInterval(interval)
   }, [])
 
   const handleSave = async () => {
@@ -48,7 +51,7 @@ export default function SettingsPage() {
                 <div className="text-right"><p className="text-xs" style={{ color: 'var(--text-secondary)' }}>最后更新</p><p className="text-sm" style={{ color: 'var(--text-primary)' }}>{stats.last_date}</p></div>
               </div>
             </div>
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-6">
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-4">
               {[
                 { label: '今日请求', value: stats.today_requests, icon: Clock, color: '#3b82f6' },
                 { label: '今日成功', value: stats.today_success, icon: CheckCircle, color: 'var(--accent)' },
@@ -59,6 +62,22 @@ export default function SettingsPage() {
               ].map(({ label, value, icon: Icon, color }) => (
                 <div key={label} className="p-3 rounded-xl border" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
                   <Icon size={16} style={{ color }} className="mb-1" />
+                  <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{label}</p>
+                  <p className="text-lg font-bold mt-0.5" style={{ color: 'var(--text-primary)' }}>{value}</p>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-6">
+              {[
+                { label: '张图片', value: stats.total_images, icon: Image, color: 'var(--accent)' },
+                { label: '位用户', value: stats.total_users, icon: Users, color: '#3b82f6' },
+                { label: '前日新增', value: `+${stats.yesterday_new_users || 0}`, icon: null, color: 'var(--accent)' },
+                { label: '今日活跃', value: stats.today_active_users, icon: Activity, color: 'var(--accent)' },
+                { label: '在线', value: stats.current_active_users, icon: Zap, color: '#22c55e' },
+              ].map(({ label, value, icon: Icon, color }) => (
+                <div key={label} className="p-3 rounded-xl border" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
+                  {Icon && <Icon size={16} style={{ color }} className="mb-1" />}
+                  {!Icon && <span className="text-sm font-bold mb-1 block" style={{ color }}>+</span>}
                   <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{label}</p>
                   <p className="text-lg font-bold mt-0.5" style={{ color: 'var(--text-primary)' }}>{value}</p>
                 </div>

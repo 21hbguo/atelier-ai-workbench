@@ -154,7 +154,7 @@ async def list_history(page: int = Query(1, ge=1), size: int = Query(20, ge=1, l
             rows = conn.execute(
                 """
                 SELECT t.task_id, t.type, t.status, t.params, t.created_at, t.updated_at,
-                       t.result_urls, t.error, t.user_id,
+                       t.started_at, t.completed_at, t.result_urls, t.error, t.user_id,
                        u.username, u.nickname, u.last_ip
                 FROM tasks t
                 LEFT JOIN users u ON t.user_id = u.id
@@ -169,7 +169,7 @@ async def list_history(page: int = Query(1, ge=1), size: int = Query(20, ge=1, l
             rows = conn.execute(
                 """
                 SELECT t.task_id, t.type, t.status, t.params, t.created_at, t.updated_at,
-                       t.result_urls, t.error, t.user_id,
+                       t.started_at, t.completed_at, t.result_urls, t.error, t.user_id,
                        u.username, u.nickname, u.last_ip
                 FROM tasks t
                 LEFT JOIN users u ON t.user_id = u.id
