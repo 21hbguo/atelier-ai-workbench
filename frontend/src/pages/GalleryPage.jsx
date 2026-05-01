@@ -192,7 +192,8 @@ function HostingGallery() {
   const [loading, setLoading] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
   const [checked, setChecked] = useState(new Set())
-  const [lightbox, setLightbox] = useState(null)
+  const [selected, setSelected] = useState(null)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => { fetchItems() }, [])
 
@@ -224,6 +225,12 @@ function HostingGallery() {
 
   const exitSelectMode = () => { setSelectMode(false); setChecked(new Set()) }
 
+  const handleCopy = (text) => {
+    navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+
   return (
     <>
       <div className="flex items-center gap-2 mb-4">
@@ -240,7 +247,7 @@ function HostingGallery() {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
           {items.map((item, i) => (
             <div key={i} className="group relative rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-              onClick={() => selectMode ? toggleCheck(item.url) : setLightbox(item.url)}>
+              onClick={() => selectMode ? toggleCheck(item.url) : setSelected(item)}>
               <img src={`/api/images/proxy-thumb?url=${encodeURIComponent(item.url)}`} alt={item.filename} className="w-full aspect-square object-cover" loading="lazy" />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
               {selectMode && (
@@ -267,11 +274,48 @@ function HostingGallery() {
         </div>
       )}
 
-      {lightbox && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setLightbox(null)}>
-          <div className="relative max-w-full max-h-full" onClick={e => e.stopPropagation()}>
-            <img src={lightbox} alt="" className="max-w-full max-h-[90vh] rounded-lg" />
-            <a href={lightbox} target="_blank" rel="noopener noreferrer" className="absolute top-3 right-3 p-2 rounded-lg bg-black/50 text-white hover:bg-black/70"><ExternalLink size={16} /></a>
+      {selected && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setSelected(null)}>
+          <div className="bg-white dark:bg-gray-900 rounded-2xl overflow-hidden max-w-4xl w-full max-h-[90vh] flex flex-col md:flex-row shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="md:w-3/5 bg-black flex items-center justify-center min-h-[200px] md:min-h-0">
+              <img src={selected.url} alt="" className="max-w-full max-h-[60vh] md:max-h-[90vh] object-contain" />
+            </div>
+            <div className="md:w-2/5 p-5 flex flex-col gap-4 overflow-y-auto" style={{ color: 'var(--text-primary)' }}>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>图床信息</span>
+                <button onClick={() => setSelected(null)} className="p-1 rounded hover:bg-black/5"><X size={18} /></button>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>图床 URL</label>
+                <div className="relative">
+                  <p className="text-sm p-3 rounded-lg pr-9 break-all" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>{selected.url}</p>
+                  <button onClick={() => handleCopy(selected.url)} className="absolute right-2 top-2 p-1 rounded hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>
+                    <Copy size={14} />
+                  </button>
+                </div>
+                {copied && <span className="text-xs mt-1" style={{ color: 'var(--accent)' }}>已复制</span>}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <InfoItem label="文件名" value={selected.filename} />
+                <div>
+                  <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>本地状态</label>
+                  <p className="text-sm" style={{ color: selected.exists ? '#22c55e' : '#ef4444' }}>{selected.exists ? '文件存在' : '文件缺失'}</p>
+                </div>
+              </div>
+
+              {selected.local_path && (
+                <div>
+                  <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>本地路径</label>
+                  <p className="text-xs p-3 rounded-lg break-all" style={{ background: 'var(--bg-primary)', color: 'var(--text-secondary)' }}>{selected.local_path}</p>
+                </div>
+              )}
+
+              <div className="flex gap-2 mt-auto pt-2">
+                <a href={selected.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}><ExternalLink size={14} /> 打开原图</a>
+              </div>
+            </div>
           </div>
         </div>
       )}

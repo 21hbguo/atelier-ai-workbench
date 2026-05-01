@@ -31,7 +31,6 @@ export default function SettingsPage() {
   }
 
   const updateField = (key, value) => setConfig(prev => ({ ...prev, [key]: value }))
-  const apiUrl = config.api_url || DEFAULTS.api_url
 
   return (
     <PageLayout className="p-4 sm:p-6">
@@ -68,14 +67,6 @@ export default function SettingsPage() {
           </>
         )}
 
-        <div className="p-4 rounded-xl border mb-6" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
-          <h3 className="text-xs font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>当前请求地址（仅供参考）</h3>
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2"><span className="text-xs px-2 py-0.5 rounded" style={{ background: 'var(--accent)15', color: 'var(--accent)' }}>纯文本</span><code className="text-xs truncate" style={{ color: 'var(--text-primary)' }}>{apiUrl}/image_gpt</code></div>
-            <div className="flex items-center gap-2"><span className="text-xs px-2 py-0.5 rounded" style={{ background: 'var(--accent)15', color: 'var(--accent)' }}>文本+图像</span><code className="text-xs truncate" style={{ color: 'var(--text-primary)' }}>{apiUrl}/image_gpt</code></div>
-            <div className="flex items-center gap-2"><span className="text-xs px-2 py-0.5 rounded" style={{ background: 'var(--accent)15', color: 'var(--accent)' }}>查询结果</span><code className="text-xs truncate" style={{ color: 'var(--text-primary)' }}>{apiUrl}/detail</code></div>
-          </div>
-        </div>
         <div className="p-5 rounded-xl border mb-6" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
           <h2 className="font-medium mb-4" style={{ color: 'var(--text-primary)' }}>AI 图像生成 API</h2>
           <div className="space-y-4">

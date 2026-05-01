@@ -1,15 +1,18 @@
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Edit2, Trash2, Search, Download, Upload, X } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Plus, Edit2, Trash2, Search, Download, Upload, X, Send } from 'lucide-react'
 import { promptAPI } from '../api'
 import PageLayout from '../components/PageLayout'
 
 export default function PromptsPage() {
+  const navigate = useNavigate()
   const [prompts, setPrompts] = useState([])
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState(new Set())
   const [editing, setEditing] = useState(null)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name: '', prompt: '', negative_prompt: '', tags: '' })
+  const [detail, setDetail] = useState(null)
   const fileRef = useRef(null)
 
   useEffect(() => { fetchPrompts() }, [query])
@@ -20,9 +23,13 @@ export default function PromptsPage() {
 
   const handleSubmit = async () => {
     if (!form.name || !form.prompt) return
+    const payload = {
+      ...form,
+      tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+    }
     try {
-      if (editing) await promptAPI.update(editing, form)
-      else await promptAPI.create(form)
+      if (editing) await promptAPI.update(editing, payload)
+      else await promptAPI.create(payload)
       setForm({ name: '', prompt: '', negative_prompt: '', tags: '' }); setShowForm(false); setEditing(null); fetchPrompts()
     } catch (e) { alert('失败: ' + e.message) }
   }
@@ -97,8 +104,9 @@ export default function PromptsPage() {
         {prompts.length === 0 ? <div className="text-center py-20" style={{ color: 'var(--text-secondary)' }}>暂无提示词</div>
         : <div className="grid gap-3 sm:grid-cols-2">
           {prompts.map(p => (
-            <div key={p.id} className={`p-4 rounded-xl border ${selected.has(p.id) ? 'ring-2 ring-accent/50' : ''}`}
-              style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
+            <div key={p.id} className={`p-4 rounded-xl border cursor-pointer hover:shadow-md transition-shadow ${selected.has(p.id) ? 'ring-2 ring-accent/50' : ''}`}
+              style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}
+              onClick={(e) => { if (e.target.type === 'checkbox' || e.target.closest('button')) return; setDetail(p) }}>
               <div className="flex items-start gap-3">
                 <input type="checkbox" checked={selected.has(p.id)} onChange={() => { const n = new Set(selected); n.has(p.id) ? n.delete(p.id) : n.add(p.id); setSelected(n) }} className="mt-1" />
                 <div className="flex-1 min-w-0">
@@ -108,6 +116,7 @@ export default function PromptsPage() {
                   <div className="flex items-center gap-2">
                     <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{p.created_at}</span>
                     <div className="ml-auto flex gap-1">
+                      <button onClick={() => { localStorage.setItem('pending_prompt', p.prompt); navigate('/') }} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-white" style={{ background: 'var(--accent)' }}><Send size={12} /> 使用</button>
                       <button onClick={() => navigator.clipboard.writeText(p.prompt)} className="p-1 rounded hover:bg-black/5 text-xs" style={{ color: 'var(--text-secondary)' }}>复制</button>
                       <button onClick={() => handleEdit(p)} className="p-1 rounded hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}><Edit2 size={14} /></button>
                       <button onClick={() => handleDelete(p.id)} className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20" style={{ color: '#ef4444' }}><Trash2 size={14} /></button>
@@ -119,6 +128,45 @@ export default function PromptsPage() {
           ))}
         </div>}
       </div>
+
+      {detail && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setDetail(null)}>
+          <div className="bg-white dark:bg-gray-900 rounded-2xl overflow-hidden max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
+              <h2 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>{detail.name}</h2>
+              <button onClick={() => setDetail(null)} className="p-1 rounded hover:bg-black/5"><X size={18} style={{ color: 'var(--text-secondary)' }} /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4">
+              <div>
+                <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>提示词内容</label>
+                <p className="text-sm p-3 rounded-lg whitespace-pre-wrap" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>{detail.prompt}</p>
+              </div>
+              {detail.negative_prompt && (
+                <div>
+                  <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>反向提示词</label>
+                  <p className="text-sm p-3 rounded-lg whitespace-pre-wrap" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>{detail.negative_prompt}</p>
+                </div>
+              )}
+              {detail.tags?.length > 0 && (
+                <div>
+                  <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>标签</label>
+                  <div className="flex flex-wrap gap-1.5">{detail.tags.map((t, i) => <span key={i} className="px-2 py-0.5 rounded text-xs" style={{ background: 'var(--accent)15', color: 'var(--accent)' }}>{t}</span>)}</div>
+                </div>
+              )}
+              <div>
+                <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>创建时间</label>
+                <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{detail.created_at}</p>
+              </div>
+            </div>
+            <div className="flex gap-2 px-5 py-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
+              <button onClick={() => { localStorage.setItem('pending_prompt', detail.prompt); navigate('/') }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}><Send size={14} /> 使用</button>
+              <button onClick={() => navigator.clipboard.writeText(detail.prompt)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>复制</button>
+              <button onClick={() => { setDetail(null); handleEdit(detail) }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}><Edit2 size={14} /> 编辑</button>
+              <button onClick={() => { setDetail(null); handleDelete(detail.id) }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 ml-auto"><Trash2 size={14} /> 删除</button>
+            </div>
+          </div>
+        </div>
+      )}
     </PageLayout>
   )
 }

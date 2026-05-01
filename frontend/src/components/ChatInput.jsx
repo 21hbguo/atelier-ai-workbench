@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
+import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
 import { Paperclip, X, Settings, Send, Maximize2 } from 'lucide-react'
 import ParamPanel from './ParamPanel'
 
@@ -9,9 +9,25 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading }, ref) {
   const [params, setParams] = useState({ size: 'auto' })
   const [lightbox, setLightbox] = useState(null)
   const fileRef = useRef(null)
-  const [dragging, setDragging] = useState(false)
+  const textareaRef = useRef(null)
+
+  useEffect(() => {
+    const pending = localStorage.getItem('pending_prompt')
+    if (pending) {
+      setPrompt(pending)
+      localStorage.removeItem('pending_prompt')
+    }
+  }, [])
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px'
+    }
+  }, [prompt])
 
   useImperativeHandle(ref, () => ({
+    addFiles(files) { handleFiles(files) },
     async addImage(url) {
       try {
         const res = await fetch(url)
@@ -45,28 +61,14 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading }, ref) {
     <>
       <div className="w-full px-4 py-4">
         <div
-          className={`rounded-xl border-2 transition-all duration-150 ${dragging ? 'border-accent/50 bg-accent/5' : ''}`}
+          className="rounded-xl border-2 transition-all duration-150"
           style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-md)', position: 'relative' }}
-          onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={(e) => { e.preventDefault(); setDragging(false); handleFiles(e.dataTransfer.files) }}
         >
-          {dragging && (
-            <div className="absolute inset-0 flex items-center justify-center bg-accent/10 rounded-xl z-10">
-              <p className="text-lg font-medium" style={{ color: 'var(--accent)' }}>松开鼠标上传图片</p>
-            </div>
-          )}
-          <div className="flex items-center justify-end p-2 border-b" style={{ borderColor: 'var(--border-color)' }}>
-            <button onClick={() => setShowParams(!showParams)} className="p-1.5 rounded-lg hover:bg-black/5 transition-colors"
-              style={{ color: 'var(--text-secondary)' }}>
-              <Settings size={16} />
-            </button>
-          </div>
           {showParams && <div className="p-3 border-b" style={{ borderColor: 'var(--border-color)' }}><ParamPanel params={params} onChange={setParams} /></div>}
           {images.length > 0 && (
-            <div className="flex gap-2 p-3 overflow-x-auto">
+            <div className="flex gap-2 p-3 pb-0 overflow-x-auto">
               {images.map((img, i) => (
-                <div key={i} className="relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden group cursor-pointer">
+                <div key={i} className="relative w-14 h-14 flex-shrink-0 rounded-lg overflow-hidden group cursor-pointer">
                   <img src={img.preview} alt="" className="w-full h-full object-cover" onClick={() => setLightbox(img.preview)} />
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center" onClick={() => setLightbox(img.preview)}>
                     <Maximize2 size={14} className="opacity-0 group-hover:opacity-100 transition-opacity text-white" />
@@ -76,23 +78,26 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading }, ref) {
               ))}
             </div>
           )}
-          <div className="flex items-end gap-2 p-3">
-            <button onClick={() => fileRef.current?.click()} className="p-2 rounded-lg hover:bg-black/5 transition-colors flex-shrink-0"
+          <div className="flex items-end gap-2 p-2">
+            <button onClick={() => fileRef.current?.click()} className="p-2 rounded-lg hover:bg-black/5 transition-colors flex-shrink-0 self-end"
               style={{ color: 'var(--text-secondary)' }}>
               <Paperclip size={18} />
             </button>
-            <textarea value={prompt} onChange={e => setPrompt(e.target.value)}
+            <button onClick={() => setShowParams(!showParams)} className="p-2 rounded-lg hover:bg-black/5 transition-colors flex-shrink-0 self-end"
+              style={{ color: showParams ? 'var(--accent)' : 'var(--text-secondary)' }}>
+              <Settings size={16} />
+            </button>
+            <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
               placeholder="输入提示词..."
-              className="flex-1 resize-none bg-transparent outline-none text-sm"
-              rows={1} style={{ color: 'var(--text-primary)', minHeight: '24px', maxHeight: '120px' }}
-              onInput={e => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px' }} />
-            <div className="flex flex-col items-end gap-1">
-              <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{prompt.length} 字符</span>
+              className="flex-1 resize-none bg-transparent outline-none text-sm py-2"
+              rows={1} style={{ color: 'var(--text-primary)', minHeight: '32px', maxHeight: '120px' }} />
+            <div className="flex items-center gap-1.5 flex-shrink-0 self-end pb-0.5">
+              {prompt.length > 0 && <span className="text-xs tabular-nums" style={{ color: 'var(--text-secondary)' }}>{prompt.length}</span>}
               <button onClick={handleSend} disabled={!prompt.trim() || loading}
                 className="p-2 rounded-lg transition-all duration-150 disabled:opacity-40"
                 style={{ background: prompt.trim() && !loading ? 'var(--accent)' : 'var(--border-color)', color: '#fff' }}>
-                <Send size={18} />
+                <Send size={16} />
               </button>
             </div>
           </div>

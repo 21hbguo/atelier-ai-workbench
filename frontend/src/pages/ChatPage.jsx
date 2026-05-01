@@ -16,13 +16,15 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState('all')
   const [loaded, setLoaded] = useState(false)
+  const [dragging, setDragging] = useState(false)
   const feedRef = useRef(null)
   const inputRef = useRef(null)
+  const dragCounter = useRef(0)
 
   const refreshTasks = useCallback(async () => {
     try {
       const [taskRes, imgRes] = await Promise.all([taskAPI.list(50), imageAPI.list(1, 100)])
-      const allTasks = taskRes.data.reverse()
+      const allTasks = taskRes.data
       const allImages = imgRes.data.images || []
       const taskImageFiles = new Set()
       for (const t of allTasks) {
@@ -39,14 +41,17 @@ export default function ChatPage() {
       }))
       const merged = [...orphans, ...allTasks].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
       setTasks(merged)
-      if (!loaded) {
-        setLoaded(true)
-        requestAnimationFrame(() => { const el = feedRef.current; if (el) el.scrollTop = el.scrollHeight })
-      }
+      if (!loaded) setLoaded(true)
     } catch {}
   }, [loaded])
 
   useEffect(() => { refreshTasks() }, [refreshTasks])
+
+  useEffect(() => {
+    if (loaded && feedRef.current) {
+      feedRef.current.scrollTop = feedRef.current.scrollHeight
+    }
+  }, [loaded])
 
   useEffect(() => {
     const handler = () => refreshTasks()
@@ -151,8 +156,49 @@ export default function ChatPage() {
     : filter === 'processing' ? tasks.filter(t => t.status === 'processing' || t.status === 'queued')
     : tasks.filter(t => t.status === filter)
 
+  const handleDragEnter = useCallback((e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.dataTransfer.types.includes('Files')) {
+      dragCounter.current++
+      setDragging(true)
+    }
+  }, [])
+
+  const handleDragLeave = useCallback((e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragCounter.current--
+    if (dragCounter.current === 0) setDragging(false)
+  }, [])
+
+  const handleDragOver = useCallback((e) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }, [])
+
+  const handleDrop = useCallback((e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragCounter.current = 0
+    setDragging(false)
+    const files = Array.from(e.dataTransfer.files).filter(f => /\.(png|jpe?g|webp)$/i.test(f.name))
+    if (files.length > 0) inputRef.current?.addFiles(files)
+  }, [])
+
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden"
+      onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDragOver={handleDragOver} onDrop={handleDrop}>
+      {dragging && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none" style={{ background: 'var(--bg-primary)', opacity: 0.92 }}>
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-20 h-20 rounded-2xl border-2 border-dashed flex items-center justify-center" style={{ borderColor: 'var(--accent)' }}>
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            </div>
+            <p className="text-lg font-medium" style={{ color: 'var(--accent)' }}>拖放图片到此处上传</p>
+          </div>
+        </div>
+      )}
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex-1 flex flex-col min-w-0">
         <div className="flex items-center gap-3 px-4 py-3 border-b lg:hidden" style={{ borderColor: 'var(--border-color)' }}>
