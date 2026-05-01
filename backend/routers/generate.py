@@ -14,6 +14,7 @@ from backend.models.schemas import (
     GenerateResponse,
 )
 from backend.auth import get_current_user, record_request, update_user_ip, get_client_ip
+from backend.database import get_db
 
 router = APIRouter(prefix="/api/generate", tags=["generate"])
 
@@ -173,9 +174,11 @@ async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = N
                 local_paths.append(save_path)
                 image_meta = meta or {}
                 image_meta["created_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                meta_path = save_path + ".meta.json"
-                with open(meta_path, "w", encoding="utf-8") as f:
-                    json.dump(image_meta, f, ensure_ascii=False, indent=2)
+                with get_db() as conn:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO image_metadata (filename, metadata, created_at) VALUES (?, ?, ?)",
+                        (filename, json.dumps(image_meta, ensure_ascii=False), image_meta["created_at"]),
+                    )
 
         return local_paths
 

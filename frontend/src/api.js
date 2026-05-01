@@ -50,11 +50,6 @@ export const taskAPI = {
   delete: (id) => api.delete(`/tasks/${id}`),
 }
 
-export const hostingAPI = {
-  list: () => api.get('/hosting'),
-  delete: (urls) => api.delete('/hosting', { data: { urls } }),
-}
-
 export const imageAPI = {
   list: (page = 1, pageSize = 20) => api.get(`/images?page=${page}&page_size=${pageSize}`),
   get: (filename) => api.get(`/images/${filename}`),
@@ -92,14 +87,12 @@ export const statsAPI = {
 export const authAPI = {
   register: (data) => api.post('/auth/register', data),
   login: (data) => api.post('/auth/login', data),
-  me: () => api.get('/auth/me'),
 }
 
 export const squareAPI = {
   list: (page = 1, size = 20) => api.get(`/square?page=${page}&size=${size}`),
   share: (data) => api.post('/square/share', data),
   like: (imageId) => api.post(`/square/like?image_id=${imageId}`),
-  my: (page = 1, size = 20) => api.get(`/square/my?page=${page}&size=${size}`),
 }
 
 export const adminAPI = {

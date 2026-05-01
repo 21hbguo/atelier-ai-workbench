@@ -1,78 +1,44 @@
-import csv
 import os
-import threading
-from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict
-
-from backend.config import IMAGE_URL_MAPPING_CSV
+from backend.database import get_db
 
 
 class ImageUrlMapping:
-    _lock = threading.Lock()
-
     @classmethod
     def load_mapping(cls) -> Dict[str, str]:
-        if not os.path.exists(IMAGE_URL_MAPPING_CSV):
-            return {}
-        mapping = {}
-        with open(IMAGE_URL_MAPPING_CSV, "r", encoding="utf-8") as f:
-            reader = csv.reader(f)
-            for i, row in enumerate(reader):
-                if i == 0 and row and row[0] == "local_path":
-                    continue
-                if len(row) >= 2:
-                    mapping[row[0]] = row[1]
-        return mapping
+        with get_db() as conn:
+            rows = conn.execute("SELECT local_path, url FROM image_mappings").fetchall()
+            return {row["local_path"]: row["url"] for row in rows}
 
     @classmethod
     def get_url(cls, local_path: str) -> Optional[str]:
-        mapping = cls.load_mapping()
         abs_path = os.path.abspath(local_path)
-        return mapping.get(abs_path)
+        with get_db() as conn:
+            row = conn.execute("SELECT url FROM image_mappings WHERE local_path = ?", (abs_path,)).fetchone()
+            return row["url"] if row else None
 
     @classmethod
     def get_url_by_hash(cls, content_hash: str) -> Optional[str]:
-        if not os.path.exists(IMAGE_URL_MAPPING_CSV):
-            return None
-        with open(IMAGE_URL_MAPPING_CSV, "r", encoding="utf-8") as f:
-            reader = csv.reader(f)
-            for i, row in enumerate(reader):
-                if i == 0 and row and row[0] == "local_path":
-                    continue
-                if len(row) >= 4 and row[3] == content_hash:
-                    return row[1]
-        return None
+        with get_db() as conn:
+            row = conn.execute("SELECT url FROM image_mappings WHERE content_hash = ?", (content_hash,)).fetchone()
+            return row["url"] if row else None
 
     @classmethod
     def save_url(cls, local_path: str, url: str, content_hash: str = "") -> None:
         abs_path = os.path.abspath(local_path)
-        if cls.get_url(abs_path) is not None:
-            return
-        with cls._lock:
-            file_exists = os.path.exists(IMAGE_URL_MAPPING_CSV)
-            with open(IMAGE_URL_MAPPING_CSV, "a", encoding="utf-8", newline="") as f:
-                writer = csv.writer(f)
-                if not file_exists:
-                    writer.writerow(["local_path", "url", "upload_time", "hash"])
-                writer.writerow([abs_path, url, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), content_hash])
+        with get_db() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO image_mappings (local_path, url, upload_time, content_hash) VALUES (?, ?, ?, ?)",
+                (abs_path, url, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), content_hash),
+            )
 
     @classmethod
     def delete_urls(cls, urls: list) -> int:
-        if not os.path.exists(IMAGE_URL_MAPPING_CSV):
-            return 0
-        with cls._lock:
-            rows = []
-            with open(IMAGE_URL_MAPPING_CSV, "r", encoding="utf-8") as f:
-                reader = csv.reader(f)
-                for row in reader:
-                    if len(row) >= 2 and row[1] in urls:
-                        continue
-                    rows.append(row)
-            with open(IMAGE_URL_MAPPING_CSV, "w", encoding="utf-8", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerows(rows)
-            return len(urls)
+        with get_db() as conn:
+            placeholders = ",".join("?" for _ in urls)
+            cur = conn.execute(f"DELETE FROM image_mappings WHERE url IN ({placeholders})", urls)
+            return cur.rowcount
 
     @classmethod
     def ensure_url(cls, local_path: str, upload_func) -> Optional[str]:

@@ -77,6 +77,62 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_square_images_created_at ON square_images(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_square_likes_image_id ON square_likes(image_id);
             CREATE INDEX IF NOT EXISTS idx_square_likes_user_id ON square_likes(user_id);
+
+            CREATE TABLE IF NOT EXISTS tasks (
+                task_id TEXT PRIMARY KEY,
+                type TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                params TEXT,
+                created_at TEXT,
+                updated_at TEXT,
+                started_at TEXT,
+                completed_at TEXT,
+                progress INTEGER DEFAULT 0,
+                result_urls TEXT,
+                error TEXT,
+                external_result TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS prompts (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                prompt TEXT NOT NULL,
+                negative_prompt TEXT DEFAULT '',
+                tags TEXT DEFAULT '[]',
+                created_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS stats (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                today_requests INTEGER DEFAULT 0,
+                today_success INTEGER DEFAULT 0,
+                today_failed INTEGER DEFAULT 0,
+                total_requests INTEGER DEFAULT 0,
+                total_success INTEGER DEFAULT 0,
+                total_failed INTEGER DEFAULT 0,
+                last_date TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS image_mappings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                local_path TEXT NOT NULL UNIQUE,
+                url TEXT NOT NULL,
+                upload_time TEXT,
+                content_hash TEXT DEFAULT ''
+            );
+
+            CREATE TABLE IF NOT EXISTS image_metadata (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename TEXT NOT NULL UNIQUE,
+                metadata TEXT,
+                created_at TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+            CREATE INDEX IF NOT EXISTS idx_tasks_updated_at ON tasks(updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_prompts_name ON prompts(name);
+            CREATE INDEX IF NOT EXISTS idx_image_mappings_hash ON image_mappings(content_hash);
+            CREATE INDEX IF NOT EXISTS idx_image_metadata_filename ON image_metadata(filename);
         """)
 
         # 检查新列是否存在，不存在则添加

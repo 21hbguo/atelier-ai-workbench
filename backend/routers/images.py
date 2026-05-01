@@ -1,9 +1,7 @@
 import os
 import json
-import base64
 import hashlib
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -11,20 +9,21 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 
 from backend.config import GENERATED_IMAGES_DIR, THUMBS_DIR
+from backend.database import get_db
 from backend.services.task_manager import TaskManager
 from backend.services.image_mapping import ImageUrlMapping
 
 router = APIRouter(prefix="/api", tags=["images"])
 
 
-def get_image_metadata(image_path: str) -> dict:
-    meta_path = image_path + ".meta.json"
-    if os.path.exists(meta_path):
-        try:
-            with open(meta_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
+def get_image_metadata(filename: str) -> dict:
+    with get_db() as conn:
+        row = conn.execute("SELECT metadata FROM image_metadata WHERE filename = ?", (filename,)).fetchone()
+        if row and row["metadata"]:
+            try:
+                return json.loads(row["metadata"])
+            except (json.JSONDecodeError, TypeError):
+                pass
     return {}
 
 
@@ -37,16 +36,15 @@ async def list_images(page: int = Query(1, ge=1), page_size: int = Query(20, ge=
         image_files = []
         for f in GENERATED_IMAGES_DIR.iterdir():
             if f.is_file() and f.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
-                if not f.name.endswith(".meta.json"):
-                    stat = f.stat()
-                    metadata = get_image_metadata(str(f))
-                    image_files.append({
-                        "filename": f.name,
-                        "path": str(f),
-                        "url": f"/api/images/file/{f.name}",
-                        "created_at": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
-                        "metadata": metadata,
-                    })
+                stat = f.stat()
+                metadata = get_image_metadata(f.name)
+                image_files.append({
+                    "filename": f.name,
+                    "path": str(f),
+                    "url": f"/api/images/file/{f.name}",
+                    "created_at": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                    "metadata": metadata,
+                })
 
         image_files.sort(key=lambda x: x["created_at"], reverse=True)
 
@@ -138,7 +136,7 @@ async def get_image_info(filename: str):
         raise HTTPException(status_code=404, detail="图片不存在")
 
     stat = image_path.stat()
-    metadata = get_image_metadata(str(image_path))
+    metadata = get_image_metadata(filename)
 
     return {
         "filename": filename,
@@ -152,15 +150,14 @@ async def get_image_info(filename: str):
 @router.delete("/images/{filename}")
 async def delete_image(filename: str):
     image_path = GENERATED_IMAGES_DIR / filename
-    meta_path = str(image_path) + ".meta.json"
 
     if not image_path.exists():
         raise HTTPException(status_code=404, detail="图片不存在")
 
     try:
         image_path.unlink()
-        if os.path.exists(meta_path):
-            os.remove(meta_path)
+        with get_db() as conn:
+            conn.execute("DELETE FROM image_metadata WHERE filename = ?", (filename,))
         TaskManager.remove_image_from_tasks(str(image_path))
         return {"filename": filename, "message": "图片已删除"}
     except Exception as e:
@@ -168,15 +165,17 @@ async def delete_image(filename: str):
 
 
 @router.post("/images/{filename}/metadata")
-async def save_image_metadata(filename: str, metadata: dict):
+async def save_image_metadata_route(filename: str, metadata: dict):
     image_path = GENERATED_IMAGES_DIR / filename
     if not image_path.exists():
         raise HTTPException(status_code=404, detail="图片不存在")
 
-    meta_path = str(image_path) + ".meta.json"
     try:
-        with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump(metadata, f, ensure_ascii=False, indent=2)
+        with get_db() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO image_metadata (filename, metadata, created_at) VALUES (?, ?, ?)",
+                (filename, json.dumps(metadata, ensure_ascii=False), datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+            )
         return {"filename": filename, "message": "元数据已保存"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"保存元数据失败: {str(e)}")
