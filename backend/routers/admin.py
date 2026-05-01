@@ -1,5 +1,11 @@
 import json
+import io
+import zipfile
+from pathlib import Path
+from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi.responses import StreamingResponse
+from backend.config import GENERATED_IMAGES_DIR, UPLOAD_DIR
 from backend.database import get_db
 from backend.auth import require_admin
 from backend.services.task_manager import TaskManager
@@ -206,3 +212,103 @@ async def delete_history(task_id: str, admin=Depends(require_admin)):
     if not success:
         raise HTTPException(status_code=404, detail="任务不存在")
     return {"task_id": task_id, "message": "任务已删除"}
+
+
+# ============ 图床管理 ============
+
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+
+
+def _scan_images():
+    images = []
+    for folder, source in [(GENERATED_IMAGES_DIR, "generated"), (UPLOAD_DIR, "uploaded")]:
+        if not folder.exists():
+            continue
+        for f in folder.iterdir():
+            if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS:
+                stat = f.stat()
+                images.append({
+                    "filename": f.name,
+                    "source": source,
+                    "folder": source,
+                    "size": stat.st_size,
+                    "created_at": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                })
+    images.sort(key=lambda x: x["created_at"], reverse=True)
+    return images
+
+
+def _format_size(size_bytes):
+    for unit in ("B", "KB", "MB", "GB"):
+        if size_bytes < 1024:
+            return f"{size_bytes:.1f} {unit}"
+        size_bytes /= 1024
+    return f"{size_bytes:.1f} TB"
+
+
+@router.get("/images/stats")
+async def get_image_stats(admin=Depends(require_admin)):
+    images = _scan_images()
+    total_size = sum(i["size"] for i in images)
+    generated = [i for i in images if i["source"] == "generated"]
+    uploaded = [i for i in images if i["source"] == "uploaded"]
+    return {
+        "total_count": len(images),
+        "total_size": total_size,
+        "total_size_fmt": _format_size(total_size),
+        "generated_count": len(generated),
+        "generated_size": sum(i["size"] for i in generated),
+        "uploaded_count": len(uploaded),
+        "uploaded_size": sum(i["size"] for i in uploaded),
+    }
+
+
+@router.get("/images")
+async def list_admin_images(page: int = Query(1, ge=1), size: int = Query(50, ge=1, le=200),
+                            source: str = Query("all"), admin=Depends(require_admin)):
+    images = _scan_images()
+    if source in ("generated", "uploaded"):
+        images = [i for i in images if i["source"] == source]
+    total = len(images)
+    start = (page - 1) * size
+    page_items = images[start:start + size]
+    return {"images": page_items, "total": total, "page": page, "size": size}
+
+
+@router.post("/images/batch-delete")
+async def batch_delete_images(body: dict, admin=Depends(require_admin)):
+    filenames = body.get("filenames", [])
+    if not filenames:
+        raise HTTPException(status_code=400, detail="未提供文件名")
+    deleted = 0
+    for name in filenames:
+        for folder in (GENERATED_IMAGES_DIR, UPLOAD_DIR):
+            path = folder / name
+            if path.exists() and path.is_file():
+                try:
+                    path.unlink()
+                    deleted += 1
+                except Exception:
+                    pass
+    return {"deleted": deleted}
+
+
+@router.post("/images/batch-download")
+async def batch_download_images(body: dict, admin=Depends(require_admin)):
+    filenames = body.get("filenames", [])
+    if not filenames:
+        raise HTTPException(status_code=400, detail="未提供文件名")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name in filenames:
+            for folder in (GENERATED_IMAGES_DIR, UPLOAD_DIR):
+                path = folder / name
+                if path.exists() and path.is_file():
+                    zf.write(path, name)
+                    break
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=images_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"},
+    )

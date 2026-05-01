@@ -143,6 +143,13 @@ export const adminAPI = {
     return api.get('/admin/history', { params })
   },
   deleteHistory: (taskId) => api.delete(`/admin/history/${taskId}`),
+  imageStats: () => api.get('/admin/images/stats'),
+  images: (page = 1, size = 50, source = 'all') => {
+    const params = { page, size, source }
+    return api.get('/admin/images', { params })
+  },
+  batchDeleteImages: (filenames) => api.post('/admin/images/batch-delete', { filenames }),
+  batchDownloadImages: (filenames) => api.post('/admin/images/batch-download', { filenames }, { responseType: 'blob' }),
 }
 
 export default api
