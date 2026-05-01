@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Maximize2, RefreshCw } from 'lucide-react'
+import { Maximize2, RefreshCw, Check } from 'lucide-react'
 
 const statusConfig = {
   queued: { color: '#f59e0b', bg: '#f59e0b15', label: '排队中' },
@@ -17,7 +17,7 @@ function getProgress(startedAt, status) {
   return Math.min(99 * (1 - Math.exp(-elapsed / 30)), 99)
 }
 
-export default function GenerationCard({ task, onAddImage, onRetry }) {
+export default function GenerationCard({ task, onAddImage, onRetry, selectMode, checked, onToggleCheck }) {
   const [lightbox, setLightbox] = useState(null)
   const [progress, setProgress] = useState(() => getProgress(task.started_at, task.status))
 
@@ -41,11 +41,19 @@ export default function GenerationCard({ task, onAddImage, onRetry }) {
 
   return (
     <>
-      <div className="rounded-xl border p-3 animate-fade-in-up" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+      <div className={`rounded-xl border p-3 animate-fade-in-up relative ${checked ? 'ring-2 ring-accent/50' : ''}`}
+        style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-sm)' }}
+        onClick={() => selectMode && onToggleCheck?.()}>
+        {selectMode && (
+          <div className={`absolute top-2 left-2 z-10 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${checked ? 'bg-accent border-accent' : 'bg-white/80 border-gray-300'}`}>
+            {checked && <Check size={12} className="text-white" />}
+          </div>
+        )}
+        {selectMode && checked && <div className="absolute inset-0 bg-accent/10 rounded-xl pointer-events-none z-10" />}
         {images.length > 0 && (
-          <div className="rounded-lg overflow-hidden mb-3 group relative" onClick={() => setLightbox(images[0].full)}>
+          <div className="rounded-lg overflow-hidden mb-3 group relative" onClick={(e) => { if (!selectMode) { e.stopPropagation(); setLightbox(images[0].full) } }}>
             <img src={images[0].thumb} alt="" className="w-full aspect-square object-cover cursor-pointer" />
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center gap-2">
+            {!selectMode && <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center gap-2">
               <Maximize2 size={20} className="opacity-0 group-hover:opacity-100 transition-opacity text-white" />
               {onAddImage && isCompleted && (
                 <button onClick={(e) => { e.stopPropagation(); onAddImage(images[0].full) }}
@@ -53,7 +61,7 @@ export default function GenerationCard({ task, onAddImage, onRetry }) {
                   添加
                 </button>
               )}
-            </div>
+            </div>}
           </div>
         )}
 

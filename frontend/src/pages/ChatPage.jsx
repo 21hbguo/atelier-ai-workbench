@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Menu } from 'lucide-react'
+import { Menu, Download, Trash2, Check } from 'lucide-react'
 import ChatInput from '../components/ChatInput'
 import GenerationCard from '../components/GenerationCard'
 import Sidebar from '../components/Sidebar'
@@ -17,6 +17,8 @@ export default function ChatPage() {
   const [filter, setFilter] = useState('all')
   const [loaded, setLoaded] = useState(false)
   const [dragging, setDragging] = useState(false)
+  const [selectMode, setSelectMode] = useState(false)
+  const [checked, setChecked] = useState(new Set())
   const feedRef = useRef(null)
   const inputRef = useRef(null)
   const dragCounter = useRef(0)
@@ -156,6 +158,43 @@ export default function ChatPage() {
     : filter === 'processing' ? tasks.filter(t => t.status === 'processing' || t.status === 'queued')
     : tasks.filter(t => t.status === filter)
 
+  const toggleCheck = useCallback((taskId) => {
+    setChecked(prev => { const next = new Set(prev); next.has(taskId) ? next.delete(taskId) : next.add(taskId); return next })
+  }, [])
+
+  const toggleSelectAll = useCallback(() => {
+    if (checked.size === filtered.length) setChecked(new Set())
+    else setChecked(new Set(filtered.map(t => t.task_id)))
+  }, [checked.size, filtered])
+
+  const handleBatchDownload = useCallback(() => {
+    for (const task of filtered) {
+      if (!checked.has(task.task_id)) continue
+      for (const url of (task.result_urls || [])) {
+        const a = document.createElement('a'); a.href = url; a.download = url.split('/').pop(); a.click()
+      }
+    }
+  }, [checked, filtered])
+
+  const handleBatchDelete = useCallback(async () => {
+    if (!confirm(`确定删除选中的 ${checked.size} 项？`)) return
+    for (const taskId of checked) {
+      try {
+        if (taskId.startsWith('img-')) {
+          const filename = taskId.replace('img-', '')
+          await imageAPI.delete(filename)
+        } else {
+          await taskAPI.delete(taskId)
+        }
+      } catch {}
+    }
+    setChecked(new Set()); setSelectMode(false)
+    refreshTasks()
+    window.dispatchEvent(new Event('gallery-updated'))
+  }, [checked, refreshTasks])
+
+  const exitSelectMode = useCallback(() => { setSelectMode(false); setChecked(new Set()) }, [])
+
   const handleDragEnter = useCallback((e) => {
     e.preventDefault()
     e.stopPropagation()
@@ -205,11 +244,16 @@ export default function ChatPage() {
           <button onClick={() => setSidebarOpen(true)} style={{ color: 'var(--text-primary)' }}><Menu size={20} /></button>
           <h1 className="font-medium" style={{ color: 'var(--text-primary)' }}>AI 图像生成</h1>
         </div>
-        <div className="flex gap-2 px-4 pt-3">
+        <div className="flex items-center gap-2 px-4 pt-3">
           {[{ k: 'all', l: '全部' }, { k: 'completed', l: '已完成' }, { k: 'processing', l: '生成中' }, { k: 'failed', l: '失败' }].map(({ k, l }) => (
             <button key={k} onClick={() => setFilter(k)} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${filter === k ? 'bg-accent/10' : 'hover:bg-black/5'}`}
               style={{ color: filter === k ? 'var(--accent)' : 'var(--text-secondary)' }}>{l}</button>
           ))}
+          {selectMode ? (
+            <button onClick={exitSelectMode} className="ml-auto px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button>
+          ) : (
+            <button onClick={() => setSelectMode(true)} className="ml-auto px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>选择</button>
+          )}
         </div>
         <div ref={feedRef} className="flex-1 overflow-y-auto px-4 pb-6">
           {!loaded ? (
@@ -220,11 +264,23 @@ export default function ChatPage() {
               <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>输入提示词或上传参考图，AI 为你创作</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
-              {filtered.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onRetry={handleRetry} />)}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 pt-4">
+              {filtered.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id)} onToggleCheck={() => toggleCheck(task.task_id)} />)}
             </div>
           )}
         </div>
+        {selectMode && checked.size > 0 && (
+          <div className="border-t px-4 py-3 flex items-center gap-3" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
+            <span className="text-sm" style={{ color: 'var(--text-primary)' }}>已选 {checked.size} 项</span>
+            <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>
+              {checked.size === filtered.length ? '取消全选' : '全选'}
+            </button>
+            <div className="ml-auto flex gap-2">
+              <button onClick={handleBatchDownload} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}><Download size={14} /> 下载</button>
+              <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"><Trash2 size={14} /> 删除</button>
+            </div>
+          </div>
+        )}
         <ChatInput ref={inputRef} onSubmit={handleSubmit} loading={loading} />
       </div>
     </div>
