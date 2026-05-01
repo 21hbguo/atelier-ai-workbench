@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Heart, User, Plus, Image, BookOpen, Edit2, Trash2, Download, Upload, X, Send } from 'lucide-react'
 import { squareAPI, promptAPI } from '../api'
-import PageLayout from '../components/PageLayout'
+import MainLayout from '../components/MainLayout'
 import SearchInput from '../components/SearchInput'
 import ImageDetailModal from '../components/ImageDetailModal'
 
@@ -13,12 +13,9 @@ export default function SquarePage() {
   const [tab, setTab] = useState('works')
 
   return (
-    <PageLayout className="p-4 sm:p-6">
-      <div>
+    <MainLayout>
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="flex items-center gap-2 mb-4">
-          <button onClick={() => history.back()} className="p-2 rounded-lg hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m15 18-6-6 6-6"/></svg>
-          </button>
           <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>广场</h1>
         </div>
 
@@ -33,7 +30,7 @@ export default function SquarePage() {
 
         {tab === 'works' ? <WorksTab /> : <PromptsTab isAdmin={isAdmin} />}
       </div>
-    </PageLayout>
+    </MainLayout>
   )
 }
 
