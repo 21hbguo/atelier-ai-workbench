@@ -1,7 +1,8 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Optional
 from backend.config import get_config, update_config
+from backend.auth import get_current_user, require_admin
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
@@ -15,14 +16,14 @@ class ConfigUpdate(BaseModel):
 
 
 @router.get("")
-async def get_runtime_config():
+async def get_runtime_config(user=Depends(get_current_user)):
     cfg = get_config()
     cfg["api_key"] = "***" if cfg.get("api_key") else ""
     return cfg
 
 
 @router.post("")
-async def update_runtime_config(body: ConfigUpdate):
+async def update_runtime_config(body: ConfigUpdate, admin=Depends(require_admin)):
     updates = {k: v for k, v in body.dict().items() if v is not None}
     update_config(updates)
     return {"status": "ok"}

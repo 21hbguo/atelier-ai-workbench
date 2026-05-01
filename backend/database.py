@@ -185,15 +185,21 @@ def init_db():
 
 
 def create_admin_if_not_exists():
-    """创建管理员账号（如果不存在）"""
+    """创建管理员账号（从环境变量读取）"""
+    import os
     import bcrypt
+    admin_username = os.getenv("ADMIN_USERNAME")
+    admin_password = os.getenv("ADMIN_PASSWORD")
+    if not admin_username or not admin_password:
+        print("[WARNING] ADMIN_USERNAME 或 ADMIN_PASSWORD 未设置，跳过管理员创建")
+        return
     with get_db() as conn:
-        admin = conn.execute("SELECT id FROM users WHERE username = '2678896985'").fetchone()
+        admin = conn.execute("SELECT id FROM users WHERE username = ?", (admin_username,)).fetchone()
         if not admin:
-            password_hash = bcrypt.hashpw("CHANGE_ME".encode(), bcrypt.gensalt()).decode()
+            password_hash = bcrypt.hashpw(admin_password.encode(), bcrypt.gensalt()).decode()
             conn.execute(
                 "INSERT INTO users (username, password_hash, nickname, is_admin) VALUES (?, ?, ?, ?)",
-                ("2678896985", password_hash, "管理员", 1),
+                (admin_username, password_hash, "管理员", 1),
             )
 
 

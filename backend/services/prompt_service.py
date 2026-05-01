@@ -17,10 +17,15 @@ class PromptService:
             d["tags"] = []
         return d
 
+    _ORDER_MAP = {
+        "likes": "p.likes_count DESC",
+        "time": "p.created_at DESC",
+    }
+
     @classmethod
     def get_all(cls, scope: str = "public", user_id: int = None, sort: str = "likes") -> List[Dict[str, Any]]:
         with get_db() as conn:
-            order = "p.likes_count DESC" if sort == "likes" else "p.created_at DESC"
+            order = cls._ORDER_MAP.get(sort, cls._ORDER_MAP["likes"])
             if scope == "private" and user_id is not None:
                 rows = conn.execute(f"SELECT * FROM prompts WHERE user_id = ? ORDER BY created_at DESC", (user_id,)).fetchall()
             elif scope == "all":
@@ -102,7 +107,7 @@ class PromptService:
     @classmethod
     def search(cls, query: str, tags: Optional[List[str]] = None, scope: str = "public", user_id: int = None, sort: str = "likes") -> List[Dict[str, Any]]:
         with get_db() as conn:
-            order = "p.likes_count DESC" if sort == "likes" else "p.created_at DESC"
+            order = cls._ORDER_MAP.get(sort, cls._ORDER_MAP["likes"])
             if scope == "private" and user_id is not None:
                 scope_sql = "p.user_id = ?"
                 scope_params = [user_id]

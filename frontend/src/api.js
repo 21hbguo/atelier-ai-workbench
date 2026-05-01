@@ -98,6 +98,8 @@ export const promptAPI = {
 
 export const statsAPI = {
   get: () => api.get('/stats'),
+  system: () => api.get('/stats/system'),
+  users: () => api.get('/stats/users'),
 }
 
 export const authAPI = {

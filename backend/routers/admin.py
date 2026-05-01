@@ -16,7 +16,7 @@ async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
             total = conn.execute("SELECT COUNT(*) FROM users WHERE username LIKE ? OR nickname LIKE ?", (q, q)).fetchone()[0]
             rows = conn.execute(
                 """
-                SELECT u.id, u.username, u.nickname, u.is_admin, u.is_frozen, u.last_ip, u.created_at,
+                SELECT u.id, u.username, u.nickname, u.is_admin, u.is_frozen, u.last_ip, u.last_active, u.created_at,
                        COUNT(CASE WHEN ur.status = 'success' THEN 1 END) as success_count,
                        COUNT(CASE WHEN ur.status = 'failed' THEN 1 END) as failed_count,
                        COUNT(CASE WHEN ur.status = 'processing' THEN 1 END) as processing_count
@@ -24,7 +24,7 @@ async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
                 LEFT JOIN user_requests ur ON u.id = ur.user_id
                 WHERE u.username LIKE ? OR u.nickname LIKE ?
                 GROUP BY u.id
-                ORDER BY u.created_at DESC
+                ORDER BY u.last_active DESC
                 LIMIT ? OFFSET ?
                 """,
                 (q, q, size, offset),
@@ -33,14 +33,14 @@ async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
             total = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
             rows = conn.execute(
                 """
-                SELECT u.id, u.username, u.nickname, u.is_admin, u.is_frozen, u.last_ip, u.created_at,
+                SELECT u.id, u.username, u.nickname, u.is_admin, u.is_frozen, u.last_ip, u.last_active, u.created_at,
                        COUNT(CASE WHEN ur.status = 'success' THEN 1 END) as success_count,
                        COUNT(CASE WHEN ur.status = 'failed' THEN 1 END) as failed_count,
                        COUNT(CASE WHEN ur.status = 'processing' THEN 1 END) as processing_count
                 FROM users u
                 LEFT JOIN user_requests ur ON u.id = ur.user_id
                 GROUP BY u.id
-                ORDER BY u.created_at DESC
+                ORDER BY u.last_active DESC
                 LIMIT ? OFFSET ?
                 """,
                 (size, offset),

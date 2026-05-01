@@ -1,3 +1,5 @@
+import time
+from collections import defaultdict
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
@@ -5,6 +7,40 @@ from backend.database import get_db
 from backend.auth import hash_password, verify_password, create_token, get_current_user, update_user_ip, get_client_ip
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+_login_attempts = defaultdict(list)
+_register_attempts = defaultdict(list)
+_login_rate_hits = 0
+_register_rate_hits = 0
+
+
+def _check_login_rate(ip: str):
+    global _login_rate_hits
+    now = time.time()
+    _login_attempts[ip] = [t for t in _login_attempts[ip] if now - t < 60]
+    if len(_login_attempts[ip]) >= 5:
+        _login_rate_hits += 1
+        raise HTTPException(status_code=429, detail="登录尝试过于频繁，请稍后再试")
+    _login_attempts[ip].append(now)
+
+
+def _check_register_rate(ip: str):
+    global _register_rate_hits
+    now = time.time()
+    _register_attempts[ip] = [t for t in _register_attempts[ip] if now - t < 60]
+    if len(_register_attempts[ip]) >= 3:
+        _register_rate_hits += 1
+        raise HTTPException(status_code=429, detail="注册过于频繁，请稍后再试")
+    _register_attempts[ip].append(now)
+
+
+def get_rate_limit_stats():
+    return {
+        "login_rate_hits": _login_rate_hits,
+        "register_rate_hits": _register_rate_hits,
+        "login_active_ips": len([k for k, v in _login_attempts.items() if v and time.time() - v[-1] < 60]),
+        "register_active_ips": len([k for k, v in _register_attempts.items() if v and time.time() - v[-1] < 60]),
+    }
 
 
 class RegisterRequest(BaseModel):
@@ -20,6 +56,7 @@ class LoginRequest(BaseModel):
 
 @router.post("/register")
 async def register(req: RegisterRequest, request: Request):
+    _check_register_rate(get_client_ip(request))
     with get_db() as conn:
         existing = conn.execute("SELECT id FROM users WHERE username = ?", (req.username,)).fetchone()
         if existing:
@@ -38,6 +75,7 @@ async def register(req: RegisterRequest, request: Request):
 
 @router.post("/login")
 async def login(req: LoginRequest, request: Request):
+    _check_login_rate(get_client_ip(request))
     with get_db() as conn:
         user = conn.execute("SELECT * FROM users WHERE username = ?", (req.username,)).fetchone()
         if not user or not verify_password(req.password, user["password_hash"]):

@@ -1,8 +1,11 @@
 import uuid
 import json
 import asyncio
+import logging
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends, Request
+
+logger = logging.getLogger(__name__)
 
 from backend.services.image_gen import ImageGenService
 from backend.services.task_manager import TaskManager
@@ -19,15 +22,26 @@ from backend.database import get_db
 router = APIRouter(prefix="/api/generate", tags=["generate"])
 
 
+def _check_generate_rate(user_id: int):
+    with get_db() as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM user_requests WHERE user_id = ? AND status = 'processing' AND created_at > datetime('now', '-1 minute')",
+            (user_id,)
+        ).fetchone()[0]
+        if count >= 10:
+            raise HTTPException(status_code=429, detail="生成请求过于频繁，请稍后再试")
+
+
 @router.post("/text", response_model=GenerateResponse)
 async def generate_text(request: GenerateTextRequest, req: Request, user=Depends(get_current_user)):
     user_id = user["user_id"]
+    _check_generate_rate(user_id)
     update_user_ip(user_id, get_client_ip(req))
     record_request(user_id, "processing")
 
     try:
         StatsService.record_request()
-        task_id = request.task_id or str(uuid.uuid4())[:8]
+        task_id = request.task_id or str(uuid.uuid4())
 
         TaskManager.create_task(task_id, "text", {"prompt": request.prompt, "size": request.size}, user_id=user_id)
         TaskManager.update_task(task_id, status="processing", progress=10)
@@ -38,7 +52,8 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
             TaskManager.update_task(task_id, status="failed", error=str(e))
             StatsService.record_failed()
             record_request(user_id, "failed")
-            raise HTTPException(status_code=500, detail=f"提交任务失败: {e}")
+            logger.exception("提交任务失败")
+            raise HTTPException(status_code=500, detail="提交任务失败")
 
         external_task_id = result["task_id"]
         meta = {"prompt": request.prompt, "size": request.size, "type": "text", "task_id": task_id}
@@ -60,18 +75,20 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
     except Exception as e:
         TaskManager.update_task(task_id, status="failed", error=str(e))
         record_request(user_id, "failed")
-        raise HTTPException(status_code=500, detail=f"生成失败: {e}")
+        logger.exception("生成失败")
+        raise HTTPException(status_code=500, detail="生成失败")
 
 
 @router.post("/text-image", response_model=GenerateResponse)
 async def generate_text_image(request: GenerateTextImageRequest, req: Request, user=Depends(get_current_user)):
     user_id = user["user_id"]
+    _check_generate_rate(user_id)
     update_user_ip(user_id, get_client_ip(req))
     record_request(user_id, "processing")
 
     try:
         StatsService.record_request()
-        task_id = request.task_id or str(uuid.uuid4())[:8]
+        task_id = request.task_id or str(uuid.uuid4())
 
         TaskManager.create_task(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "image_urls": request.image_urls}, user_id=user_id)
         TaskManager.update_task(task_id, status="processing", progress=10)
@@ -82,7 +99,8 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
             TaskManager.update_task(task_id, status="failed", error=str(e))
             StatsService.record_failed()
             record_request(user_id, "failed")
-            raise HTTPException(status_code=500, detail=f"提交任务失败: {e}")
+            logger.exception("提交任务失败")
+            raise HTTPException(status_code=500, detail="提交任务失败")
 
         external_task_id = result["task_id"]
         meta = {"prompt": request.prompt, "size": request.size, "type": "text_image", "task_id": task_id, "input_urls": request.image_urls}
@@ -104,7 +122,8 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
     except Exception as e:
         TaskManager.update_task(task_id, status="failed", error=str(e))
         record_request(user_id, "failed")
-        raise HTTPException(status_code=500, detail=f"生成失败: {e}")
+        logger.exception("生成失败")
+        raise HTTPException(status_code=500, detail="生成失败")
 
 
 async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = None, user_id: int = None) -> list:
@@ -128,10 +147,10 @@ async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = N
         try:
             result = await ImageGenService.get_task_result(external_task_id)
             consecutive_errors = 0
-            print(f"[poll] task={task_id} attempt={attempt} result={result}")
+            logger.info(f"[poll] task={task_id} attempt={attempt} status={result.get('status') if isinstance(result, dict) else 'ok'}")
         except Exception as e:
             consecutive_errors += 1
-            print(f"[poll] task={task_id} error={e} consecutive={consecutive_errors}")
+            logger.warning(f"[poll] task={task_id} error={e} consecutive={consecutive_errors}")
             if consecutive_errors >= 10:
                 return []
             continue
@@ -144,7 +163,7 @@ async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = N
 
         if isinstance(result, dict):
             raw_urls = result.get("result") or result.get("urls") or result.get("images")
-            print(f"[poll] task={task_id} raw_urls={raw_urls}")
+            logger.info(f"[poll] task={task_id} got {len(raw_urls) if isinstance(raw_urls, list) else 1} results")
             if raw_urls is None:
                 raw_urls = [result]
         else:
@@ -168,7 +187,7 @@ async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = N
 
             filename = f"{task_id}_{i}.png"
             save_path = str(GENERATED_IMAGES_DIR / filename)
-            print(f"[poll] task={task_id} downloading {url} -> {save_path}")
+            logger.info(f"[poll] task={task_id} downloading image {i}")
 
             if await ImageGenService.download_image(url, save_path):
                 local_paths.append(save_path)

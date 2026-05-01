@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Trash2, Users, Image, Shield, Snowflake, Sun, Clock, Check } from 'lucide-react'
+import { Trash2, Users, Image, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { adminAPI } from '../api'
 import MainLayout from '../components/MainLayout'
@@ -147,65 +147,56 @@ export default function AdminPage() {
               </div>
             ) : (
             <>
-            <div className="space-y-2">
-              {users.map(u => (
-                <div key={u.id} className="flex items-center gap-4 px-4 py-3 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>{u.nickname || u.username}</span>
-                      {u.is_admin ? (
-                        <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">管理员</span>
-                      ) : null}
-                      {u.is_frozen ? (
-                        <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">已冻结</span>
-                      ) : null}
-                    </div>
-                    <div className="flex items-center gap-4 mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                      <span>ID: {u.id}</span>
-                      <span>用户名: {u.username}</span>
-                      <span>IP: {u.last_ip || '未知'}</span>
-                      <span>注册: {u.created_at}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-6 text-center">
-                    <div>
-                      <div className="text-lg font-semibold text-green-500">{u.success_count}</div>
-                      <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>成功</div>
-                    </div>
-                    <div>
-                      <div className="text-lg font-semibold text-red-500">{u.failed_count}</div>
-                      <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>失败</div>
-                    </div>
-                    <div>
-                      <div className="text-lg font-semibold text-amber-500">{u.processing_count}</div>
-                      <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>进行中</div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1">
-                    {!u.is_admin && (
-                      <>
-                        <button
-                          onClick={() => handleToggleFreeze(u.id, u.username)}
-                          className="p-2 rounded-lg hover:bg-black/5"
-                          style={{ color: u.is_frozen ? '#3b82f6' : 'var(--text-secondary)' }}
-                          title={u.is_frozen ? '启用' : '冻结'}
-                        >
-                          {u.is_frozen ? <Sun size={16} /> : <Snowflake size={16} />}
-                        </button>
-                        <button
-                          onClick={() => handleDeleteUser(u.id, u.username)}
-                          className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"
-                          title="删除"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))}
+            <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr style={{ background: 'var(--bg-primary)' }}>
+                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>用户</th>
+                      <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>成功</th>
+                      <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>失败</th>
+                      <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>处理中</th>
+                      <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>状态</th>
+                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>IP</th>
+                      <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>最后活跃</th>
+                      <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {users.map(u => (
+                      <tr key={u.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-1.5">
+                            {u.is_admin ? <span className="px-1 py-0.5 rounded text-[10px] font-medium" style={{ background: 'var(--accent)20', color: 'var(--accent)' }}>管</span> : null}
+                            <span style={{ color: 'var(--text-primary)' }}>{u.nickname || u.username}</span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-center" style={{ color: '#22c55e' }}>{u.success_count}</td>
+                        <td className="px-3 py-2 text-center" style={{ color: '#ef4444' }}>{u.failed_count}</td>
+                        <td className="px-3 py-2 text-center" style={{ color: '#f59e0b' }}>{u.processing_count}</td>
+                        <td className="px-3 py-2 text-center">
+                          {u.is_frozen ? <UserX size={12} className="inline" style={{ color: '#ef4444' }} /> : <UserCheck size={12} className="inline" style={{ color: '#22c55e' }} />}
+                        </td>
+                        <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{u.last_ip || '-'}</td>
+                        <td className="px-3 py-2 text-right" style={{ color: 'var(--text-secondary)' }}>{u.last_active || '-'}</td>
+                        <td className="px-3 py-2 text-right">
+                          {!u.is_admin && (
+                            <div className="flex items-center justify-end gap-1">
+                              <button onClick={() => handleToggleFreeze(u.id, u.username)} className="p-1.5 rounded-lg hover:bg-black/5"
+                                style={{ color: u.is_frozen ? '#3b82f6' : 'var(--text-secondary)' }} title={u.is_frozen ? '启用' : '冻结'}>
+                                {u.is_frozen ? <Sun size={14} /> : <Snowflake size={14} />}
+                              </button>
+                              <button onClick={() => handleDeleteUser(u.id, u.username)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500" title="删除">
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
             {userTotal > 20 && (
               <div className="flex justify-center gap-2 mt-4">

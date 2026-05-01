@@ -1,6 +1,7 @@
 import json
 import csv
 import io
+import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query, Depends
@@ -16,6 +17,7 @@ from backend.models.schemas import (
     BatchDeleteRequest,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/prompts", tags=["prompts"])
 
 
@@ -45,7 +47,8 @@ async def get_prompts(
             results = PromptService.get_all(scope=scope, user_id=uid, sort=sort)
         return {"prompts": results, "total": len(results)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取提示词列表失败: {str(e)}")
+        logger.exception("获取提示词列表失败")
+        raise HTTPException(status_code=500, detail="获取提示词列表失败")
 
 
 @router.post("", response_model=PromptItem)
@@ -59,7 +62,8 @@ async def create_prompt(request: PromptCreateRequest, user=Depends(get_current_u
             user_id=user["user_id"],
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"创建提示词失败: {str(e)}")
+        logger.exception("创建提示词失败")
+        raise HTTPException(status_code=500, detail="创建提示词失败")
 
 
 @router.post("/public", response_model=PromptItem)
@@ -73,7 +77,8 @@ async def create_public_prompt(request: PromptCreateRequest, admin=Depends(requi
             user_id=None,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"创建提示词失败: {str(e)}")
+        logger.exception("创建提示词失败")
+        raise HTTPException(status_code=500, detail="创建提示词失败")
 
 
 @router.put("/{prompt_id}", response_model=PromptItem)
@@ -108,7 +113,8 @@ async def batch_delete(request: BatchDeleteRequest, user=Depends(get_current_use
         count = PromptService.batch_delete(request.ids)
         return {"deleted": count, "message": f"已删除 {count} 条提示词"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"批量删除失败: {str(e)}")
+        logger.exception("批量删除失败")
+        raise HTTPException(status_code=500, detail="批量删除失败")
 
 
 @router.post("/like")
@@ -153,7 +159,8 @@ async def import_prompts(file: UploadFile = File(...), user=Depends(get_current_
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"导入失败: {str(e)}")
+        logger.exception("导入失败")
+        raise HTTPException(status_code=500, detail="导入失败")
 
 
 @router.post("/import/public")
@@ -167,7 +174,8 @@ async def import_public_prompts(file: UploadFile = File(...), admin=Depends(requ
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"导入失败: {str(e)}")
+        logger.exception("导入失败")
+        raise HTTPException(status_code=500, detail="导入失败")
 
 
 def _parse_import_file(content: bytes, filename: str) -> list:
@@ -212,4 +220,5 @@ async def export_prompts(
                 headers={"Content-Disposition": "attachment; filename=prompts.json"},
             )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"导出失败: {str(e)}")
+        logger.exception("导出失败")
+        raise HTTPException(status_code=500, detail="导出失败")

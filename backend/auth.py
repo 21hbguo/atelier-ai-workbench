@@ -7,8 +7,21 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import jwt
 import bcrypt
 from backend.database import get_db
+from backend.config import DATA_DIR
 
-JWT_SECRET = os.getenv("JWT_SECRET", secrets.token_hex(32))
+def _get_jwt_secret():
+    secret = os.getenv("JWT_SECRET")
+    if secret:
+        return secret
+    secret_file = DATA_DIR / ".jwt_secret"
+    if secret_file.exists():
+        return secret_file.read_text().strip()
+    new_secret = secrets.token_hex(32)
+    secret_file.write_text(new_secret)
+    return new_secret
+
+
+JWT_SECRET = _get_jwt_secret()
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = 72
 

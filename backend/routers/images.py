@@ -1,6 +1,7 @@
 import os
 import json
 import hashlib
+import logging
 from datetime import datetime
 from typing import Optional
 
@@ -12,8 +13,9 @@ from backend.config import GENERATED_IMAGES_DIR, THUMBS_DIR
 from backend.database import get_db
 from backend.services.task_manager import TaskManager
 from backend.services.image_mapping import ImageUrlMapping
-from backend.auth import get_current_user
+from backend.auth import get_current_user, require_admin
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["images"])
 
 
@@ -85,11 +87,33 @@ async def list_images(page: int = Query(1, ge=1), page_size: int = Query(20, ge=
         return {"images": paginated, "total": total, "page": page, "page_size": page_size}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取图片列表失败: {str(e)}")
+        logger.exception("获取图片列表失败")
+        raise HTTPException(status_code=500, detail="获取图片列表失败")
 
 
 @router.get("/images/proxy-thumb")
-async def proxy_thumbnail(url: str = Query(...), size: int = Query(400, ge=50, le=1000)):
+async def proxy_thumbnail(url: str = Query(...), size: int = Query(400, ge=50, le=1000), user=Depends(get_current_user)):
+    from urllib.parse import urlparse
+    import socket
+    import ipaddress
+    from backend.config import IMAGE_HOSTING_BASE_URL
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="仅支持 http/https 协议")
+
+    allowed_host = urlparse(IMAGE_HOSTING_BASE_URL()).hostname
+    if parsed.hostname != allowed_host:
+        raise HTTPException(status_code=403, detail="不允许的 URL 域名")
+
+    try:
+        ip = socket.getaddrinfo(parsed.hostname, None)[0][4][0]
+        addr = ipaddress.ip_address(ip)
+        if addr.is_private or addr.is_loopback or addr.is_link_local:
+            raise HTTPException(status_code=403, detail="不允许访问内部地址")
+    except (socket.gaierror, ValueError):
+        raise HTTPException(status_code=400, detail="无法解析域名")
+
     url_hash = hashlib.md5(url.encode()).hexdigest()[:12]
     ext = url.split('.')[-1].split('?')[0][:4]
     thumb_name = f"{size}_{url_hash}.{ext}"
@@ -99,7 +123,7 @@ async def proxy_thumbnail(url: str = Query(...), size: int = Query(400, ge=50, l
         return FileResponse(str(thumb_path), media_type="image/jpeg")
 
     try:
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
             resp = await client.get(url)
         if resp.status_code != 200:
             raise Exception(f"下载失败: {resp.status_code}")
@@ -117,11 +141,11 @@ async def proxy_thumbnail(url: str = Query(...), size: int = Query(400, ge=50, l
         img.save(thumb_path, "JPEG", quality=80)
         return FileResponse(str(thumb_path), media_type="image/jpeg")
     except ImportError:
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
             resp = await client.get(url)
         return Response(content=resp.content, media_type=resp.headers.get("content-type", "image/jpeg"))
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"缩略图生成失败: {e}")
+        raise HTTPException(status_code=502, detail="缩略图生成失败")
 
 
 @router.get("/images/file/{filename}")
@@ -196,7 +220,8 @@ async def delete_image(filename: str, user=Depends(get_current_user)):
         TaskManager.remove_image_from_tasks(str(image_path))
         return {"filename": filename, "message": "图片已删除"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"删除图片失败: {str(e)}")
+        logger.exception("删除图片失败")
+        raise HTTPException(status_code=500, detail="删除图片失败")
 
 
 @router.post("/images/{filename}/metadata")
@@ -213,11 +238,12 @@ async def save_image_metadata_route(filename: str, metadata: dict, user=Depends(
             )
         return {"filename": filename, "message": "元数据已保存"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"保存元数据失败: {str(e)}")
+        logger.exception("保存元数据失败")
+        raise HTTPException(status_code=500, detail="保存元数据失败")
 
 
 @router.get("/hosting")
-async def list_hosting():
+async def list_hosting(user=Depends(get_current_user)):
     mapping = ImageUrlMapping.load_mapping()
     items = []
     for local_path, url in mapping.items():
@@ -233,7 +259,7 @@ async def list_hosting():
 
 
 @router.delete("/hosting")
-async def delete_hosting(body: dict):
+async def delete_hosting(body: dict, admin=Depends(require_admin)):
     urls = body.get("urls", [])
     if not urls:
         raise HTTPException(status_code=400, detail="未提供要删除的 URL")

@@ -5,6 +5,8 @@ data/images/
 data/thumbs/
 data/tasks.json
 data/stats.json
+data/config.json
+data/.jwt_secret
 node_modules/
 dist/
 *.log

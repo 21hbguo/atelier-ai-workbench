@@ -1,17 +1,17 @@
 from __future__ import annotations
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 
 class GenerateTextRequest(BaseModel):
-    prompt: str
-    size: str = "auto"
-    task_id: Optional[str] = None
+    prompt: str = Field(..., max_length=2500)
+    size: str = Field("auto", max_length=20)
+    task_id: Optional[str] = Field(None, max_length=50)
 
 class GenerateTextImageRequest(BaseModel):
-    prompt: str
-    image_urls: List[str]
-    size: str = "auto"
-    task_id: Optional[str] = None
+    prompt: str = Field(..., max_length=2500)
+    image_urls: List[str] = Field(..., max_length=5)
+    size: str = Field("auto", max_length=20)
+    task_id: Optional[str] = Field(None, max_length=50)
 
 class GenerateResponse(BaseModel):
     task_id: str
@@ -39,16 +39,16 @@ class PromptItem(BaseModel):
     user_id: Optional[int] = None
 
 class PromptCreateRequest(BaseModel):
-    name: str
-    prompt: str
-    negative_prompt: Optional[str] = None
+    name: str = Field(..., max_length=200)
+    prompt: str = Field(..., max_length=2500)
+    negative_prompt: Optional[str] = Field(None, max_length=2500)
     tags: Optional[List[str]] = None
 
 class PromptUpdateRequest(BaseModel):
-    name: Optional[str] = None
-    prompt: Optional[str] = None
-    negative_prompt: Optional[str] = None
+    name: Optional[str] = Field(None, max_length=200)
+    prompt: Optional[str] = Field(None, max_length=2500)
+    negative_prompt: Optional[str] = Field(None, max_length=2500)
     tags: Optional[List[str]] = None
 
 class BatchDeleteRequest(BaseModel):
-    ids: List[str]
+    ids: List[str] = Field(..., max_length=100)

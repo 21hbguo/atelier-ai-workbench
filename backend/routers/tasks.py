@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, HTTPException, Depends, Query
 
 from backend.services.task_manager import TaskManager
@@ -5,6 +6,7 @@ from backend.models.schemas import TaskStatusResponse
 from backend.auth import get_current_user
 from backend.database import get_db
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["tasks"])
 
 
@@ -43,7 +45,8 @@ async def list_tasks(
             tasks = _enrich_tasks_with_username(tasks)
         return tasks
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取任务列表失败: {str(e)}")
+        logger.exception("获取任务列表失败")
+        raise HTTPException(status_code=500, detail="获取任务列表失败")
 
 
 @router.get("/tasks/{task_id}", response_model=TaskStatusResponse)

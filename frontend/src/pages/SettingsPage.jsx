@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Save, RotateCcw, Eye, EyeOff, BarChart3, TrendingUp, CheckCircle, XCircle, Clock, Image, Users, Activity, Zap } from 'lucide-react'
+import { Save, RotateCcw, Eye, EyeOff, BarChart3, TrendingUp, CheckCircle, XCircle, Clock, Image, Users, Activity, Zap, Shield, HardDrive, Server, Loader } from 'lucide-react'
 import { statsAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 
@@ -10,12 +10,16 @@ export default function SettingsPage() {
   const [showKey, setShowKey] = useState(false)
   const [saved, setSaved] = useState(false)
   const [stats, setStats] = useState(null)
+  const [sysStats, setSysStats] = useState(null)
 
   useEffect(() => {
     fetch('/api/config').then(r => r.json()).then(data => {
       setConfig(prev => ({ ...prev, ...data }))
     }).catch(() => {})
-    const fetchStats = () => statsAPI.get().then(({ data }) => setStats(data)).catch(() => {})
+    const fetchStats = () => {
+      statsAPI.get().then(({ data }) => setStats(data)).catch(() => {})
+      statsAPI.system().then(({ data }) => setSysStats(data)).catch(() => {})
+    }
     fetchStats()
     const interval = setInterval(fetchStats, 30000)
     return () => clearInterval(interval)
@@ -83,6 +87,47 @@ export default function SettingsPage() {
                 </div>
               ))}
             </div>
+            {sysStats && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6">
+                {[
+                  { label: '运行时间', value: sysStats.uptime_seconds >= 3600 ? `${Math.floor(sysStats.uptime_seconds / 3600)}h${Math.floor((sysStats.uptime_seconds % 3600) / 60)}m` : `${Math.floor(sysStats.uptime_seconds / 60)}m`, icon: Server, color: '#3b82f6' },
+                  { label: '处理中任务', value: sysStats.processing_tasks, icon: Loader, color: '#f59e0b' },
+                  { label: '登录限流触发', value: sysStats.login_rate_hits, icon: Shield, color: '#ef4444' },
+                  { label: '注册限流触发', value: sysStats.register_rate_hits, icon: Shield, color: '#ef4444' },
+                ].map(({ label, value, icon: Icon, color }) => (
+                  <div key={label} className="p-3 rounded-xl border" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
+                    <Icon size={16} style={{ color }} className="mb-1" />
+                    <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{label}</p>
+                    <p className="text-lg font-bold mt-0.5" style={{ color: 'var(--text-primary)' }}>{value}</p>
+                  </div>
+                ))}
+                <div className="p-3 rounded-xl border" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
+                  <HardDrive size={16} style={{ color: '#8b5cf6' }} className="mb-1" />
+                  <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>存储用量</p>
+                  <p className="text-lg font-bold mt-0.5" style={{ color: 'var(--text-primary)' }}>{((sysStats.db_size + sysStats.image_size + sysStats.upload_size) / 1024 / 1024).toFixed(1)}MB</p>
+                </div>
+              </div>
+            )}
+            {sysStats?.limits && (
+              <div className="mb-6">
+                <h3 className="text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>使用限制</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {[
+                    { label: '登录限流', value: sysStats.limits.login_rate },
+                    { label: '注册限流', value: sysStats.limits.register_rate },
+                    { label: '生成并发', value: sysStats.limits.generate_concurrent },
+                    { label: '文件大小', value: sysStats.limits.file_size },
+                    { label: '提示词长度', value: sysStats.limits.prompt_length },
+                    { label: '上传格式', value: sysStats.limits.image_upload_ext },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="p-3 rounded-xl border" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
+                      <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{label}</p>
+                      <p className="text-sm font-semibold mt-0.5" style={{ color: 'var(--text-primary)' }}>{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </>
         )}
 

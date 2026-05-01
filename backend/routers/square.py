@@ -6,6 +6,11 @@ from backend.auth import get_current_user, get_optional_user
 
 router = APIRouter(prefix="/api/square", tags=["square"])
 
+_SQUARE_ORDER_MAP = {
+    "likes": "si.likes_count DESC",
+    "time": "si.created_at DESC",
+}
+
 
 class ShareRequest(BaseModel):
     filename: str
@@ -41,7 +46,7 @@ async def list_square_images(
 ):
     with get_db() as conn:
         offset = (page - 1) * size
-        order = "si.likes_count DESC" if sort == "likes" else "si.created_at DESC"
+        order = _SQUARE_ORDER_MAP.get(sort, _SQUARE_ORDER_MAP["likes"])
         if query:
             q = f"%{query}%"
             total = conn.execute(
