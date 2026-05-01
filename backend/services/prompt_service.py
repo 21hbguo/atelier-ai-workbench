@@ -18,9 +18,19 @@ class PromptService:
         return d
 
     @classmethod
-    def get_all(cls) -> List[Dict[str, Any]]:
+    def get_all(cls, scope: str = "public", user_id: int = None) -> List[Dict[str, Any]]:
         with get_db() as conn:
-            rows = conn.execute("SELECT * FROM prompts ORDER BY created_at DESC").fetchall()
+            if scope == "private" and user_id is not None:
+                rows = conn.execute("SELECT * FROM prompts WHERE user_id = ? ORDER BY created_at DESC", (user_id,)).fetchall()
+            elif scope == "all":
+                rows = conn.execute("""
+                    SELECT p.*, u.username, u.nickname
+                    FROM prompts p
+                    LEFT JOIN users u ON p.user_id = u.id
+                    ORDER BY p.created_at DESC
+                """).fetchall()
+            else:
+                rows = conn.execute("SELECT * FROM prompts WHERE user_id IS NULL ORDER BY created_at DESC").fetchall()
             return [cls._row_to_dict(r) for r in rows]
 
     @classmethod
@@ -30,7 +40,7 @@ class PromptService:
             return cls._row_to_dict(row) if row else None
 
     @classmethod
-    def create(cls, name: str, prompt: str, negative_prompt: Optional[str] = None, tags: Optional[List[str]] = None) -> Dict[str, Any]:
+    def create(cls, name: str, prompt: str, negative_prompt: Optional[str] = None, tags: Optional[List[str]] = None, user_id: int = None) -> Dict[str, Any]:
         item = {
             "id": str(uuid4()),
             "name": name,
@@ -38,12 +48,13 @@ class PromptService:
             "negative_prompt": negative_prompt or "",
             "tags": tags or [],
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "user_id": user_id,
         }
         with get_db() as conn:
             conn.execute(
-                "INSERT INTO prompts (id, name, prompt, negative_prompt, tags, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO prompts (id, name, prompt, negative_prompt, tags, created_at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (item["id"], item["name"], item["prompt"], item["negative_prompt"],
-                 json.dumps(item["tags"], ensure_ascii=False), item["created_at"]),
+                 json.dumps(item["tags"], ensure_ascii=False), item["created_at"], item["user_id"]),
             )
         return item
 
@@ -83,16 +94,35 @@ class PromptService:
             return cur.rowcount
 
     @classmethod
-    def search(cls, query: str, tags: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    def search(cls, query: str, tags: Optional[List[str]] = None, scope: str = "public", user_id: int = None) -> List[Dict[str, Any]]:
         with get_db() as conn:
+            if scope == "private" and user_id is not None:
+                scope_sql = "p.user_id = ?"
+                scope_params = [user_id]
+                join_sql = ""
+                select_extra = ""
+            elif scope == "all":
+                scope_sql = "1=1"
+                scope_params = []
+                join_sql = "LEFT JOIN users u ON p.user_id = u.id"
+                select_extra = ", u.username, u.nickname"
+            else:
+                scope_sql = "p.user_id IS NULL"
+                scope_params = []
+                join_sql = ""
+                select_extra = ""
+
             if query:
                 q = f"%{query}%"
-                rows = conn.execute(
-                    "SELECT * FROM prompts WHERE name LIKE ? OR prompt LIKE ? OR tags LIKE ? ORDER BY created_at DESC",
-                    (q, q, q),
-                ).fetchall()
+                if scope == "all":
+                    sql = f"SELECT p.*{select_extra} FROM prompts p {join_sql} WHERE ({scope_sql}) AND (p.name LIKE ? OR p.prompt LIKE ? OR p.tags LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?) ORDER BY p.created_at DESC"
+                    rows = conn.execute(sql, scope_params + [q, q, q, q, q]).fetchall()
+                else:
+                    sql = f"SELECT p.* FROM prompts p WHERE ({scope_sql}) AND (p.name LIKE ? OR p.prompt LIKE ? OR p.tags LIKE ?) ORDER BY p.created_at DESC"
+                    rows = conn.execute(sql, scope_params + [q, q, q]).fetchall()
             else:
-                rows = conn.execute("SELECT * FROM prompts ORDER BY created_at DESC").fetchall()
+                sql = f"SELECT p.*{select_extra} FROM prompts p {join_sql} WHERE {scope_sql} ORDER BY p.created_at DESC"
+                rows = conn.execute(sql, scope_params).fetchall()
 
             results = [cls._row_to_dict(r) for r in rows]
 
@@ -105,7 +135,7 @@ class PromptService:
             return results
 
     @classmethod
-    def import_prompts(cls, prompts_data: List[Dict[str, Any]]) -> Dict[str, int]:
+    def import_prompts(cls, prompts_data: List[Dict[str, Any]], user_id: int = None) -> Dict[str, int]:
         success = 0
         failed = 0
         with get_db() as conn:
@@ -119,7 +149,7 @@ class PromptService:
                     failed += 1
                     continue
                 conn.execute(
-                    "INSERT INTO prompts (id, name, prompt, negative_prompt, tags, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO prompts (id, name, prompt, negative_prompt, tags, created_at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (
                         str(uuid4()),
                         name or f"导入提示词_{success + 1}",
@@ -127,6 +157,7 @@ class PromptService:
                         item.get("negative_prompt", ""),
                         json.dumps(item.get("tags", []), ensure_ascii=False),
                         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        user_id,
                     ),
                 )
                 existing.add(prompt_text)

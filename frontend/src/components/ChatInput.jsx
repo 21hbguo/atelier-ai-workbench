@@ -18,6 +18,17 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading }, ref) {
       setPrompt(pending)
       localStorage.removeItem('pending_prompt')
     }
+    const pendingImg = localStorage.getItem('pending_image')
+    if (pendingImg) {
+      try {
+        const { dataUrl, name } = JSON.parse(pendingImg)
+        fetch(dataUrl).then(r => r.blob()).then(blob => {
+          const file = new File([blob], name || `ref-${Date.now()}.png`, { type: blob.type })
+          setImages(prev => [...prev, { file, preview: URL.createObjectURL(file) }])
+        })
+      } catch {}
+      localStorage.removeItem('pending_image')
+    }
   }, [])
 
   useEffect(() => {
@@ -29,6 +40,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading }, ref) {
 
   useImperativeHandle(ref, () => ({
     addFiles(files) { handleFiles(files) },
+    setPrompt(text) { setPrompt(text) },
     async addImage(url) {
       try {
         const res = await fetch(url)
@@ -99,7 +111,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading }, ref) {
               <span className="text-xs whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>分享</span>
             </label>
             <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
+              onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleSend() } }}
               placeholder="输入提示词..."
               className="flex-1 resize-none bg-transparent outline-none text-sm py-2"
               rows={1} style={{ color: 'var(--text-primary)', minHeight: '32px', maxHeight: '120px' }} />

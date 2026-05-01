@@ -71,8 +71,13 @@ def require_admin(user: dict = Depends(get_current_user)) -> dict:
 
 
 def record_request(user_id: int, status: str):
-    """记录用户请求"""
+    """记录用户请求。成功/失败时清理对应的 processing 记录。"""
     with get_db() as conn:
+        if status in ("success", "failed"):
+            conn.execute(
+                "DELETE FROM user_requests WHERE user_id = ? AND status = 'processing' AND id = (SELECT id FROM user_requests WHERE user_id = ? AND status = 'processing' ORDER BY id DESC LIMIT 1)",
+                (user_id, user_id),
+            )
         conn.execute(
             "INSERT INTO user_requests (user_id, status) VALUES (?, ?)",
             (user_id, status),

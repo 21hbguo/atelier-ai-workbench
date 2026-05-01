@@ -36,6 +36,7 @@ class PromptItem(BaseModel):
     negative_prompt: Optional[str] = None
     tags: Optional[List[str]] = None
     created_at: str
+    user_id: Optional[int] = None
 
 class PromptCreateRequest(BaseModel):
     name: str

@@ -99,7 +99,8 @@ def init_db():
                 prompt TEXT NOT NULL,
                 negative_prompt TEXT DEFAULT '',
                 tags TEXT DEFAULT '[]',
-                created_at TEXT
+                created_at TEXT,
+                user_id INTEGER
             );
 
             CREATE TABLE IF NOT EXISTS stats (
@@ -131,6 +132,7 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
             CREATE INDEX IF NOT EXISTS idx_tasks_updated_at ON tasks(updated_at DESC);
             CREATE INDEX IF NOT EXISTS idx_prompts_name ON prompts(name);
+            CREATE INDEX IF NOT EXISTS idx_prompts_user_id ON prompts(user_id);
             CREATE INDEX IF NOT EXISTS idx_image_mappings_hash ON image_mappings(content_hash);
             CREATE INDEX IF NOT EXISTS idx_image_metadata_filename ON image_metadata(filename);
         """)
@@ -153,6 +155,18 @@ def init_db():
         if "user_id" not in meta_cols:
             conn.execute("ALTER TABLE image_metadata ADD COLUMN user_id INTEGER")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_image_metadata_user_id ON image_metadata(user_id)")
+
+        prompt_cols = [row[1] for row in conn.execute("PRAGMA table_info(prompts)").fetchall()]
+        if "user_id" not in prompt_cols:
+            conn.execute("ALTER TABLE prompts ADD COLUMN user_id INTEGER")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_prompts_user_id ON prompts(user_id)")
+
+        # 清理历史脏数据：删除已有终态记录的 processing 条目
+        conn.execute("""
+            DELETE FROM user_requests WHERE status = 'processing' AND user_id IN (
+                SELECT DISTINCT user_id FROM user_requests WHERE status IN ('success', 'failed')
+            )
+        """)
 
 
 def create_admin_if_not_exists():
