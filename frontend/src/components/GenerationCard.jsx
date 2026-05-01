@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { RefreshCw, Check, Plus } from 'lucide-react'
+import { RefreshCw, Check, Plus, Share2 } from 'lucide-react'
 import ImageDetailModal from './ImageDetailModal'
+import { squareAPI } from '../api'
 
 const statusConfig = {
   queued: { color: '#f59e0b', bg: '#f59e0b20', label: '排队中' },
@@ -21,6 +22,8 @@ function getProgress(startedAt, status) {
 export default function GenerationCard({ task, onAddImage, onRetry, selectMode, checked, onToggleCheck, showUsername, username }) {
   const [showDetail, setShowDetail] = useState(false)
   const [progress, setProgress] = useState(() => getProgress(task.started_at, task.status))
+  const [shared, setShared] = useState(false)
+  const [sharing, setSharing] = useState(false)
 
   useEffect(() => {
     if (task.status !== 'processing' && task.status !== 'queued') return
@@ -52,6 +55,25 @@ export default function GenerationCard({ task, onAddImage, onRetry, selectMode, 
     },
   } : null
 
+  const handleShare = async (e) => {
+    e.stopPropagation()
+    if (shared || sharing) return
+    setSharing(true)
+    try {
+      const filename = images[0].full.split('/').pop()
+      await squareAPI.share({
+        filename,
+        prompt,
+        metadata: { size: task.params?.size, type: task.params?.image_urls?.length ? 'image' : 'text' },
+      })
+      setShared(true)
+    } catch (err) {
+      if (err.message?.includes('已分享')) setShared(true)
+    } finally {
+      setSharing(false)
+    }
+  }
+
   return (
     <>
       <div
@@ -80,13 +102,26 @@ export default function GenerationCard({ task, onAddImage, onRetry, selectMode, 
         )}
 
         {/* hover actions */}
-        {!selectMode && isCompleted && onAddImage && (
-          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+        {!selectMode && isCompleted && (
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center gap-2">
+            {onAddImage && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onAddImage(images[0].full) }}
+                className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"
+              >
+                <Plus size={14} /> 添加
+              </button>
+            )}
             <button
-              onClick={(e) => { e.stopPropagation(); onAddImage(images[0].full) }}
-              className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"
+              onClick={handleShare}
+              disabled={shared || sharing}
+              className={`opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1 ${
+                shared
+                  ? 'bg-green-500/90 text-white cursor-default'
+                  : 'bg-white/90 text-gray-800 hover:bg-white'
+              }`}
             >
-              <Plus size={14} /> 添加
+              <Share2 size={14} /> {shared ? '已分享' : sharing ? '...' : '广场'}
             </button>
           </div>
         )}
