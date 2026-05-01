@@ -8,25 +8,43 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
 @router.get("/users")
-async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), admin=Depends(require_admin)):
+async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), query: str = Query(None), admin=Depends(require_admin)):
     with get_db() as conn:
         offset = (page - 1) * size
-        total = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-
-        rows = conn.execute(
-            """
-            SELECT u.id, u.username, u.nickname, u.is_admin, u.is_frozen, u.last_ip, u.created_at,
-                   COUNT(CASE WHEN ur.status = 'success' THEN 1 END) as success_count,
-                   COUNT(CASE WHEN ur.status = 'failed' THEN 1 END) as failed_count,
-                   COUNT(CASE WHEN ur.status = 'processing' THEN 1 END) as processing_count
-            FROM users u
-            LEFT JOIN user_requests ur ON u.id = ur.user_id
-            GROUP BY u.id
-            ORDER BY u.created_at DESC
-            LIMIT ? OFFSET ?
-            """,
-            (size, offset),
-        ).fetchall()
+        if query:
+            q = f"%{query}%"
+            total = conn.execute("SELECT COUNT(*) FROM users WHERE username LIKE ? OR nickname LIKE ?", (q, q)).fetchone()[0]
+            rows = conn.execute(
+                """
+                SELECT u.id, u.username, u.nickname, u.is_admin, u.is_frozen, u.last_ip, u.created_at,
+                       COUNT(CASE WHEN ur.status = 'success' THEN 1 END) as success_count,
+                       COUNT(CASE WHEN ur.status = 'failed' THEN 1 END) as failed_count,
+                       COUNT(CASE WHEN ur.status = 'processing' THEN 1 END) as processing_count
+                FROM users u
+                LEFT JOIN user_requests ur ON u.id = ur.user_id
+                WHERE u.username LIKE ? OR u.nickname LIKE ?
+                GROUP BY u.id
+                ORDER BY u.created_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                (q, q, size, offset),
+            ).fetchall()
+        else:
+            total = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+            rows = conn.execute(
+                """
+                SELECT u.id, u.username, u.nickname, u.is_admin, u.is_frozen, u.last_ip, u.created_at,
+                       COUNT(CASE WHEN ur.status = 'success' THEN 1 END) as success_count,
+                       COUNT(CASE WHEN ur.status = 'failed' THEN 1 END) as failed_count,
+                       COUNT(CASE WHEN ur.status = 'processing' THEN 1 END) as processing_count
+                FROM users u
+                LEFT JOIN user_requests ur ON u.id = ur.user_id
+                GROUP BY u.id
+                ORDER BY u.created_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                (size, offset),
+            ).fetchall()
 
         users = []
         for row in rows:
@@ -71,21 +89,39 @@ async def delete_user(user_id: int, admin=Depends(require_admin)):
 
 
 @router.get("/square")
-async def list_all_square(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), admin=Depends(require_admin)):
+async def list_all_square(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), query: str = Query(None), admin=Depends(require_admin)):
     with get_db() as conn:
         import json
         offset = (page - 1) * size
-        total = conn.execute("SELECT COUNT(*) FROM square_images").fetchone()[0]
-        rows = conn.execute(
-            """
-            SELECT si.*, u.username, u.nickname
-            FROM square_images si
-            JOIN users u ON si.user_id = u.id
-            ORDER BY si.created_at DESC
-            LIMIT ? OFFSET ?
-            """,
-            (size, offset),
-        ).fetchall()
+        if query:
+            q = f"%{query}%"
+            total = conn.execute(
+                "SELECT COUNT(*) FROM square_images si JOIN users u ON si.user_id = u.id WHERE si.prompt LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?",
+                (q, q, q),
+            ).fetchone()[0]
+            rows = conn.execute(
+                """
+                SELECT si.*, u.username, u.nickname
+                FROM square_images si
+                JOIN users u ON si.user_id = u.id
+                WHERE si.prompt LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?
+                ORDER BY si.created_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                (q, q, q, size, offset),
+            ).fetchall()
+        else:
+            total = conn.execute("SELECT COUNT(*) FROM square_images").fetchone()[0]
+            rows = conn.execute(
+                """
+                SELECT si.*, u.username, u.nickname
+                FROM square_images si
+                JOIN users u ON si.user_id = u.id
+                ORDER BY si.created_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                (size, offset),
+            ).fetchall()
         images = []
         for row in rows:
             item = dict(row)
@@ -106,22 +142,42 @@ async def delete_square_image(image_id: int, admin=Depends(require_admin)):
 
 
 @router.get("/history")
-async def list_history(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), admin=Depends(require_admin)):
+async def list_history(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), query: str = Query(None), admin=Depends(require_admin)):
     offset = (page - 1) * size
     with get_db() as conn:
-        total = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
-        rows = conn.execute(
-            """
-            SELECT t.task_id, t.type, t.status, t.params, t.created_at, t.updated_at,
-                   t.result_urls, t.error, t.user_id,
-                   u.username, u.nickname, u.last_ip
-            FROM tasks t
-            LEFT JOIN users u ON t.user_id = u.id
-            ORDER BY t.updated_at DESC
-            LIMIT ? OFFSET ?
-            """,
-            (size, offset),
-        ).fetchall()
+        if query:
+            q = f"%{query}%"
+            total = conn.execute(
+                "SELECT COUNT(*) FROM tasks t LEFT JOIN users u ON t.user_id = u.id WHERE t.params LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?",
+                (q, q, q),
+            ).fetchone()[0]
+            rows = conn.execute(
+                """
+                SELECT t.task_id, t.type, t.status, t.params, t.created_at, t.updated_at,
+                       t.result_urls, t.error, t.user_id,
+                       u.username, u.nickname, u.last_ip
+                FROM tasks t
+                LEFT JOIN users u ON t.user_id = u.id
+                WHERE t.params LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?
+                ORDER BY t.updated_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                (q, q, q, size, offset),
+            ).fetchall()
+        else:
+            total = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+            rows = conn.execute(
+                """
+                SELECT t.task_id, t.type, t.status, t.params, t.created_at, t.updated_at,
+                       t.result_urls, t.error, t.user_id,
+                       u.username, u.nickname, u.last_ip
+                FROM tasks t
+                LEFT JOIN users u ON t.user_id = u.id
+                ORDER BY t.updated_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                (size, offset),
+            ).fetchall()
 
         items = []
         for row in rows:

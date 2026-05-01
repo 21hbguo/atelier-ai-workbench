@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Menu, Download, Trash2, Check } from 'lucide-react'
 import ChatInput from '../components/ChatInput'
 import GenerationCard from '../components/GenerationCard'
+import SearchInput from '../components/SearchInput'
 import Sidebar from '../components/Sidebar'
 import { generateAPI, uploadAPI, taskAPI, imageAPI, squareAPI, adminAPI } from '../api'
 
@@ -21,6 +22,7 @@ export default function ChatPage() {
   const [dragging, setDragging] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
   const [checked, setChecked] = useState(new Set())
+  const [searchQuery, setSearchQuery] = useState('')
   const [userList, setUserList] = useState([])
   const [selectedUserId, setSelectedUserId] = useState(null)
   const feedRef = useRef(null)
@@ -30,14 +32,15 @@ export default function ChatPage() {
   const refreshTasks = useCallback(async () => {
     try {
       const uid = isAdmin ? selectedUserId : undefined
-      const [taskRes, imgRes] = await Promise.all([taskAPI.list(50, 0, uid), imageAPI.list(1, 100, uid)])
+      const q = searchQuery || undefined
+      const [taskRes, imgRes] = await Promise.all([taskAPI.list(50, 0, uid, q), imageAPI.list(1, 100, uid)])
       const allTasks = taskRes.data
       const allImages = imgRes.data.images || []
       const taskImageFiles = new Set()
       for (const t of allTasks) {
         for (const u of (t.result_urls || [])) taskImageFiles.add(u.split('/').pop())
       }
-      const orphans = allImages.filter(img => !taskImageFiles.has(img.filename)).map(img => ({
+      let orphans = allImages.filter(img => !taskImageFiles.has(img.filename)).map(img => ({
         task_id: 'img-' + img.filename,
         status: 'completed',
         result_urls: [img.url],
@@ -47,11 +50,15 @@ export default function ChatPage() {
         completed_at: img.created_at,
         username: img.username || '',
       }))
+      if (q) {
+        const lower = q.toLowerCase()
+        orphans = orphans.filter(o => ((o.params?.prompt || '').toLowerCase().includes(lower)))
+      }
       const merged = [...orphans, ...allTasks].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
       setTasks(merged)
       if (!loaded) setLoaded(true)
     } catch {}
-  }, [loaded, isAdmin, selectedUserId])
+  }, [loaded, isAdmin, selectedUserId, searchQuery])
 
   useEffect(() => { refreshTasks() }, [refreshTasks])
 
@@ -75,6 +82,10 @@ export default function ChatPage() {
   const scroll = useCallback(() => {
     const el = feedRef.current
     if (el) setTimeout(() => el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }), 50)
+  }, [])
+
+  const handleAddPrompt = useCallback((promptText) => {
+    inputRef.current?.setPrompt(promptText)
   }, [])
 
   const updateTask = useCallback((taskId, updates) => {
@@ -289,6 +300,7 @@ export default function ChatPage() {
               ))}
             </select>
           )}
+          <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="搜索提示词..." />
           {selectMode ? (
             <button onClick={exitSelectMode} className="ml-auto px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button>
           ) : (
@@ -305,7 +317,7 @@ export default function ChatPage() {
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 pt-4">
-              {filtered.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id)} onToggleCheck={() => toggleCheck(task.task_id)} showUsername={isAdmin} username={task.username} />)}
+              {filtered.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onAddPrompt={handleAddPrompt} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id)} onToggleCheck={() => toggleCheck(task.task_id)} showUsername={isAdmin} username={task.username} />)}
             </div>
           )}
         </div>

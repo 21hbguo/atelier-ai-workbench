@@ -3,6 +3,7 @@ import { Trash2, Users, Image, Shield, Snowflake, Sun, Clock, Check } from 'luci
 import { useNavigate } from 'react-router-dom'
 import { adminAPI } from '../api'
 import PageLayout from '../components/PageLayout'
+import SearchInput from '../components/SearchInput'
 
 export default function AdminPage() {
   const navigate = useNavigate()
@@ -19,15 +20,21 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
   const [checked, setChecked] = useState(new Set())
+  const [userQuery, setUserQuery] = useState('')
+  const [imageQuery, setImageQuery] = useState('')
+  const [historyQuery, setHistoryQuery] = useState('')
 
-  useEffect(() => { fetchUsers() }, [userPage])
-  useEffect(() => { fetchImages() }, [imagePage])
-  useEffect(() => { fetchHistory() }, [historyPage])
+  useEffect(() => { setUserPage(1) }, [userQuery])
+  useEffect(() => { setImagePage(1) }, [imageQuery])
+  useEffect(() => { setHistoryPage(1) }, [historyQuery])
+  useEffect(() => { fetchUsers() }, [userPage, userQuery])
+  useEffect(() => { fetchImages() }, [imagePage, imageQuery])
+  useEffect(() => { fetchHistory() }, [historyPage, historyQuery])
 
   const fetchUsers = async () => {
     setLoading(true)
     try {
-      const { data } = await adminAPI.users(userPage, 20)
+      const { data } = await adminAPI.users(userPage, 20, userQuery || undefined)
       setUsers(data.users)
       setUserTotal(data.total)
     } catch {} finally { setLoading(false) }
@@ -36,7 +43,7 @@ export default function AdminPage() {
   const fetchImages = async () => {
     setLoading(true)
     try {
-      const { data } = await adminAPI.square(imagePage, 20)
+      const { data } = await adminAPI.square(imagePage, 20, imageQuery || undefined)
       setImages(data.images)
       setImageTotal(data.total)
     } catch {} finally { setLoading(false) }
@@ -45,7 +52,7 @@ export default function AdminPage() {
   const fetchHistory = async () => {
     setLoading(true)
     try {
-      const { data } = await adminAPI.history(historyPage, 20)
+      const { data } = await adminAPI.history(historyPage, 20, historyQuery || undefined)
       setHistory(data.items)
       setHistoryTotal(data.total)
     } catch {} finally { setLoading(false) }
@@ -131,13 +138,18 @@ export default function AdminPage() {
           ))}
         </div>
 
-        {loading ? (
-          <div className="flex justify-center py-20">
-            <div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} />
-          </div>
-        ) : tab === 'users' ? (
+        {tab === 'users' ? (
           <div>
-            <div className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>共 {userTotal} 个用户</div>
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>共 {userTotal} 个用户</span>
+              <SearchInput value={userQuery} onChange={setUserQuery} placeholder="搜索用户名/昵称..." />
+            </div>
+            {loading ? (
+              <div className="flex justify-center py-20">
+                <div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} />
+              </div>
+            ) : (
+            <>
             <div className="space-y-2">
               {users.map(u => (
                 <div key={u.id} className="flex items-center gap-4 px-4 py-3 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
@@ -206,11 +218,16 @@ export default function AdminPage() {
                 ))}
               </div>
             )}
+            </>
+            )}
           </div>
         ) : tab === 'images' ? (
           <div>
             <div className="flex items-center justify-between mb-4">
-              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>共 {imageTotal} 张图片</span>
+              <div className="flex items-center gap-3 flex-1">
+                <span className="text-sm flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>共 {imageTotal} 张图片</span>
+                <SearchInput value={imageQuery} onChange={setImageQuery} placeholder="搜索提示词/用户名..." />
+              </div>
               <div className="flex items-center gap-2">
                 {selectMode && (
                   <button onClick={toggleSelectAll}
@@ -233,6 +250,12 @@ export default function AdminPage() {
                 )}
               </div>
             </div>
+            {loading ? (
+              <div className="flex justify-center py-20">
+                <div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} />
+              </div>
+            ) : (
+            <>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
               {images.map(img => (
                 <div key={img.id}
@@ -267,10 +290,21 @@ export default function AdminPage() {
                 ))}
               </div>
             )}
+            </>
+            )}
           </div>
         ) : (
           <div>
-            <div className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>共 {historyTotal} 条记录</div>
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>共 {historyTotal} 条记录</span>
+              <SearchInput value={historyQuery} onChange={setHistoryQuery} placeholder="搜索提示词/用户名..." />
+            </div>
+            {loading ? (
+              <div className="flex justify-center py-20">
+                <div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} />
+              </div>
+            ) : (
+            <>
             <div className="space-y-2">
               {history.map(item => {
                 const st = { pending: { c: '#6b7280', l: '等待中' }, queued: { c: '#f59e0b', l: '排队中' }, processing: { c: '#f59e0b', l: '生成中' }, completed: { c: '#22c55e', l: '已完成' }, failed: { c: '#ef4444', l: '失败' } }
@@ -311,6 +345,8 @@ export default function AdminPage() {
                     style={{ color: p !== historyPage ? 'var(--text-primary)' : undefined }}>{p}</button>
                 ))}
               </div>
+            )}
+            </>
             )}
           </div>
         )}

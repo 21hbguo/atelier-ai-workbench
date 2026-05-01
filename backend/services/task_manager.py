@@ -91,12 +91,15 @@ class TaskManager:
         return cls._tasks.get(task_id)
 
     @classmethod
-    def list_tasks(cls, limit: int = 50, offset: int = 0, user_id: int = None) -> List[Dict[str, Any]]:
+    def list_tasks(cls, limit: int = 50, offset: int = 0, user_id: int = None, query: str = None) -> List[Dict[str, Any]]:
         all_tasks = cls._tasks.values()
         if user_id is not None:
             all_tasks = [t for t in all_tasks if t.get("user_id") == user_id]
         else:
             all_tasks = list(all_tasks)
+        if query:
+            q = query.lower()
+            all_tasks = [t for t in all_tasks if q in (t.get("params") or {}).get("prompt", "").lower()]
         all_tasks.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
         return all_tasks[offset:offset + limit]
 

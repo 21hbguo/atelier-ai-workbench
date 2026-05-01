@@ -35,22 +35,40 @@ async def share_to_square(req: ShareRequest, user=Depends(get_current_user)):
 async def list_square_images(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
+    query: str = Query(None),
     user=Depends(get_optional_user),
 ):
     with get_db() as conn:
         offset = (page - 1) * size
-        total = conn.execute("SELECT COUNT(*) FROM square_images").fetchone()[0]
-
-        rows = conn.execute(
-            """
-            SELECT si.*, u.username, u.nickname, u.avatar
-            FROM square_images si
-            JOIN users u ON si.user_id = u.id
-            ORDER BY si.created_at DESC
-            LIMIT ? OFFSET ?
-            """,
-            (size, offset),
-        ).fetchall()
+        if query:
+            q = f"%{query}%"
+            total = conn.execute(
+                "SELECT COUNT(*) FROM square_images si JOIN users u ON si.user_id = u.id WHERE si.prompt LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?",
+                (q, q, q),
+            ).fetchone()[0]
+            rows = conn.execute(
+                """
+                SELECT si.*, u.username, u.nickname, u.avatar
+                FROM square_images si
+                JOIN users u ON si.user_id = u.id
+                WHERE si.prompt LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?
+                ORDER BY si.created_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                (q, q, q, size, offset),
+            ).fetchall()
+        else:
+            total = conn.execute("SELECT COUNT(*) FROM square_images").fetchone()[0]
+            rows = conn.execute(
+                """
+                SELECT si.*, u.username, u.nickname, u.avatar
+                FROM square_images si
+                JOIN users u ON si.user_id = u.id
+                ORDER BY si.created_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                (size, offset),
+            ).fetchall()
 
         images = []
         for row in rows:

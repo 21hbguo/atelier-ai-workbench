@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { RefreshCw, Check, Plus, Share2 } from 'lucide-react'
+import { RefreshCw, Check, Plus, Image, Share2 } from 'lucide-react'
 import ImageDetailModal from './ImageDetailModal'
 import { squareAPI } from '../api'
 
@@ -19,7 +19,7 @@ function getProgress(startedAt, status) {
   return Math.min(99 * (1 - Math.exp(-elapsed / 30)), 99)
 }
 
-export default function GenerationCard({ task, onAddImage, onRetry, selectMode, checked, onToggleCheck, showUsername, username }) {
+export default function GenerationCard({ task, onAddImage, onAddPrompt, onRetry, selectMode, checked, onToggleCheck, showUsername, username }) {
   const [showDetail, setShowDetail] = useState(false)
   const [progress, setProgress] = useState(() => getProgress(task.started_at, task.status))
   const [shared, setShared] = useState(false)
@@ -90,8 +90,24 @@ export default function GenerationCard({ task, onAddImage, onRetry, selectMode, 
         )}
         {selectMode && checked && <div className="absolute inset-0 bg-accent/10 pointer-events-none z-10" />}
 
-        {images.length > 0 && (
+        {images.length > 0 ? (
           <img src={images[0].thumb} alt="" className="w-full aspect-square object-cover" />
+        ) : (
+          <div className="w-full aspect-square flex flex-col items-center justify-center gap-3" style={{ background: cfg.bg }}>
+            {task.status === 'processing' || task.status === 'queued' ? (
+              <>
+                <div className="w-10 h-10 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: cfg.color, borderTopColor: 'transparent' }} />
+                <span className="text-xs font-medium" style={{ color: cfg.color }}>{cfg.label} {Math.round(progress)}%</span>
+              </>
+            ) : task.status === 'failed' ? (
+              <>
+                <span className="text-2xl">!</span>
+                <span className="text-xs font-medium" style={{ color: cfg.color }}>{cfg.label}</span>
+              </>
+            ) : (
+              <span className="text-xs font-medium" style={{ color: cfg.color }}>{cfg.label}</span>
+            )}
+          </div>
         )}
 
         {/* admin: username badge */}
@@ -103,25 +119,33 @@ export default function GenerationCard({ task, onAddImage, onRetry, selectMode, 
 
         {/* hover actions */}
         {!selectMode && isCompleted && (
-          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center gap-2">
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors hidden md:flex items-center justify-center gap-1.5">
+            {prompt && onAddPrompt && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onAddPrompt(prompt) }}
+                className="opacity-0 group-hover:opacity-100 transition-opacity px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"
+              >
+                <Plus size={12} /> 提示词
+              </button>
+            )}
             {onAddImage && (
               <button
                 onClick={(e) => { e.stopPropagation(); onAddImage(images[0].full) }}
-                className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"
+                className="opacity-0 group-hover:opacity-100 transition-opacity px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"
               >
-                <Plus size={14} /> 添加
+                <Image size={12} /> 参考图
               </button>
             )}
             <button
               onClick={handleShare}
               disabled={shared || sharing}
-              className={`opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1 ${
+              className={`opacity-0 group-hover:opacity-100 transition-opacity px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1 ${
                 shared
                   ? 'bg-green-500/90 text-white cursor-default'
                   : 'bg-white/90 text-gray-800 hover:bg-white'
               }`}
             >
-              <Share2 size={14} /> {shared ? '已分享' : sharing ? '...' : '广场'}
+              <Share2 size={12} /> {shared ? '已分享' : sharing ? '...' : '广场'}
             </button>
           </div>
         )}
@@ -167,6 +191,7 @@ export default function GenerationCard({ task, onAddImage, onRetry, selectMode, 
           image={imageData}
           onClose={() => setShowDetail(false)}
           onAddImage={onAddImage}
+          onAddPrompt={onAddPrompt}
           title="生成详情"
         />
       )}

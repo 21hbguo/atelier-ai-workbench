@@ -44,9 +44,10 @@ export const uploadAPI = {
 }
 
 export const taskAPI = {
-  list: (limit = 50, offset = 0, userId) => {
+  list: (limit = 50, offset = 0, userId, query) => {
     const params = { limit, offset }
     if (userId) params.user_id = userId
+    if (query) params.query = query
     return api.get('/tasks', { params })
   },
   get: (id) => api.get(`/tasks/${id}`),
@@ -66,13 +67,14 @@ export const imageAPI = {
 }
 
 export const promptAPI = {
-  list: (query, tags) => {
-    const params = {}
+  list: (query, tags, scope = 'private') => {
+    const params = { scope }
     if (query) params.query = query
     if (tags) params.tags = tags
     return api.get('/prompts', { params })
   },
   create: (data) => api.post('/prompts', data),
+  createPublic: (data) => api.post('/prompts/public', data),
   update: (id, data) => api.put(`/prompts/${id}`, data),
   delete: (id) => api.delete(`/prompts/${id}`),
   batchDelete: (ids) => api.post('/prompts/batch-delete', { ids }),
@@ -80,6 +82,11 @@ export const promptAPI = {
     const fd = new FormData()
     fd.append('file', file)
     return api.post('/prompts/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
+  importPublic: (file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return api.post('/prompts/import/public', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
   },
   export: (ids, format = 'json') => {
     const params = { format }
@@ -98,18 +105,34 @@ export const authAPI = {
 }
 
 export const squareAPI = {
-  list: (page = 1, size = 20) => api.get(`/square?page=${page}&size=${size}`),
+  list: (page = 1, size = 20, query) => {
+    const params = { page, size }
+    if (query) params.query = query
+    return api.get('/square', { params })
+  },
   share: (data) => api.post('/square/share', data),
   like: (imageId) => api.post(`/square/like?image_id=${imageId}`),
 }
 
 export const adminAPI = {
-  users: (page = 1, size = 20) => api.get(`/admin/users?page=${page}&size=${size}`),
+  users: (page = 1, size = 20, query) => {
+    const params = { page, size }
+    if (query) params.query = query
+    return api.get('/admin/users', { params })
+  },
   deleteUser: (userId) => api.delete(`/admin/users/${userId}`),
   toggleFreeze: (userId) => api.post(`/admin/users/${userId}/freeze`),
-  square: (page = 1, size = 20) => api.get(`/admin/square?page=${page}&size=${size}`),
+  square: (page = 1, size = 20, query) => {
+    const params = { page, size }
+    if (query) params.query = query
+    return api.get('/admin/square', { params })
+  },
   deleteSquare: (imageId) => api.delete(`/admin/square/${imageId}`),
-  history: (page = 1, size = 20) => api.get(`/admin/history?page=${page}&size=${size}`),
+  history: (page = 1, size = 20, query) => {
+    const params = { page, size }
+    if (query) params.query = query
+    return api.get('/admin/history', { params })
+  },
   deleteHistory: (taskId) => api.delete(`/admin/history/${taskId}`),
 }
 

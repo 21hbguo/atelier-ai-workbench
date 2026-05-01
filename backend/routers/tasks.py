@@ -30,6 +30,7 @@ async def list_tasks(
     limit: int = 50,
     offset: int = 0,
     user_id: int = Query(None),
+    query: str = Query(None),
     user=Depends(get_current_user),
 ):
     try:
@@ -37,7 +38,7 @@ async def list_tasks(
             uid = user_id
         else:
             uid = user["user_id"]
-        tasks = TaskManager.list_tasks(limit=limit, offset=offset, user_id=uid)
+        tasks = TaskManager.list_tasks(limit=limit, offset=offset, user_id=uid, query=query)
         if user.get("is_admin"):
             tasks = _enrich_tasks_with_username(tasks)
         return tasks

@@ -5,7 +5,7 @@ import { useTheme } from '../ThemeContext'
 const navItems = [
   { path: '/', icon: MessageSquare, label: '生成' },
   { path: '/square', icon: Globe, label: '广场' },
-  { path: '/prompts', icon: BookOpen, label: '提示词' },
+  { path: '/prompts', icon: BookOpen, label: '我的提示词' },
 ]
 
 export default function Sidebar({ open, onClose }) {

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X, Copy, Download, Trash2, Plus, Maximize2 } from 'lucide-react'
+import { X, Copy, Download, Trash2, Plus, Image, Maximize2 } from 'lucide-react'
 
 function InfoItem({ label, value }) {
   return (
@@ -15,6 +15,7 @@ export default function ImageDetailModal({
   onClose,
   onDelete,
   onAddImage,
+  onAddPrompt,
   title = '生成详情',
   detailContent,
   downloadUrl,
@@ -29,8 +30,19 @@ export default function ImageDetailModal({
   const meta = image.metadata || {}
   const url = downloadUrl || image.url
 
-  const handleCopy = (text) => {
-    navigator.clipboard.writeText(text)
+  const handleCopy = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }
@@ -99,9 +111,15 @@ export default function ImageDetailModal({
                 </a>
               )}
 
+              {onAddPrompt && meta.prompt && (
+                <button onClick={() => onAddPrompt(meta.prompt)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
+                  <Plus size={14} /> 提示词
+                </button>
+              )}
+
               {onAddImage && (
                 <button onClick={() => onAddImage(image.url)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
-                  <Plus size={14} /> 添加
+                  <Image size={14} /> 参考图
                 </button>
               )}
 
