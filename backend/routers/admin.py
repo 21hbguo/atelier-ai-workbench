@@ -1,6 +1,8 @@
+import json
 from fastapi import APIRouter, HTTPException, Depends, Query
 from backend.database import get_db
 from backend.auth import require_admin
+from backend.services.task_manager import TaskManager
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -101,3 +103,48 @@ async def delete_square_image(image_id: int, admin=Depends(require_admin)):
         conn.execute("DELETE FROM square_likes WHERE image_id = ?", (image_id,))
         conn.execute("DELETE FROM square_images WHERE id = ?", (image_id,))
         return {"message": "删除成功"}
+
+
+@router.get("/history")
+async def list_history(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), admin=Depends(require_admin)):
+    offset = (page - 1) * size
+    with get_db() as conn:
+        total = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+        rows = conn.execute(
+            """
+            SELECT t.task_id, t.type, t.status, t.params, t.created_at, t.updated_at,
+                   t.result_urls, t.error, t.user_id,
+                   u.username, u.nickname, u.last_ip
+            FROM tasks t
+            LEFT JOIN users u ON t.user_id = u.id
+            ORDER BY t.updated_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            (size, offset),
+        ).fetchall()
+
+        items = []
+        for row in rows:
+            d = dict(row)
+            try:
+                params = json.loads(d.get("params") or "{}")
+            except (json.JSONDecodeError, TypeError):
+                params = {}
+            d["prompt"] = params.get("prompt", "")
+            d["size"] = params.get("size", "")
+            d["params"] = params
+            try:
+                d["result_urls"] = json.loads(d.get("result_urls") or "[]")
+            except (json.JSONDecodeError, TypeError):
+                d["result_urls"] = []
+            items.append(d)
+
+        return {"items": items, "total": total}
+
+
+@router.delete("/history/{task_id}")
+async def delete_history(task_id: str, admin=Depends(require_admin)):
+    success = TaskManager.delete_task(task_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return {"task_id": task_id, "message": "任务已删除"}

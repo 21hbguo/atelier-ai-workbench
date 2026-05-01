@@ -30,7 +30,7 @@ async def register(req: RegisterRequest, request: Request):
             (req.username, password_hash, req.nickname or req.username),
         )
         user_id = cursor.lastrowid
-        update_user_ip(user_id, get_client_ip(request))
+        update_user_ip(user_id, get_client_ip(request), conn=conn)
         token = create_token(user_id, req.username)
         return {"token": token, "user": {"id": user_id, "username": req.username, "nickname": req.nickname or req.username, "is_admin": False}}
 

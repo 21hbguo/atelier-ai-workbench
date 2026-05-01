@@ -87,7 +87,10 @@ def get_client_ip(request) -> str:
     return request.client.host
 
 
-def update_user_ip(user_id: int, ip: str):
+def update_user_ip(user_id: int, ip: str, conn=None):
     """更新用户 IP"""
-    with get_db() as conn:
+    if conn:
         conn.execute("UPDATE users SET last_ip = ? WHERE id = ?", (ip, user_id))
+    else:
+        with get_db() as c:
+            c.execute("UPDATE users SET last_ip = ? WHERE id = ?", (ip, user_id))

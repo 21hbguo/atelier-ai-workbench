@@ -44,14 +44,22 @@ export const uploadAPI = {
 }
 
 export const taskAPI = {
-  list: (limit = 50, offset = 0) => api.get(`/tasks?limit=${limit}&offset=${offset}`),
+  list: (limit = 50, offset = 0, userId) => {
+    const params = { limit, offset }
+    if (userId) params.user_id = userId
+    return api.get('/tasks', { params })
+  },
   get: (id) => api.get(`/tasks/${id}`),
   retry: (id) => api.post(`/tasks/${id}/retry`),
   delete: (id) => api.delete(`/tasks/${id}`),
 }
 
 export const imageAPI = {
-  list: (page = 1, pageSize = 20) => api.get(`/images?page=${page}&page_size=${pageSize}`),
+  list: (page = 1, pageSize = 20, userId) => {
+    const params = { page, page_size: pageSize }
+    if (userId) params.user_id = userId
+    return api.get('/images', { params })
+  },
   get: (filename) => api.get(`/images/${filename}`),
   delete: (filename) => api.delete(`/images/${filename}`),
   saveMetadata: (filename, metadata) => api.post(`/images/${filename}/metadata`, metadata),
@@ -101,6 +109,8 @@ export const adminAPI = {
   toggleFreeze: (userId) => api.post(`/admin/users/${userId}/freeze`),
   square: (page = 1, size = 20) => api.get(`/admin/square?page=${page}&size=${size}`),
   deleteSquare: (imageId) => api.delete(`/admin/square/${imageId}`),
+  history: (page = 1, size = 20) => api.get(`/admin/history?page=${page}&size=${size}`),
+  deleteHistory: (taskId) => api.delete(`/admin/history/${taskId}`),
 }
 
 export default api

@@ -42,8 +42,8 @@ class TaskManager:
             conn.execute(
                 """INSERT OR REPLACE INTO tasks
                    (task_id, type, status, params, created_at, updated_at,
-                    started_at, completed_at, progress, result_urls, error, external_result)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    started_at, completed_at, progress, result_urls, error, external_result, user_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     task_id,
                     task.get("type", "text"),
@@ -57,6 +57,7 @@ class TaskManager:
                     json.dumps(task.get("result_urls", []), ensure_ascii=False),
                     task.get("error"),
                     json.dumps(task.get("external_result"), ensure_ascii=False) if task.get("external_result") else None,
+                    task.get("user_id"),
                 ),
             )
 
@@ -66,7 +67,7 @@ class TaskManager:
             conn.execute("DELETE FROM tasks WHERE task_id = ?", (task_id,))
 
     @classmethod
-    def create_task(cls, task_id: str, task_type: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    def create_task(cls, task_id: str, task_type: str, params: Dict[str, Any], user_id: int = None) -> Dict[str, Any]:
         task = {
             "task_id": task_id,
             "type": task_type,
@@ -79,6 +80,7 @@ class TaskManager:
             "progress": 0,
             "result_urls": [],
             "error": None,
+            "user_id": user_id,
         }
         cls._tasks[task_id] = task
         cls._save_to_db(task_id, task)
@@ -89,12 +91,13 @@ class TaskManager:
         return cls._tasks.get(task_id)
 
     @classmethod
-    def list_tasks(cls, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
-        all_tasks = sorted(
-            cls._tasks.values(),
-            key=lambda x: x.get("updated_at", ""),
-            reverse=True,
-        )
+    def list_tasks(cls, limit: int = 50, offset: int = 0, user_id: int = None) -> List[Dict[str, Any]]:
+        all_tasks = cls._tasks.values()
+        if user_id is not None:
+            all_tasks = [t for t in all_tasks if t.get("user_id") == user_id]
+        else:
+            all_tasks = list(all_tasks)
+        all_tasks.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
         return all_tasks[offset:offset + limit]
 
     @classmethod

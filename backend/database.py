@@ -144,6 +144,16 @@ def init_db():
         if "last_ip" not in columns:
             conn.execute("ALTER TABLE users ADD COLUMN last_ip TEXT")
 
+        task_cols = [row[1] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()]
+        if "user_id" not in task_cols:
+            conn.execute("ALTER TABLE tasks ADD COLUMN user_id INTEGER")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id)")
+
+        meta_cols = [row[1] for row in conn.execute("PRAGMA table_info(image_metadata)").fetchall()]
+        if "user_id" not in meta_cols:
+            conn.execute("ALTER TABLE image_metadata ADD COLUMN user_id INTEGER")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_image_metadata_user_id ON image_metadata(user_id)")
+
 
 def create_admin_if_not_exists():
     """创建管理员账号（如果不存在）"""

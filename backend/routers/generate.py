@@ -29,7 +29,7 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
         StatsService.record_request()
         task_id = request.task_id or str(uuid.uuid4())[:8]
 
-        TaskManager.create_task(task_id, "text", {"prompt": request.prompt, "size": request.size})
+        TaskManager.create_task(task_id, "text", {"prompt": request.prompt, "size": request.size}, user_id=user_id)
         TaskManager.update_task(task_id, status="processing", progress=10)
 
         try:
@@ -42,7 +42,7 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
 
         external_task_id = result["task_id"]
         meta = {"prompt": request.prompt, "size": request.size, "type": "text", "task_id": task_id}
-        urls = await _poll_and_download(external_task_id, task_id, meta)
+        urls = await _poll_and_download(external_task_id, task_id, meta, user_id=user_id)
 
         if urls:
             TaskManager.update_task(task_id, status="completed", progress=100, result_urls=urls)
@@ -73,7 +73,7 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
         StatsService.record_request()
         task_id = request.task_id or str(uuid.uuid4())[:8]
 
-        TaskManager.create_task(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "image_urls": request.image_urls})
+        TaskManager.create_task(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "image_urls": request.image_urls}, user_id=user_id)
         TaskManager.update_task(task_id, status="processing", progress=10)
 
         try:
@@ -86,7 +86,7 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
 
         external_task_id = result["task_id"]
         meta = {"prompt": request.prompt, "size": request.size, "type": "text_image", "task_id": task_id, "input_urls": request.image_urls}
-        urls = await _poll_and_download(external_task_id, task_id, meta)
+        urls = await _poll_and_download(external_task_id, task_id, meta, user_id=user_id)
 
         if urls:
             TaskManager.update_task(task_id, status="completed", progress=100, result_urls=urls)
@@ -107,7 +107,7 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
         raise HTTPException(status_code=500, detail=f"生成失败: {e}")
 
 
-async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = None) -> list:
+async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = None, user_id: int = None) -> list:
     max_attempts = 300
     consecutive_errors = 0
     start_time = datetime.now()
@@ -176,8 +176,8 @@ async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = N
                 image_meta["created_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 with get_db() as conn:
                     conn.execute(
-                        "INSERT OR REPLACE INTO image_metadata (filename, metadata, created_at) VALUES (?, ?, ?)",
-                        (filename, json.dumps(image_meta, ensure_ascii=False), image_meta["created_at"]),
+                        "INSERT OR REPLACE INTO image_metadata (filename, metadata, created_at, user_id) VALUES (?, ?, ?, ?)",
+                        (filename, json.dumps(image_meta, ensure_ascii=False), image_meta["created_at"], user_id),
                     )
 
         return local_paths
