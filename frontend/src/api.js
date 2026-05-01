@@ -155,6 +155,7 @@ export const adminAPI = {
     return api.get('/admin/banned-words', { params })
   },
   addBannedWord: (word) => api.post('/admin/banned-words', { word }),
+  batchImportBannedWords: (text) => api.post('/admin/banned-words/batch-import', { text }),
   deleteBannedWord: (wordId) => api.delete(`/admin/banned-words/${wordId}`),
 }
 

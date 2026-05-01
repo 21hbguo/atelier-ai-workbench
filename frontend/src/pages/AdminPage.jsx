@@ -40,6 +40,9 @@ export default function AdminPage() {
   const [bannedWordsPage, setBannedWordsPage] = useState(1)
   const [bannedWordsQuery, setBannedWordsQuery] = useState('')
   const [newBannedWord, setNewBannedWord] = useState('')
+  const [showBatchImport, setShowBatchImport] = useState(false)
+  const [batchImportText, setBatchImportText] = useState('')
+  const [batchImporting, setBatchImporting] = useState(false)
 
   useEffect(() => { setUserPage(1) }, [userQuery])
   useEffect(() => { setImagePage(1) }, [imageQuery])
@@ -122,6 +125,23 @@ export default function AdminPage() {
       await adminAPI.deleteBannedWord(wordId)
       fetchBannedWords()
     } catch {}
+  }
+
+  const handleBatchImport = async () => {
+    const text = batchImportText.trim()
+    if (!text) return
+    setBatchImporting(true)
+    try {
+      const { data } = await adminAPI.batchImportBannedWords(text)
+      alert(data.message)
+      setShowBatchImport(false)
+      setBatchImportText('')
+      fetchBannedWords()
+    } catch (e) {
+      alert(e.message || '导入失败')
+    } finally {
+      setBatchImporting(false)
+    }
   }
 
   const handleHostingBatchDelete = useCallback(async () => {
@@ -440,6 +460,12 @@ export default function AdminPage() {
                 <span className="text-sm flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>共 {bannedWordsTotal} 个违禁词</span>
                 <SearchInput value={bannedWordsQuery} onChange={setBannedWordsQuery} placeholder="搜索违禁词..." />
               </div>
+              <button
+                onClick={() => setShowBatchImport(true)}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-accent text-white hover:opacity-90"
+              >
+                批量导入
+              </button>
             </div>
             {/* 添加违禁词 */}
             <div className="flex items-center gap-2 mb-4">
@@ -624,6 +650,52 @@ export default function AdminPage() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 批量导入违禁词弹窗 */}
+      {showBatchImport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowBatchImport(false)}>
+          <div className="absolute inset-0 bg-black/50" />
+          <div className="relative w-full max-w-md rounded-2xl overflow-hidden" style={{ background: 'var(--bg-primary)' }} onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>批量导入违禁词</h3>
+            </div>
+            <div className="p-4">
+              <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>
+                每行一个违禁词，自动去除空行和首尾空格
+              </p>
+              <textarea
+                value={batchImportText}
+                onChange={e => setBatchImportText(e.target.value)}
+                placeholder="违禁词1&#10;违禁词2&#10;违禁词3"
+                rows={10}
+                className="w-full px-3 py-2 rounded-lg text-sm border resize-none"
+                style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)', color: 'var(--text-primary)' }}
+              />
+              {batchImportText.trim() && (
+                <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>
+                  待导入 {batchImportText.splitlines().filter(l => l.trim()).length} 个违禁词
+                </p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
+              <button
+                onClick={() => { setShowBatchImport(false); setBatchImportText('') }}
+                className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                取消
+              </button>
+              <button
+                onClick={handleBatchImport}
+                disabled={!batchImportText.trim() || batchImporting}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {batchImporting ? '导入中...' : '确认导入'}
+              </button>
             </div>
           </div>
         </div>

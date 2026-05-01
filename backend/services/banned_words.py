@@ -50,6 +50,27 @@ class BannedWordsService:
             return True
 
     @classmethod
+    def batch_add(cls, words: list[str]) -> dict:
+        added = 0
+        skipped = 0
+        with get_db() as conn:
+            for word in words:
+                word = word.strip()
+                if not word or len(word) > 50:
+                    skipped += 1
+                    continue
+                try:
+                    conn.execute(
+                        "INSERT INTO banned_words (word, created_at) VALUES (?, datetime('now'))",
+                        (word,),
+                    )
+                    added += 1
+                except Exception:
+                    skipped += 1
+            cls._cache = None
+        return {"added": added, "skipped": skipped}
+
+    @classmethod
     def list_words(cls, page: int = 1, size: int = 20, query: str = None):
         with get_db() as conn:
             offset = (page - 1) * size

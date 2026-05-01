@@ -317,3 +317,15 @@ async def delete_banned_word(word_id: int, admin=Depends(require_admin)):
     if not BannedWordsService.remove(word_id):
         raise HTTPException(status_code=404, detail="违禁词不存在")
     return {"message": "删除成功"}
+
+
+@router.post("/banned-words/batch-import")
+async def batch_import_banned_words(body: dict, admin=Depends(require_admin)):
+    text = body.get("text", "")
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="内容不能为空")
+    words = [line.strip() for line in text.splitlines() if line.strip()]
+    if not words:
+        raise HTTPException(status_code=400, detail="未解析到有效违禁词")
+    result = BannedWordsService.batch_add(words)
+    return {"message": f"导入完成：新增 {result['added']} 个，跳过 {result['skipped']} 个", **result}
