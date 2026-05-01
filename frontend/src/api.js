@@ -2,7 +2,7 @@ import axios from 'axios'
 
 const api = axios.create({
   baseURL: '/api',
-  timeout: 120000,
+  timeout: 300000,
   headers: { 'Content-Type': 'application/json' },
 })
 
@@ -72,6 +72,11 @@ export const promptAPI = {
     if (query) params.query = query
     if (tags) params.tags = tags
     return api.get('/prompts', { params })
+  },
+  listPublic: (query, sort = 'likes') => {
+    const params = { sort }
+    if (query) params.query = query
+    return api.get('/prompts/public', { params })
   },
   like: (promptId) => api.post(`/prompts/like?prompt_id=${promptId}`),
   create: (data) => api.post('/prompts', data),

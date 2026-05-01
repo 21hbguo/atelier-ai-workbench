@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Heart, User, Plus, Image, BookOpen, Edit2, Trash2, Download, Upload, X, Send } from 'lucide-react'
+import { Heart, User, Plus, Image, BookOpen, Edit2, Trash2, Download, Upload, X, Send, RefreshCw } from 'lucide-react'
 import { squareAPI, promptAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 import SearchInput from '../components/SearchInput'
@@ -39,6 +39,7 @@ function WorksTab() {
   const [selected, setSelected] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [sort, setSort] = useState('likes')
+  const [refreshing, setRefreshing] = useState(false)
 
   const handleUsePrompt = (prompt) => {
     localStorage.setItem('pending_prompt', prompt)
@@ -60,6 +61,12 @@ function WorksTab() {
 
   useEffect(() => { setPage(1) }, [searchQuery, sort])
   useEffect(() => { fetchImages() }, [page, searchQuery, sort])
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    await fetchImages()
+    setRefreshing(false)
+  }
 
   const fetchImages = async () => {
     setLoading(true)
@@ -108,6 +115,11 @@ function WorksTab() {
             style={{ color: sort === 'time' ? 'var(--accent)' : 'var(--text-secondary)' }}>最新</button>
         </div>
         <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="搜索提示词/作者..." />
+        <button onClick={handleRefresh} disabled={refreshing}
+          className="p-1.5 rounded-lg hover:bg-black/5 transition-colors disabled:opacity-50"
+          style={{ color: 'var(--text-secondary)' }}>
+          <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
+        </button>
       </div>
 
       {loading ? (
@@ -250,6 +262,7 @@ function WorksTab() {
 
 function PromptsTab({ isAdmin }) {
   const navigate = useNavigate()
+  const user = JSON.parse(localStorage.getItem('user') || 'null')
   const [prompts, setPrompts] = useState([])
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
@@ -260,14 +273,26 @@ function PromptsTab({ isAdmin }) {
   const [editForm, setEditForm] = useState(null)
   const [selected, setSelected] = useState(new Set())
   const [sort, setSort] = useState('likes')
+  const [refreshing, setRefreshing] = useState(false)
   const fileRef = useRef(null)
 
   useEffect(() => { fetchPrompts() }, [query, sort])
 
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    await fetchPrompts()
+    setRefreshing(false)
+  }
+
   const fetchPrompts = async () => {
     setLoading(true)
     try {
-      const { data } = await promptAPI.list(query, null, isAdmin ? 'all' : 'public', sort)
+      let data
+      if (!user) {
+        ({ data } = await promptAPI.listPublic(query, sort))
+      } else {
+        ({ data } = await promptAPI.list(query, null, isAdmin ? 'all' : 'community', sort))
+      }
       setPrompts(data.prompts)
     } catch {
       setPrompts([])
@@ -380,6 +405,11 @@ function PromptsTab({ isAdmin }) {
             style={{ color: sort === 'time' ? 'var(--accent)' : 'var(--text-secondary)' }}>最新</button>
         </div>
         <SearchInput value={query} onChange={setQuery} placeholder="搜索提示词..." />
+        <button onClick={handleRefresh} disabled={refreshing}
+          className="p-1.5 rounded-lg hover:bg-black/5 transition-colors disabled:opacity-50"
+          style={{ color: 'var(--text-secondary)' }}>
+          <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
+        </button>
       </div>
 
       {isAdmin && (
@@ -475,16 +505,29 @@ function PromptsTab({ isAdmin }) {
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => { setDetail(null); setEditForm(null) }}>
           <div className="bg-white dark:bg-gray-900 rounded-2xl overflow-hidden max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
-              <h2 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>{editForm?.name || detail.name}</h2>
+              <h2 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>{editForm?.name ?? detail.name}</h2>
               <button onClick={() => { setDetail(null); setEditForm(null) }} className="p-1 rounded hover:bg-black/5"><X size={18} style={{ color: 'var(--text-secondary)' }} /></button>
             </div>
             <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4">
+              <div>
+                <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>名称</label>
+                <input
+                  value={editForm?.name ?? detail.name}
+                  onChange={e => {
+                    if (!editForm) setEditForm({ name: detail.name, prompt: detail.prompt, negative_prompt: detail.negative_prompt || '', tags: (detail.tags || []).join(', ') })
+                    setEditForm(f => ({ ...f, name: e.target.value }))
+                  }}
+                  className="text-sm px-3 py-2 rounded-lg w-full border outline-none"
+                  style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)', borderColor: 'var(--border-color)' }}
+                  placeholder="提示词名称"
+                />
+              </div>
               <div>
                 <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>提示词内容</label>
                 <textarea
                   value={editForm?.prompt ?? detail.prompt}
                   onChange={e => {
-                    if (!editForm) setEditForm({ prompt: detail.prompt, negative_prompt: detail.negative_prompt || '', tags: (detail.tags || []).join(', ') })
+                    if (!editForm) setEditForm({ name: detail.name, prompt: detail.prompt, negative_prompt: detail.negative_prompt || '', tags: (detail.tags || []).join(', ') })
                     setEditForm(f => ({ ...f, prompt: e.target.value }))
                   }}
                   className="text-sm p-3 rounded-lg whitespace-pre-wrap w-full min-h-[120px] border outline-none resize-none"
@@ -496,7 +539,7 @@ function PromptsTab({ isAdmin }) {
                 <input
                   value={editForm?.tags ?? (detail.tags || []).join(', ')}
                   onChange={e => {
-                    if (!editForm) setEditForm({ prompt: detail.prompt, negative_prompt: detail.negative_prompt || '', tags: (detail.tags || []).join(', ') })
+                    if (!editForm) setEditForm({ name: detail.name, prompt: detail.prompt, negative_prompt: detail.negative_prompt || '', tags: (detail.tags || []).join(', ') })
                     setEditForm(f => ({ ...f, tags: e.target.value }))
                   }}
                   className="text-sm px-3 py-2 rounded-lg w-full border outline-none"

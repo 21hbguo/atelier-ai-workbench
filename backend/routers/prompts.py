@@ -9,7 +9,7 @@ from fastapi.responses import Response
 
 from backend.services.prompt_service import PromptService
 from backend.database import get_db
-from backend.auth import get_current_user, require_admin
+from backend.auth import get_current_user, require_admin, get_optional_user
 from backend.models.schemas import (
     PromptItem,
     PromptCreateRequest,
@@ -49,6 +49,26 @@ async def get_prompts(
     except Exception as e:
         logger.exception("获取提示词列表失败")
         raise HTTPException(status_code=500, detail="获取提示词列表失败")
+
+
+@router.get("/public")
+async def get_public_prompts(
+    query: Optional[str] = Query(None),
+    tags: Optional[str] = Query(None),
+    sort: str = Query("likes", regex="^(likes|time)$"),
+    user=Depends(get_optional_user),
+):
+    try:
+        tag_list = [t.strip() for t in tags.split(",")] if tags else None
+        uid = user["user_id"] if user else None
+        if query or tag_list:
+            results = PromptService.search(query=query or "", tags=tag_list, scope="community", user_id=uid, sort=sort)
+        else:
+            results = PromptService.get_all(scope="community", user_id=uid, sort=sort)
+        return {"prompts": results, "total": len(results)}
+    except Exception as e:
+        logger.exception("获取公开提示词列表失败")
+        raise HTTPException(status_code=500, detail="获取公开提示词列表失败")
 
 
 @router.post("", response_model=PromptItem)

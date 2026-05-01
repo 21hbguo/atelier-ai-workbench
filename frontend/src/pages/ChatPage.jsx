@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Download, Trash2, Check } from 'lucide-react'
+import { Download, Trash2, Check, RefreshCw } from 'lucide-react'
 import ChatInput from '../components/ChatInput'
 import GenerationCard from '../components/GenerationCard'
 import SearchInput from '../components/SearchInput'
@@ -22,6 +22,7 @@ export default function ChatPage() {
   const [selectMode, setSelectMode] = useState(false)
   const [checked, setChecked] = useState(new Set())
   const [searchQuery, setSearchQuery] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
   const [userList, setUserList] = useState([])
   const [selectedUserId, setSelectedUserId] = useState(null)
   const feedRef = useRef(null)
@@ -102,13 +103,11 @@ export default function ChatPage() {
   }, [])
 
   const pollTask = useCallback(async (taskId, startTime, shareToSquare, prompt, params, hasImages) => {
-    const maxAttempts = 80
-    await new Promise(r => setTimeout(r, 10000))
+    const maxAttempts = 40
+    const getDelay = (attempt) => Math.min(2000 + attempt * 500, 10000)
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const elapsed = (Date.now() - startTime) / 1000
-      const delay = elapsed < 30 ? 10000 : elapsed < 60 ? 5000 : 3000
-      await new Promise(r => setTimeout(r, delay))
+      await new Promise(r => setTimeout(r, getDelay(attempt)))
       try {
         const { data: st } = await taskAPI.get(taskId)
         if (st.status === 'completed') {
@@ -159,11 +158,13 @@ export default function ChatPage() {
       }
     }
 
+    const hasImages = imageUrls.length > 0
+    const taskId = crypto.randomUUID()
+
     try {
-      const hasImages = imageUrls.length > 0
       const data = hasImages
-        ? (await generateAPI.submitTextImage({ prompt, image_urls: imageUrls, size: params?.size || 'auto' })).data
-        : (await generateAPI.submitText({ prompt, size: params?.size || 'auto' })).data
+        ? (await generateAPI.submitTextImage({ prompt, image_urls: imageUrls, size: params?.size || 'auto', task_id: taskId })).data
+        : (await generateAPI.submitText({ prompt, size: params?.size || 'auto', task_id: taskId })).data
 
       const realId = data.task_id
       setTasks(prev => prev.map(t => t.task_id === tempId ? { ...t, task_id: realId } : t))
@@ -179,10 +180,22 @@ export default function ChatPage() {
 
       pollTask(realId, Date.now(), shareToSquare, prompt, params, hasImages)
     } catch (e) {
-      updateTask(tempId, { status: 'failed', error: '提交失败: ' + e.message, _active: false })
+      const isTimeout = e.message?.includes('timeout') || e.message?.includes('超时')
+      if (isTimeout) {
+        setTasks(prev => prev.map(t => t.task_id === tempId ? { ...t, task_id: taskId } : t))
+        pollTask(taskId, Date.now(), shareToSquare, prompt, params, imageUrls.length > 0)
+      } else {
+        updateTask(tempId, { status: 'failed', error: '提交失败: ' + e.message, _active: false })
+      }
       setLoading(false)
     }
   }, [scroll, updateTask, pollTask, shareImageToSquare])
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true)
+    await refreshTasks()
+    setRefreshing(false)
+  }, [refreshTasks])
 
   const handleRetry = useCallback(async (taskId) => {
     try {
@@ -300,6 +313,11 @@ export default function ChatPage() {
           </select>
         )}
         <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="搜索提示词..." />
+        <button onClick={handleRefresh} disabled={refreshing}
+          className="p-1.5 rounded-lg hover:bg-black/5 transition-colors disabled:opacity-50"
+          style={{ color: 'var(--text-secondary)' }}>
+          <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
+        </button>
         {selectMode ? (
           <button onClick={exitSelectMode} className="ml-auto px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button>
         ) : (

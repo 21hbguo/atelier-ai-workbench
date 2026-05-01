@@ -28,7 +28,7 @@ class PromptService:
             order = cls._ORDER_MAP.get(sort, cls._ORDER_MAP["likes"])
             if scope == "private" and user_id is not None:
                 rows = conn.execute(f"SELECT * FROM prompts WHERE user_id = ? ORDER BY created_at DESC", (user_id,)).fetchall()
-            elif scope == "all":
+            elif scope in ("all", "community"):
                 rows = conn.execute(f"""
                     SELECT p.*, u.username, u.nickname
                     FROM prompts p
@@ -113,7 +113,7 @@ class PromptService:
                 scope_params = [user_id]
                 join_sql = ""
                 select_extra = ""
-            elif scope == "all":
+            elif scope in ("all", "community"):
                 scope_sql = "1=1"
                 scope_params = []
                 join_sql = "LEFT JOIN users u ON p.user_id = u.id"
@@ -126,7 +126,7 @@ class PromptService:
 
             if query:
                 q = f"%{query}%"
-                if scope == "all":
+                if scope in ("all", "community"):
                     sql = f"SELECT p.*{select_extra} FROM prompts p {join_sql} WHERE ({scope_sql}) AND (p.name LIKE ? OR p.prompt LIKE ? OR p.tags LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?) ORDER BY {order}"
                     rows = conn.execute(sql, scope_params + [q, q, q, q, q]).fetchall()
                 else:
