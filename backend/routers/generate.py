@@ -13,7 +13,7 @@ from backend.models.schemas import (
     GenerateTextImageRequest,
     GenerateResponse,
 )
-from backend.auth import get_current_user, record_request, update_user_ip
+from backend.auth import get_current_user, record_request, update_user_ip, get_client_ip
 
 router = APIRouter(prefix="/api/generate", tags=["generate"])
 
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/generate", tags=["generate"])
 @router.post("/text", response_model=GenerateResponse)
 async def generate_text(request: GenerateTextRequest, req: Request, user=Depends(get_current_user)):
     user_id = user["user_id"]
-    update_user_ip(user_id, req.client.host)
+    update_user_ip(user_id, get_client_ip(req))
     record_request(user_id, "processing")
 
     try:
@@ -65,7 +65,7 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
 @router.post("/text-image", response_model=GenerateResponse)
 async def generate_text_image(request: GenerateTextImageRequest, req: Request, user=Depends(get_current_user)):
     user_id = user["user_id"]
-    update_user_ip(user_id, req.client.host)
+    update_user_ip(user_id, get_client_ip(req))
     record_request(user_id, "processing")
 
     try:

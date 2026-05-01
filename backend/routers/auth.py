@@ -1,7 +1,7 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 from backend.database import get_db
-from backend.auth import hash_password, verify_password, create_token, get_current_user
+from backend.auth import hash_password, verify_password, create_token, get_current_user, update_user_ip, get_client_ip
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -18,7 +18,7 @@ class LoginRequest(BaseModel):
 
 
 @router.post("/register")
-async def register(req: RegisterRequest):
+async def register(req: RegisterRequest, request: Request):
     with get_db() as conn:
         existing = conn.execute("SELECT id FROM users WHERE username = ?", (req.username,)).fetchone()
         if existing:
@@ -30,17 +30,19 @@ async def register(req: RegisterRequest):
             (req.username, password_hash, req.nickname or req.username),
         )
         user_id = cursor.lastrowid
+        update_user_ip(user_id, get_client_ip(request))
         token = create_token(user_id, req.username)
         return {"token": token, "user": {"id": user_id, "username": req.username, "nickname": req.nickname or req.username, "is_admin": False}}
 
 
 @router.post("/login")
-async def login(req: LoginRequest):
+async def login(req: LoginRequest, request: Request):
     with get_db() as conn:
         user = conn.execute("SELECT * FROM users WHERE username = ?", (req.username,)).fetchone()
         if not user or not verify_password(req.password, user["password_hash"]):
             raise HTTPException(status_code=401, detail="用户名或密码错误")
 
+        update_user_ip(user["id"], get_client_ip(request))
         token = create_token(user["id"], user["username"], bool(user["is_admin"]))
         return {"token": token, "user": {"id": user["id"], "username": user["username"], "nickname": user["nickname"], "is_admin": bool(user["is_admin"])}}
 

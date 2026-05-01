@@ -1,7 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ThemeProvider } from './ThemeContext'
 import ChatPage from './pages/ChatPage'
-import GalleryPage from './pages/GalleryPage'
 import PromptsPage from './pages/PromptsPage'
 import SettingsPage from './pages/SettingsPage'
 import LoginPage from './pages/LoginPage'
@@ -14,6 +13,14 @@ function ProtectedRoute({ children }) {
   return children
 }
 
+function AdminRoute({ children }) {
+  const token = localStorage.getItem('token')
+  const user = JSON.parse(localStorage.getItem('user') || 'null')
+  if (!token) return <Navigate to="/login" replace />
+  if (!user?.is_admin) return <Navigate to="/" replace />
+  return children
+}
+
 export default function App() {
   return (
     <ThemeProvider>
@@ -21,11 +28,10 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
-          <Route path="/gallery" element={<ProtectedRoute><GalleryPage /></ProtectedRoute>} />
           <Route path="/square" element={<ProtectedRoute><SquarePage /></ProtectedRoute>} />
           <Route path="/prompts" element={<ProtectedRoute><PromptsPage /></ProtectedRoute>} />
-          <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
-          <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
+          <Route path="/settings" element={<AdminRoute><SettingsPage /></AdminRoute>} />
+          <Route path="/admin" element={<AdminRoute><AdminPage /></AdminRoute>} />
         </Routes>
       </BrowserRouter>
     </ThemeProvider>

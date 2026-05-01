@@ -1,13 +1,11 @@
 import { useLocation, Link, useNavigate } from 'react-router-dom'
-import { Sun, Moon, Image, BookOpen, MessageSquare, X, Settings, Globe, LogOut, User, Shield } from 'lucide-react'
+import { Sun, Moon, BookOpen, MessageSquare, X, Settings, Globe, LogOut, User, Shield } from 'lucide-react'
 import { useTheme } from '../ThemeContext'
 
 const navItems = [
   { path: '/', icon: MessageSquare, label: '生成' },
   { path: '/square', icon: Globe, label: '广场' },
-  { path: '/gallery', icon: Image, label: '图库' },
   { path: '/prompts', icon: BookOpen, label: '提示词' },
-  { path: '/settings', icon: Settings, label: '设置' },
 ]
 
 export default function Sidebar({ open, onClose }) {
@@ -44,12 +42,20 @@ export default function Sidebar({ open, onClose }) {
             )
           })}
           {user?.is_admin && (
-            <Link to="/admin"
-              className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-colors duration-150 ${location.pathname === '/admin' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
-              style={{ color: location.pathname === '/admin' ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: location.pathname === '/admin' ? 'var(--accent)15' : undefined }}
-              onClick={() => onClose?.()}>
-              <Shield size={15} />管理后台
-            </Link>
+            <>
+              <Link to="/settings"
+                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-colors duration-150 ${location.pathname === '/settings' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
+                style={{ color: location.pathname === '/settings' ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: location.pathname === '/settings' ? 'var(--accent)15' : undefined }}
+                onClick={() => onClose?.()}>
+                <Settings size={15} />设置
+              </Link>
+              <Link to="/admin"
+                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-colors duration-150 ${location.pathname === '/admin' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
+                style={{ color: location.pathname === '/admin' ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: location.pathname === '/admin' ? 'var(--accent)15' : undefined }}
+                onClick={() => onClose?.()}>
+                <Shield size={15} />管理后台
+              </Link>
+            </>
           )}
         </nav>
         <div className="px-2 py-2 border-t space-y-0.5" style={{ borderColor: 'var(--border-color)' }}>

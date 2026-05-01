@@ -35,12 +35,7 @@ fi
 
 # 检查后端依赖
 echo -e "${YELLOW}[1/3] 检查后端依赖...${NC}"
-if command -v pip3 &> /dev/null; then
-    PIP="pip3"
-else
-    PIP="pip"
-fi
-$PIP install -q -r "$PROJECT_DIR/backend/requirements.txt"
+python3 -m pip install -q -r "$PROJECT_DIR/backend/requirements.txt"
 
 # 检查前端依赖
 echo -e "${YELLOW}[2/3] 检查前端依赖...${NC}"

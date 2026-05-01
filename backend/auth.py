@@ -79,6 +79,14 @@ def record_request(user_id: int, status: str):
         )
 
 
+def get_client_ip(request) -> str:
+    """获取真实客户端 IP（兼容反向代理）"""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host
+
+
 def update_user_ip(user_id: int, ip: str):
     """更新用户 IP"""
     with get_db() as conn:
