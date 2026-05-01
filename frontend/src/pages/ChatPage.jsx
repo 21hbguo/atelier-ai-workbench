@@ -3,7 +3,7 @@ import { Menu, Download, Trash2, Check } from 'lucide-react'
 import ChatInput from '../components/ChatInput'
 import GenerationCard from '../components/GenerationCard'
 import Sidebar from '../components/Sidebar'
-import { generateAPI, uploadAPI, taskAPI, imageAPI, squareAPI } from '../api'
+import { generateAPI, uploadAPI, taskAPI, imageAPI, squareAPI, adminAPI } from '../api'
 
 function formatLocalTime(d) {
   const pad = n => String(n).padStart(2, '0')
@@ -11,6 +11,8 @@ function formatLocalTime(d) {
 }
 
 export default function ChatPage() {
+  const user = JSON.parse(localStorage.getItem('user') || 'null')
+  const isAdmin = user?.is_admin
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(false)
@@ -19,13 +21,16 @@ export default function ChatPage() {
   const [dragging, setDragging] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
   const [checked, setChecked] = useState(new Set())
+  const [userList, setUserList] = useState([])
+  const [selectedUserId, setSelectedUserId] = useState(null)
   const feedRef = useRef(null)
   const inputRef = useRef(null)
   const dragCounter = useRef(0)
 
   const refreshTasks = useCallback(async () => {
     try {
-      const [taskRes, imgRes] = await Promise.all([taskAPI.list(50), imageAPI.list(1, 100)])
+      const uid = isAdmin ? selectedUserId : undefined
+      const [taskRes, imgRes] = await Promise.all([taskAPI.list(50, 0, uid), imageAPI.list(1, 100, uid)])
       const allTasks = taskRes.data
       const allImages = imgRes.data.images || []
       const taskImageFiles = new Set()
@@ -40,14 +45,20 @@ export default function ChatPage() {
         created_at: img.created_at,
         started_at: img.created_at,
         completed_at: img.created_at,
+        username: img.username || '',
       }))
       const merged = [...orphans, ...allTasks].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
       setTasks(merged)
       if (!loaded) setLoaded(true)
     } catch {}
-  }, [loaded])
+  }, [loaded, isAdmin, selectedUserId])
 
   useEffect(() => { refreshTasks() }, [refreshTasks])
+
+  useEffect(() => {
+    if (!isAdmin) return
+    adminAPI.users(1, 100).then(({ data }) => setUserList(data.users || [])).catch(() => {})
+  }, [isAdmin])
 
   useEffect(() => {
     if (loaded && feedRef.current) {
@@ -265,6 +276,19 @@ export default function ChatPage() {
             <button key={k} onClick={() => setFilter(k)} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${filter === k ? 'bg-accent/10' : 'hover:bg-black/5'}`}
               style={{ color: filter === k ? 'var(--accent)' : 'var(--text-secondary)' }}>{l}</button>
           ))}
+          {isAdmin && userList.length > 0 && (
+            <select
+              value={selectedUserId || ''}
+              onChange={e => setSelectedUserId(e.target.value ? Number(e.target.value) : null)}
+              className="ml-1 px-2 py-1.5 rounded-lg text-xs border-0 outline-none"
+              style={{ background: 'var(--border-color)', color: 'var(--text-primary)' }}
+            >
+              <option value="">全部用户</option>
+              {userList.map(u => (
+                <option key={u.id} value={u.id}>{u.nickname || u.username}</option>
+              ))}
+            </select>
+          )}
           {selectMode ? (
             <button onClick={exitSelectMode} className="ml-auto px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button>
           ) : (
@@ -281,7 +305,7 @@ export default function ChatPage() {
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 pt-4">
-              {filtered.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id)} onToggleCheck={() => toggleCheck(task.task_id)} />)}
+              {filtered.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id)} onToggleCheck={() => toggleCheck(task.task_id)} showUsername={isAdmin} username={task.username} />)}
             </div>
           )}
         </div>

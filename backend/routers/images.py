@@ -5,13 +5,14 @@ from datetime import datetime
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Response, Depends
 from fastapi.responses import FileResponse
 
 from backend.config import GENERATED_IMAGES_DIR, THUMBS_DIR
 from backend.database import get_db
 from backend.services.task_manager import TaskManager
 from backend.services.image_mapping import ImageUrlMapping
+from backend.auth import get_current_user
 
 router = APIRouter(prefix="/api", tags=["images"])
 
@@ -28,22 +29,50 @@ def get_image_metadata(filename: str) -> dict:
 
 
 @router.get("/images")
-async def list_images(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100)):
+async def list_images(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100), user_id: int = Query(None), user=Depends(get_current_user)):
     try:
         if not GENERATED_IMAGES_DIR.exists():
             return {"images": [], "total": 0, "page": page, "page_size": page_size}
 
+        is_admin = user.get("is_admin")
+        if is_admin and user_id:
+            filter_uid = user_id
+        elif is_admin:
+            filter_uid = None
+        else:
+            filter_uid = user["user_id"]
+
+        if filter_uid is not None:
+            with get_db() as conn:
+                rows = conn.execute("SELECT filename FROM image_metadata WHERE user_id = ?", (filter_uid,)).fetchall()
+                allowed_files = {r["filename"] for r in rows}
+        else:
+            allowed_files = None
+
         image_files = []
+        user_map = {}
+        if is_admin:
+            with get_db() as conn:
+                rows = conn.execute("SELECT id, username, nickname FROM users").fetchall()
+                user_map = {r["id"]: (r["nickname"] or r["username"]) for r in rows}
+
         for f in GENERATED_IMAGES_DIR.iterdir():
             if f.is_file() and f.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+                if allowed_files is not None and f.name not in allowed_files:
+                    continue
                 stat = f.stat()
                 metadata = get_image_metadata(f.name)
+                username = ""
+                if is_admin:
+                    uid = metadata.get("user_id")
+                    username = user_map.get(uid, "") if uid else ""
                 image_files.append({
                     "filename": f.name,
                     "path": str(f),
                     "url": f"/api/images/file/{f.name}",
                     "created_at": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
                     "metadata": metadata,
+                    "username": username,
                 })
 
         image_files.sort(key=lambda x: x["created_at"], reverse=True)
@@ -148,11 +177,17 @@ async def get_image_info(filename: str):
 
 
 @router.delete("/images/{filename}")
-async def delete_image(filename: str):
+async def delete_image(filename: str, user=Depends(get_current_user)):
     image_path = GENERATED_IMAGES_DIR / filename
 
     if not image_path.exists():
         raise HTTPException(status_code=404, detail="图片不存在")
+
+    if not user.get("is_admin"):
+        with get_db() as conn:
+            row = conn.execute("SELECT user_id FROM image_metadata WHERE filename = ?", (filename,)).fetchone()
+            if row and row["user_id"] != user["user_id"]:
+                raise HTTPException(status_code=403, detail="无权删除此图片")
 
     try:
         image_path.unlink()
