@@ -1,4 +1,5 @@
 import os
+import asyncio
 import httpx
 from typing import Optional
 
@@ -9,6 +10,11 @@ from backend.config import (
     MAX_FILE_SIZE,
     ALLOWED_EXTENSIONS,
 )
+
+
+def _read_file(path):
+    with open(path, "rb") as f:
+        return f.read()
 
 
 class ImageHostingService:
@@ -34,10 +40,10 @@ class ImageHostingService:
         if ext == "jpg":
             content_type = "image/jpeg"
 
+        content = await asyncio.to_thread(_read_file, image_path)
         async with httpx.AsyncClient(timeout=60.0) as client:
-            with open(image_path, "rb") as f:
-                files = {"file": (os.path.basename(image_path), f, content_type)}
-                response = await client.post(IMAGE_HOSTING_UPLOAD_URL(), headers=headers, files=files)
+            files = {"file": (os.path.basename(image_path), content, content_type)}
+            response = await client.post(IMAGE_HOSTING_UPLOAD_URL(), headers=headers, files=files)
 
         if response.status_code != 200:
             raise Exception(f"上传失败（状态码 {response.status_code}）: {response.text}")

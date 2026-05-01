@@ -42,7 +42,7 @@ async def login(req: LoginRequest, request: Request):
         if not user or not verify_password(req.password, user["password_hash"]):
             raise HTTPException(status_code=401, detail="用户名或密码错误")
 
-        update_user_ip(user["id"], get_client_ip(request))
+        update_user_ip(user["id"], get_client_ip(request), conn=conn)
         token = create_token(user["id"], user["username"], bool(user["is_admin"]))
         return {"token": token, "user": {"id": user["id"], "username": user["username"], "nickname": user["nickname"], "is_admin": bool(user["is_admin"])}}
 

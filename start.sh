@@ -15,8 +15,15 @@ echo -e "${GREEN}   AI 图像生成网站 - 一键启动${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
-# 清理旧进程（按进程名匹配，避免误杀其他服务）
+# 清理旧进程（先按端口清理，再按进程名兜底）
 echo -e "${YELLOW}[清理] 终止旧的 uvicorn/vite 进程...${NC}"
+# 按端口清理 uvicorn
+PORT_PID=$(lsof -ti :8002 2>/dev/null || fuser 8002/tcp 2>/dev/null || true)
+if [ -n "$PORT_PID" ]; then
+    echo "$PORT_PID" | xargs kill -9 2>/dev/null || true
+    echo -e "  已清理端口 8002: $PORT_PID"
+fi
+# 按名称兜底清理
 for PATTERN in "uvicorn backend.main" "vite"; do
     PIDS=$(pgrep -f "$PATTERN" 2>/dev/null || true)
     if [ -n "$PIDS" ]; then

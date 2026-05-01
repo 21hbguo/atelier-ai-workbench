@@ -1,4 +1,5 @@
 import os
+import asyncio
 import hashlib
 from datetime import datetime
 from typing import List
@@ -11,6 +12,11 @@ from backend.models.schemas import UploadResponse
 from backend.config import UPLOAD_DIR
 
 router = APIRouter(prefix="/api", tags=["upload"])
+
+
+def _write_file(path, content):
+    with open(path, "wb") as f:
+        f.write(content)
 
 
 def _file_hash(content: bytes) -> str:
@@ -34,8 +40,7 @@ async def _do_upload(file: UploadFile) -> UploadResponse:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{timestamp}_{file.filename}"
     save_path = UPLOAD_DIR / filename
-    with open(save_path, "wb") as f:
-        f.write(content)
+    await asyncio.to_thread(_write_file, save_path, content)
 
     url = await ImageHostingService.upload_image(str(save_path))
     ImageUrlMapping.save_url(str(save_path), url, content_hash)
