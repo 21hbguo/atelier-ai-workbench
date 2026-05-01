@@ -1,95 +1,155 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Menu } from 'lucide-react'
 import ChatInput from '../components/ChatInput'
-import MessageBubble from '../components/MessageBubble'
+import GenerationCard from '../components/GenerationCard'
 import Sidebar from '../components/Sidebar'
-import { generateAPI, uploadAPI, taskAPI, promptAPI } from '../api'
-import { useTasks } from '../hooks'
+import { generateAPI, uploadAPI, taskAPI, imageAPI } from '../api'
+
+function formatLocalTime(d) {
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
 
 export default function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const { tasks, refresh: refreshTasks } = useTasks()
-  const [messages, setMessages] = useState([])
+  const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(false)
-  const messagesEndRef = useRef(null)
+  const [filter, setFilter] = useState('all')
+  const [loaded, setLoaded] = useState(false)
+  const feedRef = useRef(null)
+  const inputRef = useRef(null)
+
+  const refreshTasks = useCallback(async () => {
+    try {
+      const [taskRes, imgRes] = await Promise.all([taskAPI.list(50), imageAPI.list(1, 100)])
+      const allTasks = taskRes.data.reverse()
+      const allImages = imgRes.data.images || []
+      const taskImageFiles = new Set()
+      for (const t of allTasks) {
+        for (const u of (t.result_urls || [])) taskImageFiles.add(u.split('/').pop())
+      }
+      const orphans = allImages.filter(img => !taskImageFiles.has(img.filename)).map(img => ({
+        task_id: 'img-' + img.filename,
+        status: 'completed',
+        result_urls: [img.url],
+        params: img.metadata || {},
+        created_at: img.created_at,
+        started_at: img.created_at,
+        completed_at: img.created_at,
+      }))
+      const merged = [...orphans, ...allTasks].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
+      setTasks(merged)
+      if (!loaded) {
+        setLoaded(true)
+        requestAnimationFrame(() => { const el = feedRef.current; if (el) el.scrollTop = el.scrollHeight })
+      }
+    } catch {}
+  }, [loaded])
+
+  useEffect(() => { refreshTasks() }, [refreshTasks])
+
+  useEffect(() => {
+    const handler = () => refreshTasks()
+    window.addEventListener('gallery-updated', handler)
+    return () => window.removeEventListener('gallery-updated', handler)
+  }, [refreshTasks])
 
   const scroll = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const el = feedRef.current
+    if (el) setTimeout(() => el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }), 50)
   }, [])
 
-  const handleSubmit = useCallback(async ({ prompt, mode, images, params }) => {
-    setLoading(true)
-    let imageUrls = []
+  const updateTask = useCallback((taskId, updates) => {
+    setTasks(prev => prev.map(t => t.task_id === taskId ? { ...t, ...updates } : t))
+  }, [])
 
-    if (images?.length > 0) {
-      setMessages(prev => [...prev, { role: 'user', prompt, timestamp: new Date().toISOString(), images: images.map(i => i.preview) }])
-      scroll()
-      setMessages(prev => [...prev, { role: 'ai', statusText: '正在上传参考图...', timestamp: new Date().toISOString() }])
-      scroll()
+  const pollTask = useCallback(async (taskId, startTime) => {
+    const maxAttempts = 80
+    await new Promise(r => setTimeout(r, 10000))
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const elapsed = (Date.now() - startTime) / 1000
+      const delay = elapsed < 30 ? 10000 : elapsed < 60 ? 5000 : 3000
+      await new Promise(r => setTimeout(r, delay))
       try {
-        const results = await Promise.all(images.map(img => uploadAPI.upload(img.file)))
-        imageUrls = results.map(r => r.data.url)
-      } catch (e) {
-        setMessages(prev => [...prev, { role: 'ai', error: '上传失败: ' + e.message, timestamp: new Date().toISOString() }])
-        scroll(); setLoading(false); return
-      }
-    } else {
-      setMessages(prev => [...prev, { role: 'user', prompt, timestamp: new Date().toISOString() }])
-      scroll()
+        const { data: st } = await taskAPI.get(taskId)
+        if (st.status === 'completed') {
+          updateTask(taskId, { ...st, _active: false })
+          return
+        }
+        if (st.status === 'failed') {
+          updateTask(taskId, { ...st, _active: false })
+          return
+        }
+        updateTask(taskId, st)
+      } catch { continue }
     }
+    updateTask(taskId, { status: 'failed', error: '生成超时', _active: false })
+  }, [updateTask])
 
-    const aiIdx = messages.length + (images?.length > 0 ? 1 : 0)
-    const genStartTime = Date.now()
-    setMessages(prev => [...prev, { role: 'ai', statusText: '正在生成...', progress: 0, timestamp: new Date().toISOString() }])
+  const handleSubmit = useCallback(async ({ prompt, images, params }) => {
+    setLoading(true)
+    const tempId = 'pending-' + Date.now()
+    const previewImages = images?.map(i => i.preview) || []
+    const tempTask = {
+      task_id: tempId,
+      status: 'processing',
+      prompt,
+      params: { prompt, size: params?.size || 'auto' },
+      previewImages,
+      created_at: new Date().toLocaleString('zh-CN'),
+      started_at: formatLocalTime(new Date()),
+      _active: true,
+    }
+    setTasks(prev => [...prev, tempTask])
     scroll()
 
+    let imageUrls = []
+    if (images?.length > 0) {
+      try {
+        const results = await Promise.all(images.map(img =>
+          img.url ? Promise.resolve({ data: { url: img.url } }) : uploadAPI.upload(img.file)
+        ))
+        imageUrls = results.map(r => r.data.url)
+      } catch (e) {
+        updateTask(tempId, { status: 'failed', error: '上传失败: ' + e.message, _active: false })
+        setLoading(false)
+        return
+      }
+    }
+
     try {
-      const data = mode === 'text-image'
+      const hasImages = imageUrls.length > 0
+      const data = hasImages
         ? (await generateAPI.submitTextImage({ prompt, image_urls: imageUrls, size: params?.size || 'auto' })).data
         : (await generateAPI.submitText({ prompt, size: params?.size || 'auto' })).data
 
+      const realId = data.task_id
+      setTasks(prev => prev.map(t => t.task_id === tempId ? { ...t, task_id: realId } : t))
+      setLoading(false)
+
       if (data.status === 'completed') {
-        setMessages(prev => prev.map((m, i) => i === aiIdx ? { ...m, statusText: null, progress: null, resultImages: data.result_urls.map(u => `/generated_images/${u.split('/').pop()}`) } : m))
-        scroll(); refreshTasks(); setLoading(false); return
+        updateTask(realId, { status: 'completed', result_urls: data.result_urls, _active: false })
+        return
       }
 
-      const tid = data.task_id
-      const updateProgress = () => {
-        const elapsed = (Date.now() - genStartTime) / 1000
-        const pct = Math.min(99 * (1 - Math.exp(-elapsed / 30)), 99)
-        setMessages(prev => prev.map((m, i) => i === aiIdx ? { ...m, progress: pct } : m))
-      }
-
-      await new Promise(r => setTimeout(r, 15000))
-      updateProgress()
-
-      for (let attempt = 0; attempt < 80; attempt++) {
-        const elapsed = (Date.now() - genStartTime) / 1000
-        await new Promise(r => setTimeout(r, elapsed > 50 ? 3000 : 5000))
-        updateProgress()
-        try {
-          const { data: st } = await taskAPI.get(tid)
-          if (st.status === 'completed') {
-            setMessages(prev => prev.map((m, i) => i === aiIdx ? { ...m, statusText: null, progress: 100, resultImages: (st.result_urls||[]).map(u => `/generated_images/${u.split('/').pop()}`) } : m))
-            scroll(); refreshTasks(); setLoading(false); return
-          } else if (st.status === 'failed') {
-            setMessages(prev => prev.map((m, i) => i === aiIdx ? { ...m, statusText: null, progress: null, error: st.error || '生成失败' } : m))
-            scroll(); setLoading(false); return
-          }
-          setMessages(prev => prev.map((m, i) => i === aiIdx ? { ...m, statusText: st.status === 'queued' ? '排队中...' : '生成中...' } : m))
-        } catch { continue }
-      }
-      setMessages(prev => prev.map((m, i) => i === aiIdx ? { ...m, statusText: null, progress: null, error: '生成超时' } : m))
+      pollTask(realId, Date.now())
     } catch (e) {
-      setMessages(prev => [...prev, { role: 'ai', error: '生成失败: ' + e.message, timestamp: new Date().toISOString() }])
+      updateTask(tempId, { status: 'failed', error: '提交失败: ' + e.message, _active: false })
+      setLoading(false)
     }
-    scroll(); setLoading(false)
-  }, [messages, refreshTasks, scroll])
+  }, [scroll, updateTask, pollTask])
 
-  const handleSavePrompt = async (msg) => {
-    try { await promptAPI.create({ name: msg.prompt.slice(0, 30), prompt: msg.prompt, tags: ['从对话保存'] }); alert('已保存！') }
-    catch (e) { alert('失败: ' + e.message) }
-  }
+  const handleRetry = useCallback(async (taskId) => {
+    try {
+      await taskAPI.retry(taskId)
+      refreshTasks()
+    } catch {}
+  }, [refreshTasks])
+
+  const filtered = filter === 'all' ? tasks
+    : filter === 'processing' ? tasks.filter(t => t.status === 'processing' || t.status === 'queued')
+    : tasks.filter(t => t.status === filter)
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -99,23 +159,27 @@ export default function ChatPage() {
           <button onClick={() => setSidebarOpen(true)} style={{ color: 'var(--text-primary)' }}><Menu size={20} /></button>
           <h1 className="font-medium" style={{ color: 'var(--text-primary)' }}>AI 图像生成</h1>
         </div>
-        <div className="flex-1 overflow-y-auto px-4 py-6" style={{ maxWidth: '768px', margin: '0 auto', width: '100%' }}>
-          {messages.length === 0 && (
+        <div className="flex gap-2 px-4 pt-3">
+          {[{ k: 'all', l: '全部' }, { k: 'completed', l: '已完成' }, { k: 'processing', l: '生成中' }, { k: 'failed', l: '失败' }].map(({ k, l }) => (
+            <button key={k} onClick={() => setFilter(k)} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${filter === k ? 'bg-accent/10' : 'hover:bg-black/5'}`}
+              style={{ color: filter === k ? 'var(--accent)' : 'var(--text-secondary)' }}>{l}</button>
+          ))}
+        </div>
+        <div ref={feedRef} className="flex-1 overflow-y-auto px-4 pb-6">
+          {!loaded ? (
+            <div className="flex justify-center items-center h-full"><div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} /></div>
+          ) : tasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center py-20">
               <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>开始生成你的图像</h2>
               <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>输入提示词或上传参考图，AI 为你创作</p>
             </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
+              {filtered.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onRetry={handleRetry} />)}
+            </div>
           )}
-          {messages.map((msg, i) => (
-            <MessageBubble key={i} message={msg}
-              onReusePrompt={() => handleSubmit({ prompt: msg.prompt, mode: 'text', images: [], params: msg.params })}
-              onSavePrompt={() => handleSavePrompt(msg)}
-              onRegenerate={() => handleSubmit({ prompt: msg.prompt, mode: 'text', images: [], params: msg.params })}
-            />
-          ))}
-          <div ref={messagesEndRef} />
         </div>
-        <ChatInput onSubmit={handleSubmit} loading={loading} />
+        <ChatInput ref={inputRef} onSubmit={handleSubmit} loading={loading} />
       </div>
     </div>
   )

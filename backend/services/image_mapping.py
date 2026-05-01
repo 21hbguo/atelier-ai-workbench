@@ -32,7 +32,20 @@ class ImageUrlMapping:
         return mapping.get(abs_path)
 
     @classmethod
-    def save_url(cls, local_path: str, url: str) -> None:
+    def get_url_by_hash(cls, content_hash: str) -> Optional[str]:
+        if not os.path.exists(IMAGE_URL_MAPPING_CSV):
+            return None
+        with open(IMAGE_URL_MAPPING_CSV, "r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            for i, row in enumerate(reader):
+                if i == 0 and row and row[0] == "local_path":
+                    continue
+                if len(row) >= 4 and row[3] == content_hash:
+                    return row[1]
+        return None
+
+    @classmethod
+    def save_url(cls, local_path: str, url: str, content_hash: str = "") -> None:
         abs_path = os.path.abspath(local_path)
         if cls.get_url(abs_path) is not None:
             return
@@ -41,8 +54,25 @@ class ImageUrlMapping:
             with open(IMAGE_URL_MAPPING_CSV, "a", encoding="utf-8", newline="") as f:
                 writer = csv.writer(f)
                 if not file_exists:
-                    writer.writerow(["local_path", "url", "upload_time"])
-                writer.writerow([abs_path, url, datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
+                    writer.writerow(["local_path", "url", "upload_time", "hash"])
+                writer.writerow([abs_path, url, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), content_hash])
+
+    @classmethod
+    def delete_urls(cls, urls: list) -> int:
+        if not os.path.exists(IMAGE_URL_MAPPING_CSV):
+            return 0
+        with cls._lock:
+            rows = []
+            with open(IMAGE_URL_MAPPING_CSV, "r", encoding="utf-8") as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    if len(row) >= 2 and row[1] in urls:
+                        continue
+                    rows.append(row)
+            with open(IMAGE_URL_MAPPING_CSV, "w", encoding="utf-8", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerows(rows)
+            return len(urls)
 
     @classmethod
     def ensure_url(cls, local_path: str, upload_func) -> Optional[str]:

@@ -22,13 +22,14 @@ RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", 60))
 DATA_DIR = PROJECT_ROOT / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"
 GENERATED_IMAGES_DIR = DATA_DIR / "images"
+THUMBS_DIR = DATA_DIR / "thumbs"
 TASKS_JSON = DATA_DIR / "tasks.json"
 STATS_JSON = DATA_DIR / "stats.json"
 PROMPTS_JSON = DATA_DIR / "prompts.json"
 IMAGE_URL_MAPPING_CSV = DATA_DIR / "image_mapping.csv"
 
 # 确保目录存在
-for directory in [DATA_DIR, UPLOAD_DIR, GENERATED_IMAGES_DIR]:
+for directory in [DATA_DIR, UPLOAD_DIR, GENERATED_IMAGES_DIR, THUMBS_DIR]:
     directory.mkdir(parents=True, exist_ok=True)
 
 # 运行时可修改的配置

@@ -41,9 +41,7 @@ body {
 
 * { box-sizing: border-box; }
 
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+::-webkit-scrollbar { width: 0; }
 
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(10px); }

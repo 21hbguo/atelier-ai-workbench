@@ -1,13 +1,11 @@
 import { useLocation, Link } from 'react-router-dom'
-import { Sun, Moon, Image, BookOpen, ListTodo, MessageSquare, Menu, X, BarChart3, Settings } from 'lucide-react'
+import { Sun, Moon, Image, BookOpen, MessageSquare, Menu, X, Settings } from 'lucide-react'
 import { useTheme } from '../ThemeContext'
 
 const navItems = [
-  { path: '/', icon: MessageSquare, label: '对话' },
+  { path: '/', icon: MessageSquare, label: '生成' },
   { path: '/gallery', icon: Image, label: '图库' },
   { path: '/prompts', icon: BookOpen, label: '提示词' },
-  { path: '/tasks', icon: ListTodo, label: '任务' },
-  { path: '/stats', icon: BarChart3, label: '统计' },
   { path: '/settings', icon: Settings, label: '设置' },
 ]
 

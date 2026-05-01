@@ -96,17 +96,24 @@ async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = N
     first_poll = True
     for attempt in range(max_attempts):
         if first_poll:
-            await asyncio.sleep(15)
+            await asyncio.sleep(10)
             first_poll = False
         else:
             elapsed = (datetime.now() - start_time).total_seconds()
-            await asyncio.sleep(3 if elapsed > 50 else 5)
+            if elapsed < 30:
+                await asyncio.sleep(10)
+            elif elapsed < 60:
+                await asyncio.sleep(5)
+            else:
+                await asyncio.sleep(3)
 
         try:
             result = await ImageGenService.get_task_result(external_task_id)
             consecutive_errors = 0
-        except Exception:
+            print(f"[poll] task={task_id} attempt={attempt} result={result}")
+        except Exception as e:
             consecutive_errors += 1
+            print(f"[poll] task={task_id} error={e} consecutive={consecutive_errors}")
             if consecutive_errors >= 10:
                 return []
             continue
@@ -119,6 +126,7 @@ async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = N
 
         if isinstance(result, dict):
             raw_urls = result.get("result") or result.get("urls") or result.get("images")
+            print(f"[poll] task={task_id} raw_urls={raw_urls}")
             if raw_urls is None:
                 raw_urls = [result]
         else:
@@ -142,6 +150,7 @@ async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = N
 
             filename = f"{task_id}_{i}.png"
             save_path = str(GENERATED_IMAGES_DIR / filename)
+            print(f"[poll] task={task_id} downloading {url} -> {save_path}")
 
             if await ImageGenService.download_image(url, save_path):
                 local_paths.append(save_path)

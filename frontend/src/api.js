@@ -43,6 +43,11 @@ export const taskAPI = {
   delete: (id) => api.delete(`/tasks/${id}`),
 }
 
+export const hostingAPI = {
+  list: () => api.get('/hosting'),
+  delete: (urls) => api.delete('/hosting', { data: { urls } }),
+}
+
 export const imageAPI = {
   list: (page = 1, pageSize = 20) => api.get(`/images?page=${page}&page_size=${pageSize}`),
   get: (filename) => api.get(`/images/${filename}`),

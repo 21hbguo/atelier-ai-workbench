@@ -11,9 +11,9 @@ from backend.services.image_gen import ImageGenService
 
 
 class TaskManager:
-    _tasks: Dict[str, Dict[str, Any]] = {}
     _lock = threading.Lock()
     _polling_tasks: Dict[str, asyncio.Task] = {}
+    _tasks: Dict[str, Dict[str, Any]] = {}
 
     @classmethod
     def _load_tasks(cls) -> Dict[str, Any]:
@@ -166,3 +166,18 @@ class TaskManager:
             task["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             cls._save_tasks()
             return task
+
+    @classmethod
+    def remove_image_from_tasks(cls, image_path: str) -> None:
+        with cls._lock:
+            changed = False
+            for task in cls._tasks.values():
+                urls = task.get("result_urls", [])
+                if image_path in urls:
+                    task["result_urls"] = [u for u in urls if u != image_path]
+                    changed = True
+            if changed:
+                cls._save_tasks()
+
+
+TaskManager._tasks = TaskManager._load_tasks()
