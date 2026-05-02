@@ -54,11 +54,13 @@ SERIAL_TABLES = {
 
 
 def convert_row(row: dict, jsonb_fields: list, bool_fields: list) -> dict:
+    from psycopg.types.json import Jsonb
     result = {}
     for key, value in row.items():
         if key in jsonb_fields and isinstance(value, str):
             try:
-                result[key] = json.loads(value)
+                parsed = json.loads(value)
+                result[key] = Jsonb(parsed)
             except (json.JSONDecodeError, TypeError):
                 result[key] = value
         elif key in bool_fields:

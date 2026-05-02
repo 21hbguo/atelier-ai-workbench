@@ -1,10 +1,10 @@
 from contextlib import contextmanager
-from backend.db.engine import pool
+from backend.db import engine
 
 
 @contextmanager
 def get_db():
-    with pool.connection() as conn:
+    with engine.pool.connection() as conn:
         try:
             yield conn
             conn.commit()

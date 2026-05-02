@@ -247,10 +247,11 @@ def init_db():
                 ("ecommerce", "电商案例", 6),
                 ("character", "角色设计", 7),
             ]
-            conn.executemany(
-                "INSERT INTO categories (slug, label, sort_order) VALUES (%s, %s, %s)",
-                default_categories,
-            )
+            with conn.cursor() as cur:
+                cur.executemany(
+                    "INSERT INTO categories (slug, label, sort_order) VALUES (%s, %s, %s)",
+                    default_categories,
+                )
 
         # 清理历史脏数据
         conn.execute("""
