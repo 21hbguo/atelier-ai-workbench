@@ -424,9 +424,13 @@ async def list_codes(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
     with get_db() as conn:
         total = conn.execute("SELECT COUNT(*) FROM redemption_codes").fetchone()[0]
         rows = conn.execute(
-            f"""SELECT rc.*, u.username as used_by_name
+            f"""SELECT rc.*, u.username as used_by_name,
+                rr.id as recharge_id, rr.channel as recharge_channel, rr.amount as recharge_amount,
+                ru.username as recharge_username, ru.nickname as recharge_nickname
                 FROM redemption_codes rc
                 LEFT JOIN users u ON rc.used_by = u.id
+                LEFT JOIN recharge_requests rr ON rc.recharge_request_id = rr.id
+                LEFT JOIN users ru ON rr.user_id = ru.id
                 ORDER BY rc.{sort} {order_dir}
                 LIMIT ? OFFSET ?""",
             (size, offset),
@@ -550,7 +554,7 @@ async def approve_recharge_request(request_id: int, body: dict, admin=Depends(re
             code = secrets.token_urlsafe(8).upper()
             if not conn.execute("SELECT id FROM redemption_codes WHERE code = ?", (code,)).fetchone():
                 break
-        conn.execute("INSERT INTO redemption_codes (code, points) VALUES (?, ?)", (code, points))
+        conn.execute("INSERT INTO redemption_codes (code, points, recharge_request_id) VALUES (?, ?, ?)", (code, points, request_id))
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         conn.execute(
             "UPDATE recharge_requests SET status = 'approved', points = ?, redeem_code = ?, review_note = ?, reviewed_at = ?, reviewed_by = ? WHERE id = ?",

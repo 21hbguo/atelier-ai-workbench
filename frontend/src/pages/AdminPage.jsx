@@ -959,8 +959,8 @@ export default function AdminPage() {
                       <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>兑换码</th>
                       <th className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--text-secondary)' }}>积分</th>
                       <th className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--text-secondary)' }}>状态</th>
+                      <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>来源</th>
                       <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>使用者</th>
-                      <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>使用IP</th>
                       <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>创建时间</th>
                       <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>使用时间</th>
                       <th className="px-4 py-3 text-right font-semibold" style={{ color: 'var(--text-secondary)' }}>操作</th>
@@ -980,10 +980,18 @@ export default function AdminPage() {
                             {c.is_used ? '已使用' : '未使用'}
                           </span>
                         </td>
+                        <td className="px-4 py-3">
+                          {c.recharge_id ? (
+                            <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ background: '#8b5cf620', color: '#8b5cf6' }}>
+                              {c.recharge_nickname || c.recharge_username || '用户'} · {c.recharge_channel === 'wechat' ? '微信' : '支付宝'} ¥{c.recharge_amount}
+                            </span>
+                          ) : (
+                            <span className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>手动创建</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3" style={{ color: c.used_by_name ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
                           {c.used_by_name || '-'}
                         </td>
-                        <td className="px-4 py-3 font-mono text-[11px]" style={{ color: 'var(--text-secondary)' }}>{c.used_by_ip || '-'}</td>
                         <td className="px-4 py-3 text-[11px]" style={{ color: 'var(--text-secondary)' }}>{c.created_at || '-'}</td>
                         <td className="px-4 py-3 text-[11px]" style={{ color: 'var(--text-secondary)' }}>{c.used_at || '-'}</td>
                         <td className="px-4 py-3 text-right">
