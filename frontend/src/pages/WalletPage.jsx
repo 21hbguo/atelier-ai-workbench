@@ -3,12 +3,13 @@ import { Coins, ArrowUpCircle, ArrowDownCircle, RefreshCw, User, Mail, Gift, Wal
 import MainLayout from '../components/MainLayout'
 import Pagination from '../components/Pagination'
 import api, { pointsAPI, uploadAPI } from '../api'
+import { readUser } from '../auth'
 const typeMap={register_bonus:{label:'注册赠送',color:'var(--accent)'},daily_checkin:{label:'每日签到',color:'var(--accent)'},generate_consume:{label:'生成消耗',color:'#ef4444'},generate_refund:{label:'生成退款',color:'#22c55e'},redeem_code:{label:'兑换码兑换',color:'var(--accent)'},admin_grant:{label:'管理员调整',color:'#8b5cf6'},migration:{label:'历史补偿',color:'var(--accent)'},migration_bonus:{label:'历史补偿',color:'var(--accent)'},recharge_pending:{label:'充值待审核',color:'#f59e0b'}}
 const rechargePackages=[{amount:9.9,points:120,label:'体验包'},{amount:29.9,points:400,label:'进阶包'},{amount:59.9,points:900,label:'超值包'}]
 const channelLabel={wechat:'微信',alipay:'支付宝'}
 const statusMap={pending:{label:'待审核',color:'#f59e0b'},approved:{label:'已通过',color:'#22c55e'},rejected:{label:'已拒绝',color:'#ef4444'}}
 export default function WalletPage(){
-const user=JSON.parse(localStorage.getItem('user')||'null')
+const user=readUser()
 const isAdmin=Boolean(user?.is_admin)
 const [points,setPoints]=useState(user?.points??0)
 const [transactions,setTransactions]=useState([])
@@ -40,7 +41,7 @@ const [balRes,txRes]=await Promise.all([pointsAPI.balance(),pointsAPI.transactio
 setPoints(balRes.data.points)
 setTransactions(txRes.data.items||[])
 setTotal(txRes.data.total||0)
-const u=JSON.parse(localStorage.getItem('user')||'null')
+const u=readUser()
 if(u){u.points=balRes.data.points;localStorage.setItem('user',JSON.stringify(u))}
 }catch{}
 setLoading(false)
@@ -54,7 +55,7 @@ pointsAPI.checkinStatus().then(({data})=>{setCheckedInToday(data.checked_in_toda
 },[])
 useEffect(()=>{
 const handleUpdate=()=>{
-const u=JSON.parse(localStorage.getItem('user')||'null')
+const u=readUser()
 if(u)setPoints(u.points??0)
 }
 window.addEventListener('points-updated',handleUpdate)
@@ -69,7 +70,7 @@ const res=await pointsAPI.redeem(redeemCode.trim())
 setPoints(res.data.balance)
 setRedeemMsg({type:'success',text:`兑换成功！+${res.data.points_awarded} 积分`})
 setRedeemCode('')
-const u=JSON.parse(localStorage.getItem('user')||'null')
+const u=readUser()
 if(u){u.points=res.data.balance;localStorage.setItem('user',JSON.stringify(u))}
 window.dispatchEvent(new Event('points-updated'))
 fetchData(page)
@@ -85,7 +86,7 @@ try{
 const res=await pointsAPI.checkin()
 setPoints(res.data.points)
 setCheckedInToday(true)
-const u=JSON.parse(localStorage.getItem('user')||'null')
+const u=readUser()
 if(u){u.points=res.data.points;localStorage.setItem('user',JSON.stringify(u))}
 window.dispatchEvent(new Event('points-updated'))
 fetchData(page)

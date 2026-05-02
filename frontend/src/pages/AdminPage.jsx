@@ -10,6 +10,7 @@ import CardGrid from '../components/CardGrid'
 import UnifiedDetailModal from '../components/UnifiedDetailModal'
 import UnifiedCard from '../components/UnifiedCard'
 import { useCardData } from '../hooks/useCardData'
+import { readUser } from '../auth'
 
 function AdminSquareTab({ imageQuery, setImageQuery }) {
   const [status, setStatus] = useState('all')
@@ -524,7 +525,7 @@ export default function AdminPage() {
     setHostingChecked(prev => { const next = new Set(prev); next.has(filename) ? next.delete(filename) : next.add(filename); return next })
   }, [])
 
-  const user = JSON.parse(localStorage.getItem('user') || 'null')
+  const user = readUser()
   if (!user?.is_admin) {
     return (
       <PageLayout className="p-4 sm:p-6">

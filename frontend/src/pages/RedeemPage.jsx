@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react'
 import { Coins } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
 import { pointsAPI } from '../api'
+import { readUser } from '../auth'
 
 export default function RedeemPage() {
-  const user = JSON.parse(localStorage.getItem('user') || 'null')
+  const user = readUser()
   const [code, setCode] = useState('')
   const [points, setPoints] = useState(user?.points ?? 0)
   const [loading, setLoading] = useState(false)
@@ -23,7 +24,7 @@ export default function RedeemPage() {
       setPoints(res.data.balance)
       setMessage({ type: 'success', text: `兑换成功！+${res.data.points_awarded} 积分，当前余额 ${res.data.balance}` })
       setCode('')
-      const u = JSON.parse(localStorage.getItem('user') || 'null')
+      const u = readUser()
       if (u) { u.points = res.data.balance; localStorage.setItem('user', JSON.stringify(u)) }
       window.dispatchEvent(new Event('points-updated'))
     } catch (e) {

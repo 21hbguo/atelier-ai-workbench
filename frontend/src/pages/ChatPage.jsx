@@ -7,6 +7,7 @@ import SearchInput from '../components/SearchInput'
 import MainLayout from '../components/MainLayout'
 import UnifiedDetailModal from '../components/UnifiedDetailModal'
 import { generateAPI, uploadAPI, taskAPI, imageAPI, squareAPI, adminAPI, pointsAPI } from '../api'
+import { readUser } from '../auth'
 
 function formatLocalTime(d) {
   const pad = n => String(n).padStart(2, '0')
@@ -20,7 +21,7 @@ function withTimeout(promise, ms, message) {
 }
 
 export default function ChatPage() {
-  const user = JSON.parse(localStorage.getItem('user') || 'null')
+  const user = readUser()
   const isAdmin = Boolean(user?.is_admin)
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(false)
@@ -88,18 +89,6 @@ export default function ChatPage() {
 
   useEffect(() => { refreshTasks() }, [refreshTasks])
 
-  // 刷新后自动恢复 processing 任务的轮询
-  useEffect(() => {
-    for (const t of tasks) {
-      if (t.status === 'processing' && !t._active && !recoveringRef.current.has(t.task_id)) {
-        recoveringRef.current.add(t.task_id)
-        updateTask(t.task_id, { _active: true })
-        const p = t.params || {}
-        pollTask(t.task_id, Date.now(), false, p.prompt || '', p, t.type === 'text_image')
-      }
-    }
-  }, [tasks, pollTask, updateTask])
-
   useEffect(() => {
     if (!isAdmin) return
     adminAPI.users(1, 100).then(({ data }) => setUserList(data.users || [])).catch(() => {})
@@ -108,7 +97,7 @@ export default function ChatPage() {
   useEffect(() => {
     pointsAPI.balance().then(res => setPoints(res.data.points)).catch(() => {})
     const handleUpdate = () => {
-      const u = JSON.parse(localStorage.getItem('user') || 'null')
+      const u = readUser()
       if (u) setPoints(u.points ?? 0)
     }
     window.addEventListener('points-updated', handleUpdate)
@@ -170,7 +159,7 @@ export default function ChatPage() {
           if (!isAdmin) {
             pointsAPI.balance().then(res => {
               setPoints(res.data.points)
-              const u = JSON.parse(localStorage.getItem('user') || 'null')
+              const u = readUser()
               if (u) { u.points = res.data.points; localStorage.setItem('user', JSON.stringify(u)) }
               window.dispatchEvent(new Event('points-updated'))
             }).catch(() => {})
@@ -224,7 +213,7 @@ export default function ChatPage() {
 
       if (!isAdmin) {
         setPoints(p => Math.max(0, p - 10))
-        const u = JSON.parse(localStorage.getItem('user') || 'null')
+        const u = readUser()
         if (u) { u.points = Math.max(0, (u.points ?? 0) - 10); localStorage.setItem('user', JSON.stringify(u)) }
         window.dispatchEvent(new Event('points-updated'))
       }
@@ -271,6 +260,18 @@ export default function ChatPage() {
       refreshTasks()
     } catch {}
   }, [refreshTasks])
+
+  // 刷新后自动恢复 processing 任务的轮询
+  useEffect(() => {
+    for (const t of tasks) {
+      if (t.status === 'processing' && !t._active && !recoveringRef.current.has(t.task_id)) {
+        recoveringRef.current.add(t.task_id)
+        updateTask(t.task_id, { _active: true })
+        const p = t.params || {}
+        pollTask(t.task_id, Date.now(), false, p.prompt || '', p, t.type === 'text_image')
+      }
+    }
+  }, [tasks, pollTask, updateTask])
 
   const filtered = tasks
 

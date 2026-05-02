@@ -3,7 +3,7 @@ import { useLocation, Link, useNavigate } from 'react-router-dom'
 import { Sun, Moon, BookOpen, MessageSquare, X, Settings, Globe, LogOut, User, Shield, Coins, Wallet, Megaphone } from 'lucide-react'
 import { useTheme } from '../ThemeContext'
 import { authAPI, pointsAPI } from '../api'
-import { clearUser } from '../auth'
+import { clearUser, readUser } from '../auth'
 
 const navItems = [
   { path: '/', icon: MessageSquare, label: '生成' },
@@ -17,7 +17,7 @@ export default function Sidebar({ open, onClose }) {
   const { dark, toggle } = useTheme()
   const location = useLocation()
   const navigate = useNavigate()
-  const user = JSON.parse(localStorage.getItem('user') || 'null')
+  const user = readUser()
   const isAdmin = Boolean(user?.is_admin)
   const [points, setPoints] = useState(user?.points ?? 0)
   const [checkedInToday, setCheckedInToday] = useState(false)
@@ -25,7 +25,7 @@ export default function Sidebar({ open, onClose }) {
   useEffect(() => {
     pointsAPI.balance().then(res => {
       setPoints(res.data.points)
-      const u = JSON.parse(localStorage.getItem('user') || 'null')
+      const u = readUser()
       if (u) { u.points = res.data.points; localStorage.setItem('user', JSON.stringify(u)) }
     }).catch(() => {})
 
@@ -34,7 +34,7 @@ export default function Sidebar({ open, onClose }) {
     }).catch(() => {})
 
     const handleUpdate = () => {
-      const u = JSON.parse(localStorage.getItem('user') || 'null')
+      const u = readUser()
       if (u) setPoints(u.points ?? 0)
     }
     window.addEventListener('points-updated', handleUpdate)
@@ -46,7 +46,7 @@ export default function Sidebar({ open, onClose }) {
       const res = await pointsAPI.checkin()
       setPoints(res.data.points)
       setCheckedInToday(true)
-      const u = JSON.parse(localStorage.getItem('user') || 'null')
+      const u = readUser()
       if (u) { u.points = res.data.points; localStorage.setItem('user', JSON.stringify(u)) }
       window.dispatchEvent(new Event('points-updated'))
       alert(res.data.message || '签到成功')

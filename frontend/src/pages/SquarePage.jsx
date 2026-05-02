@@ -8,6 +8,7 @@ import CardGrid from '../components/CardGrid'
 import UnifiedDetailModal from '../components/UnifiedDetailModal'
 import CategoryFilter from '../components/CategoryFilter'
 import { useCardData } from '../hooks/useCardData'
+import { readUser } from '../auth'
 
 function useImageActions() {
   const navigate = useNavigate()
@@ -214,7 +215,7 @@ function MySharesTab() {
 }
 
 function PromptsTab({ query, sort, activeCategory }) {
-  const user = JSON.parse(localStorage.getItem('user') || 'null')
+  const user = readUser()
   const [detailIdx, setDetailIdx] = useState(null)
   const { handleUsePrompt, handleUseImage } = usePromptActions()
   const deps = useMemo(() => [query, sort, activeCategory], [query, sort, activeCategory])
