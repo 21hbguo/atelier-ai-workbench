@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Trash2, Users, Image, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket, BarChart3, Megaphone, BookOpen } from 'lucide-react'
+import { Trash2, Users, Image, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket, BarChart3, Megaphone, BookOpen, Wallet } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { adminAPI, statsAPI, announcementAPI } from '../api'
 import MainLayout from '../components/MainLayout'
@@ -58,6 +58,11 @@ export default function AdminPage() {
   const [adjustUserId, setAdjustUserId] = useState(null)
   const [adjustAmount, setAdjustAmount] = useState('')
   const [adjustDesc, setAdjustDesc] = useState('')
+  const [rechargeItems, setRechargeItems] = useState([])
+  const [rechargeTotal, setRechargeTotal] = useState(0)
+  const [rechargePage, setRechargePage] = useState(1)
+  const [rechargeStatus, setRechargeStatus] = useState('pending')
+  const [rechargeQuery, setRechargeQuery] = useState('')
 
   // 用户统计
   const [userStats, setUserStats] = useState([])
@@ -83,6 +88,7 @@ export default function AdminPage() {
   useEffect(() => { setImagePage(1) }, [imageQuery])
   useEffect(() => { setHistoryPage(1) }, [historyQuery])
   useEffect(() => { setBannedWordsPage(1) }, [bannedWordsQuery])
+  useEffect(() => { setRechargePage(1) }, [rechargeStatus, rechargeQuery])
   useEffect(() => { fetchUsers() }, [userPage, userQuery])
   useEffect(() => { fetchImages() }, [imagePage, imageQuery])
   useEffect(() => { fetchHistory() }, [historyPage, historyQuery])
@@ -90,6 +96,7 @@ export default function AdminPage() {
   useEffect(() => { fetchHostingStats() }, [])
   useEffect(() => { fetchBannedWords() }, [bannedWordsPage, bannedWordsQuery])
   useEffect(() => { fetchCodes() }, [codesPage, codesSort, codesOrder])
+  useEffect(() => { if (tab === 'recharge') fetchRechargeRequests() }, [tab, rechargePage, rechargeStatus, rechargeQuery])
   useEffect(() => { if (tab === 'stats') fetchUserStats() }, [tab])
   useEffect(() => { if (tab === 'announcements') fetchAnnouncements() }, [tab, announcementPage])
   useEffect(() => { fetchPrompts() }, [promptPage, promptQuery])
@@ -238,6 +245,14 @@ export default function AdminPage() {
       setCodesTotal(data.total)
     } catch {} finally { setLoading(false) }
   }
+  const fetchRechargeRequests = async () => {
+    setLoading(true)
+    try {
+      const { data } = await adminAPI.rechargeRequests(rechargePage, 20, rechargeStatus, rechargeQuery || undefined)
+      setRechargeItems(data.items || [])
+      setRechargeTotal(data.total || 0)
+    } catch {} finally { setLoading(false) }
+  }
 
   const handleGenerateCodes = async () => {
     if (codePoints <= 0) return
@@ -350,6 +365,26 @@ export default function AdminPage() {
     setChecked(new Set()); setSelectMode(false)
     fetchImages()
   }, [checked])
+  const handleApproveRecharge = async (item) => {
+    const pointInput = prompt('发放积分（默认使用申请积分）', String(item.points))
+    if (pointInput === null) return
+    const points = parseInt(pointInput, 10)
+    if (!points || points <= 0) return
+    const reviewNote = prompt('审核备注（可选）', '') || ''
+    try {
+      const { data } = await adminAPI.approveRecharge(item.id, { points, review_note: reviewNote })
+      if (data.code) alert(`审核通过，兑换码：${data.code}`)
+      fetchRechargeRequests()
+    } catch (e) { alert(e.message || '审核失败') }
+  }
+  const handleRejectRecharge = async (item) => {
+    const reason = prompt('请输入拒绝原因', '')
+    if (!reason?.trim()) return
+    try {
+      await adminAPI.rejectRecharge(item.id, { review_note: reason.trim() })
+      fetchRechargeRequests()
+    } catch (e) { alert(e.message || '操作失败') }
+  }
 
   const user = JSON.parse(localStorage.getItem('user') || 'null')
   if (!user?.is_admin) {
@@ -367,7 +402,7 @@ export default function AdminPage() {
     <MainLayout>
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="flex gap-1 p-0.5 rounded-lg mb-4" style={{ background: 'var(--border-color)' }}>
-          {[{ k: 'users', l: '用户管理', i: Users }, { k: 'images', l: '广场图片', i: Image }, { k: 'prompts', l: '广场提示词', i: BookOpen }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'codes', l: '兑换码管理', i: Ticket }, { k: 'stats', l: '用户统计', i: BarChart3 }, { k: 'announcements', l: '公告管理', i: Megaphone }].map(({ k, l, i: Icon }) => (
+          {[{ k: 'users', l: '用户管理', i: Users }, { k: 'images', l: '广场图片', i: Image }, { k: 'prompts', l: '广场提示词', i: BookOpen }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'codes', l: '兑换码管理', i: Ticket }, { k: 'recharge', l: '充值审核', i: Wallet }, { k: 'stats', l: '用户统计', i: BarChart3 }, { k: 'announcements', l: '公告管理', i: Megaphone }].map(({ k, l, i: Icon }) => (
             <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
               <Icon size={14} />{l}
@@ -838,55 +873,68 @@ export default function AdminPage() {
           </div>
         ) : tab === 'codes' ? (
           <div>
-            <div className="p-4 rounded-xl border mb-4" style={{ borderColor: 'var(--border-color)' }}>
-              <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>生成兑换码</h3>
-              <div className="flex flex-wrap items-end gap-3">
+            {/* 生成兑换码区域 */}
+            <div className="p-5 rounded-2xl border mb-5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+              <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
+                <Ticket size={16} className="inline mr-1.5 -mt-0.5" />生成兑换码
+              </h3>
+              <div className="flex flex-wrap items-end gap-4">
                 <div>
-                  <label className="block text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>积分额度</label>
-                  <div className="flex gap-1.5 mb-1.5">
+                  <label className="block text-xs font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>积分额度</label>
+                  <div className="flex gap-2 mb-2">
                     {[10, 50, 100, 500].map(p => (
                       <button key={p} onClick={() => { setCodePoints(p); setCustomCode('') }}
-                        className={`px-2 py-1 rounded text-xs font-medium ${codePoints === p && !customCode ? 'bg-accent text-white' : 'hover:bg-black/5'}`}
-                        style={{ color: codePoints === p && !customCode ? undefined : 'var(--text-secondary)' }}>{p}</button>
+                        className={`px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all ${codePoints === p && !customCode ? 'bg-accent text-white shadow-sm' : 'border hover:border-accent/50'}`}
+                        style={codePoints === p && !customCode ? {} : { borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
+                        {p}
+                      </button>
                     ))}
                   </div>
                   <input type="number" value={customCode} onChange={e => { setCustomCode(e.target.value); setCodePoints(parseInt(e.target.value) || 0) }}
                     placeholder="自定义额度" min={1}
-                    className="w-28 px-2 py-1.5 rounded-lg text-xs border outline-none"
+                    className="w-32 px-3 py-2 rounded-lg text-sm border outline-none focus:border-accent/50 transition-colors"
                     style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
-                  <label className="block text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>数量</label>
+                  <label className="block text-xs font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>生成数量</label>
                   <input type="number" value={codeCount} onChange={e => setCodeCount(Math.max(1, Math.min(100, parseInt(e.target.value) || 1)))}
                     min={1} max={100}
-                    className="w-20 px-2 py-1.5 rounded-lg text-xs border outline-none"
+                    className="w-24 px-3 py-2 rounded-lg text-sm border outline-none focus:border-accent/50 transition-colors"
                     style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <button onClick={handleGenerateCodes} disabled={generatingCodes || codePoints <= 0}
-                  className="px-4 py-1.5 rounded-lg text-xs font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50">
-                  {generatingCodes ? '生成中...' : '生成'}
+                  className="px-5 py-2 rounded-lg text-sm font-semibold bg-accent text-white hover:opacity-90 disabled:opacity-50 transition-all shadow-sm">
+                  {generatingCodes ? '生成中...' : '生成兑换码'}
                 </button>
               </div>
               {generatedCodes.length > 0 && (
-                <div className="mt-3 p-2 rounded-lg text-xs" style={{ background: 'var(--bg-secondary)' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>已生成 {generatedCodes.length} 个兑换码：</span>
-                  <div className="mt-1 font-mono break-all" style={{ color: 'var(--accent)' }}>{generatedCodes.join(', ')}</div>
+                <div className="mt-4 p-3 rounded-xl text-xs" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: '#22c55e20', color: '#22c55e' }}>成功</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>已生成 {generatedCodes.length} 个兑换码</span>
+                  </div>
+                  <div className="font-mono break-all leading-relaxed" style={{ color: 'var(--accent)' }}>{generatedCodes.join('、')}</div>
                 </div>
               )}
             </div>
 
-            <div className="flex items-center gap-2 mb-4">
-              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>共 {codesTotal} 个兑换码</span>
-              <select value={codesSort} onChange={e => setCodesSort(e.target.value)}
-                className="px-2 py-1 rounded-lg text-xs border-0 outline-none" style={{ background: 'var(--border-color)', color: 'var(--text-primary)' }}>
-                <option value="created_at">创建时间</option>
-                <option value="is_used">使用状态</option>
-                <option value="points">积分额度</option>
-              </select>
-              <button onClick={() => setCodesOrder(o => o === 'desc' ? 'asc' : 'desc')}
-                className="px-2 py-1 rounded-lg text-xs hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>
-                {codesOrder === 'desc' ? '↓' : '↑'}
-              </button>
+            {/* 筛选排序 */}
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>共 <span style={{ color: 'var(--text-primary)' }}>{codesTotal}</span> 个兑换码</span>
+              <div className="flex items-center gap-1.5 ml-auto">
+                <select value={codesSort} onChange={e => setCodesSort(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium border outline-none cursor-pointer"
+                  style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+                  <option value="created_at">按创建时间</option>
+                  <option value="is_used">按使用状态</option>
+                  <option value="points">按积分额度</option>
+                </select>
+                <button onClick={() => setCodesOrder(o => o === 'desc' ? 'asc' : 'desc')}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium border hover:bg-black/5 transition-colors"
+                  style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
+                  {codesOrder === 'desc' ? '↓ 降序' : '↑ 升序'}
+                </button>
+              </div>
             </div>
 
             {loading ? (
@@ -895,38 +943,47 @@ export default function AdminPage() {
               </div>
             ) : (
             <>
-            <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+            <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr style={{ background: 'var(--bg-primary)' }}>
-                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>兑换码</th>
-                      <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>积分</th>
-                      <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>状态</th>
-                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>使用者</th>
-                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>使用IP</th>
-                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>创建时间</th>
-                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>使用时间</th>
+                    <tr style={{ background: 'var(--bg-secondary)' }}>
+                      <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>兑换码</th>
+                      <th className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--text-secondary)' }}>积分</th>
+                      <th className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--text-secondary)' }}>状态</th>
+                      <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>使用者</th>
+                      <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>使用IP</th>
+                      <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>创建时间</th>
+                      <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>使用时间</th>
                     </tr>
                   </thead>
                   <tbody>
                     {codes.map(c => (
-                      <tr key={c.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
-                        <td className="px-3 py-2 font-mono" style={{ color: 'var(--accent)' }}>{c.code}</td>
-                        <td className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-primary)' }}>{c.points}</td>
-                        <td className="px-3 py-2 text-center">
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${c.is_used ? 'bg-gray-500/20 text-gray-500' : 'bg-green-500/20 text-green-500'}`}>
+                      <tr key={c.id} className="border-t transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style={{ borderColor: 'var(--border-color)' }}>
+                        <td className="px-4 py-3">
+                          <span className="px-2 py-1 rounded-lg text-xs font-mono font-semibold" style={{ background: 'var(--accent)12', color: 'var(--accent)' }}>{c.code}</span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{c.points}</span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${c.is_used ? 'bg-gray-100 text-gray-500 dark:bg-gray-800' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400'}`}>
                             {c.is_used ? '已使用' : '未使用'}
                           </span>
                         </td>
-                        <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{c.used_by_name || '-'}</td>
-                        <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{c.used_by_ip || '-'}</td>
-                        <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{c.created_at || '-'}</td>
-                        <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{c.used_at || '-'}</td>
+                        <td className="px-4 py-3" style={{ color: c.used_by_name ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                          {c.used_by_name || '-'}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-[11px]" style={{ color: 'var(--text-secondary)' }}>{c.used_by_ip || '-'}</td>
+                        <td className="px-4 py-3 text-[11px]" style={{ color: 'var(--text-secondary)' }}>{c.created_at || '-'}</td>
+                        <td className="px-4 py-3 text-[11px]" style={{ color: 'var(--text-secondary)' }}>{c.used_at || '-'}</td>
                       </tr>
                     ))}
                     {codes.length === 0 && (
-                      <tr><td colSpan={7} className="text-center py-10" style={{ color: 'var(--text-secondary)' }}>暂无兑换码</td></tr>
+                      <tr><td colSpan={7} className="text-center py-16" style={{ color: 'var(--text-secondary)' }}>
+                        <Ticket size={32} className="mx-auto mb-2 opacity-30" />
+                        <p>暂无兑换码</p>
+                      </td></tr>
                     )}
                   </tbody>
                 </table>
@@ -937,6 +994,78 @@ export default function AdminPage() {
                 {Array.from({ length: Math.ceil(codesTotal / 20) }, (_, i) => i + 1).map(p => (
                   <button key={p} onClick={() => setCodesPage(p)} className={`w-8 h-8 rounded-lg text-sm font-medium ${p === codesPage ? 'bg-accent text-white' : 'hover:bg-black/5'}`}
                     style={{ color: p !== codesPage ? 'var(--text-primary)' : undefined }}>{p}</button>
+                ))}
+              </div>
+            )}
+            </>
+            )}
+          </div>
+        ) : tab === 'recharge' ? (
+          <div>
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>共 {rechargeTotal} 条申请</span>
+              <select value={rechargeStatus} onChange={e => setRechargeStatus(e.target.value)} className="px-2 py-1.5 rounded-lg text-xs border-0 outline-none" style={{ background: 'var(--border-color)', color: 'var(--text-primary)' }}>
+                <option value="all">全部状态</option>
+                <option value="pending">待审核</option>
+                <option value="approved">已通过</option>
+                <option value="rejected">已拒绝</option>
+              </select>
+              <SearchInput value={rechargeQuery} onChange={setRechargeQuery} placeholder="搜索用户名/交易单号..." />
+            </div>
+            {loading ? (
+              <div className="flex justify-center py-20">
+                <div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} />
+              </div>
+            ) : (
+            <>
+            <div className="space-y-2">
+              {rechargeItems.map(item => {
+                const st = { pending: { c: '#f59e0b', l: '待审核' }, approved: { c: '#22c55e', l: '已通过' }, rejected: { c: '#ef4444', l: '已拒绝' } }
+                const s = st[item.status] || st.pending
+                return (
+                  <div key={item.id} className="rounded-xl border px-4 py-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{item.nickname || item.username || '-'}</span>
+                          <span className="text-xs px-2 py-0.5 rounded-full" style={{ color: s.c, background: s.c + '20' }}>{s.l}</span>
+                        </div>
+                        <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                          <span>{item.channel === 'wechat' ? '微信' : item.channel === 'alipay' ? '支付宝' : item.channel}</span>
+                          <span> · 金额 ¥{item.amount}</span>
+                          <span> · 申请积分 {item.points}</span>
+                          <span> · 单号 {item.tx_no || '-'}</span>
+                        </div>
+                        <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                          <span>提交：{item.created_at}</span>
+                          {item.reviewed_at && <span> · 审核：{item.reviewed_at}</span>}
+                          {item.reviewed_by_name && <span> · 审核人：{item.reviewed_by_name}</span>}
+                        </div>
+                        {item.payer_name && <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>付款人：{item.payer_name}</div>}
+                        {item.remark && <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>备注：{item.remark}</div>}
+                        {item.review_note && <div className="mt-1 text-xs" style={{ color: item.status === 'rejected' ? '#ef4444' : 'var(--text-secondary)' }}>审核备注：{item.review_note}</div>}
+                        {item.redeem_code && <div className="mt-1 text-xs font-mono" style={{ color: 'var(--accent)' }}>发放兑换码：{item.redeem_code}</div>}
+                        {item.proof_url && <a href={item.proof_url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs underline" style={{ color: 'var(--accent)' }}>查看支付凭证</a>}
+                      </div>
+                      {item.status === 'pending' && (
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => handleApproveRecharge(item)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: '#22c55e' }}>通过并发码</button>
+                          <button onClick={() => handleRejectRecharge(item)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: '#ef4444' }}>拒绝</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+              {rechargeItems.length === 0 && (
+                <div className="text-center py-20" style={{ color: 'var(--text-secondary)' }}>暂无充值申请</div>
+              )}
+            </div>
+            {rechargeTotal > 20 && (
+              <div className="flex justify-center gap-2 mt-4">
+                {Array.from({ length: Math.ceil(rechargeTotal / 20) }, (_, i) => i + 1).map(p => (
+                  <button key={p} onClick={() => setRechargePage(p)} className={`w-8 h-8 rounded-lg text-sm font-medium ${p === rechargePage ? 'bg-accent text-white' : 'hover:bg-black/5'}`}
+                    style={{ color: p !== rechargePage ? 'var(--text-primary)' : undefined }}>{p}</button>
                 ))}
               </div>
             )}
