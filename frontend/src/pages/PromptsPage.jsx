@@ -188,7 +188,7 @@ export default function PromptsPage() {
                 </select>
               </div>
             </div>
-            <div className="flex gap-2 px-5 py-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
+            <div className="flex gap-2 px-5 py-4 border-t overflow-x-auto scrollbar-hide" style={{ borderColor: 'var(--border-color)', scrollbarWidth: 'none' }}>
               <button onClick={() => { localStorage.setItem('pending_prompt', form.prompt); navigate('/') }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}><Send size={14} /> 使用</button>
               <button onClick={() => navigator.clipboard.writeText(form.prompt)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>复制</button>
               <button onClick={handleSave} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}>保存</button>

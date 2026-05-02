@@ -64,7 +64,7 @@ export default function SquarePage() {
   return (
     <MainLayout>
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-        <div className="flex gap-1 p-0.5 rounded-lg mb-4" style={{ background: 'var(--border-color)' }}>
+        <div className="flex gap-1 p-0.5 rounded-lg mb-4 overflow-x-auto scrollbar-hide" style={{ background: 'var(--border-color)', scrollbarWidth: 'none' }}>
           {[{ k: 'works', l: '用户作品库', i: Image }, { k: 'prompts', l: '提示词库', i: BookOpen }, { k: 'my', l: '我的分享', i: Share2 }].map(({ k, l, i: Icon }) => (
             <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
@@ -133,6 +133,7 @@ function WorksTab() {
           onUsePrompt={handleUsePrompt}
           onUseImage={handleUseImage}
           title={`${cards[detailIdx].author} 的作品`}
+          hideDownload
         />
       )}
     </>
@@ -180,6 +181,7 @@ function MySharesTab() {
           onUsePrompt={handleUsePrompt}
           onUseImage={handleUseImage}
           title="我的作品"
+          hideDownload
         />
       )}
     </>
@@ -262,6 +264,7 @@ function PromptsTab() {
           onUsePrompt={handleUsePrompt}
           onUseImage={handleUseImage}
           title="提示词详情"
+          hideDownload
         />
       )}
     </>

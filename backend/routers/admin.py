@@ -4,7 +4,7 @@ import secrets
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends, Query
 from backend.database import get_db
-from backend.auth import require_admin
+from backend.auth import require_admin, hash_password
 from backend.services.task_manager import TaskManager
 from backend.services.banned_words import BannedWordsService
 from backend.services.image_mapping import ImageUrlMapping
@@ -500,6 +500,22 @@ async def delete_code(code_id: int, admin=Depends(require_admin)):
             raise HTTPException(status_code=400, detail="已使用的兑换码不能删除")
         conn.execute("DELETE FROM redemption_codes WHERE id = ?", (code_id,))
     return {"message": "删除成功"}
+
+
+@router.post("/users/{user_id}/reset-password")
+async def reset_user_password(user_id: int, body: dict, admin=Depends(require_admin)):
+    new_password = (body.get("password") or "").strip()
+    if not new_password or len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="密码长度至少6位")
+    if len(new_password) > 50:
+        raise HTTPException(status_code=400, detail="密码长度不能超过50位")
+    with get_db() as conn:
+        user = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="用户不存在")
+        password_hash = await hash_password(new_password)
+        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
+    return {"message": "密码重置成功"}
 
 
 @router.post("/users/{user_id}/points")

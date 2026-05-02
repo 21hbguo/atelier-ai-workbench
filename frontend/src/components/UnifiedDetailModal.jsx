@@ -24,6 +24,7 @@ export default function UnifiedDetailModal({
   onMetadataSaved,
   detailExtra,
   title = '详情',
+  hideDownload = false,
 }) {
   const [lightbox, setLightbox] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -180,10 +181,10 @@ export default function UnifiedDetailModal({
       </div>
       {card.tags?.length > 0 && (
         <div>
-          <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>标签</label>
+          <label className="text-xs mb-1 block" style={{ color: 'var(--text-secondary)' }}>标签</label>
           <div className="flex gap-1.5 flex-wrap">
             {card.tags.map((tag, i) => (
-              <span key={i} className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--accent)15', color: 'var(--accent)' }}>{tag}</span>
+              <span key={i} className="text-sm" style={{ color: 'var(--text-primary)' }}>{tag}</span>
             ))}
           </div>
         </div>
@@ -193,14 +194,14 @@ export default function UnifiedDetailModal({
 
   const renderActions = () => {
     const actions = []
-    if (isImage && card.fullUrl) {
+    if (isImage && card.fullUrl && !hideDownload) {
       actions.push(
         <a key="dl" href={card.fullUrl} download className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}>
           <Download size={14} /> 下载
         </a>
       )
     }
-    if (card.prompt && onUsePrompt) {
+    if (onUsePrompt) {
       actions.push(
         <button key="use-prompt" onClick={() => onUsePrompt(card.prompt)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
           <Plus size={14} /> 使用提示词

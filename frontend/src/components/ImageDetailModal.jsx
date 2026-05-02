@@ -240,7 +240,7 @@ export default function ImageDetailModal({
               </>
             )}
 
-            <div className="flex gap-2 mt-auto pt-2">
+            <div className="flex gap-2 mt-auto pt-2 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
               {downloadExternal ? (
                 <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}>
                   <Download size={14} /> {downloadLabel}

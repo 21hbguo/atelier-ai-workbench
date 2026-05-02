@@ -182,6 +182,7 @@ export const adminAPI = {
   generateCodes: (data) => api.post('/admin/codes', data),
   deleteCode: (codeId) => api.delete(`/admin/codes/${codeId}`),
   adjustPoints: (userId, data) => api.post(`/admin/users/${userId}/points`, data),
+  resetPassword: (userId, password) => api.post(`/admin/users/${userId}/reset-password`, { password }),
   migratePoints: () => api.post('/admin/migrate-points'),
   rechargeRequests: (page = 1, size = 20, status = 'all', query) => {
     const params = { page, size, status }

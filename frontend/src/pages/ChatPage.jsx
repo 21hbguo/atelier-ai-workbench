@@ -24,7 +24,6 @@ export default function ChatPage() {
   const isAdmin = Boolean(user?.is_admin)
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(false)
-  const [filter, setFilter] = useState('all')
   const [loaded, setLoaded] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
@@ -260,9 +259,7 @@ export default function ChatPage() {
     } catch {}
   }, [refreshTasks])
 
-  const filtered = filter === 'all' ? tasks
-    : filter === 'processing' ? tasks.filter(t => t.status === 'processing' || t.status === 'queued')
-    : tasks.filter(t => t.status === filter)
+  const filtered = tasks
 
   const completedTasks = filtered.filter(t => t.status === 'completed' && t.result_urls?.length)
 
@@ -385,16 +382,16 @@ export default function ChatPage() {
           </div>
         </div>
       )}
-      <div className="flex items-center gap-2 px-4 pt-3">
-        {[{ k: 'all', l: '全部' }, { k: 'completed', l: '已完成' }, { k: 'processing', l: '生成中' }, { k: 'failed', l: '失败' }].map(({ k, l }) => (
-          <button key={k} onClick={() => setFilter(k)} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${filter === k ? 'bg-accent/10' : 'hover:bg-black/5'}`}
-            style={{ color: filter === k ? 'var(--accent)' : 'var(--text-secondary)' }}>{l}</button>
-        ))}
+      <div className="flex items-center gap-2 px-4 pt-3 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
+        <button onClick={() => navigate('/wallet')} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5 transition-colors" style={{ color: 'var(--accent)' }}>
+          <Coins size={14} />
+          <span>{points}</span>
+        </button>
         {isAdmin && userList.length > 0 && (
           <select
             value={selectedUserId || ''}
             onChange={e => setSelectedUserId(e.target.value ? Number(e.target.value) : null)}
-            className="ml-1 px-2 py-1.5 rounded-lg text-xs border-0 outline-none"
+            className="px-2 py-1.5 rounded-lg text-xs border-0 outline-none"
             style={{ background: 'var(--border-color)', color: 'var(--text-primary)' }}
           >
             <option value="">全部用户</option>
@@ -408,10 +405,6 @@ export default function ChatPage() {
           className="p-1.5 rounded-lg hover:bg-black/5 transition-colors disabled:opacity-50"
           style={{ color: 'var(--text-secondary)' }}>
           <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
-        </button>
-        <button onClick={() => navigate('/wallet')} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5 transition-colors" style={{ color: 'var(--accent)' }}>
-          <Coins size={14} />
-          <span>{points}</span>
         </button>
         {selectMode ? (
           <button onClick={exitSelectMode} className="ml-auto px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button>
