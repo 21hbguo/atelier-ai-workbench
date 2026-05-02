@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Heart, User, Plus, Image, BookOpen, Edit2, Trash2, Download, Upload, X, Send, RefreshCw, Share2 } from 'lucide-react'
+import { Heart, User, Plus, Image, BookOpen, Trash2, Download, Upload, X, RefreshCw, Share2 } from 'lucide-react'
 import { squareAPI, promptAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 import SearchInput from '../components/SearchInput'
@@ -10,7 +10,6 @@ import PromptDetailModal from '../components/PromptDetailModal'
 import CategoryFilter from '../components/CategoryFilter'
 
 export default function SquarePage() {
-  const navigate = useNavigate()
   const user = JSON.parse(localStorage.getItem('user') || 'null')
   const isAdmin = user?.is_admin
   const [tab, setTab] = useState('works')
@@ -39,8 +38,8 @@ function MySharesTab() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
-  const [selected, setSelected] = useState(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [selectedImageIndex, setSelectedImageIndex] = useState(null)
 
   const handleUsePrompt = (prompt) => {
     localStorage.setItem('pending_prompt', prompt)
@@ -91,13 +90,6 @@ function MySharesTab() {
             : img
         )
       )
-      if (selected?.id === imageId) {
-        setSelected(prev => ({
-          ...prev,
-          is_liked: data.liked,
-          likes_count: prev.likes_count + (data.liked ? 1 : -1),
-        }))
-      }
     } catch {}
   }
 
@@ -128,7 +120,7 @@ function MySharesTab() {
               <div
                 key={img.id}
                 className="group relative rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-                onClick={() => setSelected(img)}
+                onClick={() => setSelectedImageIndex(images.findIndex(i => i.id === img.id))}
               >
                 <img
                   src={getThumbUrl(img)}
@@ -180,62 +172,74 @@ function MySharesTab() {
         </>
       )}
 
-      {selected && (
+      {selectedImageIndex !== null && images.length > 0 && (
         <ImageDetailModal
           image={{
-            url: getImageUrl(selected),
-            filename: selected.filename,
+            url: getImageUrl(images[selectedImageIndex]),
+            filename: images[selectedImageIndex].filename,
             metadata: {
-              prompt: selected.prompt,
-              created_at: selected.created_at,
-              type: selected.metadata?.type,
-              size: selected.metadata?.size,
+              prompt: images[selectedImageIndex].prompt,
+              created_at: images[selectedImageIndex].created_at,
+              type: images[selectedImageIndex].metadata?.type,
+              size: images[selectedImageIndex].metadata?.size,
             },
           }}
-          onClose={() => setSelected(null)}
-          onAddPrompt={selected.prompt ? () => handleUsePrompt(selected.prompt) : undefined}
-          onAddImage={() => handleUseImage(getImageUrl(selected))}
+          images={images.map(img => ({
+            url: getImageUrl(img),
+            filename: img.filename,
+            metadata: {
+              prompt: img.prompt,
+              created_at: img.created_at,
+              type: img.metadata?.type,
+              size: img.metadata?.size,
+            },
+          }))}
+          currentIndex={selectedImageIndex}
+          onNavigate={setSelectedImageIndex}
+          onClose={() => setSelectedImageIndex(null)}
+          onAddPrompt={images[selectedImageIndex].prompt ? () => handleUsePrompt(images[selectedImageIndex].prompt) : undefined}
+          onAddImage={() => handleUseImage(getImageUrl(images[selectedImageIndex]))}
           title="我的作品"
           detailContent={
             <div className="flex flex-col gap-4">
-              {selected.prompt && (
+              {images[selectedImageIndex].prompt && (
                 <div>
                   <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>提示词</label>
                   <p className="text-sm p-3 rounded-lg max-h-48 md:max-h-72 overflow-y-auto whitespace-pre-wrap break-words" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
-                    {selected.prompt}
+                    {images[selectedImageIndex].prompt}
                   </p>
                 </div>
               )}
               <div className="grid grid-cols-2 gap-3">
-                {selected.metadata?.type && (
+                {images[selectedImageIndex].metadata?.type && (
                   <div>
                     <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>类型</label>
                     <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                      {selected.metadata.type === 'text' ? '纯文本' : '文本+图像'}
+                      {images[selectedImageIndex].metadata.type === 'text' ? '纯文本' : '文本+图像'}
                     </p>
                   </div>
                 )}
-                {selected.metadata?.size && (
+                {images[selectedImageIndex].metadata?.size && (
                   <div>
                     <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>尺寸</label>
-                    <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{selected.metadata.size}</p>
+                    <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{images[selectedImageIndex].metadata.size}</p>
                   </div>
                 )}
                 <div>
                   <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>创建时间</label>
-                  <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{selected.created_at}</p>
+                  <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{images[selectedImageIndex].created_at}</p>
                 </div>
               </div>
               <button
-                onClick={() => handleLike(selected.id)}
+                onClick={() => handleLike(images[selectedImageIndex].id)}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
                 style={{
-                  background: selected.is_liked ? '#ef444415' : 'var(--bg-primary)',
-                  color: selected.is_liked ? '#ef4444' : 'var(--text-primary)',
+                  background: images[selectedImageIndex].is_liked ? '#ef444415' : 'var(--bg-primary)',
+                  color: images[selectedImageIndex].is_liked ? '#ef4444' : 'var(--text-primary)',
                 }}
               >
-                <Heart size={16} className={selected.is_liked ? 'fill-current' : ''} />
-                {selected.is_liked ? '已点赞' : '点赞'} ({selected.likes_count})
+                <Heart size={16} className={images[selectedImageIndex].is_liked ? 'fill-current' : ''} />
+                {images[selectedImageIndex].is_liked ? '已点赞' : '点赞'} ({images[selectedImageIndex].likes_count})
               </button>
             </div>
           }
@@ -251,10 +255,10 @@ function WorksTab() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
-  const [selected, setSelected] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [sort, setSort] = useState('likes')
   const [refreshing, setRefreshing] = useState(false)
+  const [selectedImageIndex, setSelectedImageIndex] = useState(null)
 
   const handleUsePrompt = (prompt) => {
     localStorage.setItem('pending_prompt', prompt)
@@ -306,13 +310,6 @@ function WorksTab() {
             : img
         )
       )
-      if (selected?.id === imageId) {
-        setSelected(prev => ({
-          ...prev,
-          is_liked: data.liked,
-          likes_count: prev.likes_count + (data.liked ? 1 : -1),
-        }))
-      }
     } catch {}
   }
 
@@ -350,7 +347,7 @@ function WorksTab() {
               <div
                 key={img.id}
                 className="group relative rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-                onClick={() => setSelected(img)}
+                onClick={() => setSelectedImageIndex(images.findIndex(i => i.id === img.id))}
               >
                 <img
                   src={getThumbUrl(img)}
@@ -406,66 +403,78 @@ function WorksTab() {
         </>
       )}
 
-      {selected && (
+      {selectedImageIndex !== null && images.length > 0 && (
         <ImageDetailModal
           image={{
-            url: getImageUrl(selected),
-            filename: selected.filename,
+            url: getImageUrl(images[selectedImageIndex]),
+            filename: images[selectedImageIndex].filename,
             metadata: {
-              prompt: selected.prompt,
-              created_at: selected.created_at,
-              type: selected.metadata?.type,
-              size: selected.metadata?.size,
+              prompt: images[selectedImageIndex].prompt,
+              created_at: images[selectedImageIndex].created_at,
+              type: images[selectedImageIndex].metadata?.type,
+              size: images[selectedImageIndex].metadata?.size,
             },
           }}
-          onClose={() => setSelected(null)}
-          onAddPrompt={selected.prompt ? () => handleUsePrompt(selected.prompt) : undefined}
-          onAddImage={() => handleUseImage(getImageUrl(selected))}
-          title={`${selected.nickname || selected.username} 的作品`}
+          images={images.map(img => ({
+            url: getImageUrl(img),
+            filename: img.filename,
+            metadata: {
+              prompt: img.prompt,
+              created_at: img.created_at,
+              type: img.metadata?.type,
+              size: img.metadata?.size,
+            },
+          }))}
+          currentIndex={selectedImageIndex}
+          onNavigate={setSelectedImageIndex}
+          onClose={() => setSelectedImageIndex(null)}
+          onAddPrompt={images[selectedImageIndex].prompt ? () => handleUsePrompt(images[selectedImageIndex].prompt) : undefined}
+          onAddImage={() => handleUseImage(getImageUrl(images[selectedImageIndex]))}
+          title={`${images[selectedImageIndex].nickname || images[selectedImageIndex].username} 的作品`}
           detailContent={
             <div className="flex flex-col gap-4">
-              {selected.prompt && (
+              {images[selectedImageIndex].prompt && (
                 <div>
                   <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>提示词</label>
                   <p className="text-sm p-3 rounded-lg max-h-48 md:max-h-72 overflow-y-auto whitespace-pre-wrap break-words" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
-                    {selected.prompt}
+                    {images[selectedImageIndex].prompt}
                   </p>
                 </div>
               )}
               <div className="grid grid-cols-2 gap-3">
-                {selected.metadata?.type && (
+                {images[selectedImageIndex].metadata?.type && (
                   <div>
                     <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>类型</label>
                     <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                      {selected.metadata.type === 'text' ? '纯文本' : '文本+图像'}
+                      {images[selectedImageIndex].metadata.type === 'text' ? '纯文本' : '文本+图像'}
                     </p>
                   </div>
                 )}
-                {selected.metadata?.size && (
+                {images[selectedImageIndex].metadata?.size && (
                   <div>
                     <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>尺寸</label>
-                    <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{selected.metadata.size}</p>
+                    <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{images[selectedImageIndex].metadata.size}</p>
                   </div>
                 )}
                 <div>
                   <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>作者</label>
-                  <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{selected.nickname || selected.username}</p>
+                  <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{images[selectedImageIndex].nickname || images[selectedImageIndex].username}</p>
                 </div>
                 <div>
                   <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>创建时间</label>
-                  <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{selected.created_at}</p>
+                  <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{images[selectedImageIndex].created_at}</p>
                 </div>
               </div>
               <button
-                onClick={() => handleLike(selected.id)}
+                onClick={() => handleLike(images[selectedImageIndex].id)}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
                 style={{
-                  background: selected.is_liked ? '#ef444415' : 'var(--bg-primary)',
-                  color: selected.is_liked ? '#ef4444' : 'var(--text-primary)',
+                  background: images[selectedImageIndex].is_liked ? '#ef444415' : 'var(--bg-primary)',
+                  color: images[selectedImageIndex].is_liked ? '#ef4444' : 'var(--text-primary)',
                 }}
               >
-                <Heart size={16} className={selected.is_liked ? 'fill-current' : ''} />
-                {selected.is_liked ? '已点赞' : '点赞'} ({selected.likes_count})
+                <Heart size={16} className={images[selectedImageIndex].is_liked ? 'fill-current' : ''} />
+                {images[selectedImageIndex].is_liked ? '已点赞' : '点赞'} ({images[selectedImageIndex].likes_count})
               </button>
             </div>
           }

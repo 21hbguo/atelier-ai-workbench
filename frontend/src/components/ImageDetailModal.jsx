@@ -125,19 +125,19 @@ export default function ImageDetailModal({
           {hasNavigation && canPrev && (
             <button
               onClick={handlePrev}
-              className="absolute left-2 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-all hidden md:flex items-center justify-center"
+              className="absolute left-3 top-1/2 -translate-y-1/2 z-10 p-3 rounded-full bg-black/30 backdrop-blur-sm hover:bg-black/50 hover:scale-110 text-white transition-all flex items-center justify-center"
             >
-              <ChevronLeft size={20} />
+              <ChevronLeft size={24} />
             </button>
           )}
 
           {hasNavigation && canNext && (
             <button
               onClick={handleNext}
-              className="absolute right-2 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-all hidden md:flex items-center justify-center"
-              style={{ right: '40%' }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 z-10 p-3 rounded-full bg-black/30 backdrop-blur-sm hover:bg-black/50 hover:scale-110 text-white transition-all flex items-center justify-center"
+              style={{ right: 'calc(40% + 12px)' }}
             >
-              <ChevronRight size={20} />
+              <ChevronRight size={24} />
             </button>
           )}
 

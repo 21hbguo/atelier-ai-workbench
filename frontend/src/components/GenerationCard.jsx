@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { RefreshCw, Check, Plus, Image, Share2 } from 'lucide-react'
-import ImageDetailModal from './ImageDetailModal'
 import { squareAPI } from '../api'
 
 const statusConfig = {
@@ -19,12 +18,10 @@ function getProgress(startedAt, status) {
   return Math.min(99 * (1 - Math.exp(-elapsed / 30)), 99)
 }
 
-export default function GenerationCard({ task, onAddImage, onAddPrompt, onRetry, selectMode, checked, onToggleCheck, showUsername, username }) {
-  const [showDetail, setShowDetail] = useState(false)
+export default function GenerationCard({ task, onAddImage, onAddPrompt, onRetry, selectMode, checked, onToggleCheck, showUsername, username, onViewDetail }) {
   const [progress, setProgress] = useState(() => getProgress(task.started_at, task.status))
   const [shared, setShared] = useState(false)
   const [sharing, setSharing] = useState(false)
-  const [currentImageIndex, setCurrentImageIndex] = useState(0)
 
   useEffect(() => {
     if (task.status !== 'processing' && task.status !== 'queued') return
@@ -42,21 +39,6 @@ export default function GenerationCard({ task, onAddImage, onAddPrompt, onRetry,
     ? task.result_urls.map(u => { const f = u.split('/').pop(); return { thumb: `/api/images/thumb/${f}`, full: `/api/images/file/${f}` } })
     : (task.previewImages || []).map(u => ({ thumb: u, full: u }))
   const prompt = task.params?.prompt || task.prompt || ''
-
-  const imageData = isCompleted ? {
-    url: images[0].full,
-    filename: images[0].full.split('/').pop(),
-    metadata: {
-      prompt,
-      task_id: task.task_id,
-      created_at: task.created_at,
-      started_at: task.started_at,
-      completed_at: task.completed_at,
-      type: task.params?.image_urls?.length ? 'image' : 'text',
-      size: task.params?.size,
-      input_urls: task.params?.image_urls,
-    },
-  } : null
 
   const handleShare = async (e) => {
     e.stopPropagation()
@@ -83,7 +65,7 @@ export default function GenerationCard({ task, onAddImage, onAddPrompt, onRetry,
         className={`group relative rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer ${checked ? 'ring-2 ring-accent/50' : ''}`}
         onClick={() => {
           if (selectMode) { onToggleCheck?.(); return }
-          if (isCompleted) setShowDetail(true)
+          if (isCompleted) onViewDetail?.()
         }}
       >
         {selectMode && (
@@ -188,32 +170,6 @@ export default function GenerationCard({ task, onAddImage, onAddPrompt, onRetry,
           </div>
         ) : null}
       </div>
-
-      {showDetail && imageData && (
-        <ImageDetailModal
-          image={imageData}
-          images={images.map(img => ({
-            url: img.full,
-            filename: img.full.split('/').pop(),
-            metadata: {
-              prompt,
-              task_id: task.task_id,
-              created_at: task.created_at,
-              started_at: task.started_at,
-              completed_at: task.completed_at,
-              type: task.params?.image_urls?.length ? 'image' : 'text',
-              size: task.params?.size,
-              input_urls: task.params?.image_urls,
-            },
-          }))}
-          currentIndex={currentImageIndex}
-          onNavigate={setCurrentImageIndex}
-          onClose={() => { setShowDetail(false); setCurrentImageIndex(0) }}
-          onAddImage={onAddImage}
-          onAddPrompt={onAddPrompt}
-          title="生成详情"
-        />
-      )}
     </>
   )
 }
