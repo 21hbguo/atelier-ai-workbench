@@ -218,6 +218,14 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_announcements_created_at ON announcements(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_announcement_reads_user ON announcement_reads(user_id);
             CREATE INDEX IF NOT EXISTS idx_announcement_reads_ann ON announcement_reads(announcement_id);
+
+            CREATE TABLE IF NOT EXISTS import_sources (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_key TEXT UNIQUE NOT NULL,
+                last_imported_at TEXT,
+                record_count INTEGER DEFAULT 0,
+                metadata TEXT
+            );
         """)
 
         # 检查新列是否存在，不存在则添加
@@ -249,6 +257,16 @@ def init_db():
             conn.execute("CREATE INDEX IF NOT EXISTS idx_prompts_user_id ON prompts(user_id)")
         if "likes_count" not in prompt_cols:
             conn.execute("ALTER TABLE prompts ADD COLUMN likes_count INTEGER DEFAULT 0")
+        if "image_path" not in prompt_cols:
+            conn.execute("ALTER TABLE prompts ADD COLUMN image_path TEXT")
+        if "author" not in prompt_cols:
+            conn.execute("ALTER TABLE prompts ADD COLUMN author TEXT")
+        if "source" not in prompt_cols:
+            conn.execute("ALTER TABLE prompts ADD COLUMN source TEXT")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_prompts_source ON prompts(source)")
+        if "category" not in prompt_cols:
+            conn.execute("ALTER TABLE prompts ADD COLUMN category TEXT")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_prompts_category ON prompts(category)")
 
         mapping_cols = [row[1] for row in conn.execute("PRAGMA table_info(image_mappings)").fetchall()]
         if "delete_token" not in mapping_cols:
