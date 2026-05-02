@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Image, BookOpen, Share2, Plus, Trash2, Download, Upload, X } from 'lucide-react'
 import { squareAPI, promptAPI } from '../api'
@@ -86,11 +86,12 @@ function WorksTab() {
   const [sort, setSort] = useState('likes')
   const [detailIdx, setDetailIdx] = useState(null)
   const { handleUsePrompt, handleUseImage } = useImageActions()
+  const deps = useMemo(() => [searchQuery, sort], [searchQuery, sort])
 
   const { cards, total, page, setPage, loading, refreshing, refresh, handleLike } = useCardData({
     type: 'image',
     apiFn: (p, s) => squareAPI.list(p, s, searchQuery || undefined, sort),
-    deps: [searchQuery, sort],
+    deps,
   })
 
   const totalPages = Math.ceil(total / 20)
@@ -200,6 +201,7 @@ function PromptsTab({ isAdmin }) {
   const [categories, setCategories] = useState([])
   const fileRef = useRef(null)
   const { handleUsePrompt, handleUseImage } = usePromptActions()
+  const deps = useMemo(() => [query, sort, activeCategory, isAdmin], [query, sort, activeCategory, isAdmin])
 
   useEffect(() => { fetchCategories() }, [])
 
@@ -216,7 +218,7 @@ function PromptsTab({ isAdmin }) {
       if (!user) return promptAPI.listPublic(query, sort, activeCategory, p)
       return promptAPI.list(query, null, isAdmin ? 'all' : 'community', sort, activeCategory, p)
     },
-    deps: [query, sort, activeCategory, isAdmin],
+    deps,
   })
 
   const totalPages = Math.ceil(total / 50)
@@ -363,6 +365,7 @@ function PromptsTab({ isAdmin }) {
         onLike={handleLike}
         onUsePrompt={handleUsePrompt}
         onUseImage={handleUseImage}
+        showAuthor
         selectable={isAdmin}
         selected={selected}
         onToggleSelect={handleToggleSelect}

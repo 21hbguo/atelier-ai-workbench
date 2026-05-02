@@ -18,12 +18,17 @@ export default function Sidebar({ open, onClose }) {
   const navigate = useNavigate()
   const user = JSON.parse(localStorage.getItem('user') || 'null')
   const [points, setPoints] = useState(user?.points ?? 0)
+  const [checkedInToday, setCheckedInToday] = useState(false)
 
   useEffect(() => {
     pointsAPI.balance().then(res => {
       setPoints(res.data.points)
       const u = JSON.parse(localStorage.getItem('user') || 'null')
       if (u) { u.points = res.data.points; localStorage.setItem('user', JSON.stringify(u)) }
+    }).catch(() => {})
+
+    pointsAPI.checkinStatus().then(res => {
+      setCheckedInToday(res.data.checked_in_today)
     }).catch(() => {})
 
     const handleUpdate = () => {
@@ -38,6 +43,7 @@ export default function Sidebar({ open, onClose }) {
     try {
       const res = await pointsAPI.checkin()
       setPoints(res.data.points)
+      setCheckedInToday(true)
       const u = JSON.parse(localStorage.getItem('user') || 'null')
       if (u) { u.points = res.data.points; localStorage.setItem('user', JSON.stringify(u)) }
       window.dispatchEvent(new Event('points-updated'))
@@ -107,9 +113,10 @@ export default function Sidebar({ open, onClose }) {
                 {!user?.is_admin && (
                   <button
                     onClick={handleCheckIn}
-                    className="ml-auto text-xs px-2 py-0.5 rounded transition-colors"
+                    disabled={checkedInToday}
+                    className="ml-auto text-xs px-2 py-0.5 rounded transition-colors disabled:opacity-50"
                     style={{ background: 'var(--accent)', color: '#fff' }}
-                  >签到</button>
+                  >{checkedInToday ? '已签到' : '签到'}</button>
                 )}
               </div>
             </>

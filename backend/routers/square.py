@@ -148,6 +148,11 @@ async def my_shares(
         for row in rows:
             item = dict(row)
             item["metadata"] = json.loads(item["metadata"]) if item["metadata"] else None
+            like = conn.execute(
+                "SELECT id FROM square_likes WHERE image_id = ? AND user_id = ?",
+                (item["id"], user["user_id"]),
+            ).fetchone()
+            item["is_liked"] = like is not None
             images.append(item)
 
         return {"images": images, "total": total, "page": page, "size": size}

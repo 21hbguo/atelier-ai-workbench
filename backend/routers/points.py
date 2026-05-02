@@ -16,6 +16,11 @@ async def get_balance(user=Depends(get_current_user)):
     return {"points": balance}
 
 
+@router.get("/checkin/status")
+async def checkin_status(user=Depends(get_current_user)):
+    return {"checked_in_today": PointsService.has_checked_in_today(user["user_id"])}
+
+
 @router.post("/checkin")
 async def check_in(user=Depends(get_current_user)):
     try:

@@ -9,6 +9,7 @@ export function useCardData({ type, apiFn, pageSize = 20, deps = [] }) {
   const [loading, setLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const mountedRef = useRef(true)
+  const depsRef = useRef(deps)
 
   useEffect(() => {
     mountedRef.current = true

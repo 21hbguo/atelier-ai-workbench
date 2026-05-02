@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Trash2, Download, Upload, X, Send } from 'lucide-react'
 import { promptAPI } from '../api'
@@ -13,6 +13,7 @@ export default function PromptsPage() {
   const [selected, setSelected] = useState(new Set())
   const [detail, setDetail] = useState(null)
   const [form, setForm] = useState({ name: '', prompt: '', tags: '', category: '' })
+  const deps = useMemo(() => [query], [query])
   const [showNewForm, setShowNewForm] = useState(false)
   const [categories, setCategories] = useState([])
   const fileRef = useRef(null)
@@ -24,7 +25,7 @@ export default function PromptsPage() {
   const { cards, total, page, setPage, loading, refresh } = useCardData({
     type: 'prompt',
     apiFn: (p, s) => promptAPI.list(query, null, 'private', null, null, p, s),
-    deps: [query],
+    deps,
   })
 
   const handleUsePrompt = (prompt) => {
