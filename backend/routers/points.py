@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request, Query
 from pydantic import BaseModel
 from backend.auth import get_current_user, get_client_ip
 from backend.services.points_service import PointsService
+from backend.services.upload_file_service import UploadFileService
 from backend.database import get_db
 
 router = APIRouter(prefix="/api/points", tags=["points"])
@@ -85,6 +86,11 @@ async def create_recharge_request(body: RechargeCreateRequest, user=Depends(get_
     from datetime import datetime
     tx_no = f"RCH{datetime.now().strftime('%Y%m%d%H%M%S')}{user['user_id']}"
     proof_url = (body.proof_url or "").strip()[:1000]
+    if not proof_url.startswith("/api/uploads/"):
+        raise HTTPException(status_code=400, detail="支付凭证地址不合法")
+    file_key = proof_url.rsplit("/", 1)[-1]
+    if not UploadFileService.belongs_to_user(file_key, user["user_id"]):
+        raise HTTPException(status_code=400, detail="支付凭证不存在或无权使用")
     remark = (body.remark or "").strip()[:500]
     with get_db() as conn:
         cursor = conn.execute(

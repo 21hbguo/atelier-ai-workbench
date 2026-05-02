@@ -21,6 +21,19 @@ class ConfigUpdate(BaseModel):
 @router.get("")
 async def get_runtime_config(user=Depends(get_current_user)):
     cfg = get_config()
+    if user.get("is_admin"):
+        cfg["api_key"] = "***" if cfg.get("api_key") else ""
+        return cfg
+    return {
+        "wechat_pay_qr_url": cfg.get("wechat_pay_qr_url", ""),
+        "alipay_pay_qr_url": cfg.get("alipay_pay_qr_url", ""),
+        "manual_recharge_notice": cfg.get("manual_recharge_notice", ""),
+    }
+
+
+@router.get("/admin")
+async def get_runtime_config_admin(admin=Depends(require_admin)):
+    cfg = get_config()
     cfg["api_key"] = "***" if cfg.get("api_key") else ""
     return cfg
 

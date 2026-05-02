@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { useLocation, Link, useNavigate } from 'react-router-dom'
 import { Sun, Moon, BookOpen, MessageSquare, X, Settings, Globe, LogOut, User, Shield, Coins, Wallet, Megaphone } from 'lucide-react'
 import { useTheme } from '../ThemeContext'
-import { pointsAPI } from '../api'
+import { authAPI, pointsAPI } from '../api'
+import { clearUser } from '../auth'
 
 const navItems = [
   { path: '/', icon: MessageSquare, label: '生成' },
@@ -55,9 +56,7 @@ export default function Sidebar({ open, onClose }) {
   }
 
   const handleLogout = () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
-    navigate('/login')
+    authAPI.logout().catch(() => {}).finally(() => { clearUser(); navigate('/login') })
   }
 
   return (

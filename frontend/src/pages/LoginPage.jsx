@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { authAPI } from '../api'
+import { writeUser } from '../auth'
 
 export default function LoginPage() {
   const [isRegister, setIsRegister] = useState(false)
@@ -20,9 +21,7 @@ export default function LoginPage() {
       const data = isRegister
         ? (await authAPI.register({ username, password, nickname: nickname || username })).data
         : (await authAPI.login({ username, password })).data
-
-      localStorage.setItem('token', data.token)
-      localStorage.setItem('user', JSON.stringify(data.user))
+      writeUser(data.user)
       navigate('/')
     } catch (err) {
       setError(err.message)

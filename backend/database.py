@@ -166,6 +166,18 @@ def init_db():
                 reviewed_at TIMESTAMP,
                 reviewed_by INTEGER REFERENCES users(id)
             )""",
+            """CREATE TABLE IF NOT EXISTS upload_files (
+                id SERIAL PRIMARY KEY,
+                file_key VARCHAR(128) NOT NULL UNIQUE,
+                owner_id INTEGER NOT NULL REFERENCES users(id),
+                original_name VARCHAR(255) NOT NULL,
+                storage_name VARCHAR(255) NOT NULL UNIQUE,
+                content_type VARCHAR(128) NOT NULL,
+                category VARCHAR(32) NOT NULL DEFAULT 'private',
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_upload_files_owner_id ON upload_files(owner_id)",
+            "CREATE INDEX IF NOT EXISTS idx_upload_files_created_at ON upload_files(created_at DESC)",
             """CREATE TABLE IF NOT EXISTS redemption_codes (
                 id SERIAL PRIMARY KEY,
                 code VARCHAR(64) UNIQUE NOT NULL,
@@ -226,6 +238,18 @@ def init_db():
                 record_count INTEGER DEFAULT 0,
                 metadata JSONB
             )""",
+            """CREATE TABLE IF NOT EXISTS auth_refresh_tokens (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                token_hash VARCHAR(128) NOT NULL UNIQUE,
+                expires_at TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                revoked_at TIMESTAMP,
+                last_ip VARCHAR(45) DEFAULT '',
+                user_agent VARCHAR(255) DEFAULT ''
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_auth_refresh_tokens_user_id ON auth_refresh_tokens(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_auth_refresh_tokens_expires_at ON auth_refresh_tokens(expires_at)",
         ]
         for sql in statements:
             conn.execute(sql)

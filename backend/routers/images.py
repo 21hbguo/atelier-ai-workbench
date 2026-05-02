@@ -10,7 +10,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Query, Response, Depends
 from fastapi.responses import FileResponse
 
-from backend.config import GENERATED_IMAGES_DIR, THUMBS_DIR
+from backend.config import GENERATED_IMAGES_DIR, THUMBS_DIR, UPLOAD_DIR
 from backend.database import get_db
 from backend.services.task_manager import TaskManager
 from backend.services.image_mapping import ImageUrlMapping
@@ -18,6 +18,7 @@ from backend.auth import get_current_user, require_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["images"])
+MAX_REMOTE_IMAGE_BYTES = int(os.getenv("MAX_REMOTE_IMAGE_BYTES", str(10 * 1024 * 1024)))
 
 
 def get_image_metadata(filename: str) -> dict:
@@ -46,6 +47,37 @@ def _parse_metadata(raw) -> dict:
 
 def _format_timestamp(ts: float) -> str:
     return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _image_media_type(path: str) -> str:
+    ext = os.path.splitext(path)[1].lower()
+    return {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif"}.get(ext, "application/octet-stream")
+
+
+def _resolve_local_image_path(path: str) -> str:
+    resolved = os.path.abspath(path)
+    allowed = [str(UPLOAD_DIR.resolve()), str(GENERATED_IMAGES_DIR.resolve())]
+    if not any(resolved == root or resolved.startswith(root + os.sep) for root in allowed):
+        raise HTTPException(status_code=403, detail="不允许访问该路径")
+    if not os.path.isfile(resolved):
+        raise HTTPException(status_code=404, detail="本地文件不存在")
+    return resolved
+
+
+def _can_access_generated_image(filename: str, user: dict) -> bool:
+    if user.get("is_admin"):
+        return True
+    with get_db() as conn:
+        row = conn.execute("SELECT user_id FROM image_metadata WHERE filename = %s", (filename,)).fetchone()
+        if row and row["user_id"] == user["user_id"]:
+            return True
+        shared = conn.execute("SELECT id FROM square_images WHERE filename = %s", (filename,)).fetchone()
+        return bool(shared)
+
+
+def _assert_generated_image_access(filename: str, user: dict):
+    if not _can_access_generated_image(filename, user):
+        raise HTTPException(status_code=403, detail="无权访问此图片")
 
 
 @router.get("/images")
@@ -94,7 +126,7 @@ async def list_images(page: int = Query(1, ge=1), page_size: int = Query(20, ge=
             username = (row["nickname"] or row["username"] or "") if is_admin else ""
             images.append({
                 "filename": filename,
-                "path": str(f),
+                "path": str(f) if is_admin else "",
                 "url": f"/api/images/file/{filename}",
                 "created_at": created_at,
                 "metadata": metadata,
@@ -151,6 +183,13 @@ async def proxy_thumbnail(url: str = Query(...), size: int = Query(400, ge=50, l
             resp = await client.get(url, headers=headers)
         if resp.status_code != 200:
             raise Exception(f"下载失败: {resp.status_code}")
+        if int(resp.headers.get("content-length") or 0) > MAX_REMOTE_IMAGE_BYTES:
+            raise HTTPException(status_code=413, detail="远程图片过大")
+        content_type = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+        if content_type and not content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="远程资源不是图片")
+        if len(resp.content) > MAX_REMOTE_IMAGE_BYTES:
+            raise HTTPException(status_code=413, detail="远程图片过大")
 
         from PIL import Image
         import io
@@ -167,19 +206,19 @@ async def proxy_thumbnail(url: str = Query(...), size: int = Query(400, ge=50, l
     except ImportError:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
             resp = await client.get(url)
+        if len(resp.content) > MAX_REMOTE_IMAGE_BYTES:
+            raise HTTPException(status_code=413, detail="远程图片过大")
         return Response(content=resp.content, media_type=resp.headers.get("content-type", "image/jpeg"))
     except Exception as e:
         raise HTTPException(status_code=502, detail="缩略图生成失败")
 
 
 @router.get("/images/local-thumb")
-async def local_thumbnail(path: str = Query(...), size: int = Query(400, ge=50, le=1000)):
+async def local_thumbnail(path: str = Query(...), size: int = Query(400, ge=50, le=1000), admin=Depends(require_admin)):
     import os
     import hashlib
 
-    abs_path = os.path.abspath(path)
-    if not os.path.isfile(abs_path):
-        raise HTTPException(status_code=404, detail="本地文件不存在")
+    abs_path = _resolve_local_image_path(path)
 
     url_hash = hashlib.md5(abs_path.encode()).hexdigest()[:12]
     ext = os.path.splitext(abs_path)[1].lower().lstrip('.')
@@ -204,19 +243,21 @@ async def local_thumbnail(path: str = Query(...), size: int = Query(400, ge=50, 
         img.save(thumb_path, "JPEG", quality=80)
         return FileResponse(str(thumb_path), media_type="image/jpeg")
     except ImportError:
-        return FileResponse(abs_path, media_type="image/png")
+        return FileResponse(abs_path, media_type=_image_media_type(abs_path))
 
 
 @router.get("/images/file/{filename}")
-async def serve_image(filename: str):
+async def serve_image(filename: str, user=Depends(get_current_user)):
     image_path = GENERATED_IMAGES_DIR / filename
     if not image_path.exists():
         raise HTTPException(status_code=404, detail="图片不存在")
-    return FileResponse(str(image_path), media_type="image/png")
+    _assert_generated_image_access(filename, user)
+    return FileResponse(str(image_path), media_type=_image_media_type(str(image_path)))
 
 
 @router.get("/images/thumb/{filename}")
-async def serve_thumbnail(filename: str, size: int = Query(400, ge=50, le=1000)):
+async def serve_thumbnail(filename: str, size: int = Query(400, ge=50, le=1000), user=Depends(get_current_user)):
+    _assert_generated_image_access(filename, user)
     thumb_path = THUMBS_DIR / f"{size}_{filename}"
     if thumb_path.exists():
         return FileResponse(str(thumb_path), media_type="image/jpeg")
@@ -242,17 +283,18 @@ async def serve_thumbnail(filename: str, size: int = Query(400, ge=50, le=1000))
 
 
 @router.get("/images/{filename}")
-async def get_image_info(filename: str):
+async def get_image_info(filename: str, user=Depends(get_current_user)):
     image_path = GENERATED_IMAGES_DIR / filename
     if not image_path.exists():
         raise HTTPException(status_code=404, detail="图片不存在")
+    _assert_generated_image_access(filename, user)
 
     stat = image_path.stat()
     metadata = get_image_metadata(filename)
 
     return {
         "filename": filename,
-        "path": str(image_path),
+        "path": str(image_path) if user.get("is_admin") else "",
         "url": f"/api/images/file/{filename}",
         "created_at": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
         "metadata": metadata,
@@ -302,7 +344,7 @@ async def save_image_metadata_route(filename: str, metadata: dict, user=Depends(
 
 
 @router.get("/hosting")
-async def list_hosting(user=Depends(get_current_user)):
+async def list_hosting(admin=Depends(require_admin)):
     mapping = ImageUrlMapping.load_mapping()
     items = []
     for local_path, url in mapping.items():
