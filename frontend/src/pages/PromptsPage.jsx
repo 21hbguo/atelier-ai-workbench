@@ -11,24 +11,28 @@ export default function PromptsPage() {
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState(new Set())
   const [detail, setDetail] = useState(null)
-  const [form, setForm] = useState({ name: '', prompt: '', tags: '' })
+  const [form, setForm] = useState({ name: '', prompt: '', tags: '', category: '' })
   const [showNewForm, setShowNewForm] = useState(false)
+  const [categories, setCategories] = useState([])
   const fileRef = useRef(null)
 
   useEffect(() => { fetchPrompts() }, [query])
+  useEffect(() => {
+    promptAPI.categories().then(({ data }) => setCategories(data.categories)).catch(() => {})
+  }, [])
 
   const fetchPrompts = async () => {
     try { const { data } = await promptAPI.list(query, null, 'private'); setPrompts(data.prompts) } catch { setPrompts([]) }
   }
 
   const openDetail = (p) => {
-    setForm({ name: p.name, prompt: p.prompt, tags: (p.tags || []).join(', ') })
+    setForm({ name: p.name, prompt: p.prompt, tags: (p.tags || []).join(', '), category: p.category || '' })
     setDetail(p)
   }
 
   const handleSave = async () => {
     if (!form.name || !form.prompt) return
-    const payload = { name: form.name, prompt: form.prompt, negative_prompt: '', tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [] }
+    const payload = { name: form.name, prompt: form.prompt, negative_prompt: '', tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [], category: form.category || null }
     try {
       await promptAPI.update(detail.id, payload)
       setDetail(null)
@@ -38,11 +42,11 @@ export default function PromptsPage() {
 
   const handleCreate = async () => {
     if (!form.name || !form.prompt) return
-    const payload = { name: form.name, prompt: form.prompt, negative_prompt: '', tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [] }
+    const payload = { name: form.name, prompt: form.prompt, negative_prompt: '', tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [], category: form.category || null }
     try {
       await promptAPI.create(payload)
       setShowNewForm(false)
-      setForm({ name: '', prompt: '', tags: '' })
+      setForm({ name: '', prompt: '', tags: '', category: '' })
       fetchPrompts()
     } catch (e) { alert('失败: ' + e.message) }
   }
@@ -95,8 +99,13 @@ export default function PromptsPage() {
                   className="px-3 py-2 rounded-lg text-sm border outline-none resize-none focus:ring-1 focus:ring-accent/50" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
                 <input value={form.tags} onChange={e => setForm(f => ({ ...f, tags: e.target.value }))} placeholder="标签，逗号分隔"
                   className="px-3 py-2 rounded-lg text-sm border outline-none focus:ring-1 focus:ring-accent/50" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
+                <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+                  className="px-3 py-2 rounded-lg text-sm border outline-none focus:ring-1 focus:ring-accent/50" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
+                  <option value="">无分类</option>
+                  {categories.map(c => <option key={c.slug} value={c.slug}>{c.label}</option>)}
+                </select>
                 <div className="flex justify-end gap-2">
-                  <button onClick={() => { setShowNewForm(false); setForm({ name: '', prompt: '', tags: '' }) }} className="px-4 py-2 rounded-lg text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>取消</button>
+                  <button onClick={() => { setShowNewForm(false); setForm({ name: '', prompt: '', tags: '', category: '' }) }} className="px-4 py-2 rounded-lg text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>取消</button>
                   <button onClick={handleCreate} className="px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}>保存</button>
                 </div>
               </div>
@@ -144,6 +153,14 @@ export default function PromptsPage() {
                 <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>标签</label>
                 <input value={form.tags} onChange={e => setForm(f => ({ ...f, tags: e.target.value }))} placeholder="逗号分隔"
                   className="w-full text-sm p-3 rounded-lg outline-none border focus:ring-1 focus:ring-accent/50" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
+              </div>
+              <div>
+                <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>分类</label>
+                <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+                  className="w-full text-sm p-3 rounded-lg outline-none border focus:ring-1 focus:ring-accent/50" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
+                  <option value="">无分类</option>
+                  {categories.map(c => <option key={c.slug} value={c.slug}>{c.label}</option>)}
+                </select>
               </div>
             </div>
             <div className="flex gap-2 px-5 py-4 border-t" style={{ borderColor: 'var(--border-color)' }}>

@@ -29,7 +29,7 @@ export default function PromptCard({ prompt: p, onLike, onUse, onUseImage, onCli
           <p className="text-xs flex-1 overflow-hidden line-clamp-4" style={{ color: 'var(--text-secondary)' }}>{p.prompt}</p>
           <div className="flex items-center gap-2 mt-2">
             {p.author && <span className="text-xs" style={{ color: 'var(--accent)' }}>{p.author}</span>}
-            {p.category && <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--accent)15', color: 'var(--accent)' }}>{p.category}</span>}
+            {p.category && <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--accent)15', color: 'var(--accent)' }}>{p.category_label || p.category}</span>}
           </div>
         </div>
       </div>

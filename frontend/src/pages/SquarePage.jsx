@@ -19,7 +19,7 @@ export default function SquarePage() {
     <MainLayout>
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="flex gap-1 p-0.5 rounded-lg mb-4" style={{ background: 'var(--border-color)' }}>
-          {[{ k: 'works', l: '用户作品库', i: Image }, { k: 'my', l: '我的分享', i: Share2 }, { k: 'prompts', l: '提示词库', i: BookOpen }].map(({ k, l, i: Icon }) => (
+          {[{ k: 'works', l: '用户作品库', i: Image }, { k: 'prompts', l: '提示词库', i: BookOpen }, { k: 'my', l: '我的分享', i: Share2 }].map(({ k, l, i: Icon }) => (
             <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
               <Icon size={14} />{l}
@@ -27,7 +27,7 @@ export default function SquarePage() {
           ))}
         </div>
 
-        {tab === 'works' ? <WorksTab /> : tab === 'my' ? <MySharesTab /> : <PromptsTab isAdmin={isAdmin} />}
+        {tab === 'works' ? <WorksTab /> : tab === 'prompts' ? <PromptsTab isAdmin={isAdmin} /> : <MySharesTab />}
       </div>
     </MainLayout>
   )
@@ -201,7 +201,7 @@ function MySharesTab() {
               {selected.prompt && (
                 <div>
                   <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>提示词</label>
-                  <p className="text-sm p-3 rounded-lg" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+                  <p className="text-sm p-3 rounded-lg max-h-48 md:max-h-72 overflow-y-auto whitespace-pre-wrap break-words" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
                     {selected.prompt}
                   </p>
                 </div>
@@ -427,7 +427,7 @@ function WorksTab() {
               {selected.prompt && (
                 <div>
                   <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>提示词</label>
-                  <p className="text-sm p-3 rounded-lg" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+                  <p className="text-sm p-3 rounded-lg max-h-48 md:max-h-72 overflow-y-auto whitespace-pre-wrap break-words" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
                     {selected.prompt}
                   </p>
                 </div>
@@ -484,7 +484,7 @@ function PromptsTab({ isAdmin }) {
   const [loading, setLoading] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
-  const [form, setForm] = useState({ name: '', prompt: '', negative_prompt: '', tags: '' })
+  const [form, setForm] = useState({ name: '', prompt: '', negative_prompt: '', tags: '', category: '' })
   const [detail, setDetail] = useState(null)
   const [selected, setSelected] = useState(new Set())
   const [sort, setSort] = useState('likes')
@@ -553,6 +553,7 @@ function PromptsTab({ isAdmin }) {
     const payload = {
       ...form,
       tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+      category: form.category || null,
     }
     try {
       if (editing) {
@@ -560,7 +561,7 @@ function PromptsTab({ isAdmin }) {
       } else {
         await promptAPI.createPublic(payload)
       }
-      setForm({ name: '', prompt: '', negative_prompt: '', tags: '' })
+      setForm({ name: '', prompt: '', negative_prompt: '', tags: '', category: '' })
       setShowForm(false)
       setEditing(null)
       fetchPrompts()
@@ -651,7 +652,7 @@ function PromptsTab({ isAdmin }) {
 
       {isAdmin && (
         <div className="flex flex-wrap gap-2 mb-4">
-          <button onClick={() => { setForm({ name: '', prompt: '', negative_prompt: '', tags: '' }); setEditing(null); setShowForm(true) }}
+          <button onClick={() => { setForm({ name: '', prompt: '', negative_prompt: '', tags: '', category: '' }); setEditing(null); setShowForm(true) }}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}>
             <Plus size={16} /> 新增
           </button>
@@ -685,6 +686,11 @@ function PromptsTab({ isAdmin }) {
               className="px-3 py-2 rounded-lg text-sm border outline-none" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
             <input value={form.tags} onChange={e => setForm(f => ({ ...f, tags: e.target.value }))} placeholder="标签，逗号分隔"
               className="px-3 py-2 rounded-lg text-sm border outline-none" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
+            <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+              className="px-3 py-2 rounded-lg text-sm border outline-none" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
+              <option value="">无分类</option>
+              {categories.map(c => <option key={c.slug} value={c.slug}>{c.label}</option>)}
+            </select>
             <div className="flex justify-end gap-2">
               <button onClick={() => { setShowForm(false); setEditing(null) }} className="px-4 py-2 rounded-lg text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>取消</button>
               <button onClick={handleSubmit} className="px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}>保存</button>

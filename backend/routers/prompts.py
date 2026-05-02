@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Query, Depends
 from fastapi.responses import Response
 
 from backend.services.prompt_service import PromptService
+from backend.services.category_service import CategoryService
 from backend.database import get_db
 from backend.auth import get_current_user, require_admin, get_optional_user
 from backend.models.schemas import (
@@ -15,6 +16,9 @@ from backend.models.schemas import (
     PromptCreateRequest,
     PromptUpdateRequest,
     BatchDeleteRequest,
+    CategoryItem,
+    CategoryCreateRequest,
+    CategoryUpdateRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -90,8 +94,51 @@ async def get_categories(user=Depends(get_optional_user)):
         raise HTTPException(status_code=500, detail="获取分类列表失败")
 
 
+@router.post("/categories")
+async def create_category(request: CategoryCreateRequest, admin=Depends(require_admin)):
+    try:
+        existing = CategoryService.get_by_slug(request.slug)
+        if existing:
+            raise HTTPException(status_code=400, detail="分类标识已存在")
+        return CategoryService.create(request.slug, request.label)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("创建分类失败")
+        raise HTTPException(status_code=500, detail="创建分类失败")
+
+
+@router.put("/categories/{category_id}")
+async def update_category(category_id: int, request: CategoryUpdateRequest, admin=Depends(require_admin)):
+    try:
+        result = CategoryService.update(category_id, request.label)
+        if not result:
+            raise HTTPException(status_code=404, detail="分类不存在")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("更新分类失败")
+        raise HTTPException(status_code=500, detail="更新分类失败")
+
+
+@router.delete("/categories/{category_id}")
+async def delete_category(category_id: int, admin=Depends(require_admin)):
+    try:
+        success = CategoryService.delete(category_id)
+        if not success:
+            raise HTTPException(status_code=400, detail="分类不存在或有关联提示词")
+        return {"message": "分类已删除"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("删除分类失败")
+        raise HTTPException(status_code=500, detail="删除分类失败")
+
+
 @router.get("/evo-thumb/{path:path}")
 async def serve_evo_thumbnail(path: str, size: int = Query(400)):
+    import hashlib
     from pathlib import Path
     from fastapi.responses import FileResponse
     from backend.config import EVO_IMAGES_DIR, EVO_THUMBS_DIR
@@ -100,7 +147,7 @@ async def serve_evo_thumbnail(path: str, size: int = Query(400)):
     if not source.exists():
         raise HTTPException(status_code=404, detail="图片不存在")
 
-    thumb_name = f"{size}_{Path(path).stem}.jpg"
+    thumb_name = f"{size}_{hashlib.md5(path.encode()).hexdigest()}.jpg"
     thumb = EVO_THUMBS_DIR / thumb_name
     if thumb.exists():
         return FileResponse(str(thumb), media_type="image/jpeg")
@@ -128,6 +175,7 @@ async def create_prompt(request: PromptCreateRequest, user=Depends(get_current_u
             negative_prompt=request.negative_prompt,
             tags=request.tags,
             user_id=user["user_id"],
+            category=request.category,
         )
     except Exception as e:
         logger.exception("创建提示词失败")
@@ -143,6 +191,7 @@ async def create_public_prompt(request: PromptCreateRequest, admin=Depends(requi
             negative_prompt=request.negative_prompt,
             tags=request.tags,
             user_id=None,
+            category=request.category,
         )
     except Exception as e:
         logger.exception("创建提示词失败")
@@ -158,6 +207,7 @@ async def update_prompt(prompt_id: str, request: PromptUpdateRequest, user=Depen
         prompt=request.prompt,
         negative_prompt=request.negative_prompt,
         tags=request.tags,
+        category=request.category,
     )
     if not result:
         raise HTTPException(status_code=404, detail="提示词不存在")

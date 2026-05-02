@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from uuid import uuid4
 from backend.database import get_db
+from backend.services.category_service import CategoryService
 
 
 class PromptService:
@@ -20,16 +21,6 @@ class PromptService:
     _ORDER_MAP = {
         "likes": "p.likes_count DESC",
         "time": "p.created_at DESC",
-    }
-
-    CATEGORY_LABELS = {
-        "poster": "海报与插画",
-        "portrait": "人像摄影",
-        "ui": "UI设计",
-        "comparison": "模型对比",
-        "ad-creative": "广告创意",
-        "ecommerce": "电商案例",
-        "character": "角色设计",
     }
 
     @classmethod
@@ -56,7 +47,9 @@ class PromptService:
 
             where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
             join_sql = "LEFT JOIN users u ON p.user_id = u.id" if scope in ("all", "community") else ""
+            join_sql += " LEFT JOIN categories cat ON p.category = cat.slug"
             select_extra = ", u.username, u.nickname" if scope in ("all", "community") else ""
+            select_extra += ", cat.label as category_label"
 
             count_sql = f"SELECT COUNT(*) FROM prompts p {join_sql} {where_sql}"
             total = conn.execute(count_sql, params).fetchone()[0]
@@ -79,7 +72,8 @@ class PromptService:
             return cls._row_to_dict(row) if row else None
 
     @classmethod
-    def create(cls, name: str, prompt: str, negative_prompt: Optional[str] = None, tags: Optional[List[str]] = None, user_id: int = None) -> Dict[str, Any]:
+    def create(cls, name: str, prompt: str, negative_prompt: Optional[str] = None,
+               tags: Optional[List[str]] = None, user_id: int = None, category: Optional[str] = None) -> Dict[str, Any]:
         item = {
             "id": str(uuid4()),
             "name": name,
@@ -88,12 +82,13 @@ class PromptService:
             "tags": tags or [],
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "user_id": user_id,
+            "category": category,
         }
         with get_db() as conn:
             conn.execute(
-                "INSERT INTO prompts (id, name, prompt, negative_prompt, tags, created_at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO prompts (id, name, prompt, negative_prompt, tags, created_at, user_id, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (item["id"], item["name"], item["prompt"], item["negative_prompt"],
-                 json.dumps(item["tags"], ensure_ascii=False), item["created_at"], item["user_id"]),
+                 json.dumps(item["tags"], ensure_ascii=False), item["created_at"], item["user_id"], item["category"]),
             )
         return item
 
@@ -164,7 +159,9 @@ class PromptService:
                     params.extend([q, q])
 
             join_sql = "LEFT JOIN users u ON p.user_id = u.id" if scope in ("all", "community") else ""
+            join_sql += " LEFT JOIN categories cat ON p.category = cat.slug"
             select_extra = ", u.username, u.nickname" if scope in ("all", "community") else ""
+            select_extra += ", cat.label as category_label"
             where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
             count_sql = f"SELECT COUNT(*) FROM prompts p {join_sql} {where_sql}"
@@ -191,11 +188,7 @@ class PromptService:
 
     @classmethod
     def get_categories(cls) -> List[Dict[str, Any]]:
-        with get_db() as conn:
-            rows = conn.execute(
-                "SELECT category, COUNT(*) as count FROM prompts WHERE category IS NOT NULL GROUP BY category ORDER BY count DESC"
-            ).fetchall()
-            return [{"slug": r["category"], "label": cls.CATEGORY_LABELS.get(r["category"], r["category"]), "count": r["count"]} for r in rows]
+        return CategoryService.get_all()
 
     @classmethod
     def import_prompts(cls, prompts_data: List[Dict[str, Any]], user_id: int = None) -> Dict[str, int]:

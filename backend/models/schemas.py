@@ -37,18 +37,34 @@ class PromptItem(BaseModel):
     tags: Optional[List[str]] = None
     created_at: str
     user_id: Optional[int] = None
+    category: Optional[str] = None
 
 class PromptCreateRequest(BaseModel):
     name: str = Field(..., max_length=200)
     prompt: str = Field(..., max_length=2500)
     negative_prompt: Optional[str] = Field(None, max_length=2500)
     tags: Optional[List[str]] = None
+    category: Optional[str] = None
 
 class PromptUpdateRequest(BaseModel):
     name: Optional[str] = Field(None, max_length=200)
     prompt: Optional[str] = Field(None, max_length=2500)
     negative_prompt: Optional[str] = Field(None, max_length=2500)
     tags: Optional[List[str]] = None
+    category: Optional[str] = None
 
 class BatchDeleteRequest(BaseModel):
     ids: List[str] = Field(..., max_length=100)
+
+class CategoryItem(BaseModel):
+    id: int
+    slug: str
+    label: str
+    count: int = 0
+
+class CategoryCreateRequest(BaseModel):
+    slug: str = Field(..., max_length=50)
+    label: str = Field(..., max_length=100)
+
+class CategoryUpdateRequest(BaseModel):
+    label: str = Field(..., max_length=100)

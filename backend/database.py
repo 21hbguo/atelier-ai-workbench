@@ -104,6 +104,13 @@ def init_db():
                 likes_count INTEGER DEFAULT 0
             );
 
+            CREATE TABLE IF NOT EXISTS categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                slug TEXT NOT NULL UNIQUE,
+                label TEXT NOT NULL,
+                sort_order INTEGER DEFAULT 0
+            );
+
             CREATE TABLE IF NOT EXISTS prompt_likes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 prompt_id TEXT NOT NULL,
@@ -271,6 +278,19 @@ def init_db():
         mapping_cols = [row[1] for row in conn.execute("PRAGMA table_info(image_mappings)").fetchall()]
         if "delete_token" not in mapping_cols:
             conn.execute("ALTER TABLE image_mappings ADD COLUMN delete_token TEXT DEFAULT ''")
+
+        # 初始化默认分类（如果 categories 表为空）
+        if conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0] == 0:
+            default_categories = [
+                ("poster", "海报与插画", 1),
+                ("portrait", "人像摄影", 2),
+                ("ui", "UI设计", 3),
+                ("comparison", "模型对比", 4),
+                ("ad-creative", "广告创意", 5),
+                ("ecommerce", "电商案例", 6),
+                ("character", "角色设计", 7),
+            ]
+            conn.executemany("INSERT INTO categories (slug, label, sort_order) VALUES (?, ?, ?)", default_categories)
 
         # 清理历史脏数据：删除已有终态记录的 processing 条目
         conn.execute("""

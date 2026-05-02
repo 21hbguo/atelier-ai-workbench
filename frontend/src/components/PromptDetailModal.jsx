@@ -61,12 +61,12 @@ export default function PromptDetailModal({ prompt: p, onClose, onLike }) {
           <div className="w-1/2 p-5 flex flex-col gap-4">
             <div>
               <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>提示词</label>
-              <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--text-primary)' }}>{p.prompt}</p>
+              <p className="text-sm whitespace-pre-wrap max-h-48 md:max-h-72 overflow-y-auto break-words p-3 rounded-lg" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>{p.prompt}</p>
             </div>
 
             <div className="flex items-center gap-3 flex-wrap">
               {p.author && <span className="text-sm" style={{ color: 'var(--accent)' }}>{p.author}</span>}
-              {p.category && <span className="text-xs px-2 py-1 rounded" style={{ background: 'var(--accent)15', color: 'var(--accent)' }}>{p.category}</span>}
+              {p.category && <span className="text-xs px-2 py-1 rounded" style={{ background: 'var(--accent)15', color: 'var(--accent)' }}>{p.category_label || p.category}</span>}
             </div>
 
             {p.tags?.length > 0 && (
