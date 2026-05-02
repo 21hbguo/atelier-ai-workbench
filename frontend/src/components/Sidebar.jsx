@@ -63,14 +63,11 @@ export default function Sidebar({ open, onClose }) {
   return (
     <>
       {open && <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={onClose} />}
-      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-48 flex flex-col transition-transform duration-200 ease-out ${open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
+      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-40 flex flex-col transition-transform duration-200 ease-out ${open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
         style={{ background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border-color)' }}>
-        <div className="px-3 py-2.5 border-b" style={{ borderColor: 'var(--border-color)' }}>
-          <div className="flex items-center justify-between">
-            <h1 className="text-base font-semibold truncate" style={{ color: 'var(--text-primary)' }}>Atelier</h1>
-            <button className="lg:hidden p-1 rounded-md hover:bg-black/10" onClick={onClose}><X size={16} /></button>
-          </div>
-          <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>v1.0.0</span>
+        <div className="px-3 py-2 border-b flex items-center" style={{ borderColor: 'var(--border-color)' }}>
+          <h1 className="flex-1 truncate" style={{ color: 'var(--text-primary)', fontFamily: "'Alex Brush', cursive", fontSize: '2.5rem', lineHeight: '1' }}>Atelier</h1>
+          <button className="lg:hidden p-1 rounded-md hover:bg-black/10" onClick={onClose}><X size={16} /></button>
         </div>
         <nav className="flex-1 px-2 py-2 space-y-0.5 overflow-y-auto">
           {navItems.map(({ path, icon: Icon, label }) => {
@@ -103,24 +100,10 @@ export default function Sidebar({ open, onClose }) {
         </nav>
         <div className="px-2 py-2 border-t space-y-0.5" style={{ borderColor: 'var(--border-color)' }}>
           {user && (
-            <>
-              <div className="flex items-center gap-2.5 px-2.5 py-2">
-                <User size={16} style={{ color: 'var(--text-secondary)' }} />
-                <span className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{user.nickname || user.username}</span>
-              </div>
-              <div className="flex items-center gap-2 px-2.5 py-1.5">
-                <Coins size={14} className="shrink-0" style={{ color: 'var(--accent)' }} />
-                <span className="text-xs font-medium" style={{ color: 'var(--accent)' }}>{isAdmin ? '∞' : points}</span>
-                {!isAdmin && (
-                  <button
-                    onClick={handleCheckIn}
-                    disabled={checkedInToday}
-                    className="ml-auto text-xs px-2 py-0.5 rounded transition-colors disabled:opacity-50"
-                    style={{ background: 'var(--accent)', color: '#fff' }}
-                  >{checkedInToday ? '已签到' : '签到'}</button>
-                )}
-              </div>
-            </>
+            <div className="flex items-center gap-2.5 px-2.5 py-2">
+              <User size={16} style={{ color: 'var(--text-secondary)' }} />
+              <span className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{user.nickname || user.username}</span>
+            </div>
           )}
           <button onClick={toggle} className="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-sm font-medium hover:bg-black/5 transition-colors"
             style={{ color: 'var(--text-primary)' }}>

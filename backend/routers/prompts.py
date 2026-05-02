@@ -47,10 +47,7 @@ async def get_prompts(
 ):
     try:
         tag_list = [t.strip() for t in tags.split(",")] if tags else None
-        # 管理员看全部，普通用户只看自己的
         uid = user["user_id"]
-        if user.get("is_admin") and scope == "private":
-            scope = "all"
         if query or tag_list:
             result = PromptService.search(query=query or "", tags=tag_list, scope=scope,
                                           user_id=uid, sort=sort, category=category, page=page, size=size)

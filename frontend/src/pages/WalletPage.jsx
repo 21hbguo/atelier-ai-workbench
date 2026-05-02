@@ -28,6 +28,9 @@ const [proofUrl,setProofUrl]=useState('')
 const [remark,setRemark]=useState('')
 const [submittingRecharge,setSubmittingRecharge]=useState(false)
 const [uploadingProof,setUploadingProof]=useState(false)
+const [proofLightbox,setProofLightbox]=useState(false)
+const [checkedInToday,setCheckedInToday]=useState(null)
+const [checkinLoading,setCheckinLoading]=useState(false)
 const [rechargeMsg,setRechargeMsg]=useState(null)
 const [rechargeItems,setRechargeItems]=useState([])
 const [rechargeTotal,setRechargeTotal]=useState(0)
@@ -58,6 +61,9 @@ useEffect(()=>{
 api.get('/config').then(({data})=>{setPayConfig({wechat_pay_qr_url:data.wechat_pay_qr_url||'',alipay_pay_qr_url:data.alipay_pay_qr_url||'',manual_recharge_notice:data.manual_recharge_notice||'请备注用户名并在下方提交支付凭证，审核通过后自动发放兑换码'})}).catch(()=>{})
 },[])
 useEffect(()=>{
+pointsAPI.checkinStatus().then(({data})=>{setCheckedInToday(data.checked_in_today)}).catch(()=>{})
+},[])
+useEffect(()=>{
 const handleUpdate=()=>{
 const u=JSON.parse(localStorage.getItem('user')||'null')
 if(u)setPoints(u.points??0)
@@ -82,6 +88,22 @@ fetchData(page)
 setRedeemMsg({type:'error',text:e.message})
 }finally{
 setRedeemLoading(false)
+}
+}
+const handleCheckIn=async()=>{
+setCheckinLoading(true)
+try{
+const res=await pointsAPI.checkin()
+setPoints(res.data.points)
+setCheckedInToday(true)
+const u=JSON.parse(localStorage.getItem('user')||'null')
+if(u){u.points=res.data.points;localStorage.setItem('user',JSON.stringify(u))}
+window.dispatchEvent(new Event('points-updated'))
+fetchData(page)
+}catch(e){
+alert(e.message||'签到失败')
+}finally{
+setCheckinLoading(false)
 }
 }
 const handlePickPackage=(idx)=>{setPackageIdx(idx);setRechargeAmount(rechargePackages[idx].amount);setRechargePoints(rechargePackages[idx].points)}
@@ -121,6 +143,7 @@ const totalPages=Math.ceil(total/size)
 const rechargeTotalPages=Math.ceil(rechargeTotal/rechargeSize)
 const activeQr=rechargeChannel==='wechat'?payConfig.wechat_pay_qr_url:payConfig.alipay_pay_qr_url
 return(
+<>
 <MainLayout>
 <div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-3xl mx-auto w-full">
 <div className="mb-6 p-5 rounded-xl border" style={{background:'var(--bg-ai-bubble)',borderColor:'var(--border-color)'}}>
@@ -133,10 +156,15 @@ return(
 </div>
 <div className="flex items-center gap-2 p-4 rounded-lg" style={{background:'var(--bg-primary)'}}>
 <Coins size={20} style={{color:'var(--accent)'}} />
-<div>
+<div className="flex-1">
 <p className="text-xs" style={{color:'var(--text-secondary)'}}>当前积分</p>
 <p className="text-2xl font-bold" style={{color:'var(--accent)'}}>{isAdmin?'∞':points}</p>
 </div>
+{!isAdmin&&checkedInToday!==null&&(
+<button onClick={handleCheckIn} disabled={checkedInToday||checkinLoading} className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors" style={{background:checkedInToday?'#22c55e':'var(--accent)',color:'#fff',opacity:checkedInToday?0.7:1}}>
+{checkinLoading?'签到中...':checkedInToday?'已签到 ✓':'签到'}
+</button>
+)}
 </div>
 </div>
 {!isAdmin&&(
@@ -158,7 +186,7 @@ return(
 <div className="grid grid-cols-3 gap-2 mb-3">{rechargePackages.map((pkg,idx)=><button key={pkg.label} onClick={()=>handlePickPackage(idx)} className={`px-2 py-2 rounded-lg text-xs font-medium ${packageIdx===idx?'text-white':'hover:bg-black/5'}`} style={{background:packageIdx===idx?'var(--accent)':'var(--bg-primary)',color:packageIdx===idx?'#fff':'var(--text-primary)',border:'1px solid var(--border-color)'}}><div>{pkg.label}</div><div className="mt-0.5">¥{pkg.amount} / {pkg.points}积分</div></button>)}</div>
 <div className="mb-2"><input type="text" value={payerName} onChange={e=>setPayerName(e.target.value)} placeholder="付款人（选填）" className="w-full px-3 py-2 rounded-lg text-sm outline-none transition-colors" style={{background:'var(--bg-primary)',color:'var(--text-primary)',border:'1px solid var(--border-color)'}} /></div>
 <textarea value={remark} onChange={e=>setRemark(e.target.value)} placeholder="备注（选填）" rows={2} className="w-full px-3 py-2 rounded-lg text-sm outline-none resize-none transition-colors mb-2" style={{background:'var(--bg-primary)',color:'var(--text-primary)',border:'1px solid var(--border-color)'}} />
-<div className="flex flex-wrap items-center gap-2 mb-2"><label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium cursor-pointer hover:bg-black/5" style={{color:'var(--text-primary)',border:'1px solid var(--border-color)'}}><Upload size={14} />{uploadingProof?'上传中...':'上传支付凭证'}<input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleUploadProof} /></label>{proofUrl&&<a href={proofUrl} target="_blank" rel="noreferrer" className="text-xs underline" style={{color:'var(--accent)'}}>查看已上传凭证</a>}</div>
+<div className="flex flex-wrap items-center gap-2 mb-2"><label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium cursor-pointer hover:bg-black/5" style={{color:'var(--text-primary)',border:'1px solid var(--border-color)'}}><Upload size={14} />{uploadingProof?'上传中...':'上传支付凭证'}<input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleUploadProof} /></label>{proofUrl&&<button type="button" onClick={()=>setProofLightbox(true)} className="text-xs underline" style={{color:'var(--accent)'}}>查看已上传凭证</button>}</div>
 <button onClick={handleSubmitRecharge} disabled={submittingRecharge||!proofUrl.trim()} className="w-full px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors disabled:opacity-50" style={{background:'var(--accent)'}}>{submittingRecharge?'提交中...':`提交充值申请（¥${rechargeAmount} / ${rechargePoints}积分）`}</button>
 {rechargeMsg&&<div className={`mt-2 px-3 py-2 rounded-lg text-xs ${rechargeMsg.type==='success'?'text-green-600':'text-red-500'}`} style={{background:rechargeMsg.type==='success'?'rgba(34,197,94,0.1)':'rgba(239,68,68,0.1)'}}>{rechargeMsg.text}</div>}
 <div className="mt-4">
@@ -173,5 +201,10 @@ return(
 </div>
 </div>
 </MainLayout>
-)
-}
+{proofLightbox&&proofUrl&&(
+<div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={()=>setProofLightbox(false)}>
+<img src={proofUrl} alt="支付凭证" className="max-w-full max-h-full rounded-lg" onClick={e=>e.stopPropagation()} />
+</div>
+)}
+</>
+)}

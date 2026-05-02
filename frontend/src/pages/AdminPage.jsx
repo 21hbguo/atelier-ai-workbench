@@ -63,6 +63,12 @@ export default function AdminPage() {
   const [rechargePage, setRechargePage] = useState(1)
   const [rechargeStatus, setRechargeStatus] = useState('pending')
   const [rechargeQuery, setRechargeQuery] = useState('')
+  const [rechargeFormId, setRechargeFormId] = useState(null)
+  const [rechargeFormPoints, setRechargeFormPoints] = useState('')
+  const [rechargeFormNote, setRechargeFormNote] = useState('')
+  const [rejectFormId, setRejectFormId] = useState(null)
+  const [rejectFormNote, setRejectFormNote] = useState('')
+  const [proofLightbox, setProofLightbox] = useState(null)
 
   // 用户统计
   const [userStats, setUserStats] = useState([])
@@ -384,22 +390,31 @@ export default function AdminPage() {
     fetchImages()
   }, [checked])
   const handleApproveRecharge = async (item) => {
-    const pointInput = prompt('发放积分（默认使用申请积分）', String(item.points))
-    if (pointInput === null) return
-    const points = parseInt(pointInput, 10)
+    setRechargeFormId(item.id)
+    setRechargeFormPoints(String(item.points))
+    setRechargeFormNote('')
+    setRejectFormId(null)
+  }
+  const handleConfirmApprove = async (item) => {
+    const points = parseInt(rechargeFormPoints, 10)
     if (!points || points <= 0) return
-    const reviewNote = prompt('审核备注（可选）', '') || ''
     try {
-      const { data } = await adminAPI.approveRecharge(item.id, { points, review_note: reviewNote })
+      const { data } = await adminAPI.approveRecharge(item.id, { points, review_note: rechargeFormNote })
       if (data.code) alert(`审核通过，兑换码：${data.code}`)
+      setRechargeFormId(null)
       fetchRechargeRequests()
     } catch (e) { alert(e.message || '审核失败') }
   }
   const handleRejectRecharge = async (item) => {
-    const reason = prompt('请输入拒绝原因', '')
-    if (!reason?.trim()) return
+    setRejectFormId(item.id)
+    setRejectFormNote('信息不符')
+    setRechargeFormId(null)
+  }
+  const handleConfirmReject = async (item) => {
+    if (!rejectFormNote.trim()) return
     try {
-      await adminAPI.rejectRecharge(item.id, { review_note: reason.trim() })
+      await adminAPI.rejectRecharge(item.id, { review_note: rejectFormNote.trim() })
+      setRejectFormId(null)
       fetchRechargeRequests()
     } catch (e) { alert(e.message || '操作失败') }
   }
@@ -417,6 +432,7 @@ export default function AdminPage() {
   }
 
   return (
+    <>
     <MainLayout>
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="flex gap-1 p-0.5 rounded-lg mb-4" style={{ background: 'var(--border-color)' }}>
@@ -944,27 +960,36 @@ export default function AdminPage() {
               )}
             </div>
 
-            {/* 待审核充值 */}
+            {/* 充值审核 */}
             <div>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>待审核充值</h3>
-                <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#f59e0b20', color: '#f59e0b' }}>
-                  {rechargeItems.filter(i => i.status === 'pending').length} 条待处理
-                </span>
+                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>充值审核</h3>
+                <div className="flex items-center gap-2">
+                  {['pending', 'approved', 'rejected', 'all'].map(s => (
+                    <button key={s} onClick={() => setRechargeStatus(s)}
+                      className={`px-2 py-1 rounded text-xs font-medium transition-colors`}
+                      style={{ background: rechargeStatus === s ? 'var(--accent)' : 'var(--bg-secondary)', color: rechargeStatus === s ? '#fff' : 'var(--text-secondary)' }}>
+                      {{ pending: '待审核', approved: '已通过', rejected: '已拒绝', all: '全部' }[s]}
+                    </button>
+                  ))}
+                </div>
               </div>
-              {rechargeItems.filter(i => i.status === 'pending').length === 0 ? (
+              {rechargeItems.length === 0 ? (
                 <div className="text-center py-6 rounded-xl border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
-                  暂无待审核充值
+                  暂无记录
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {rechargeItems.filter(i => i.status === 'pending').map(item => (
+                  {rechargeItems.map(item => {
+                    const statusMap = { pending: { label: '待审核', color: '#f59e0b' }, approved: { label: '已通过', color: '#22c55e' }, rejected: { label: '已拒绝', color: '#ef4444' } }
+                    const st = statusMap[item.status] || statusMap.pending
+                    return (
                     <div key={item.id} className="rounded-xl border px-4 py-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
                       <div className="flex items-center gap-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{item.nickname || item.username || '-'}</span>
-                            <span className="text-xs px-2 py-0.5 rounded-full" style={{ color: '#f59e0b', background: '#f59e0b20' }}>待审核</span>
+                            <span className="text-xs px-2 py-0.5 rounded-full" style={{ color: st.color, background: st.color + '20' }}>{st.label}</span>
                           </div>
                           <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
                             <span>{item.channel === 'wechat' ? '微信' : item.channel === 'alipay' ? '支付宝' : item.channel}</span>
@@ -975,15 +1000,49 @@ export default function AdminPage() {
                           <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>提交：{item.created_at}</div>
                           {item.payer_name && <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>付款人：{item.payer_name}</div>}
                           {item.remark && <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>备注：{item.remark}</div>}
-                          {item.proof_url && <a href={item.proof_url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs underline" style={{ color: 'var(--accent)' }}>查看支付凭证</a>}
+                          {item.proof_url && <button onClick={() => setProofLightbox(item.proof_url)} className="mt-1 inline-block text-xs underline text-left" style={{ color: 'var(--accent)' }}>查看支付凭证</button>}
+                          {item.status === 'approved' && item.redeem_code && <div className="mt-1 text-xs" style={{ color: '#22c55e' }}>兑换码：{item.redeem_code}</div>}
+                          {item.status === 'rejected' && item.review_note && <div className="mt-1 text-xs" style={{ color: '#ef4444' }}>原因：{item.review_note}</div>}
                         </div>
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => handleApproveRecharge(item)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: '#22c55e' }}>通过并发码</button>
-                          <button onClick={() => handleRejectRecharge(item)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: '#ef4444' }}>拒绝</button>
-                        </div>
+                        {item.status === 'pending' && rechargeFormId !== item.id && rejectFormId !== item.id && (
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => handleApproveRecharge(item)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: '#22c55e' }}>通过并发码</button>
+                            <button onClick={() => handleRejectRecharge(item)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: '#ef4444' }}>拒绝</button>
+                          </div>
+                        )}
                       </div>
+                      {rechargeFormId === item.id && (
+                        <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>发放积分</span>
+                            <input type="number" value={rechargeFormPoints} onChange={e => setRechargeFormPoints(e.target.value)}
+                              className="w-24 px-2 py-1 rounded text-xs border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>备注</span>
+                            <input type="text" value={rechargeFormNote} onChange={e => setRechargeFormNote(e.target.value)} placeholder="可选"
+                              className="flex-1 px-2 py-1 rounded text-xs border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => handleConfirmApprove(item)} className="px-3 py-1 rounded text-xs font-medium text-white" style={{ background: '#22c55e' }}>确认通过</button>
+                            <button onClick={() => setRechargeFormId(null)} className="px-3 py-1 rounded text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>取消</button>
+                          </div>
+                        </div>
+                      )}
+                      {rejectFormId === item.id && (
+                        <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>拒绝原因</span>
+                            <input type="text" value={rejectFormNote} onChange={e => setRejectFormNote(e.target.value)} placeholder="请输入原因"
+                              className="flex-1 px-2 py-1 rounded text-xs border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => handleConfirmReject(item)} disabled={!rejectFormNote.trim()} className="px-3 py-1 rounded text-xs font-medium text-white disabled:opacity-50" style={{ background: '#ef4444' }}>确认拒绝</button>
+                            <button onClick={() => setRejectFormId(null)} className="px-3 py-1 rounded text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>取消</button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -1333,5 +1392,11 @@ export default function AdminPage() {
         </div>
       )}
     </MainLayout>
+    {proofLightbox && (
+      <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setProofLightbox(null)}>
+        <img src={proofLightbox} alt="支付凭证" className="max-w-full max-h-full rounded-lg" onClick={e => e.stopPropagation()} />
+      </div>
+    )}
+    </>
   )
 }
