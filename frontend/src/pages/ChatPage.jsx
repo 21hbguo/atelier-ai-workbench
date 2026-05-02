@@ -192,7 +192,7 @@ export default function ChatPage() {
   }, [isAdmin])
 
   const pollTask = useCallback(async (taskId, startTime, shareToSquare, prompt, params, hasImages) => {
-    const maxWaitMs = 5 * 60 * 1000
+    const maxWaitMs = 15 * 60 * 1000
     const getDelay = (attempt) => Math.min(2000 + attempt * 500, 10000)
     let missingCount = 0
     let errorCount = 0
@@ -234,7 +234,7 @@ export default function ChatPage() {
         }
       }
     }
-    updateTask(taskId, { status: 'failed', error: '生成超时（已等待5分钟）', _active: false })
+    updateTask(taskId, { status: 'failed', error: '生成超时（已等待15分钟）', _active: false })
     refreshPointsOnFailed()
   }, [updateTask, shareImageToSquare, refreshPointsOnFailed])
 

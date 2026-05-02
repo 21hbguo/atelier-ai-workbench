@@ -162,7 +162,7 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
 
 
 async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = None, user_id: int = None) -> list:
-    max_wait_seconds = 300
+    max_wait_seconds = 900
     consecutive_errors = 0
     start_time = datetime.now()
     first_poll = True
@@ -249,4 +249,4 @@ async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = N
         return local_paths
         attempt += 1
 
-    raise Exception("轮询超时（已等待5分钟）")
+    raise Exception("轮询超时（已等待15分钟）")
