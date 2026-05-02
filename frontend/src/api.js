@@ -111,6 +111,7 @@ export const statsAPI = {
 export const authAPI = {
   register: (data) => api.post('/auth/register', data),
   login: (data) => api.post('/auth/login', data),
+  me: () => api.get('/auth/me'),
 }
 
 export const squareAPI = {
@@ -119,6 +120,7 @@ export const squareAPI = {
     if (query) params.query = query
     return api.get('/square', { params })
   },
+  my: (page = 1, size = 20) => api.get('/square/my', { params: { page, size } }),
   share: (data) => api.post('/square/share', data),
   like: (imageId) => api.post(`/square/like?image_id=${imageId}`),
 }
@@ -169,6 +171,7 @@ export const adminAPI = {
 export const pointsAPI = {
   balance: () => api.get('/points/balance'),
   checkin: () => api.post('/points/checkin'),
+  hasCheckedInToday: () => api.get('/points/has-checked-in-today'),
   redeem: (code) => api.post('/points/redeem', { code }),
   transactions: (page = 1, size = 20) => api.get('/points/transactions', { params: { page, size } }),
 }

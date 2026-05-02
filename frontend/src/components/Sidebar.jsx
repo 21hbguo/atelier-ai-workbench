@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useLocation, Link, useNavigate } from 'react-router-dom'
-import { Sun, Moon, BookOpen, MessageSquare, X, Settings, Globe, LogOut, User, Shield, Coins } from 'lucide-react'
+import { Sun, Moon, BookOpen, MessageSquare, X, Settings, Globe, LogOut, User, Shield, Coins, Wallet } from 'lucide-react'
 import { useTheme } from '../ThemeContext'
 import { pointsAPI } from '../api'
 
@@ -8,6 +8,7 @@ const navItems = [
   { path: '/', icon: MessageSquare, label: '生成' },
   { path: '/square', icon: Globe, label: '广场' },
   { path: '/prompts', icon: BookOpen, label: '我的提示词' },
+  { path: '/wallet', icon: Wallet, label: '小金库' },
 ]
 
 export default function Sidebar({ open, onClose }) {
@@ -16,10 +17,7 @@ export default function Sidebar({ open, onClose }) {
   const navigate = useNavigate()
   const user = JSON.parse(localStorage.getItem('user') || 'null')
   const [points, setPoints] = useState(user?.points ?? 0)
-  const [checkedIn, setCheckedIn] = useState(() => {
-    const last = localStorage.getItem('last_checkin_date')
-    return last === new Date().toISOString().slice(0, 10)
-  })
+  const [checkedIn, setCheckedIn] = useState(false)
 
   useEffect(() => {
     pointsAPI.balance().then(res => {
@@ -27,6 +25,11 @@ export default function Sidebar({ open, onClose }) {
       const u = JSON.parse(localStorage.getItem('user') || 'null')
       if (u) { u.points = res.data.points; localStorage.setItem('user', JSON.stringify(u)) }
     }).catch(() => {})
+
+    pointsAPI.hasCheckedInToday().then(res => {
+      setCheckedIn(res.data.checked_in)
+    }).catch(() => {})
+
     const handleUpdate = () => {
       const u = JSON.parse(localStorage.getItem('user') || 'null')
       if (u) setPoints(u.points ?? 0)
@@ -40,7 +43,6 @@ export default function Sidebar({ open, onClose }) {
       const res = await pointsAPI.checkin()
       setPoints(res.data.points)
       setCheckedIn(true)
-      localStorage.setItem('last_checkin_date', new Date().toISOString().slice(0, 10))
       const u = JSON.parse(localStorage.getItem('user') || 'null')
       if (u) { u.points = res.data.points; localStorage.setItem('user', JSON.stringify(u)) }
       window.dispatchEvent(new Event('points-updated'))
