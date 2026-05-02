@@ -1,13 +1,24 @@
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, Query
 from pydantic import BaseModel
 from backend.auth import get_current_user, get_client_ip
 from backend.services.points_service import PointsService
+from backend.database import get_db
 
 router = APIRouter(prefix="/api/points", tags=["points"])
 
 
 class RedeemRequest(BaseModel):
     code: str
+
+
+class RechargeCreateRequest(BaseModel):
+    channel: str
+    amount: float
+    points: int
+    payer_name: str = ""
+    tx_no: str = ""
+    proof_url: str = ""
+    remark: str = ""
 
 
 @router.get("/balance")
@@ -42,7 +53,6 @@ async def redeem(req: RedeemRequest, request: Request, user=Depends(get_current_
 
 @router.get("/transactions")
 async def get_transactions(page: int = 1, size: int = 20, user=Depends(get_current_user)):
-    from backend.database import get_db
     offset = (page - 1) * size
     with get_db() as conn:
         total = conn.execute(
@@ -52,5 +62,39 @@ async def get_transactions(page: int = 1, size: int = 20, user=Depends(get_curre
         rows = conn.execute(
             "SELECT * FROM point_transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
             (user["user_id"], size, offset)
+        ).fetchall()
+        return {"total": total, "items": [dict(r) for r in rows], "page": page, "size": size}
+
+
+@router.post("/recharge/requests")
+async def create_recharge_request(body: RechargeCreateRequest, user=Depends(get_current_user)):
+    channel = (body.channel or "").strip().lower()
+    if channel not in {"wechat", "alipay"}:
+        raise HTTPException(status_code=400, detail="充值渠道仅支持 wechat/alipay")
+    if body.amount <= 0:
+        raise HTTPException(status_code=400, detail="充值金额必须大于0")
+    if body.points <= 0:
+        raise HTTPException(status_code=400, detail="兑换积分必须大于0")
+    payer_name = (body.payer_name or "").strip()[:64]
+    tx_no = (body.tx_no or "").strip()[:128]
+    proof_url = (body.proof_url or "").strip()[:1000]
+    remark = (body.remark or "").strip()[:500]
+    with get_db() as conn:
+        cursor = conn.execute(
+            "INSERT INTO recharge_requests (user_id, channel, amount, points, payer_name, tx_no, proof_url, remark, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+            (user["user_id"], channel, body.amount, body.points, payer_name, tx_no, proof_url, remark),
+        )
+        request_id = cursor.lastrowid
+    return {"id": request_id, "message": "充值申请已提交，等待审核"}
+
+
+@router.get("/recharge/requests")
+async def list_recharge_requests(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), user=Depends(get_current_user)):
+    offset = (page - 1) * size
+    with get_db() as conn:
+        total = conn.execute("SELECT COUNT(*) as cnt FROM recharge_requests WHERE user_id = ?", (user["user_id"],)).fetchone()["cnt"]
+        rows = conn.execute(
+            "SELECT id, channel, amount, points, payer_name, tx_no, proof_url, remark, status, redeem_code, review_note, created_at, reviewed_at FROM recharge_requests WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (user["user_id"], size, offset),
         ).fetchall()
         return {"total": total, "items": [dict(r) for r in rows], "page": page, "size": size}

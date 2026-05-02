@@ -39,6 +39,9 @@ _runtime_config = {
     "image_hosting_upload_url": os.getenv("IMAGE_HOSTING_UPLOAD_URL", "https://img.heliar.top/upload"),
     "image_hosting_base_url": os.getenv("IMAGE_HOSTING_BASE_URL", "https://img.heliar.top"),
     "image_hosting_referer": os.getenv("IMAGE_HOSTING_REFERER", "https://img.heliar.top/"),
+    "wechat_pay_qr_url": os.getenv("WECHAT_PAY_QR_URL", ""),
+    "alipay_pay_qr_url": os.getenv("ALIPAY_PAY_QR_URL", ""),
+    "manual_recharge_notice": os.getenv("MANUAL_RECHARGE_NOTICE", "请备注用户名并在下方提交支付凭证，审核通过后自动发放兑换码"),
 }
 
 

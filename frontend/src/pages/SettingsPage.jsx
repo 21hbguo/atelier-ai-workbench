@@ -4,7 +4,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import api, { statsAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 
-const DEFAULTS = { api_url: 'https://api.wuyinkeji.com/api/async', api_key: '', image_hosting_upload_url: 'https://img.heliar.top/upload', image_hosting_base_url: 'https://img.heliar.top', image_hosting_referer: 'https://img.heliar.top/' }
+const DEFAULTS = { api_url: 'https://api.wuyinkeji.com/api/async', api_key: '', image_hosting_upload_url: 'https://img.heliar.top/upload', image_hosting_base_url: 'https://img.heliar.top', image_hosting_referer: 'https://img.heliar.top/', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '请备注用户名并在下方提交支付凭证，审核通过后自动发放兑换码' }
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('stats')
@@ -202,6 +202,25 @@ export default function SettingsPage() {
                           style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
                       </div>
                     ))}
+                </div>
+              </div>
+              <div className="p-5 rounded-xl border" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
+                <h2 className="font-medium mb-4" style={{ color: 'var(--text-primary)' }}>人工充值配置</h2>
+                <div className="space-y-4">
+                  {[{ key: 'wechat_pay_qr_url', label: '微信收款码URL' }, { key: 'alipay_pay_qr_url', label: '支付宝收款码URL' }].map(({ key, label }) => (
+                    <div key={key}>
+                      <label className="block text-sm mb-1.5" style={{ color: 'var(--text-primary)' }}>{label}</label>
+                      <input type="text" value={config[key] || ''} onChange={e => updateField(key, e.target.value)}
+                        className="w-full px-3 py-2.5 rounded-lg text-sm border outline-none focus:ring-1 focus:ring-accent/50"
+                        style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
+                    </div>
+                  ))}
+                  <div>
+                    <label className="block text-sm mb-1.5" style={{ color: 'var(--text-primary)' }}>充值提示文案</label>
+                    <textarea value={config.manual_recharge_notice || ''} onChange={e => updateField('manual_recharge_notice', e.target.value)} rows={3}
+                      className="w-full px-3 py-2.5 rounded-lg text-sm border outline-none resize-none focus:ring-1 focus:ring-accent/50"
+                      style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
+                  </div>
                 </div>
               </div>
 

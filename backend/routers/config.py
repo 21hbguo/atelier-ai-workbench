@@ -13,6 +13,9 @@ class ConfigUpdate(BaseModel):
     image_hosting_upload_url: Optional[str] = None
     image_hosting_base_url: Optional[str] = None
     image_hosting_referer: Optional[str] = None
+    wechat_pay_qr_url: Optional[str] = None
+    alipay_pay_qr_url: Optional[str] = None
+    manual_recharge_notice: Optional[str] = None
 
 
 @router.get("")

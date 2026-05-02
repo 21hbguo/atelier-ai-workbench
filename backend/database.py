@@ -194,6 +194,25 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(user_id, checkin_date)
             );
+            CREATE TABLE IF NOT EXISTS recharge_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                channel TEXT NOT NULL,
+                amount REAL NOT NULL,
+                points INTEGER NOT NULL,
+                payer_name TEXT DEFAULT '',
+                tx_no TEXT DEFAULT '',
+                proof_url TEXT DEFAULT '',
+                remark TEXT DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'pending',
+                redeem_code TEXT DEFAULT '',
+                review_note TEXT DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                reviewed_at TEXT,
+                reviewed_by INTEGER,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (reviewed_by) REFERENCES users(id)
+            );
 
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
             CREATE INDEX IF NOT EXISTS idx_tasks_updated_at ON tasks(updated_at DESC);
@@ -225,6 +244,9 @@ def init_db():
             );
 
             CREATE INDEX IF NOT EXISTS idx_daily_checkins_user_date ON daily_checkins(user_id, checkin_date);
+            CREATE INDEX IF NOT EXISTS idx_recharge_user_id ON recharge_requests(user_id);
+            CREATE INDEX IF NOT EXISTS idx_recharge_status ON recharge_requests(status);
+            CREATE INDEX IF NOT EXISTS idx_recharge_created_at ON recharge_requests(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_announcements_created_at ON announcements(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_announcement_reads_user ON announcement_reads(user_id);
             CREATE INDEX IF NOT EXISTS idx_announcement_reads_ann ON announcement_reads(announcement_id);

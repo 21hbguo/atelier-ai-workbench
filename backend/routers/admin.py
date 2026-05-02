@@ -484,3 +484,83 @@ async def adjust_points(user_id: int, body: dict, admin=Depends(require_admin)):
 async def migrate_points(admin=Depends(require_admin)):
     result = PointsService.migrate_existing_users()
     return {"message": f"已为 {result['migrated']} 个用户补发积分", **result}
+
+
+# ============ 人工充值审核 ============
+
+@router.get("/recharge-requests")
+async def list_recharge_requests(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), status: str = Query("all"), query: str = Query(None), admin=Depends(require_admin)):
+    offset = (page - 1) * size
+    where = []
+    params = []
+    if status in {"pending", "approved", "rejected"}:
+        where.append("rr.status = ?")
+        params.append(status)
+    if query:
+        q = f"%{query}%"
+        where.append("(u.username LIKE ? OR u.nickname LIKE ? OR rr.tx_no LIKE ?)")
+        params.extend([q, q, q])
+    where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+    with get_db() as conn:
+        total = conn.execute(
+            f"""SELECT COUNT(*) FROM recharge_requests rr
+                LEFT JOIN users u ON rr.user_id = u.id
+                {where_sql}""",
+            params,
+        ).fetchone()[0]
+        rows = conn.execute(
+            f"""SELECT rr.*, u.username, u.nickname, au.username as reviewed_by_name
+                FROM recharge_requests rr
+                LEFT JOIN users u ON rr.user_id = u.id
+                LEFT JOIN users au ON rr.reviewed_by = au.id
+                {where_sql}
+                ORDER BY rr.created_at DESC
+                LIMIT ? OFFSET ?""",
+            params + [size, offset],
+        ).fetchall()
+        return {"items": [dict(r) for r in rows], "total": total, "page": page, "size": size}
+
+
+@router.post("/recharge-requests/{request_id}/approve")
+async def approve_recharge_request(request_id: int, body: dict, admin=Depends(require_admin)):
+    review_note = (body.get("review_note") or "").strip()[:500]
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM recharge_requests WHERE id = ?", (request_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="充值申请不存在")
+        item = dict(row)
+        if item["status"] != "pending":
+            raise HTTPException(status_code=400, detail="仅待审核申请可通过")
+        points = int(body.get("points") or item["points"])
+        if points <= 0:
+            raise HTTPException(status_code=400, detail="发放积分必须大于0")
+        while True:
+            code = secrets.token_urlsafe(8).upper()
+            if not conn.execute("SELECT id FROM redemption_codes WHERE code = ?", (code,)).fetchone():
+                break
+        conn.execute("INSERT INTO redemption_codes (code, points) VALUES (?, ?)", (code, points))
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute(
+            "UPDATE recharge_requests SET status = 'approved', points = ?, redeem_code = ?, review_note = ?, reviewed_at = ?, reviewed_by = ? WHERE id = ?",
+            (points, code, review_note, now, admin["user_id"], request_id),
+        )
+        return {"message": "审核通过并已自动发放兑换码", "code": code, "points": points}
+
+
+@router.post("/recharge-requests/{request_id}/reject")
+async def reject_recharge_request(request_id: int, body: dict, admin=Depends(require_admin)):
+    review_note = (body.get("review_note") or "").strip()[:500]
+    if not review_note:
+        raise HTTPException(status_code=400, detail="拒绝原因不能为空")
+    with get_db() as conn:
+        row = conn.execute("SELECT status FROM recharge_requests WHERE id = ?", (request_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="充值申请不存在")
+        if row["status"] != "pending":
+            raise HTTPException(status_code=400, detail="仅待审核申请可拒绝")
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute(
+            "UPDATE recharge_requests SET status = 'rejected', review_note = ?, reviewed_at = ?, reviewed_by = ? WHERE id = ?",
+            (review_note, now, admin["user_id"], request_id),
+        )
+        return {"message": "已拒绝该充值申请"}

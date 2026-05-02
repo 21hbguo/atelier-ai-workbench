@@ -176,6 +176,13 @@ export const adminAPI = {
   generateCodes: (data) => api.post('/admin/codes', data),
   adjustPoints: (userId, data) => api.post(`/admin/users/${userId}/points`, data),
   migratePoints: () => api.post('/admin/migrate-points'),
+  rechargeRequests: (page = 1, size = 20, status = 'all', query) => {
+    const params = { page, size, status }
+    if (query) params.query = query
+    return api.get('/admin/recharge-requests', { params })
+  },
+  approveRecharge: (id, data) => api.post(`/admin/recharge-requests/${id}/approve`, data || {}),
+  rejectRecharge: (id, data) => api.post(`/admin/recharge-requests/${id}/reject`, data || {}),
 }
 
 export const pointsAPI = {
@@ -184,6 +191,8 @@ export const pointsAPI = {
   checkin: () => api.post('/points/checkin'),
   redeem: (code) => api.post('/points/redeem', { code }),
   transactions: (page = 1, size = 20) => api.get('/points/transactions', { params: { page, size } }),
+  createRechargeRequest: (data) => api.post('/points/recharge/requests', data),
+  rechargeRequests: (page = 1, size = 20) => api.get('/points/recharge/requests', { params: { page, size } }),
 }
 
 export const announcementAPI = {
