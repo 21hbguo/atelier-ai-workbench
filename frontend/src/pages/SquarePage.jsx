@@ -60,6 +60,16 @@ function usePromptActions() {
 
 export default function SquarePage() {
   const [tab, setTab] = useState('works')
+  const [query, setQuery] = useState('')
+  const [sort, setSort] = useState('likes')
+  const [activeCategory, setActiveCategory] = useState(null)
+
+  const handleTabChange = (newTab) => {
+    setTab(newTab)
+    setQuery('')
+    setSort('likes')
+    setActiveCategory(null)
+  }
 
   return (
     <MainLayout>
@@ -67,31 +77,53 @@ export default function SquarePage() {
         <div className="p-4 sm:p-6 pb-0">
           <div className="flex gap-1 p-0.5 rounded-lg overflow-x-auto scrollbar-hide" style={{ background: 'var(--border-color)', scrollbarWidth: 'none' }}>
           {[{ k: 'works', l: '用户作品库', i: Image }, { k: 'prompts', l: '提示词库', i: BookOpen }, { k: 'my', l: '我的分享', i: Share2 }].map(({ k, l, i: Icon }) => (
-            <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`}
+            <button key={k} onClick={() => handleTabChange(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
               <Icon size={14} />{l}
             </button>
           ))}
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 pt-3">
-          {tab === 'works' ? <WorksTab /> : tab === 'prompts' ? <PromptsTab /> : <MySharesTab />}
+        {tab !== 'my' && (
+          <div className="px-4 sm:px-6 pt-3 pb-2">
+            <div className="flex items-center gap-3">
+              <div className="flex gap-1 ml-auto">
+                <button onClick={() => setSort('likes')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${sort === 'likes' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
+                  style={{ color: sort === 'likes' ? 'var(--accent)' : 'var(--text-secondary)' }}>最热</button>
+                <button onClick={() => setSort('time')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${sort === 'time' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
+                  style={{ color: sort === 'time' ? 'var(--accent)' : 'var(--text-secondary)' }}>最新</button>
+              </div>
+              <SearchInput value={query} onChange={setQuery} placeholder={tab === 'works' ? '搜索提示词/作者...' : '搜索提示词...'} />
+            </div>
+            {tab === 'prompts' && (
+              <div className="mt-2">
+                <PromptsCategoryFilter active={activeCategory} onChange={setActiveCategory} />
+              </div>
+            )}
+          </div>
+        )}
+        <div className="flex-1 overflow-y-auto px-4 sm:px-6 pb-6">
+          {tab === 'works' ? (
+            <WorksTab query={query} sort={sort} />
+          ) : tab === 'prompts' ? (
+            <PromptsTab query={query} sort={sort} activeCategory={activeCategory} />
+          ) : (
+            <MySharesTab />
+          )}
         </div>
       </div>
     </MainLayout>
   )
 }
 
-function WorksTab() {
-  const [searchQuery, setSearchQuery] = useState('')
-  const [sort, setSort] = useState('likes')
+function WorksTab({ query, sort }) {
   const [detailIdx, setDetailIdx] = useState(null)
   const { handleUsePrompt, handleUseImage } = useImageActions()
-  const deps = useMemo(() => [searchQuery, sort], [searchQuery, sort])
+  const deps = useMemo(() => [query, sort], [query, sort])
 
   const { cards, total, page, setPage, loading, refreshing, refresh, handleLike } = useCardData({
     type: 'image',
-    apiFn: (p, s) => squareAPI.list(p, s, searchQuery || undefined, sort),
+    apiFn: (p, s) => squareAPI.list(p, s, query || undefined, sort),
     deps,
   })
 
@@ -99,16 +131,6 @@ function WorksTab() {
 
   return (
     <>
-      <div className="flex items-center gap-3 mb-3">
-        <div className="flex gap-1 ml-auto">
-          <button onClick={() => setSort('likes')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${sort === 'likes' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
-            style={{ color: sort === 'likes' ? 'var(--accent)' : 'var(--text-secondary)' }}>最热</button>
-          <button onClick={() => setSort('time')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${sort === 'time' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
-            style={{ color: sort === 'time' ? 'var(--accent)' : 'var(--text-secondary)' }}>最新</button>
-        </div>
-        <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="搜索提示词/作者..." />
-      </div>
-
       <CardGrid
         cards={cards}
         loading={loading}
@@ -191,24 +213,11 @@ function MySharesTab() {
   )
 }
 
-function PromptsTab() {
+function PromptsTab({ query, sort, activeCategory }) {
   const user = JSON.parse(localStorage.getItem('user') || 'null')
-  const [query, setQuery] = useState('')
-  const [sort, setSort] = useState('likes')
-  const [activeCategory, setActiveCategory] = useState(null)
   const [detailIdx, setDetailIdx] = useState(null)
-  const [categories, setCategories] = useState([])
   const { handleUsePrompt, handleUseImage } = usePromptActions()
   const deps = useMemo(() => [query, sort, activeCategory], [query, sort, activeCategory])
-
-  useEffect(() => { fetchCategories() }, [])
-
-  const fetchCategories = async () => {
-    try {
-      const { data } = await promptAPI.categories()
-      setCategories(data.categories)
-    } catch {}
-  }
 
   const { cards, total, page, setPage, loading, refreshing, refresh, handleLike } = useCardData({
     type: 'prompt',
@@ -223,22 +232,6 @@ function PromptsTab() {
 
   return (
     <>
-      <div className="flex items-center gap-3 mb-3">
-        <div className="flex gap-1 ml-auto">
-          <button onClick={() => setSort('likes')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${sort === 'likes' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
-            style={{ color: sort === 'likes' ? 'var(--accent)' : 'var(--text-secondary)' }}>最热</button>
-          <button onClick={() => setSort('time')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${sort === 'time' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
-            style={{ color: sort === 'time' ? 'var(--accent)' : 'var(--text-secondary)' }}>最新</button>
-        </div>
-        <SearchInput value={query} onChange={setQuery} placeholder="搜索提示词..." />
-      </div>
-
-      {categories.length > 0 && (
-        <div className="mb-3">
-          <CategoryFilter categories={categories} active={activeCategory} onChange={setActiveCategory} />
-        </div>
-      )}
-
       <CardGrid
         cards={cards}
         loading={loading}
@@ -272,4 +265,15 @@ function PromptsTab() {
       )}
     </>
   )
+}
+
+function PromptsCategoryFilter({ active, onChange }) {
+  const [categories, setCategories] = useState([])
+
+  useEffect(() => {
+    promptAPI.categories().then(({ data }) => setCategories(data.categories)).catch(() => {})
+  }, [])
+
+  if (categories.length === 0) return null
+  return <CategoryFilter categories={categories} active={active} onChange={onChange} />
 }
