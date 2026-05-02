@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { X, Copy, Download, Trash2, Plus, Image as ImageIcon, Maximize2, Heart, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
+import { X, Copy, Download, Trash2, Plus, Image as ImageIcon, Maximize2, Heart, ChevronLeft, ChevronRight, Edit2, Check } from 'lucide-react'
 import { imageAPI } from '../api'
 
 function InfoItem({ label, value }) {
@@ -25,9 +25,12 @@ export default function UnifiedDetailModal({
   detailExtra,
   title = '详情',
   hideDownload = false,
+  allowMetadataEdit = false,
 }) {
   const [lightbox, setLightbox] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editForm, setEditForm] = useState(null)
   const [saving, setSaving] = useState(false)
   const touchStartX = useRef(0)
   const touchStartY = useRef(0)
@@ -53,6 +56,10 @@ export default function UnifiedDetailModal({
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [hasNavigation, handlePrev, handleNext])
+  useEffect(() => {
+    setEditing(false)
+    setEditForm(null)
+  }, [card?.id, currentIndex])
 
   const handleTouchStart = (e) => {
     touchStartX.current = e.touches[0].clientX
@@ -70,8 +77,28 @@ export default function UnifiedDetailModal({
 
   if (!card) return null
 
-  const isImage = card._type === 'image'
-  const raw = card._raw
+  const isImage = card._type === 'image' || (!card._type && (card.fullUrl || card.url || card.filename || card.metadata))
+  const raw = card._raw || { metadata: card.metadata || {}, filename: card.filename || null }
+  const fullUrl = card.fullUrl || card.url || ''
+  const meta = typeof raw.metadata === 'string' ? JSON.parse(raw.metadata || '{}') : (raw.metadata || {})
+  const handleSaveMetadata = async () => {
+    if (!editForm || !raw.filename || saving) return
+    setSaving(true)
+    try {
+      await imageAPI.saveMetadata(raw.filename, editForm)
+      setEditing(false)
+      setEditForm(null)
+      onMetadataSaved?.(editForm)
+    } catch (e) {
+      alert('保存失败: ' + (e?.message || '未知错误'))
+    } finally {
+      setSaving(false)
+    }
+  }
+  const startEditing = () => {
+    setEditForm({ ...meta })
+    setEditing(true)
+  }
 
   const handleCopy = async (text) => {
     try {
@@ -91,7 +118,7 @@ export default function UnifiedDetailModal({
   }
 
   const renderLeftPanel = () => {
-    if (!card.fullUrl) {
+    if (!fullUrl) {
       return (
         <div className="md:w-3/5 bg-black flex items-center justify-center min-h-[200px] md:min-h-0" style={{ background: 'linear-gradient(135deg, var(--accent)08, var(--accent)15)' }}>
           <ImageIcon size={64} style={{ color: 'var(--accent)', opacity: 0.3 }} />
@@ -100,7 +127,7 @@ export default function UnifiedDetailModal({
     }
     return (
       <div className="md:w-3/5 bg-black flex items-center justify-center min-h-[200px] md:min-h-0 relative group cursor-pointer overflow-hidden" onClick={() => setLightbox(true)}>
-        <img src={card.fullUrl} alt="" className="max-w-full max-h-[60vh] md:max-h-full object-contain" />
+        <img src={fullUrl} alt="" className="max-w-full max-h-[60vh] md:max-h-full object-contain" />
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
           <Maximize2 size={24} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
         </div>
@@ -114,7 +141,22 @@ export default function UnifiedDetailModal({
   }
 
   const renderImageDetail = () => {
-    const meta = raw.metadata || {}
+    if (editing && editForm) {
+      return (
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>提示词</label>
+            <textarea value={editForm.prompt || ''} onChange={e => setEditForm(f => ({ ...f, prompt: e.target.value }))} className="w-full px-3 py-2 rounded-lg text-sm border outline-none resize-none" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} rows={3} />
+          </div>
+          {(meta.size || editForm.size !== undefined) && (
+            <div>
+              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>尺寸</label>
+              <input value={editForm.size || ''} onChange={e => setEditForm(f => ({ ...f, size: e.target.value }))} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
+            </div>
+          )}
+        </div>
+      )
+    }
     return (
       <>
         {card.prompt && (
@@ -194,9 +236,9 @@ export default function UnifiedDetailModal({
 
   const renderActions = () => {
     const actions = []
-    if (isImage && card.fullUrl && !hideDownload) {
+    if (isImage && fullUrl && !hideDownload) {
       actions.push(
-        <a key="dl" href={card.fullUrl} download className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}>
+        <a key="dl" href={fullUrl} download className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}>
           <Download size={14} /> 下载
         </a>
       )
@@ -208,7 +250,7 @@ export default function UnifiedDetailModal({
         </button>
       )
     }
-    if (card.fullUrl && onUseImage) {
+    if (fullUrl && onUseImage) {
       actions.push(
         <button key="use-image" onClick={() => onUseImage(card)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
           <ImageIcon size={14} /> 参考图
@@ -257,7 +299,10 @@ export default function UnifiedDetailModal({
           <div className="md:w-2/5 p-5 flex flex-col gap-4 overflow-y-auto" style={{ color: 'var(--text-primary)' }}>
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{title}</span>
-              <button onClick={onClose} className="p-1 rounded hover:bg-black/5"><X size={18} /></button>
+              <div className="flex items-center gap-2">
+                {allowMetadataEdit && isImage && raw.filename && !detailExtra && (editing ? <button onClick={handleSaveMetadata} disabled={saving} className="p-1 rounded hover:bg-black/5" style={{ color: 'var(--accent)' }}><Check size={16} /></button> : <button onClick={startEditing} className="p-1 rounded hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}><Edit2 size={16} /></button>)}
+                <button onClick={onClose} className="p-1 rounded hover:bg-black/5"><X size={18} /></button>
+              </div>
             </div>
 
             {detailExtra || (isImage ? renderImageDetail() : renderPromptDetail())}
@@ -269,9 +314,9 @@ export default function UnifiedDetailModal({
         </div>
       </div>
 
-      {lightbox && card.fullUrl && (
+      {lightbox && fullUrl && (
         <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4" onClick={() => setLightbox(false)}>
-          <img src={card.fullUrl} alt="" className="max-w-full max-h-full rounded-lg" onClick={(e) => e.stopPropagation()} />
+          <img src={fullUrl} alt="" className="max-w-full max-h-full rounded-lg" onClick={(e) => e.stopPropagation()} />
         </div>
       )}
     </>

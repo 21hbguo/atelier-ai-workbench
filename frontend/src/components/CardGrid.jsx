@@ -1,5 +1,6 @@
 import { Heart, User, Plus, Image as ImageIcon, RefreshCw, Loader2 } from 'lucide-react'
 import Pagination from './Pagination'
+import UnifiedCard from './UnifiedCard'
 
 export default function CardGrid({
   cards, onCardClick, onLike, onUsePrompt, onUseImage,
@@ -36,78 +37,18 @@ export default function CardGrid({
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
         {cards.map((card, idx) => (
-          <div
+          <UnifiedCard
             key={card.id}
-            className={`group relative rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer ${selectable && selected.has(card.id) ? 'ring-2 ring-accent/50' : ''}`}
-            onClick={(e) => {
-              if (e.target.type === 'checkbox' || e.target.closest('button')) return
-              onCardClick?.(card, idx)
-            }}
-          >
-            {card.thumbUrl ? (
-              <img src={card.thumbUrl} alt="" className="w-full aspect-square object-cover" loading="lazy" />
-            ) : (
-              <div className="w-full aspect-square flex items-center justify-center p-3" style={{ background: 'linear-gradient(135deg, var(--accent)12, var(--accent)20)' }}>
-                {(() => {
-                  const text = card.title || card.subtitle || '无提示词'
-                  const len = text.length
-                  const fontSize = len <= 4 ? '2rem' : len <= 8 ? '1.5rem' : len <= 16 ? '1.125rem' : '0.875rem'
-                  return <p className="text-center font-bold leading-tight line-clamp-4" style={{ color: 'var(--accent)', fontSize }}>
-                    {text}
-                  </p>
-                })()}
-              </div>
-            )}
-
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors hidden md:flex items-center justify-center gap-1.5">
-              {Boolean(card.prompt) && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); onUsePrompt?.(card.prompt) }}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"
-                >
-                  <Plus size={12} /> 提示词
-                </button>
-              )}
-              {Boolean(card.fullUrl) && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); onUseImage?.(card) }}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"
-                >
-                  <ImageIcon size={12} /> 参考图
-                </button>
-              )}
-            </div>
-
-            <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 bg-gradient-to-t from-black/70 to-transparent">
-              <p className="text-white text-xs truncate">{card.subtitle || '无提示词'}</p>
-            </div>
-
-            <div onClick={(e) => { e.stopPropagation(); onLike?.(card.id) }} className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded-full bg-black/50 backdrop-blur-sm cursor-pointer hover:bg-black/70 transition-colors">
-              <Heart size={12} className={card.isLiked ? 'fill-red-500 text-red-500' : 'text-white'} />
-              {(card.likesCount > 0 || card.isLiked) && <span className="text-white text-xs">{card.likesCount}</span>}
-            </div>
-
-            {showAuthor && Boolean(card.author) && (
-              <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-1 rounded-full bg-black/50 backdrop-blur-sm">
-                <User size={12} className="text-white" />
-                <span className="text-white text-xs truncate max-w-[80px]">{card.author}</span>
-              </div>
-            )}
-
-            {selectable && (
-              <div className="absolute top-2 left-2" style={showAuthor && card.author ? { top: '2.5rem' } : undefined}>
-                <input
-                  type="checkbox"
-                  checked={selected.has(card.id)}
-                  onChange={() => onToggleSelect?.(card.id)}
-                  className="w-4 h-4 rounded"
-                  onClick={e => e.stopPropagation()}
-                />
-              </div>
-            )}
-
-            {renderOverlay && renderOverlay(card, idx)}
-          </div>
+            checked={selectable && selected.has(card.id)}
+            onClick={(e) => { if (e.target.type === 'checkbox' || e.target.closest('button')) return; onCardClick?.(card, idx) }}
+            mediaNode={card.thumbUrl ? <img src={card.thumbUrl} alt="" className="w-full aspect-square object-cover" loading="lazy" /> : <div className="w-full aspect-square flex items-center justify-center p-3" style={{ background: 'linear-gradient(135deg, var(--accent)12, var(--accent)20)' }}>{(() => { const text = card.title || card.subtitle || '无提示词'; const len = text.length; const fontSize = len <= 4 ? '2rem' : len <= 8 ? '1.5rem' : len <= 16 ? '1.125rem' : '0.875rem'; return <p className="text-center font-bold leading-tight line-clamp-4" style={{ color: 'var(--accent)', fontSize }}>{text}</p> })()}</div>}
+            hoverNode={<div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors hidden md:flex items-center justify-center gap-1.5">{Boolean(card.prompt) && <button onClick={(e) => { e.stopPropagation(); onUsePrompt?.(card.prompt) }} className="opacity-0 group-hover:opacity-100 transition-opacity px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"><Plus size={12} /> 提示词</button>}{Boolean(card.fullUrl) && <button onClick={(e) => { e.stopPropagation(); onUseImage?.(card) }} className="opacity-0 group-hover:opacity-100 transition-opacity px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"><ImageIcon size={12} /> 参考图</button>}</div>}
+            bottomNode={<div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 bg-gradient-to-t from-black/70 to-transparent"><p className="text-white text-xs truncate">{card.subtitle || '无提示词'}</p></div>}
+            topRightNode={<div onClick={(e) => { e.stopPropagation(); onLike?.(card.id) }} className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded-full bg-black/50 backdrop-blur-sm cursor-pointer hover:bg-black/70 transition-colors"><Heart size={12} className={card.isLiked ? 'fill-red-500 text-red-500' : 'text-white'} />{(card.likesCount > 0 || card.isLiked) && <span className="text-white text-xs">{card.likesCount}</span>}</div>}
+            topLeftNode={showAuthor && Boolean(card.author) ? <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-1 rounded-full bg-black/50 backdrop-blur-sm"><User size={12} className="text-white" /><span className="text-white text-xs truncate max-w-[80px]">{card.author}</span></div> : null}
+            selectNode={selectable ? <div className="absolute top-2 left-2" style={showAuthor && card.author ? { top: '2.5rem' } : undefined}><input type="checkbox" checked={selected.has(card.id)} onChange={() => onToggleSelect?.(card.id)} className="w-4 h-4 rounded" onClick={e => e.stopPropagation()} /></div> : null}
+            overlayNode={renderOverlay ? renderOverlay(card, idx) : null}
+          />
         ))}
       </div>
 
