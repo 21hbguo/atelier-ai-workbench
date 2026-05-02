@@ -90,7 +90,7 @@ const file=e.target.files?.[0]
 if(!file)return
 setUploadingProof(true)
 try{
-const {data}=await uploadAPI.upload(file)
+const {data}=await uploadAPI.uploadLocal(file)
 setProofUrl(data.url||'')
 setRechargeMsg({type:'success',text:'支付凭证上传成功'})
 }catch(err){

@@ -78,3 +78,20 @@ async def upload_images_batch(files: List[UploadFile] = File(...), user=Depends(
         except Exception:
             results.append(UploadResponse(url="", is_duplicate=False))
     return results
+
+
+@router.post("/upload/local", response_model=UploadResponse)
+async def upload_local(file: UploadFile = File(...), user=Depends(get_current_user)):
+    """本地上传，不使用图床（用于支付凭证等）"""
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="文件大小超过10MB限制")
+
+    file_ext = os.path.splitext(file.filename)[1].lower().lstrip(".")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{timestamp}_{_safe_filename(file.filename)}"
+    save_path = UPLOAD_DIR / filename
+    await asyncio.to_thread(_write_file, save_path, content)
+
+    url = f"/uploads/{filename}"
+    return UploadResponse(url=url, is_duplicate=False)

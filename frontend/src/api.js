@@ -36,6 +36,11 @@ export const uploadAPI = {
     fd.append('file', file)
     return api.post('/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
   },
+  uploadLocal: (file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return api.post('/upload/local', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
   uploadBatch: (files) => {
     const fd = new FormData()
     files.forEach(f => fd.append('files', f))
