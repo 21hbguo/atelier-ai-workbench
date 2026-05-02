@@ -174,6 +174,7 @@ export const adminAPI = {
     return api.get('/admin/codes', { params })
   },
   generateCodes: (data) => api.post('/admin/codes', data),
+  deleteCode: (codeId) => api.delete(`/admin/codes/${codeId}`),
   adjustPoints: (userId, data) => api.post(`/admin/users/${userId}/points`, data),
   migratePoints: () => api.post('/admin/migrate-points'),
   rechargeRequests: (page = 1, size = 20, status = 'all', query) => {

@@ -267,6 +267,14 @@ export default function AdminPage() {
     } finally { setGeneratingCodes(false) }
   }
 
+  const handleDeleteCode = async (codeId, code) => {
+    if (!confirm(`确定删除兑换码 "${code}"？`)) return
+    try {
+      await adminAPI.deleteCode(codeId)
+      fetchCodes()
+    } catch (e) { alert(e.message || '删除失败') }
+  }
+
   const handleAdjustPoints = async (userId) => {
     const amount = parseInt(adjustAmount)
     if (!amount) return
@@ -955,6 +963,7 @@ export default function AdminPage() {
                       <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>使用IP</th>
                       <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>创建时间</th>
                       <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>使用时间</th>
+                      <th className="px-4 py-3 text-right font-semibold" style={{ color: 'var(--text-secondary)' }}>操作</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -977,10 +986,17 @@ export default function AdminPage() {
                         <td className="px-4 py-3 font-mono text-[11px]" style={{ color: 'var(--text-secondary)' }}>{c.used_by_ip || '-'}</td>
                         <td className="px-4 py-3 text-[11px]" style={{ color: 'var(--text-secondary)' }}>{c.created_at || '-'}</td>
                         <td className="px-4 py-3 text-[11px]" style={{ color: 'var(--text-secondary)' }}>{c.used_at || '-'}</td>
+                        <td className="px-4 py-3 text-right">
+                          {!c.is_used && (
+                            <button onClick={() => handleDeleteCode(c.id, c.code)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500" title="删除">
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                     {codes.length === 0 && (
-                      <tr><td colSpan={7} className="text-center py-16" style={{ color: 'var(--text-secondary)' }}>
+                      <tr><td colSpan={8} className="text-center py-16" style={{ color: 'var(--text-secondary)' }}>
                         <Ticket size={32} className="mx-auto mb-2 opacity-30" />
                         <p>暂无兑换码</p>
                       </td></tr>

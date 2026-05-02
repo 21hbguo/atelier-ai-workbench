@@ -463,6 +463,18 @@ async def generate_codes(body: dict, admin=Depends(require_admin)):
         return {"generated": len(codes), "codes": codes}
 
 
+@router.delete("/codes/{code_id}")
+async def delete_code(code_id: int, admin=Depends(require_admin)):
+    with get_db() as conn:
+        row = conn.execute("SELECT id, is_used FROM redemption_codes WHERE id = ?", (code_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="兑换码不存在")
+        if row["is_used"]:
+            raise HTTPException(status_code=400, detail="已使用的兑换码不能删除")
+        conn.execute("DELETE FROM redemption_codes WHERE id = ?", (code_id,))
+    return {"message": "删除成功"}
+
+
 @router.post("/users/{user_id}/points")
 async def adjust_points(user_id: int, body: dict, admin=Depends(require_admin)):
     amount = body.get("amount", 0)
