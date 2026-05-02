@@ -14,3 +14,5 @@ data/app.db
 data/app.db-shm
 data/app.db-wal
 data/evo_thumbs/
+.codex/
+.claude/

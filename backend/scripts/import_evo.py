@@ -66,26 +66,39 @@ def parse_markdown(md_path: Path) -> dict[int, str]:
     return prompts
 
 
+PARSED_CASES_FILE = EVO_ROOT / "data" / "parsed_cases.json"
+
+
 def main():
     parser = argparse.ArgumentParser(description="Import Evo prompts")
     parser.add_argument("--full", action="store_true", help="Full import (ignore import_sources)")
     parser.add_argument("--dry-run", action="store_true", help="Preview without writing")
+    parser.add_argument("--source", choices=["evo", "cases"], default="evo",
+                        help="Data source: evo (ingested_tweets.json) or cases (parsed_cases.json)")
     args = parser.parse_args()
 
-    if not DATA_FILE.exists():
-        print(f"Error: {DATA_FILE} not found")
-        sys.exit(1)
+    if args.source == "cases":
+        if not PARSED_CASES_FILE.exists():
+            print(f"Error: {PARSED_CASES_FILE} not found. Run parse_cases.py first.")
+            sys.exit(1)
+        data = json.loads(PARSED_CASES_FILE.read_text(encoding="utf-8"))
+    else:
+        if not DATA_FILE.exists():
+            print(f"Error: {DATA_FILE} not found")
+            sys.exit(1)
+        data = json.loads(DATA_FILE.read_text(encoding="utf-8"))
 
-    data = json.loads(DATA_FILE.read_text(encoding="utf-8"))
     generated_at = data.get("generated_at", "")
     records = data.get("records", [])
 
     init_db()
 
+    source_key = f"evo_{args.source}" if args.source != "evo" else "evo"
     if not args.full:
         with get_db() as conn:
             row = conn.execute(
-                "SELECT last_imported_at FROM import_sources WHERE source_key = 'evo'"
+                "SELECT last_imported_at FROM import_sources WHERE source_key = ?",
+                (source_key,)
             ).fetchone()
             if row and row["last_imported_at"]:
                 if generated_at <= row["last_imported_at"]:
@@ -93,11 +106,12 @@ def main():
                     return
 
     prompts_by_file = {}
-    for md_file in sorted(CASES_DIR.glob("*_zh-CN.md")):
-        file_stem = md_file.stem.replace("_zh-CN", "")
-        category = FILE_CATEGORY_MAP.get(file_stem)
-        if category:
-            prompts_by_file[category] = parse_markdown(md_file)
+    if args.source == "evo":
+        for md_file in sorted(CASES_DIR.glob("*_zh-CN.md")):
+            file_stem = md_file.stem.replace("_zh-CN", "")
+            category = FILE_CATEGORY_MAP.get(file_stem)
+            if category:
+                prompts_by_file[category] = parse_markdown(md_file)
 
     existing_sources = set()
     with get_db() as conn:
@@ -132,8 +146,11 @@ def main():
         case_num = int(case_match.group(1)) if case_match else None
 
         prompt_text = ""
-        if category_slug in prompts_by_file and case_num:
-            prompt_text = prompts_by_file[category_slug].get(case_num, "")
+        if args.source == "cases":
+            prompt_text = record.get("prompt", "")
+        else:
+            if category_slug in prompts_by_file and case_num:
+                prompt_text = prompts_by_file[category_slug].get(case_num, "")
 
         if not prompt_text:
             skipped += 1
@@ -187,12 +204,12 @@ def main():
 
         conn.execute(
             """INSERT INTO import_sources (source_key, last_imported_at, record_count, metadata)
-               VALUES ('evo', ?, ?, ?)
+               VALUES (?, ?, ?, ?)
                ON CONFLICT(source_key) DO UPDATE SET
                  last_imported_at = excluded.last_imported_at,
                  record_count = excluded.record_count,
                  metadata = excluded.metadata""",
-            (generated_at, inserted, json.dumps({"total_records": len(records)})),
+            (source_key, generated_at, inserted, json.dumps({"total_records": len(records)})),
         )
 
     print(f"Imported: {inserted}, Skipped: {skipped}")
