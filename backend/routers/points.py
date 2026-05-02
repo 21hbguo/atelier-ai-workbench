@@ -76,7 +76,8 @@ async def create_recharge_request(body: RechargeCreateRequest, user=Depends(get_
     if body.points <= 0:
         raise HTTPException(status_code=400, detail="兑换积分必须大于0")
     payer_name = (body.payer_name or "").strip()[:64]
-    tx_no = (body.tx_no or "").strip()[:128]
+    from datetime import datetime
+    tx_no = f"RCH{datetime.now().strftime('%Y%m%d%H%M%S')}{user['user_id']}"
     proof_url = (body.proof_url or "").strip()[:1000]
     remark = (body.remark or "").strip()[:500]
     with get_db() as conn:
@@ -85,7 +86,7 @@ async def create_recharge_request(body: RechargeCreateRequest, user=Depends(get_
             (user["user_id"], channel, body.amount, body.points, payer_name, tx_no, proof_url, remark),
         )
         request_id = cursor.lastrowid
-    return {"id": request_id, "message": "充值申请已提交，等待审核"}
+    return {"id": request_id, "tx_no": tx_no, "message": "充值申请已提交，等待审核"}
 
 
 @router.get("/recharge/requests")

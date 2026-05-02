@@ -550,17 +550,29 @@ async def approve_recharge_request(request_id: int, body: dict, admin=Depends(re
         points = int(body.get("points") or item["points"])
         if points <= 0:
             raise HTTPException(status_code=400, detail="发放积分必须大于0")
+        user_id = item["user_id"]
         while True:
             code = secrets.token_urlsafe(8).upper()
             if not conn.execute("SELECT id FROM redemption_codes WHERE code = ?", (code,)).fetchone():
                 break
-        conn.execute("INSERT INTO redemption_codes (code, points, recharge_request_id) VALUES (?, ?, ?)", (code, points, request_id))
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute("INSERT INTO redemption_codes (code, points, recharge_request_id) VALUES (?, ?, ?)", (code, points, request_id))
+        code_id = conn.execute("SELECT id FROM redemption_codes WHERE code = ?", (code,)).fetchone()["id"]
+        conn.execute(
+            "UPDATE redemption_codes SET is_used = 1, used_by = ?, used_at = ? WHERE id = ?",
+            (user_id, now, code_id),
+        )
+        conn.execute("UPDATE users SET points = points + ? WHERE id = ?", (points, user_id))
+        new_balance = conn.execute("SELECT points FROM users WHERE id = ?", (user_id,)).fetchone()["points"]
+        conn.execute(
+            "INSERT INTO point_transactions (user_id, amount, balance_after, type, description) VALUES (?, ?, ?, ?, ?)",
+            (user_id, points, new_balance, "redeem_code", f"充值审核通过 (¥{item['amount']})"),
+        )
         conn.execute(
             "UPDATE recharge_requests SET status = 'approved', points = ?, redeem_code = ?, review_note = ?, reviewed_at = ?, reviewed_by = ? WHERE id = ?",
             (points, code, review_note, now, admin["user_id"], request_id),
         )
-        return {"message": "审核通过并已自动发放兑换码", "code": code, "points": points}
+        return {"message": "审核通过，积分已发放", "code": code, "points": points}
 
 
 @router.post("/recharge-requests/{request_id}/reject")
