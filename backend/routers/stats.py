@@ -27,10 +27,6 @@ async def get_system_stats(user=Depends(get_current_user)):
     from backend.routers.auth import get_rate_limit_stats
     from backend.config import DATA_DIR
 
-    # 存储用量
-    db_path = DATA_DIR / "app.db"
-    db_size = db_path.stat().st_size if db_path.exists() else 0
-
     images_dir = DATA_DIR / "images"
     image_count = len(list(images_dir.iterdir())) if images_dir.exists() else 0
     image_size = sum(f.stat().st_size for f in images_dir.iterdir() if f.is_file()) if images_dir.exists() else 0
@@ -39,8 +35,9 @@ async def get_system_stats(user=Depends(get_current_user)):
     upload_count = len(list(uploads_dir.iterdir())) if uploads_dir.exists() else 0
     upload_size = sum(f.stat().st_size for f in uploads_dir.iterdir() if f.is_file()) if uploads_dir.exists() else 0
 
-    # 处理中的任务数
+    # 存储用量 + 处理中的任务数
     with get_db() as conn:
+        db_size = conn.execute("SELECT pg_database_size(current_database()) as size").fetchone()["size"]
         processing = conn.execute("SELECT COUNT(*) as cnt FROM tasks WHERE status IN ('processing', 'queued')").fetchone()["cnt"]
 
     # API 配置状态

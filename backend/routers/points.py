@@ -56,7 +56,7 @@ async def get_transactions(page: int = 1, size: int = 20, user=Depends(get_curre
     offset = (page - 1) * size
     with get_db() as conn:
         total = conn.execute(
-            "SELECT COUNT(*) as cnt FROM point_transactions WHERE user_id = ?",
+            "SELECT COUNT(*) as cnt FROM point_transactions WHERE user_id = %s",
             (user["user_id"],)
         ).fetchone()["cnt"]
         rows = conn.execute(
@@ -66,7 +66,7 @@ async def get_transactions(page: int = 1, size: int = 20, user=Depends(get_curre
                       rr.reviewed_at, rr.reviewed_by
                FROM point_transactions t
                LEFT JOIN recharge_requests rr ON t.recharge_request_id = rr.id
-               WHERE t.user_id = ? ORDER BY t.created_at DESC LIMIT ? OFFSET ?""",
+               WHERE t.user_id = %s ORDER BY t.created_at DESC LIMIT %s OFFSET %s""",
             (user["user_id"], size, offset)
         ).fetchall()
         return {"total": total, "items": [dict(r) for r in rows], "page": page, "size": size}
@@ -88,13 +88,13 @@ async def create_recharge_request(body: RechargeCreateRequest, user=Depends(get_
     remark = (body.remark or "").strip()[:500]
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO recharge_requests (user_id, channel, amount, points, payer_name, tx_no, proof_url, remark, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+            "INSERT INTO recharge_requests (user_id, channel, amount, points, payer_name, tx_no, proof_url, remark, status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'pending') RETURNING id",
             (user["user_id"], channel, body.amount, body.points, payer_name, tx_no, proof_url, remark),
         )
-        request_id = cursor.lastrowid
-        balance = conn.execute("SELECT points FROM users WHERE id = ?", (user["user_id"],)).fetchone()["points"]
+        request_id = cursor.fetchone()["id"]
+        balance = conn.execute("SELECT points FROM users WHERE id = %s", (user["user_id"],)).fetchone()["points"]
         conn.execute(
-            "INSERT INTO point_transactions (user_id, amount, balance_after, type, description, recharge_request_id) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO point_transactions (user_id, amount, balance_after, type, description, recharge_request_id) VALUES (%s, %s, %s, %s, %s, %s)",
             (user["user_id"], 0, balance, "recharge_pending", f"充值申请待审核 (¥{body.amount})", request_id),
         )
     return {"id": request_id, "tx_no": tx_no, "message": "充值申请已提交，等待审核"}
@@ -104,9 +104,9 @@ async def create_recharge_request(body: RechargeCreateRequest, user=Depends(get_
 async def list_recharge_requests(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), user=Depends(get_current_user)):
     offset = (page - 1) * size
     with get_db() as conn:
-        total = conn.execute("SELECT COUNT(*) as cnt FROM recharge_requests WHERE user_id = ?", (user["user_id"],)).fetchone()["cnt"]
+        total = conn.execute("SELECT COUNT(*) as cnt FROM recharge_requests WHERE user_id = %s", (user["user_id"],)).fetchone()["cnt"]
         rows = conn.execute(
-            "SELECT id, channel, amount, points, payer_name, tx_no, proof_url, remark, status, redeem_code, review_note, created_at, reviewed_at FROM recharge_requests WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            "SELECT id, channel, amount, points, payer_name, tx_no, proof_url, remark, status, redeem_code, review_note, created_at, reviewed_at FROM recharge_requests WHERE user_id = %s ORDER BY created_at DESC LIMIT %s OFFSET %s",
             (user["user_id"], size, offset),
         ).fetchall()
         return {"total": total, "items": [dict(r) for r in rows], "page": page, "size": size}

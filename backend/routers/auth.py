@@ -59,16 +59,16 @@ class LoginRequest(BaseModel):
 async def register(req: RegisterRequest, request: Request):
     _check_register_rate(get_client_ip(request))
     with get_db() as conn:
-        existing = conn.execute("SELECT id FROM users WHERE username = ?", (req.username,)).fetchone()
+        existing = conn.execute("SELECT id FROM users WHERE username = %s", (req.username,)).fetchone()
         if existing:
             raise HTTPException(status_code=400, detail="用户名已存在")
 
         password_hash = await hash_password(req.password)
         cursor = conn.execute(
-            "INSERT INTO users (username, password_hash, nickname) VALUES (?, ?, ?)",
+            "INSERT INTO users (username, password_hash, nickname) VALUES (%s, %s, %s) RETURNING id",
             (req.username, password_hash, req.nickname or req.username),
         )
-        user_id = cursor.lastrowid
+        user_id = cursor.fetchone()["id"]
         update_user_ip(user_id, get_client_ip(request), conn=conn)
         PointsService.add_points(user_id, PointsService.REGISTER_BONUS, "register_bonus", "注册赠送")
         token = create_token(user_id, req.username)
@@ -79,12 +79,12 @@ async def register(req: RegisterRequest, request: Request):
 async def login(req: LoginRequest, request: Request):
     _check_login_rate(get_client_ip(request))
     with get_db() as conn:
-        user = conn.execute("SELECT * FROM users WHERE username = ?", (req.username,)).fetchone()
+        user = conn.execute("SELECT * FROM users WHERE username = %s", (req.username,)).fetchone()
         if not user or not await verify_password(req.password, user["password_hash"]):
             raise HTTPException(status_code=401, detail="用户名或密码错误")
 
         update_user_ip(user["id"], get_client_ip(request), conn=conn)
-        conn.execute("UPDATE users SET last_active = ? WHERE id = ?", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user["id"]))
+        conn.execute("UPDATE users SET last_active = %s WHERE id = %s", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user["id"]))
         token = create_token(user["id"], user["username"], bool(user["is_admin"]))
         return {"token": token, "user": {"id": user["id"], "username": user["username"], "nickname": user["nickname"], "is_admin": bool(user["is_admin"]), "points": user["points"]}}
 
@@ -92,7 +92,7 @@ async def login(req: LoginRequest, request: Request):
 @router.get("/me")
 async def get_me(user=Depends(get_current_user)):
     with get_db() as conn:
-        u = conn.execute("SELECT id, username, nickname, avatar, is_admin, points, created_at FROM users WHERE id = ?", (user["user_id"],)).fetchone()
+        u = conn.execute("SELECT id, username, nickname, avatar, is_admin, points, created_at FROM users WHERE id = %s", (user["user_id"],)).fetchone()
         if not u:
             raise HTTPException(status_code=404, detail="用户不存在")
         d = dict(u)

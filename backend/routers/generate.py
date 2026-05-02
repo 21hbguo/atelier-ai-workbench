@@ -27,9 +27,9 @@ router = APIRouter(prefix="/api/generate", tags=["generate"])
 def _check_generate_rate(user_id: int):
     with get_db() as conn:
         count = conn.execute(
-            "SELECT COUNT(*) FROM user_requests WHERE user_id = ? AND status = 'processing' AND created_at > datetime('now', '-1 minute')",
+            "SELECT COUNT(*) AS cnt FROM user_requests WHERE user_id = %s AND status = 'processing' AND created_at > NOW() - interval '1 minute'",
             (user_id,)
-        ).fetchone()[0]
+        ).fetchone()["cnt"]
         if count >= 10:
             raise HTTPException(status_code=429, detail="生成请求过于频繁，请稍后再试")
 
@@ -243,7 +243,7 @@ async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = N
                 image_meta["created_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 with get_db() as conn:
                     conn.execute(
-                        "INSERT OR REPLACE INTO image_metadata (filename, metadata, created_at, user_id) VALUES (?, ?, ?, ?)",
+                        "INSERT INTO image_metadata (filename, metadata, created_at, user_id) VALUES (%s, %s, %s, %s) ON CONFLICT(filename) DO UPDATE SET metadata=EXCLUDED.metadata, created_at=EXCLUDED.created_at, user_id=EXCLUDED.user_id",
                         (filename, json.dumps(image_meta, ensure_ascii=False), image_meta["created_at"], user_id),
                     )
 

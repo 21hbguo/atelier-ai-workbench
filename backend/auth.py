@@ -84,7 +84,7 @@ def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Secur
 
     # 检查用户是否被冻结
     with get_db() as conn:
-        user = conn.execute("SELECT is_frozen FROM users WHERE id = ?", (user_id,)).fetchone()
+        user = conn.execute("SELECT is_frozen FROM users WHERE id = %s", (user_id,)).fetchone()
         if user and user["is_frozen"]:
             raise HTTPException(status_code=403, detail="账号已被冻结")
 
@@ -111,11 +111,11 @@ def record_request(user_id: int, status: str):
     with get_db() as conn:
         if status in ("success", "failed"):
             conn.execute(
-                "DELETE FROM user_requests WHERE user_id = ? AND status = 'processing' AND id = (SELECT id FROM user_requests WHERE user_id = ? AND status = 'processing' ORDER BY id DESC LIMIT 1)",
+                "DELETE FROM user_requests WHERE user_id = %s AND status = 'processing' AND id = (SELECT id FROM user_requests WHERE user_id = %s AND status = 'processing' ORDER BY id DESC LIMIT 1)",
                 (user_id, user_id),
             )
         conn.execute(
-            "INSERT INTO user_requests (user_id, status) VALUES (?, ?)",
+            "INSERT INTO user_requests (user_id, status) VALUES (%s, %s)",
             (user_id, status),
         )
 
@@ -131,7 +131,7 @@ def get_client_ip(request) -> str:
 def update_user_ip(user_id: int, ip: str, conn=None):
     """更新用户 IP"""
     if conn:
-        conn.execute("UPDATE users SET last_ip = ? WHERE id = ?", (ip, user_id))
+        conn.execute("UPDATE users SET last_ip = %s WHERE id = %s", (ip, user_id))
     else:
         with get_db() as c:
-            c.execute("UPDATE users SET last_ip = ? WHERE id = ?", (ip, user_id))
+            c.execute("UPDATE users SET last_ip = %s WHERE id = %s", (ip, user_id))
