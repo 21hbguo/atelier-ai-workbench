@@ -166,7 +166,9 @@ export default function ImageDetailModal({
                         <div className="flex gap-2 flex-wrap">
                           {meta.input_urls.map((url, i) => <img key={i} src={url} className="w-16 h-16 rounded-lg object-cover" />)}
                         </div>
-                  </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             )}
