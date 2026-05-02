@@ -55,7 +55,6 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
 
         banned_word = BannedWordsService.check(request.prompt)
         if banned_word:
-            await asyncio.sleep(10)
             TaskManager.update_task(task_id, status="failed", error="提示词包含违禁词")
             StatsService.record_failed()
             record_request(user_id, "failed")
@@ -126,7 +125,6 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
 
         banned_word = BannedWordsService.check(request.prompt)
         if banned_word:
-            await asyncio.sleep(10)
             TaskManager.update_task(task_id, status="failed", error="提示词包含违禁词")
             StatsService.record_failed()
             record_request(user_id, "failed")

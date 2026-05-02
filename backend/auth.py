@@ -1,4 +1,5 @@
 import os
+import asyncio
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional
@@ -28,12 +29,16 @@ JWT_EXPIRE_HOURS = 72
 security = HTTPBearer()
 
 
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+async def hash_password(password: str) -> str:
+    return await asyncio.to_thread(
+        lambda: bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    )
 
 
-def verify_password(password: str, password_hash: str) -> bool:
-    return bcrypt.checkpw(password.encode(), password_hash.encode())
+async def verify_password(password: str, password_hash: str) -> bool:
+    return await asyncio.to_thread(
+        lambda: bcrypt.checkpw(password.encode(), password_hash.encode())
+    )
 
 
 def create_token(user_id: int, username: str, is_admin: bool = False) -> str:

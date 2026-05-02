@@ -3,6 +3,30 @@ from typing import Optional, Dict, Any, List
 
 from backend.config import IMAGE_GEN_API_URL, IMAGE_GEN_API_KEY
 
+# 模块级单例客户端，带连接池配置
+_http_client: Optional[httpx.AsyncClient] = None
+
+
+def get_http_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(
+            timeout=30.0,
+            limits=httpx.Limits(
+                max_connections=100,
+                max_keepalive_connections=20,
+                keepalive_expiry=30,
+            ),
+        )
+    return _http_client
+
+
+async def close_http_client():
+    global _http_client
+    if _http_client and not _http_client.is_closed:
+        await _http_client.aclose()
+        _http_client = None
+
 
 class ImageGenService:
     @classmethod
@@ -12,12 +36,12 @@ class ImageGenService:
         if urls:
             payload["urls"] = urls
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                f"{IMAGE_GEN_API_URL()}/image_gpt",
-                headers=headers,
-                json=payload,
-            )
+        client = get_http_client()
+        response = await client.post(
+            f"{IMAGE_GEN_API_URL()}/image_gpt",
+            headers=headers,
+            json=payload,
+        )
 
         if response.status_code != 200:
             raise Exception(f"提交任务失败 ({response.status_code}): {response.text}")
@@ -36,11 +60,11 @@ class ImageGenService:
         params = {"key": IMAGE_GEN_API_KEY(), "id": task_id}
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(
-                    f"{IMAGE_GEN_API_URL()}/detail",
-                    params=params,
-                )
+            client = get_http_client()
+            response = await client.get(
+                f"{IMAGE_GEN_API_URL()}/detail",
+                params=params,
+            )
         except Exception:
             return None
 
@@ -59,8 +83,8 @@ class ImageGenService:
 
     @classmethod
     async def download_image(cls, url: str, save_path: str) -> bool:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.get(url)
+        client = get_http_client()
+        response = await client.get(url, timeout=120.0)
 
         if response.status_code != 200:
             return False

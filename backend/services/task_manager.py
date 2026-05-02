@@ -37,29 +37,48 @@ class TaskManager:
         return tasks
 
     @classmethod
-    def _save_to_db(cls, task_id: str, task: Dict[str, Any]) -> None:
-        with get_db() as conn:
-            conn.execute(
-                """INSERT OR REPLACE INTO tasks
-                   (task_id, type, status, params, created_at, updated_at,
-                    started_at, completed_at, progress, result_urls, error, external_result, user_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    task_id,
-                    task.get("type", "text"),
-                    task.get("status", "pending"),
-                    json.dumps(task.get("params", {}), ensure_ascii=False),
-                    task.get("created_at"),
-                    task.get("updated_at"),
-                    task.get("started_at"),
-                    task.get("completed_at"),
-                    task.get("progress", 0),
-                    json.dumps(task.get("result_urls", []), ensure_ascii=False),
-                    task.get("error"),
-                    json.dumps(task.get("external_result"), ensure_ascii=False) if task.get("external_result") else None,
-                    task.get("user_id"),
-                ),
-            )
+    def _save_to_db(cls, task_id: str, task: Dict[str, Any], fields: Optional[List[str]] = None) -> None:
+        if fields:
+            # 只更新指定字段
+            set_clauses = []
+            values = []
+            for f in fields:
+                set_clauses.append(f"{f} = ?")
+                if f == "params":
+                    values.append(json.dumps(task.get("params", {}), ensure_ascii=False))
+                elif f == "result_urls":
+                    values.append(json.dumps(task.get("result_urls", []), ensure_ascii=False))
+                elif f == "external_result":
+                    values.append(json.dumps(task.get("external_result"), ensure_ascii=False) if task.get("external_result") else None)
+                else:
+                    values.append(task.get(f))
+            values.append(task_id)
+            with get_db() as conn:
+                conn.execute(f"UPDATE tasks SET {', '.join(set_clauses)} WHERE task_id = ?", values)
+        else:
+            # 全量更新
+            with get_db() as conn:
+                conn.execute(
+                    """INSERT OR REPLACE INTO tasks
+                       (task_id, type, status, params, created_at, updated_at,
+                        started_at, completed_at, progress, result_urls, error, external_result, user_id)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        task_id,
+                        task.get("type", "text"),
+                        task.get("status", "pending"),
+                        json.dumps(task.get("params", {}), ensure_ascii=False),
+                        task.get("created_at"),
+                        task.get("updated_at"),
+                        task.get("started_at"),
+                        task.get("completed_at"),
+                        task.get("progress", 0),
+                        json.dumps(task.get("result_urls", []), ensure_ascii=False),
+                        task.get("error"),
+                        json.dumps(task.get("external_result"), ensure_ascii=False) if task.get("external_result") else None,
+                        task.get("user_id"),
+                    ),
+                )
 
     @classmethod
     def _delete_from_db(cls, task_id: str) -> None:
@@ -116,7 +135,14 @@ class TaskManager:
             kwargs.setdefault("completed_at", now)
         task.update(kwargs)
         task["updated_at"] = now
-        cls._save_to_db(task_id, task)
+
+        # 终态（completed/failed）才写库，高频进度更新只写内存
+        if new_status in ("completed", "failed"):
+            cls._save_to_db(task_id, task)
+        else:
+            # 非终态只更新进度和状态到内存，不立即写库
+            pass
+
         return task
 
     @classmethod
@@ -137,50 +163,54 @@ class TaskManager:
         max_attempts = 300
         attempt = 0
 
-        while attempt < max_attempts:
-            attempt += 1
-            try:
-                result = await ImageGenService.get_task_status(external_task_id)
-                status = result.get("status", "running").lower()
+        try:
+            while attempt < max_attempts:
+                attempt += 1
+                try:
+                    result = await ImageGenService.get_task_status(external_task_id)
+                    status = result.get("status", "running").lower()
 
-                if status in ["success", "completed", "done"]:
-                    result_urls = result.get("image_urls", result.get("images", []))
-                    local_paths = []
-                    for url in result_urls:
-                        filename = f"{task_id}_{len(local_paths)}.png"
-                        save_path = GENERATED_IMAGES_DIR / filename
-                        await ImageGenService.download_image(url, str(save_path))
-                        local_paths.append(str(save_path))
+                    if status in ["success", "completed", "done"]:
+                        result_urls = result.get("image_urls", result.get("images", []))
+                        local_paths = []
+                        for url in result_urls:
+                            filename = f"{task_id}_{len(local_paths)}.png"
+                            save_path = GENERATED_IMAGES_DIR / filename
+                            await ImageGenService.download_image(url, str(save_path))
+                            local_paths.append(str(save_path))
 
-                    cls.update_task(
-                        task_id,
-                        status="completed",
-                        progress=100,
-                        result_urls=local_paths,
-                        external_result=result,
-                    )
-                    return
+                        cls.update_task(
+                            task_id,
+                            status="completed",
+                            progress=100,
+                            result_urls=local_paths,
+                            external_result=result,
+                        )
+                        return
 
-                elif status in ["failed", "error"]:
-                    cls.update_task(task_id, status="failed", error=result.get("error", "未知错误"))
-                    return
+                    elif status in ["failed", "error"]:
+                        cls.update_task(task_id, status="failed", error=result.get("error", "未知错误"))
+                        return
 
-                elif status in ["queued", "queue"]:
-                    cls.update_task(task_id, status="queued", progress=10)
-                elif status in ["processing", "running", "generating"]:
-                    progress = result.get("progress", 50)
-                    cls.update_task(task_id, status="processing", progress=progress)
-                else:
-                    cls.update_task(task_id, status=status)
+                    elif status in ["queued", "queue"]:
+                        cls.update_task(task_id, status="queued", progress=10)
+                    elif status in ["processing", "running", "generating"]:
+                        progress = result.get("progress", 50)
+                        cls.update_task(task_id, status="processing", progress=progress)
+                    else:
+                        cls.update_task(task_id, status=status)
 
-            except Exception as e:
-                if attempt >= max_attempts:
-                    cls.update_task(task_id, status="failed", error=f"轮询失败: {str(e)}")
-                    return
+                except Exception as e:
+                    if attempt >= max_attempts:
+                        cls.update_task(task_id, status="failed", error=f"轮询失败: {str(e)}")
+                        return
 
-            await asyncio.sleep(2)
+                await asyncio.sleep(2)
 
-        cls.update_task(task_id, status="failed", error="轮询超时")
+            cls.update_task(task_id, status="failed", error="轮询超时")
+        finally:
+            # 轮询完成后清理
+            cls._polling_tasks.pop(task_id, None)
 
     @classmethod
     def retry_task(cls, task_id: str) -> Optional[Dict[str, Any]]:

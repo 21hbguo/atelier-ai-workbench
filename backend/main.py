@@ -1,5 +1,6 @@
 import os
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,10 +9,18 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from backend.routers import generate, upload, tasks, images, prompts, stats, config, auth, square, admin, points, announcements
 from backend.config import GENERATED_IMAGES_DIR, UPLOAD_DIR
+from backend.services.image_gen import close_http_client
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
-app = FastAPI(title="AI Image Generator", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    await close_http_client()
+
+
+app = FastAPI(title="AI Image Generator", version="1.0.0", lifespan=lifespan)
 
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
 

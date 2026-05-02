@@ -63,7 +63,7 @@ async def register(req: RegisterRequest, request: Request):
         if existing:
             raise HTTPException(status_code=400, detail="用户名已存在")
 
-        password_hash = hash_password(req.password)
+        password_hash = await hash_password(req.password)
         cursor = conn.execute(
             "INSERT INTO users (username, password_hash, nickname) VALUES (?, ?, ?)",
             (req.username, password_hash, req.nickname or req.username),
@@ -80,7 +80,7 @@ async def login(req: LoginRequest, request: Request):
     _check_login_rate(get_client_ip(request))
     with get_db() as conn:
         user = conn.execute("SELECT * FROM users WHERE username = ?", (req.username,)).fetchone()
-        if not user or not verify_password(req.password, user["password_hash"]):
+        if not user or not await verify_password(req.password, user["password_hash"]):
             raise HTTPException(status_code=401, detail="用户名或密码错误")
 
         update_user_ip(user["id"], get_client_ip(request), conn=conn)
