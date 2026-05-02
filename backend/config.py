@@ -18,6 +18,11 @@ ALLOWED_EXTENSIONS = set(os.getenv("ALLOWED_EXTENSIONS", "png,jpg,jpeg,webp").sp
 # 频率限制
 RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", 60))
 
+# PostgreSQL
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost:5432/app_db")
+PG_POOL_MIN = int(os.getenv("PG_POOL_MIN", "5"))
+PG_POOL_MAX = int(os.getenv("PG_POOL_MAX", "20"))
+
 # 所有数据统一放在 data/ 下
 DATA_DIR = PROJECT_ROOT / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"

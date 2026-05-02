@@ -16,7 +16,7 @@ def _enrich_tasks_with_username(tasks: list) -> list:
     if not user_ids:
         return tasks
     with get_db() as conn:
-        placeholders = ",".join("?" * len(user_ids))
+        placeholders = ",".join(["%s"] * len(user_ids))
         rows = conn.execute(
             f"SELECT id, username, nickname FROM users WHERE id IN ({placeholders})",
             list(user_ids),

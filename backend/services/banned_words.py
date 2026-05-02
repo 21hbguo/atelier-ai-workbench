@@ -36,7 +36,7 @@ class BannedWordsService:
         with get_db() as conn:
             try:
                 conn.execute(
-                    "INSERT INTO banned_words (word, created_at) VALUES (?, datetime('now'))",
+                    "INSERT INTO banned_words (word, created_at) VALUES (%s, NOW())",
                     (word,),
                 )
                 cls._cache = None
@@ -48,7 +48,7 @@ class BannedWordsService:
     def remove(cls, word_id: int) -> bool:
         import time
         with get_db() as conn:
-            cur = conn.execute("DELETE FROM banned_words WHERE id = ?", (word_id,))
+            cur = conn.execute("DELETE FROM banned_words WHERE id = %s", (word_id,))
             cls._cache = None
             return cur.rowcount > 0
 
@@ -64,7 +64,7 @@ class BannedWordsService:
                     continue
                 try:
                     conn.execute(
-                        "INSERT INTO banned_words (word, created_at) VALUES (?, datetime('now'))",
+                        "INSERT INTO banned_words (word, created_at) VALUES (%s, NOW())",
                         (word,),
                     )
                     added += 1
@@ -79,15 +79,15 @@ class BannedWordsService:
             offset = (page - 1) * size
             if query:
                 q = f"%{query}%"
-                total = conn.execute("SELECT COUNT(*) FROM banned_words WHERE word LIKE ?", (q,)).fetchone()[0]
+                total = conn.execute("SELECT COUNT(*) AS cnt FROM banned_words WHERE word LIKE %s", (q,)).fetchone()["cnt"]
                 rows = conn.execute(
-                    "SELECT * FROM banned_words WHERE word LIKE ? ORDER BY id DESC LIMIT ? OFFSET ?",
+                    "SELECT * FROM banned_words WHERE word LIKE %s ORDER BY id DESC LIMIT %s OFFSET %s",
                     (q, size, offset),
                 ).fetchall()
             else:
-                total = conn.execute("SELECT COUNT(*) FROM banned_words").fetchone()[0]
+                total = conn.execute("SELECT COUNT(*) AS cnt FROM banned_words").fetchone()["cnt"]
                 rows = conn.execute(
-                    "SELECT * FROM banned_words ORDER BY id DESC LIMIT ? OFFSET ?",
+                    "SELECT * FROM banned_words ORDER BY id DESC LIMIT %s OFFSET %s",
                     (size, offset),
                 ).fetchall()
             return {"words": [dict(row) for row in rows], "total": total}

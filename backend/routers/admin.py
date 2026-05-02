@@ -22,7 +22,7 @@ async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
         offset = (page - 1) * size
         if query:
             q = f"%{query}%"
-            total = conn.execute("SELECT COUNT(*) FROM users WHERE username LIKE ? OR nickname LIKE ?", (q, q)).fetchone()[0]
+            total = conn.execute("SELECT COUNT(*) as cnt FROM users WHERE username LIKE %s OR nickname LIKE %s", (q, q)).fetchone()["cnt"]
             rows = conn.execute(
                 """
                 SELECT u.id, u.username, u.nickname, u.is_admin, u.is_frozen, u.points, u.last_ip, u.last_active, u.created_at,
@@ -32,15 +32,15 @@ async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
                 FROM users u
                 LEFT JOIN user_requests ur ON u.id = ur.user_id
                 LEFT JOIN (SELECT user_id, COUNT(*) as cnt FROM image_metadata GROUP BY user_id) img ON u.id = img.user_id
-                WHERE u.username LIKE ? OR u.nickname LIKE ?
+                WHERE u.username LIKE %s OR u.nickname LIKE %s
                 GROUP BY u.id
                 ORDER BY u.last_active DESC
-                LIMIT ? OFFSET ?
+                LIMIT %s OFFSET %s
                 """,
                 (q, q, size, offset),
             ).fetchall()
         else:
-            total = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+            total = conn.execute("SELECT COUNT(*) as cnt FROM users").fetchone()["cnt"]
             rows = conn.execute(
                 """
                 SELECT u.id, u.username, u.nickname, u.is_admin, u.is_frozen, u.points, u.last_ip, u.last_active, u.created_at,
@@ -52,7 +52,7 @@ async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
                 LEFT JOIN (SELECT user_id, COUNT(*) as cnt FROM image_metadata GROUP BY user_id) img ON u.id = img.user_id
                 GROUP BY u.id
                 ORDER BY u.last_active DESC
-                LIMIT ? OFFSET ?
+                LIMIT %s OFFSET %s
                 """,
                 (size, offset),
             ).fetchall()
@@ -64,7 +64,7 @@ async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
             user["is_frozen"] = bool(user.get("is_frozen"))
             # 获取最近一次请求时间
             last_request = conn.execute(
-                "SELECT created_at FROM user_requests WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+                "SELECT created_at FROM user_requests WHERE user_id = %s ORDER BY created_at DESC LIMIT 1",
                 (user["id"],),
             ).fetchone()
             user["last_request_at"] = last_request["created_at"] if last_request else None
@@ -78,11 +78,11 @@ async def freeze_user(user_id: int, admin=Depends(require_admin)):
     if user_id == admin["user_id"]:
         raise HTTPException(status_code=400, detail="不能冻结自己")
     with get_db() as conn:
-        user = conn.execute("SELECT id, is_frozen FROM users WHERE id = ?", (user_id,)).fetchone()
+        user = conn.execute("SELECT id, is_frozen FROM users WHERE id = %s", (user_id,)).fetchone()
         if not user:
             raise HTTPException(status_code=404, detail="用户不存在")
-        new_status = 0 if user["is_frozen"] else 1
-        conn.execute("UPDATE users SET is_frozen = ? WHERE id = ?", (new_status, user_id))
+        new_status = not user["is_frozen"]
+        conn.execute("UPDATE users SET is_frozen = %s WHERE id = %s", (new_status, user_id))
         return {"is_frozen": bool(new_status), "message": "已冻结" if new_status else "已启用"}
 
 
@@ -91,15 +91,15 @@ async def delete_user(user_id: int, admin=Depends(require_admin)):
     if user_id == admin["user_id"]:
         raise HTTPException(status_code=400, detail="不能删除自己")
     with get_db() as conn:
-        user = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+        user = conn.execute("SELECT id FROM users WHERE id = %s", (user_id,)).fetchone()
         if not user:
             raise HTTPException(status_code=404, detail="用户不存在")
-        conn.execute("DELETE FROM user_requests WHERE user_id = ?", (user_id,))
-        conn.execute("DELETE FROM square_likes WHERE user_id = ?", (user_id,))
-        conn.execute("DELETE FROM square_images WHERE user_id = ?", (user_id,))
-        conn.execute("DELETE FROM point_transactions WHERE user_id = ?", (user_id,))
-        conn.execute("DELETE FROM daily_checkins WHERE user_id = ?", (user_id,))
-        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        conn.execute("DELETE FROM user_requests WHERE user_id = %s", (user_id,))
+        conn.execute("DELETE FROM square_likes WHERE user_id = %s", (user_id,))
+        conn.execute("DELETE FROM square_images WHERE user_id = %s", (user_id,))
+        conn.execute("DELETE FROM point_transactions WHERE user_id = %s", (user_id,))
+        conn.execute("DELETE FROM daily_checkins WHERE user_id = %s", (user_id,))
+        conn.execute("DELETE FROM users WHERE id = %s", (user_id,))
         return {"message": "删除成功"}
 
 
@@ -111,36 +111,37 @@ async def list_all_square(page: int = Query(1, ge=1), size: int = Query(20, ge=1
         if query:
             q = f"%{query}%"
             total = conn.execute(
-                "SELECT COUNT(*) FROM square_images si JOIN users u ON si.user_id = u.id WHERE si.prompt LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?",
+                "SELECT COUNT(*) as cnt FROM square_images si JOIN users u ON si.user_id = u.id WHERE si.prompt LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s",
                 (q, q, q),
-            ).fetchone()[0]
+            ).fetchone()["cnt"]
             rows = conn.execute(
                 """
                 SELECT si.*, u.username, u.nickname
                 FROM square_images si
                 JOIN users u ON si.user_id = u.id
-                WHERE si.prompt LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?
+                WHERE si.prompt LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s
                 ORDER BY si.created_at DESC
-                LIMIT ? OFFSET ?
+                LIMIT %s OFFSET %s
                 """,
                 (q, q, q, size, offset),
             ).fetchall()
         else:
-            total = conn.execute("SELECT COUNT(*) FROM square_images").fetchone()[0]
+            total = conn.execute("SELECT COUNT(*) as cnt FROM square_images").fetchone()["cnt"]
             rows = conn.execute(
                 """
                 SELECT si.*, u.username, u.nickname
                 FROM square_images si
                 JOIN users u ON si.user_id = u.id
                 ORDER BY si.created_at DESC
-                LIMIT ? OFFSET ?
+                LIMIT %s OFFSET %s
                 """,
                 (size, offset),
             ).fetchall()
         images = []
         for row in rows:
             item = dict(row)
-            item["metadata"] = json.loads(item["metadata"]) if item["metadata"] else None
+            meta = item["metadata"]
+            item["metadata"] = json.loads(meta) if isinstance(meta, str) else meta
             images.append(item)
         return {"images": images, "total": total}
 
@@ -148,11 +149,11 @@ async def list_all_square(page: int = Query(1, ge=1), size: int = Query(20, ge=1
 @router.delete("/square/{image_id}")
 async def delete_square_image(image_id: int, admin=Depends(require_admin)):
     with get_db() as conn:
-        image = conn.execute("SELECT id FROM square_images WHERE id = ?", (image_id,)).fetchone()
+        image = conn.execute("SELECT id FROM square_images WHERE id = %s", (image_id,)).fetchone()
         if not image:
             raise HTTPException(status_code=404, detail="图片不存在")
-        conn.execute("DELETE FROM square_likes WHERE image_id = ?", (image_id,))
-        conn.execute("DELETE FROM square_images WHERE id = ?", (image_id,))
+        conn.execute("DELETE FROM square_likes WHERE image_id = %s", (image_id,))
+        conn.execute("DELETE FROM square_images WHERE id = %s", (image_id,))
         return {"message": "删除成功"}
 
 
@@ -163,9 +164,9 @@ async def list_history(page: int = Query(1, ge=1), size: int = Query(20, ge=1, l
         if query:
             q = f"%{query}%"
             total = conn.execute(
-                "SELECT COUNT(*) FROM tasks t LEFT JOIN users u ON t.user_id = u.id WHERE t.params LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?",
+                "SELECT COUNT(*) as cnt FROM tasks t LEFT JOIN users u ON t.user_id = u.id WHERE t.params LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s",
                 (q, q, q),
-            ).fetchone()[0]
+            ).fetchone()["cnt"]
             rows = conn.execute(
                 """
                 SELECT t.task_id, t.type, t.status, t.params, t.created_at, t.updated_at,
@@ -173,14 +174,14 @@ async def list_history(page: int = Query(1, ge=1), size: int = Query(20, ge=1, l
                        u.username, u.nickname, u.last_ip
                 FROM tasks t
                 LEFT JOIN users u ON t.user_id = u.id
-                WHERE t.params LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?
+                WHERE t.params LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s
                 ORDER BY t.updated_at DESC
-                LIMIT ? OFFSET ?
+                LIMIT %s OFFSET %s
                 """,
                 (q, q, q, size, offset),
             ).fetchall()
         else:
-            total = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+            total = conn.execute("SELECT COUNT(*) as cnt FROM tasks").fetchone()["cnt"]
             rows = conn.execute(
                 """
                 SELECT t.task_id, t.type, t.status, t.params, t.created_at, t.updated_at,
@@ -189,7 +190,7 @@ async def list_history(page: int = Query(1, ge=1), size: int = Query(20, ge=1, l
                 FROM tasks t
                 LEFT JOIN users u ON t.user_id = u.id
                 ORDER BY t.updated_at DESC
-                LIMIT ? OFFSET ?
+                LIMIT %s OFFSET %s
                 """,
                 (size, offset),
             ).fetchall()
@@ -319,7 +320,7 @@ async def clean_duplicate_hosting(admin=Depends(require_admin)):
             url = row["url"]
             keep_id = row["keep_id"]
             # 删除除keep_id以外的所有重复记录
-            cur = conn.execute("DELETE FROM image_mappings WHERE url = ? AND id != ?", (url, keep_id))
+            cur = conn.execute("DELETE FROM image_mappings WHERE url = %s AND id != %s", (url, keep_id))
             deleted += cur.rowcount
 
         return {"deleted": deleted, "duplicate_urls": len(duplicates)}
@@ -375,22 +376,22 @@ async def list_all_prompts(page: int = Query(1, ge=1), size: int = Query(20, ge=
         if query:
             q = f"%{query}%"
             total = conn.execute(
-                "SELECT COUNT(*) FROM prompts p LEFT JOIN users u ON p.user_id = u.id WHERE p.user_id IS NULL AND (p.name LIKE ? OR p.prompt LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?)",
+                "SELECT COUNT(*) as cnt FROM prompts p LEFT JOIN users u ON p.user_id = u.id WHERE p.user_id IS NULL AND (p.name LIKE %s OR p.prompt LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s)",
                 (q, q, q, q),
-            ).fetchone()[0]
+            ).fetchone()["cnt"]
             rows = conn.execute(
                 """
                 SELECT p.*, u.username, u.nickname
                 FROM prompts p
                 LEFT JOIN users u ON p.user_id = u.id
-                WHERE p.user_id IS NULL AND (p.name LIKE ? OR p.prompt LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?)
+                WHERE p.user_id IS NULL AND (p.name LIKE %s OR p.prompt LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s)
                 ORDER BY p.created_at DESC
-                LIMIT ? OFFSET ?
+                LIMIT %s OFFSET %s
                 """,
                 (q, q, q, q, size, offset),
             ).fetchall()
         else:
-            total = conn.execute("SELECT COUNT(*) FROM prompts WHERE user_id IS NULL").fetchone()[0]
+            total = conn.execute("SELECT COUNT(*) as cnt FROM prompts WHERE user_id IS NULL").fetchone()["cnt"]
             rows = conn.execute(
                 """
                 SELECT p.*, u.username, u.nickname
@@ -398,7 +399,7 @@ async def list_all_prompts(page: int = Query(1, ge=1), size: int = Query(20, ge=
                 LEFT JOIN users u ON p.user_id = u.id
                 WHERE p.user_id IS NULL
                 ORDER BY p.created_at DESC
-                LIMIT ? OFFSET ?
+                LIMIT %s OFFSET %s
                 """,
                 (size, offset),
             ).fetchall()
@@ -416,11 +417,11 @@ async def list_all_prompts(page: int = Query(1, ge=1), size: int = Query(20, ge=
 @router.delete("/prompts/{prompt_id}")
 async def delete_prompt(prompt_id: str, admin=Depends(require_admin)):
     with get_db() as conn:
-        prompt = conn.execute("SELECT id FROM prompts WHERE id = ?", (prompt_id,)).fetchone()
+        prompt = conn.execute("SELECT id FROM prompts WHERE id = %s", (prompt_id,)).fetchone()
         if not prompt:
             raise HTTPException(status_code=404, detail="提示词不存在")
-        conn.execute("DELETE FROM prompt_likes WHERE prompt_id = ?", (prompt_id,))
-        conn.execute("DELETE FROM prompts WHERE id = ?", (prompt_id,))
+        conn.execute("DELETE FROM prompt_likes WHERE prompt_id = %s", (prompt_id,))
+        conn.execute("DELETE FROM prompts WHERE id = %s", (prompt_id,))
         return {"message": "删除成功"}
 
 
@@ -430,7 +431,7 @@ async def batch_delete_prompts(body: dict, admin=Depends(require_admin)):
     if not ids:
         raise HTTPException(status_code=400, detail="未提供要删除的ID")
     with get_db() as conn:
-        placeholders = ",".join("?" * len(ids))
+        placeholders = ",".join("%s" * len(ids))
         conn.execute(f"DELETE FROM prompt_likes WHERE prompt_id IN ({placeholders})", ids)
         conn.execute(f"DELETE FROM prompts WHERE id IN ({placeholders})", ids)
         return {"message": f"已删除 {len(ids)} 条提示词"}
@@ -446,7 +447,7 @@ async def list_codes(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
     order_dir = "ASC" if order.lower() == "asc" else "DESC"
     offset = (page - 1) * size
     with get_db() as conn:
-        total = conn.execute("SELECT COUNT(*) FROM redemption_codes").fetchone()[0]
+        total = conn.execute("SELECT COUNT(*) as cnt FROM redemption_codes").fetchone()["cnt"]
         rows = conn.execute(
             f"""SELECT rc.*, u.username as used_by_name,
                 rr.id as recharge_id, rr.channel as recharge_channel, rr.amount as recharge_amount,
@@ -458,7 +459,7 @@ async def list_codes(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
                 LEFT JOIN recharge_requests rr ON rc.recharge_request_id = rr.id
                 LEFT JOIN users ru ON rr.user_id = ru.id
                 ORDER BY rc.{sort} {order_dir}
-                LIMIT ? OFFSET ?""",
+                LIMIT %s OFFSET %s""",
             (size, offset),
         ).fetchall()
         return {"items": [dict(r) for r in rows], "total": total, "page": page, "size": size}
@@ -477,18 +478,18 @@ async def generate_codes(body: dict, admin=Depends(require_admin)):
         raise HTTPException(status_code=400, detail="自定义兑换码长度不能超过 20")
     with get_db() as conn:
         if custom_code:
-            existing = conn.execute("SELECT id FROM redemption_codes WHERE code = ?", (custom_code,)).fetchone()
+            existing = conn.execute("SELECT id FROM redemption_codes WHERE code = %s", (custom_code,)).fetchone()
             if existing:
                 raise HTTPException(status_code=400, detail="兑换码已存在")
-            conn.execute("INSERT INTO redemption_codes (code, points) VALUES (?, ?)", (custom_code, points))
+            conn.execute("INSERT INTO redemption_codes (code, points) VALUES (%s, %s)", (custom_code, points))
             return {"generated": 1, "codes": [custom_code]}
         codes = []
         for _ in range(count):
             while True:
                 code = secrets.token_urlsafe(8).upper()
-                if not conn.execute("SELECT id FROM redemption_codes WHERE code = ?", (code,)).fetchone():
+                if not conn.execute("SELECT id FROM redemption_codes WHERE code = %s", (code,)).fetchone():
                     break
-            conn.execute("INSERT INTO redemption_codes (code, points) VALUES (?, ?)", (code, points))
+            conn.execute("INSERT INTO redemption_codes (code, points) VALUES (%s, %s)", (code, points))
             codes.append(code)
         return {"generated": len(codes), "codes": codes}
 
@@ -496,12 +497,12 @@ async def generate_codes(body: dict, admin=Depends(require_admin)):
 @router.delete("/codes/{code_id}")
 async def delete_code(code_id: int, admin=Depends(require_admin)):
     with get_db() as conn:
-        row = conn.execute("SELECT id, is_used FROM redemption_codes WHERE id = ?", (code_id,)).fetchone()
+        row = conn.execute("SELECT id, is_used FROM redemption_codes WHERE id = %s", (code_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="兑换码不存在")
         if row["is_used"]:
             raise HTTPException(status_code=400, detail="已使用的兑换码不能删除")
-        conn.execute("DELETE FROM redemption_codes WHERE id = ?", (code_id,))
+        conn.execute("DELETE FROM redemption_codes WHERE id = %s", (code_id,))
     return {"message": "删除成功"}
 
 
@@ -513,11 +514,11 @@ async def reset_user_password(user_id: int, body: dict, admin=Depends(require_ad
     if len(new_password) > 50:
         raise HTTPException(status_code=400, detail="密码长度不能超过50位")
     with get_db() as conn:
-        user = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+        user = conn.execute("SELECT id FROM users WHERE id = %s", (user_id,)).fetchone()
         if not user:
             raise HTTPException(status_code=404, detail="用户不存在")
         password_hash = await hash_password(new_password)
-        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
+        conn.execute("UPDATE users SET password_hash = %s WHERE id = %s", (password_hash, user_id))
     return {"message": "密码重置成功"}
 
 
@@ -528,7 +529,7 @@ async def adjust_points(user_id: int, body: dict, admin=Depends(require_admin)):
     if amount == 0:
         raise HTTPException(status_code=400, detail="积分调整量不能为 0")
     with get_db() as conn:
-        user = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+        user = conn.execute("SELECT id FROM users WHERE id = %s", (user_id,)).fetchone()
         if not user:
             raise HTTPException(status_code=404, detail="用户不存在")
     if amount > 0:
@@ -552,11 +553,11 @@ async def list_recharge_requests(page: int = Query(1, ge=1), size: int = Query(2
     where = []
     params = []
     if status in {"pending", "approved", "rejected"}:
-        where.append("rr.status = ?")
+        where.append("rr.status = %s")
         params.append(status)
     if query:
         q = f"%{query}%"
-        where.append("(u.username LIKE ? OR u.nickname LIKE ? OR rr.tx_no LIKE ?)")
+        where.append("(u.username LIKE %s OR u.nickname LIKE %s OR rr.tx_no LIKE %s)")
         params.extend([q, q, q])
     where_sql = f"WHERE {' AND '.join(where)}" if where else ""
     allowed_sort = {"created_at", "amount", "points", "status"}
@@ -564,11 +565,11 @@ async def list_recharge_requests(page: int = Query(1, ge=1), size: int = Query(2
     sort_order = "ASC" if order == "asc" else "DESC"
     with get_db() as conn:
         total = conn.execute(
-            f"""SELECT COUNT(*) FROM recharge_requests rr
+            f"""SELECT COUNT(*) as cnt FROM recharge_requests rr
                 LEFT JOIN users u ON rr.user_id = u.id
                 {where_sql}""",
             params,
-        ).fetchone()[0]
+        ).fetchone()["cnt"]
         rows = conn.execute(
             f"""SELECT rr.*, u.username, u.nickname, au.username as reviewed_by_name
                 FROM recharge_requests rr
@@ -576,7 +577,7 @@ async def list_recharge_requests(page: int = Query(1, ge=1), size: int = Query(2
                 LEFT JOIN users au ON rr.reviewed_by = au.id
                 {where_sql}
                 ORDER BY {sort_field} {sort_order}
-                LIMIT ? OFFSET ?""",
+                LIMIT %s OFFSET %s""",
             params + [size, offset],
         ).fetchall()
         return {"items": [dict(r) for r in rows], "total": total, "page": page, "size": size}
@@ -586,7 +587,7 @@ async def list_recharge_requests(page: int = Query(1, ge=1), size: int = Query(2
 async def approve_recharge_request(request_id: int, body: dict, admin=Depends(require_admin)):
     review_note = (body.get("review_note") or "").strip()[:500]
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM recharge_requests WHERE id = ?", (request_id,)).fetchone()
+        row = conn.execute("SELECT * FROM recharge_requests WHERE id = %s", (request_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="充值申请不存在")
         item = dict(row)
@@ -598,23 +599,23 @@ async def approve_recharge_request(request_id: int, body: dict, admin=Depends(re
         user_id = item["user_id"]
         while True:
             code = secrets.token_urlsafe(8).upper()
-            if not conn.execute("SELECT id FROM redemption_codes WHERE code = ?", (code,)).fetchone():
+            if not conn.execute("SELECT id FROM redemption_codes WHERE code = %s", (code,)).fetchone():
                 break
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        conn.execute("INSERT INTO redemption_codes (code, points, recharge_request_id) VALUES (?, ?, ?)", (code, points, request_id))
-        code_id = conn.execute("SELECT id FROM redemption_codes WHERE code = ?", (code,)).fetchone()["id"]
+        conn.execute("INSERT INTO redemption_codes (code, points, recharge_request_id) VALUES (%s, %s, %s)", (code, points, request_id))
+        code_id = conn.execute("SELECT id FROM redemption_codes WHERE code = %s", (code,)).fetchone()["id"]
         conn.execute(
-            "UPDATE redemption_codes SET is_used = 1, used_by = ?, used_at = ? WHERE id = ?",
+            "UPDATE redemption_codes SET is_used = true, used_by = %s, used_at = %s WHERE id = %s",
             (user_id, now, code_id),
         )
-        conn.execute("UPDATE users SET points = points + ? WHERE id = ?", (points, user_id))
-        new_balance = conn.execute("SELECT points FROM users WHERE id = ?", (user_id,)).fetchone()["points"]
+        conn.execute("UPDATE users SET points = points + %s WHERE id = %s", (points, user_id))
+        new_balance = conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()["points"]
         conn.execute(
-            "INSERT INTO point_transactions (user_id, amount, balance_after, type, description, recharge_request_id) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO point_transactions (user_id, amount, balance_after, type, description, recharge_request_id) VALUES (%s, %s, %s, %s, %s, %s)",
             (user_id, points, new_balance, "redeem_code", f"充值审核通过 (¥{item['amount']})", request_id),
         )
         conn.execute(
-            "UPDATE recharge_requests SET status = 'approved', points = ?, redeem_code = ?, review_note = ?, reviewed_at = ?, reviewed_by = ? WHERE id = ?",
+            "UPDATE recharge_requests SET status = 'approved', points = %s, redeem_code = %s, review_note = %s, reviewed_at = %s, reviewed_by = %s WHERE id = %s",
             (points, code, review_note, now, admin["user_id"], request_id),
         )
         return {"message": "审核通过，积分已发放", "code": code, "points": points}
@@ -626,14 +627,14 @@ async def reject_recharge_request(request_id: int, body: dict, admin=Depends(req
     if not review_note:
         raise HTTPException(status_code=400, detail="拒绝原因不能为空")
     with get_db() as conn:
-        row = conn.execute("SELECT status FROM recharge_requests WHERE id = ?", (request_id,)).fetchone()
+        row = conn.execute("SELECT status FROM recharge_requests WHERE id = %s", (request_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="充值申请不存在")
         if row["status"] != "pending":
             raise HTTPException(status_code=400, detail="仅待审核申请可拒绝")
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         conn.execute(
-            "UPDATE recharge_requests SET status = 'rejected', review_note = ?, reviewed_at = ?, reviewed_by = ? WHERE id = ?",
+            "UPDATE recharge_requests SET status = 'rejected', review_note = %s, reviewed_at = %s, reviewed_by = %s WHERE id = %s",
             (review_note, now, admin["user_id"], request_id),
         )
         return {"message": "已拒绝该充值申请"}

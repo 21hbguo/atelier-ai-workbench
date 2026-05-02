@@ -97,7 +97,7 @@ def main():
     if not args.full:
         with get_db() as conn:
             row = conn.execute(
-                "SELECT last_imported_at FROM import_sources WHERE source_key = ?",
+                "SELECT last_imported_at FROM import_sources WHERE source_key = %s",
                 (source_key,)
             ).fetchone()
             if row and row["last_imported_at"]:
@@ -187,7 +187,7 @@ def main():
             from uuid import uuid4
             conn.execute(
                 """INSERT INTO prompts (id, name, prompt, negative_prompt, tags, created_at, user_id, image_path, author, source, category)
-                   VALUES (?, ?, ?, '', ?, ?, NULL, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, '', %s, %s, NULL, %s, %s, %s, %s)""",
                 (
                     str(uuid4()),
                     item["name"],
@@ -204,7 +204,7 @@ def main():
 
         conn.execute(
             """INSERT INTO import_sources (source_key, last_imported_at, record_count, metadata)
-               VALUES (?, ?, ?, ?)
+               VALUES (%s, %s, %s, %s)
                ON CONFLICT(source_key) DO UPDATE SET
                  last_imported_at = excluded.last_imported_at,
                  record_count = excluded.record_count,

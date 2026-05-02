@@ -8,7 +8,7 @@ class StatsService:
     def _ensure_row(cls):
         with get_db() as conn:
             conn.execute(
-                "INSERT OR IGNORE INTO stats (id, last_date) VALUES (1, ?)",
+                "INSERT INTO stats (id, last_date) VALUES (1, %s) ON CONFLICT(id) DO NOTHING",
                 (datetime.now().strftime("%Y-%m-%d"),),
             )
 
@@ -21,11 +21,11 @@ class StatsService:
             yesterday = row["last_date"]
             if yesterday:
                 conn.execute(
-                    "INSERT OR REPLACE INTO daily_stats (date, requests, success, failed) VALUES (?, ?, ?, ?)",
+                    "INSERT INTO daily_stats (date, requests, success, failed) VALUES (%s, %s, %s, %s) ON CONFLICT(date) DO UPDATE SET requests=EXCLUDED.requests, success=EXCLUDED.success, failed=EXCLUDED.failed",
                     (yesterday, row["today_requests"], row["today_success"], row["today_failed"]),
                 )
             conn.execute(
-                "UPDATE stats SET today_requests=0, today_success=0, today_failed=0, last_date=? WHERE id=1",
+                "UPDATE stats SET today_requests=0, today_success=0, today_failed=0, last_date=%s WHERE id=1",
                 (today,),
             )
 
@@ -74,7 +74,7 @@ class StatsService:
             # 今日成功数从 image_metadata 统计
             today = datetime.now().strftime("%Y-%m-%d")
             today_img = conn.execute(
-                "SELECT COUNT(*) as cnt FROM image_metadata WHERE created_at >= ?",
+                "SELECT COUNT(*) as cnt FROM image_metadata WHERE created_at >= %s",
                 (today,)
             ).fetchone()
             result["today_success"] = today_img["cnt"] if today_img else 0
@@ -86,9 +86,9 @@ class StatsService:
             # 当日活跃用户数（今天登录或有任务的用户）
             today_active = conn.execute(
                 """SELECT COUNT(DISTINCT user_id) as cnt FROM (
-                    SELECT id as user_id FROM users WHERE last_active >= ?
+                    SELECT id as user_id FROM users WHERE last_active >= %s
                     UNION
-                    SELECT user_id FROM tasks WHERE user_id IS NOT NULL AND created_at >= ?
+                    SELECT user_id FROM tasks WHERE user_id IS NOT NULL AND created_at >= %s
                 )""",
                 (today, today)
             ).fetchone()
@@ -98,9 +98,9 @@ class StatsService:
             thirty_min_ago = (datetime.now() - timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S")
             recent_active = conn.execute(
                 """SELECT COUNT(DISTINCT user_id) as cnt FROM (
-                    SELECT id as user_id FROM users WHERE last_active >= ?
+                    SELECT id as user_id FROM users WHERE last_active >= %s
                     UNION
-                    SELECT user_id FROM tasks WHERE user_id IS NOT NULL AND created_at >= ?
+                    SELECT user_id FROM tasks WHERE user_id IS NOT NULL AND created_at >= %s
                 )""",
                 (thirty_min_ago, thirty_min_ago)
             ).fetchone()
@@ -109,7 +109,7 @@ class StatsService:
             # 前日新增用户数
             yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
             yesterday_new = conn.execute(
-                "SELECT COUNT(*) as cnt FROM users WHERE created_at >= ? AND created_at < ?",
+                "SELECT COUNT(*) as cnt FROM users WHERE created_at >= %s AND created_at < %s",
                 (yesterday, today)
             ).fetchone()
             result["yesterday_new_users"] = yesterday_new["cnt"] if yesterday_new else 0

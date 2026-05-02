@@ -19,18 +19,12 @@ class TaskManager:
                 rows = conn.execute("SELECT * FROM tasks").fetchall()
                 for row in rows:
                     d = dict(row)
-                    try:
-                        d["params"] = json.loads(d.get("params") or "{}")
-                    except (json.JSONDecodeError, TypeError):
-                        d["params"] = {}
-                    try:
-                        d["result_urls"] = json.loads(d.get("result_urls") or "[]")
-                    except (json.JSONDecodeError, TypeError):
-                        d["result_urls"] = []
-                    try:
-                        d["external_result"] = json.loads(d["external_result"]) if d.get("external_result") else None
-                    except (json.JSONDecodeError, TypeError):
-                        d["external_result"] = None
+                    val = d.get("params")
+                    d["params"] = json.loads(val) if isinstance(val, str) else (val or {})
+                    val = d.get("result_urls")
+                    d["result_urls"] = json.loads(val) if isinstance(val, str) else (val or [])
+                    val = d.get("external_result")
+                    d["external_result"] = json.loads(val) if isinstance(val, str) else val
                     tasks[d["task_id"]] = d
         except Exception:
             pass
@@ -43,7 +37,7 @@ class TaskManager:
             set_clauses = []
             values = []
             for f in fields:
-                set_clauses.append(f"{f} = ?")
+                set_clauses.append(f"{f} = %s")
                 if f == "params":
                     values.append(json.dumps(task.get("params", {}), ensure_ascii=False))
                 elif f == "result_urls":
@@ -54,15 +48,22 @@ class TaskManager:
                     values.append(task.get(f))
             values.append(task_id)
             with get_db() as conn:
-                conn.execute(f"UPDATE tasks SET {', '.join(set_clauses)} WHERE task_id = ?", values)
+                conn.execute(f"UPDATE tasks SET {', '.join(set_clauses)} WHERE task_id = %s", values)
         else:
             # 全量更新
             with get_db() as conn:
                 conn.execute(
-                    """INSERT OR REPLACE INTO tasks
+                    """INSERT INTO tasks
                        (task_id, type, status, params, created_at, updated_at,
                         started_at, completed_at, progress, result_urls, error, external_result, user_id)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       ON CONFLICT(task_id) DO UPDATE SET
+                        type=EXCLUDED.type, status=EXCLUDED.status, params=EXCLUDED.params,
+                        created_at=EXCLUDED.created_at, updated_at=EXCLUDED.updated_at,
+                        started_at=EXCLUDED.started_at, completed_at=EXCLUDED.completed_at,
+                        progress=EXCLUDED.progress, result_urls=EXCLUDED.result_urls,
+                        error=EXCLUDED.error, external_result=EXCLUDED.external_result,
+                        user_id=EXCLUDED.user_id""",
                     (
                         task_id,
                         task.get("type", "text"),
@@ -83,7 +84,7 @@ class TaskManager:
     @classmethod
     def _delete_from_db(cls, task_id: str) -> None:
         with get_db() as conn:
-            conn.execute("DELETE FROM tasks WHERE task_id = ?", (task_id,))
+            conn.execute("DELETE FROM tasks WHERE task_id = %s", (task_id,))
 
     @classmethod
     def create_task(cls, task_id: str, task_type: str, params: Dict[str, Any], user_id: int = None) -> Dict[str, Any]:
@@ -248,10 +249,10 @@ class TaskManager:
                     if image_path in urls:
                         new_urls = [u for u in urls if u != image_path]
                         conn.execute(
-                            "UPDATE tasks SET result_urls = ? WHERE task_id = ?",
+                            "UPDATE tasks SET result_urls = %s WHERE task_id = %s",
                             (json.dumps(new_urls, ensure_ascii=False), row["task_id"]),
                         )
 
 
-# 启动时从 SQLite 加载
+# 启动时从数据库加载
 TaskManager._tasks = TaskManager._load_from_db()

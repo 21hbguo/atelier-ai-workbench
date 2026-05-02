@@ -12,10 +12,8 @@ class PromptService:
     @classmethod
     def _row_to_dict(cls, row) -> Dict[str, Any]:
         d = dict(row)
-        try:
-            d["tags"] = json.loads(d.get("tags") or "[]")
-        except (json.JSONDecodeError, TypeError):
-            d["tags"] = []
+        val = d.get("tags")
+        d["tags"] = val if isinstance(val, list) else json.loads(val or "[]")
         return d
 
     _ORDER_MAP = {
@@ -32,7 +30,7 @@ class PromptService:
             params = []
 
             if scope == "private" and user_id is not None:
-                where_clauses.append("p.user_id = ?")
+                where_clauses.append("p.user_id = %s")
                 params.append(user_id)
             elif scope == "external":
                 where_clauses.append("p.source IS NOT NULL")
@@ -42,7 +40,7 @@ class PromptService:
                 where_clauses.append("p.user_id IS NULL")
 
             if category:
-                where_clauses.append("p.category = ?")
+                where_clauses.append("p.category = %s")
                 params.append(category)
 
             where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
@@ -51,24 +49,24 @@ class PromptService:
             select_extra = ", u.username, u.nickname" if scope in ("all", "community") else ""
             select_extra += ", cat.label as category_label"
 
-            count_sql = f"SELECT COUNT(*) FROM prompts p {join_sql} {where_sql}"
-            total = conn.execute(count_sql, params).fetchone()[0]
+            count_sql = f"SELECT COUNT(*) AS cnt FROM prompts p {join_sql} {where_sql}"
+            total = conn.execute(count_sql, params).fetchone()["cnt"]
 
             offset = (page - 1) * size
-            query_sql = f"SELECT p.*{select_extra} FROM prompts p {join_sql} {where_sql} ORDER BY {order} LIMIT ? OFFSET ?"
+            query_sql = f"SELECT p.*{select_extra} FROM prompts p {join_sql} {where_sql} ORDER BY {order} LIMIT %s OFFSET %s"
             rows = conn.execute(query_sql, params + [size, offset]).fetchall()
 
             results = [cls._row_to_dict(r) for r in rows]
             if user_id:
                 for p in results:
-                    like = conn.execute("SELECT id FROM prompt_likes WHERE prompt_id = ? AND user_id = ?", (p["id"], user_id)).fetchone()
+                    like = conn.execute("SELECT id FROM prompt_likes WHERE prompt_id = %s AND user_id = %s", (p["id"], user_id)).fetchone()
                     p["is_liked"] = like is not None
             return {"prompts": results, "total": total}
 
     @classmethod
     def get_by_id(cls, prompt_id: str) -> Optional[Dict[str, Any]]:
         with get_db() as conn:
-            row = conn.execute("SELECT * FROM prompts WHERE id = ?", (prompt_id,)).fetchone()
+            row = conn.execute("SELECT * FROM prompts WHERE id = %s", (prompt_id,)).fetchone()
             return cls._row_to_dict(row) if row else None
 
     @classmethod
@@ -86,7 +84,7 @@ class PromptService:
         }
         with get_db() as conn:
             conn.execute(
-                "INSERT INTO prompts (id, name, prompt, negative_prompt, tags, created_at, user_id, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO prompts (id, name, prompt, negative_prompt, tags, created_at, user_id, category) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                 (item["id"], item["name"], item["prompt"], item["negative_prompt"],
                  json.dumps(item["tags"], ensure_ascii=False), item["created_at"], item["user_id"], item["category"]),
             )
@@ -95,7 +93,7 @@ class PromptService:
     @classmethod
     def update(cls, prompt_id: str, **kwargs) -> Optional[Dict[str, Any]]:
         with get_db() as conn:
-            row = conn.execute("SELECT * FROM prompts WHERE id = ?", (prompt_id,)).fetchone()
+            row = conn.execute("SELECT * FROM prompts WHERE id = %s", (prompt_id,)).fetchone()
             if not row:
                 return None
             updates = []
@@ -103,27 +101,27 @@ class PromptService:
             for key, value in kwargs.items():
                 if value is not None:
                     if key == "tags":
-                        updates.append("tags = ?")
+                        updates.append("tags = %s")
                         values.append(json.dumps(value, ensure_ascii=False))
                     else:
-                        updates.append(f"{key} = ?")
+                        updates.append(f"{key} = %s")
                         values.append(value)
             if updates:
                 values.append(prompt_id)
-                conn.execute(f"UPDATE prompts SET {', '.join(updates)} WHERE id = ?", values)
-            row = conn.execute("SELECT * FROM prompts WHERE id = ?", (prompt_id,)).fetchone()
+                conn.execute(f"UPDATE prompts SET {', '.join(updates)} WHERE id = %s", values)
+            row = conn.execute("SELECT * FROM prompts WHERE id = %s", (prompt_id,)).fetchone()
             return cls._row_to_dict(row)
 
     @classmethod
     def delete(cls, prompt_id: str) -> bool:
         with get_db() as conn:
-            cur = conn.execute("DELETE FROM prompts WHERE id = ?", (prompt_id,))
+            cur = conn.execute("DELETE FROM prompts WHERE id = %s", (prompt_id,))
             return cur.rowcount > 0
 
     @classmethod
     def batch_delete(cls, ids: List[str]) -> int:
         with get_db() as conn:
-            placeholders = ",".join("?" for _ in ids)
+            placeholders = ",".join("%s" for _ in ids)
             cur = conn.execute(f"DELETE FROM prompts WHERE id IN ({placeholders})", ids)
             return cur.rowcount
 
@@ -137,7 +135,7 @@ class PromptService:
             params = []
 
             if scope == "private" and user_id is not None:
-                where_clauses.append("p.user_id = ?")
+                where_clauses.append("p.user_id = %s")
                 params.append(user_id)
             elif scope == "external":
                 where_clauses.append("p.source IS NOT NULL")
@@ -147,15 +145,15 @@ class PromptService:
                 where_clauses.append("p.user_id IS NULL")
 
             if category:
-                where_clauses.append("p.category = ?")
+                where_clauses.append("p.category = %s")
                 params.append(category)
 
             if query:
                 q = f"%{query}%"
-                where_clauses.append("(p.name LIKE ? OR p.prompt LIKE ? OR p.tags LIKE ?)")
+                where_clauses.append("(p.name LIKE %s OR p.prompt LIKE %s OR p.tags LIKE %s)")
                 params.extend([q, q, q])
                 if scope in ("all", "community"):
-                    where_clauses[-1] = f"({where_clauses[-1]} OR u.username LIKE ? OR u.nickname LIKE ?)"
+                    where_clauses[-1] = f"({where_clauses[-1]} OR u.username LIKE %s OR u.nickname LIKE %s)"
                     params.extend([q, q])
 
             join_sql = "LEFT JOIN users u ON p.user_id = u.id" if scope in ("all", "community") else ""
@@ -164,8 +162,8 @@ class PromptService:
             select_extra += ", cat.label as category_label"
             where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
-            count_sql = f"SELECT COUNT(*) FROM prompts p {join_sql} {where_sql}"
-            total = conn.execute(count_sql, params).fetchone()[0]
+            count_sql = f"SELECT COUNT(*) AS cnt FROM prompts p {join_sql} {where_sql}"
+            total = conn.execute(count_sql, params).fetchone()["cnt"]
 
             if tags:
                 tag_set = set(t.lower() for t in tags)
@@ -176,13 +174,13 @@ class PromptService:
                 results = results[(page - 1) * size: page * size]
             else:
                 offset = (page - 1) * size
-                query_sql = f"SELECT p.*{select_extra} FROM prompts p {join_sql} {where_sql} ORDER BY {order} LIMIT ? OFFSET ?"
+                query_sql = f"SELECT p.*{select_extra} FROM prompts p {join_sql} {where_sql} ORDER BY {order} LIMIT %s OFFSET %s"
                 rows = conn.execute(query_sql, params + [size, offset]).fetchall()
                 results = [cls._row_to_dict(r) for r in rows]
 
             if user_id:
                 for p in results:
-                    like = conn.execute("SELECT id FROM prompt_likes WHERE prompt_id = ? AND user_id = ?", (p["id"], user_id)).fetchone()
+                    like = conn.execute("SELECT id FROM prompt_likes WHERE prompt_id = %s AND user_id = %s", (p["id"], user_id)).fetchone()
                     p["is_liked"] = like is not None
             return {"prompts": results, "total": total}
 
@@ -205,7 +203,7 @@ class PromptService:
                     failed += 1
                     continue
                 conn.execute(
-                    "INSERT INTO prompts (id, name, prompt, negative_prompt, tags, created_at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO prompts (id, name, prompt, negative_prompt, tags, created_at, user_id) VALUES (%s, %s, %s, %s, %s, %s, %s)",
                     (
                         str(uuid4()),
                         name or f"导入提示词_{success + 1}",
@@ -225,10 +223,10 @@ class PromptService:
     def export_prompts(cls, ids: Optional[List[str]] = None, format: str = "json", user_id: int = None) -> bytes:
         with get_db() as conn:
             if ids:
-                placeholders = ",".join("?" for _ in ids)
+                placeholders = ",".join("%s" for _ in ids)
                 rows = conn.execute(f"SELECT * FROM prompts WHERE id IN ({placeholders}) ORDER BY created_at DESC", ids).fetchall()
             elif user_id is not None:
-                rows = conn.execute("SELECT * FROM prompts WHERE user_id = ? ORDER BY created_at DESC", (user_id,)).fetchall()
+                rows = conn.execute("SELECT * FROM prompts WHERE user_id = %s ORDER BY created_at DESC", (user_id,)).fetchall()
             else:
                 rows = conn.execute("SELECT * FROM prompts ORDER BY created_at DESC").fetchall()
 

@@ -22,7 +22,7 @@ class ShareRequest(BaseModel):
 async def share_to_square(req: ShareRequest, user=Depends(get_current_user)):
     with get_db() as conn:
         existing = conn.execute(
-            "SELECT id FROM square_images WHERE user_id = ? AND filename = ?",
+            "SELECT id FROM square_images WHERE user_id = %s AND filename = %s",
             (user["user_id"], req.filename),
         ).fetchone()
         if existing:
@@ -30,10 +30,10 @@ async def share_to_square(req: ShareRequest, user=Depends(get_current_user)):
 
         import json
         cursor = conn.execute(
-            "INSERT INTO square_images (user_id, filename, prompt, metadata) VALUES (?, ?, ?, ?)",
+            "INSERT INTO square_images (user_id, filename, prompt, metadata) VALUES (%s, %s, %s, %s) RETURNING id",
             (user["user_id"], req.filename, req.prompt, json.dumps(req.metadata) if req.metadata else None),
         )
-        return {"id": cursor.lastrowid, "message": "分享成功"}
+        return {"id": cursor.fetchone()["id"], "message": "分享成功"}
 
 
 @router.get("")
@@ -50,29 +50,29 @@ async def list_square_images(
         if query:
             q = f"%{query}%"
             total = conn.execute(
-                "SELECT COUNT(*) FROM square_images si JOIN users u ON si.user_id = u.id WHERE si.prompt LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?",
+                "SELECT COUNT(*) AS cnt FROM square_images si JOIN users u ON si.user_id = u.id WHERE si.prompt LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s",
                 (q, q, q),
-            ).fetchone()[0]
+            ).fetchone()["cnt"]
             rows = conn.execute(
                 f"""
                 SELECT si.*, u.username, u.nickname, u.avatar
                 FROM square_images si
                 JOIN users u ON si.user_id = u.id
-                WHERE si.prompt LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?
+                WHERE si.prompt LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s
                 ORDER BY {order}
-                LIMIT ? OFFSET ?
+                LIMIT %s OFFSET %s
                 """,
                 (q, q, q, size, offset),
             ).fetchall()
         else:
-            total = conn.execute("SELECT COUNT(*) FROM square_images").fetchone()[0]
+            total = conn.execute("SELECT COUNT(*) AS cnt FROM square_images").fetchone()["cnt"]
             rows = conn.execute(
                 f"""
                 SELECT si.*, u.username, u.nickname, u.avatar
                 FROM square_images si
                 JOIN users u ON si.user_id = u.id
                 ORDER BY {order}
-                LIMIT ? OFFSET ?
+                LIMIT %s OFFSET %s
                 """,
                 (size, offset),
             ).fetchall()
@@ -81,11 +81,12 @@ async def list_square_images(
         for row in rows:
             import json
             item = dict(row)
-            item["metadata"] = json.loads(item["metadata"]) if item["metadata"] else None
+            if isinstance(item["metadata"], str):
+                item["metadata"] = json.loads(item["metadata"]) if item["metadata"] else None
             item["is_liked"] = False
             if user:
                 like = conn.execute(
-                    "SELECT id FROM square_likes WHERE image_id = ? AND user_id = ?",
+                    "SELECT id FROM square_likes WHERE image_id = %s AND user_id = %s",
                     (item["id"], user["user_id"]),
                 ).fetchone()
                 item["is_liked"] = like is not None
@@ -97,29 +98,29 @@ async def list_square_images(
 @router.post("/like")
 async def toggle_like(image_id: int, user=Depends(get_current_user)):
     with get_db() as conn:
-        image = conn.execute("SELECT id FROM square_images WHERE id = ?", (image_id,)).fetchone()
+        image = conn.execute("SELECT id FROM square_images WHERE id = %s", (image_id,)).fetchone()
         if not image:
             raise HTTPException(status_code=404, detail="图片不存在")
 
         existing = conn.execute(
-            "SELECT id FROM square_likes WHERE image_id = ? AND user_id = ?",
+            "SELECT id FROM square_likes WHERE image_id = %s AND user_id = %s",
             (image_id, user["user_id"]),
         ).fetchone()
 
         if existing:
-            conn.execute("DELETE FROM square_likes WHERE id = ?", (existing["id"],))
+            conn.execute("DELETE FROM square_likes WHERE id = %s", (existing["id"],))
             conn.execute(
-                "UPDATE square_images SET likes_count = MAX(0, likes_count - 1) WHERE id = ?",
+                "UPDATE square_images SET likes_count = GREATEST(0, likes_count - 1) WHERE id = %s",
                 (image_id,),
             )
             return {"liked": False, "message": "取消点赞"}
         else:
             conn.execute(
-                "INSERT INTO square_likes (image_id, user_id) VALUES (?, ?)",
+                "INSERT INTO square_likes (image_id, user_id) VALUES (%s, %s)",
                 (image_id, user["user_id"]),
             )
             conn.execute(
-                "UPDATE square_images SET likes_count = likes_count + 1 WHERE id = ?",
+                "UPDATE square_images SET likes_count = likes_count + 1 WHERE id = %s",
                 (image_id,),
             )
             return {"liked": True, "message": "点赞成功"}
@@ -134,12 +135,12 @@ async def my_shares(
     with get_db() as conn:
         offset = (page - 1) * size
         total = conn.execute(
-            "SELECT COUNT(*) FROM square_images WHERE user_id = ?",
+            "SELECT COUNT(*) AS cnt FROM square_images WHERE user_id = %s",
             (user["user_id"],),
-        ).fetchone()[0]
+        ).fetchone()["cnt"]
 
         rows = conn.execute(
-            "SELECT * FROM square_images WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            "SELECT * FROM square_images WHERE user_id = %s ORDER BY created_at DESC LIMIT %s OFFSET %s",
             (user["user_id"], size, offset),
         ).fetchall()
 
@@ -147,9 +148,10 @@ async def my_shares(
         images = []
         for row in rows:
             item = dict(row)
-            item["metadata"] = json.loads(item["metadata"]) if item["metadata"] else None
+            if isinstance(item["metadata"], str):
+                item["metadata"] = json.loads(item["metadata"]) if item["metadata"] else None
             like = conn.execute(
-                "SELECT id FROM square_likes WHERE image_id = ? AND user_id = ?",
+                "SELECT id FROM square_likes WHERE image_id = %s AND user_id = %s",
                 (item["id"], user["user_id"]),
             ).fetchone()
             item["is_liked"] = like is not None

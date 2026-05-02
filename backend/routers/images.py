@@ -22,8 +22,10 @@ router = APIRouter(prefix="/api", tags=["images"])
 
 def get_image_metadata(filename: str) -> dict:
     with get_db() as conn:
-        row = conn.execute("SELECT metadata FROM image_metadata WHERE filename = ?", (filename,)).fetchone()
+        row = conn.execute("SELECT metadata FROM image_metadata WHERE filename = %s", (filename,)).fetchone()
         if row and row["metadata"]:
+            if isinstance(row["metadata"], dict):
+                return row["metadata"]
             try:
                 return json.loads(row["metadata"])
             except (json.JSONDecodeError, TypeError):
@@ -31,7 +33,9 @@ def get_image_metadata(filename: str) -> dict:
     return {}
 
 
-def _parse_metadata(raw: Optional[str]) -> dict:
+def _parse_metadata(raw) -> dict:
+    if isinstance(raw, dict):
+        return raw
     if not raw:
         return {}
     try:
@@ -60,7 +64,7 @@ async def list_images(page: int = Query(1, ge=1), page_size: int = Query(20, ge=
         where = []
         params = []
         if filter_uid is not None:
-            where.append("m.user_id = ?")
+            where.append("m.user_id = %s")
             params.append(filter_uid)
         where_sql = f"WHERE {' AND '.join(where)}" if where else ""
         offset = (page - 1) * page_size
@@ -74,7 +78,7 @@ async def list_images(page: int = Query(1, ge=1), page_size: int = Query(20, ge=
                 LEFT JOIN users u ON m.user_id=u.id
                 {where_sql}
                 ORDER BY COALESCE(m.created_at,'') DESC
-                LIMIT ? OFFSET ?
+                LIMIT %s OFFSET %s
                 """,
                 params + [page_size, offset],
             ).fetchall()
@@ -264,14 +268,14 @@ async def delete_image(filename: str, user=Depends(get_current_user)):
 
     if not user.get("is_admin"):
         with get_db() as conn:
-            row = conn.execute("SELECT user_id FROM image_metadata WHERE filename = ?", (filename,)).fetchone()
+            row = conn.execute("SELECT user_id FROM image_metadata WHERE filename = %s", (filename,)).fetchone()
             if row and row["user_id"] != user["user_id"]:
                 raise HTTPException(status_code=403, detail="无权删除此图片")
 
     try:
         image_path.unlink()
         with get_db() as conn:
-            conn.execute("DELETE FROM image_metadata WHERE filename = ?", (filename,))
+            conn.execute("DELETE FROM image_metadata WHERE filename = %s", (filename,))
         TaskManager.remove_image_from_tasks(str(image_path))
         return {"filename": filename, "message": "图片已删除"}
     except Exception as e:
@@ -288,7 +292,7 @@ async def save_image_metadata_route(filename: str, metadata: dict, user=Depends(
     try:
         with get_db() as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO image_metadata (filename, metadata, created_at, user_id) VALUES (?, ?, ?, ?)",
+                "INSERT INTO image_metadata (filename, metadata, created_at, user_id) VALUES (%s, %s, %s, %s) ON CONFLICT(filename) DO UPDATE SET metadata=EXCLUDED.metadata, created_at=EXCLUDED.created_at, user_id=EXCLUDED.user_id",
                 (filename, json.dumps(metadata, ensure_ascii=False), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user["user_id"]),
             )
         return {"filename": filename, "message": "元数据已保存"}

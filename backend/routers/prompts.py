@@ -238,29 +238,29 @@ async def batch_delete(request: BatchDeleteRequest, user=Depends(get_current_use
 @router.post("/like")
 async def toggle_prompt_like(prompt_id: str, user=Depends(get_current_user)):
     with get_db() as conn:
-        prompt = conn.execute("SELECT id FROM prompts WHERE id = ?", (prompt_id,)).fetchone()
+        prompt = conn.execute("SELECT id FROM prompts WHERE id = %s", (prompt_id,)).fetchone()
         if not prompt:
             raise HTTPException(status_code=404, detail="提示词不存在")
 
         existing = conn.execute(
-            "SELECT id FROM prompt_likes WHERE prompt_id = ? AND user_id = ?",
+            "SELECT id FROM prompt_likes WHERE prompt_id = %s AND user_id = %s",
             (prompt_id, user["user_id"]),
         ).fetchone()
 
         if existing:
-            conn.execute("DELETE FROM prompt_likes WHERE id = ?", (existing["id"],))
+            conn.execute("DELETE FROM prompt_likes WHERE id = %s", (existing["id"],))
             conn.execute(
-                "UPDATE prompts SET likes_count = MAX(0, likes_count - 1) WHERE id = ?",
+                "UPDATE prompts SET likes_count = GREATEST(0, likes_count - 1) WHERE id = %s",
                 (prompt_id,),
             )
             return {"liked": False, "message": "取消点赞"}
         else:
             conn.execute(
-                "INSERT INTO prompt_likes (prompt_id, user_id) VALUES (?, ?)",
+                "INSERT INTO prompt_likes (prompt_id, user_id) VALUES (%s, %s)",
                 (prompt_id, user["user_id"]),
             )
             conn.execute(
-                "UPDATE prompts SET likes_count = likes_count + 1 WHERE id = ?",
+                "UPDATE prompts SET likes_count = likes_count + 1 WHERE id = %s",
                 (prompt_id,),
             )
             return {"liked": True, "message": "点赞成功"}
