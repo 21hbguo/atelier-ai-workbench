@@ -63,8 +63,8 @@ export default function SquarePage() {
 
   return (
     <MainLayout>
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-        <div className="sticky top-0 z-10 -mx-4 -mt-4 sm:-mx-6 sm:-mt-6 px-4 sm:px-6 pt-4 sm:pt-6 pb-3" style={{ background: 'var(--bg-primary)' }}>
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="p-4 sm:p-6 pb-0">
           <div className="flex gap-1 p-0.5 rounded-lg overflow-x-auto scrollbar-hide" style={{ background: 'var(--border-color)', scrollbarWidth: 'none' }}>
           {[{ k: 'works', l: '用户作品库', i: Image }, { k: 'prompts', l: '提示词库', i: BookOpen }, { k: 'my', l: '我的分享', i: Share2 }].map(({ k, l, i: Icon }) => (
             <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`}
@@ -74,8 +74,9 @@ export default function SquarePage() {
           ))}
           </div>
         </div>
-
-        {tab === 'works' ? <WorksTab /> : tab === 'prompts' ? <PromptsTab /> : <MySharesTab />}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 pt-3">
+          {tab === 'works' ? <WorksTab /> : tab === 'prompts' ? <PromptsTab /> : <MySharesTab />}
+        </div>
       </div>
     </MainLayout>
   )
@@ -98,7 +99,7 @@ function WorksTab() {
 
   return (
     <>
-      <div className="sticky top-[52px] sm:top-[52px] z-10 -mx-4 px-4 py-2 flex items-center gap-3" style={{ background: 'var(--bg-primary)' }}>
+      <div className="flex items-center gap-3 mb-3">
         <div className="flex gap-1 ml-auto">
           <button onClick={() => setSort('likes')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${sort === 'likes' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
             style={{ color: sort === 'likes' ? 'var(--accent)' : 'var(--text-secondary)' }}>最热</button>
@@ -222,20 +223,21 @@ function PromptsTab() {
 
   return (
     <>
-      <div className="sticky top-[52px] sm:top-[52px] z-10 -mx-4 px-4 py-2" style={{ background: 'var(--bg-primary)' }}>
-        <div className="flex items-center gap-3 mb-2">
-          <div className="flex gap-1 ml-auto">
-            <button onClick={() => setSort('likes')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${sort === 'likes' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
-              style={{ color: sort === 'likes' ? 'var(--accent)' : 'var(--text-secondary)' }}>最热</button>
-            <button onClick={() => setSort('time')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${sort === 'time' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
-              style={{ color: sort === 'time' ? 'var(--accent)' : 'var(--text-secondary)' }}>最新</button>
-          </div>
-          <SearchInput value={query} onChange={setQuery} placeholder="搜索提示词..." />
+      <div className="flex items-center gap-3 mb-3">
+        <div className="flex gap-1 ml-auto">
+          <button onClick={() => setSort('likes')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${sort === 'likes' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
+            style={{ color: sort === 'likes' ? 'var(--accent)' : 'var(--text-secondary)' }}>最热</button>
+          <button onClick={() => setSort('time')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${sort === 'time' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
+            style={{ color: sort === 'time' ? 'var(--accent)' : 'var(--text-secondary)' }}>最新</button>
         </div>
-        {categories.length > 0 && (
-          <CategoryFilter categories={categories} active={activeCategory} onChange={setActiveCategory} />
-        )}
+        <SearchInput value={query} onChange={setQuery} placeholder="搜索提示词..." />
       </div>
+
+      {categories.length > 0 && (
+        <div className="mb-3">
+          <CategoryFilter categories={categories} active={activeCategory} onChange={setActiveCategory} />
+        </div>
+      )}
 
       <CardGrid
         cards={cards}
