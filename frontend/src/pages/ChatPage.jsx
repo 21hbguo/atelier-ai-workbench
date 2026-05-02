@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Download, Trash2, RefreshCw, Coins } from 'lucide-react'
 import ChatInput from '../components/ChatInput'
 import GenerationCard from '../components/GenerationCard'
@@ -38,6 +39,7 @@ export default function ChatPage() {
   const feedRef = useRef(null)
   const inputRef = useRef(null)
   const dragCounter = useRef(0)
+  const navigate = useNavigate()
 
   const refreshTasks = useCallback(async () => {
     const uid = isAdmin ? selectedUserId : undefined
@@ -407,10 +409,10 @@ export default function ChatPage() {
           style={{ color: 'var(--text-secondary)' }}>
           <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
         </button>
-        <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium" style={{ color: 'var(--accent)' }}>
+        <button onClick={() => navigate('/wallet')} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5 transition-colors" style={{ color: 'var(--accent)' }}>
           <Coins size={14} />
           <span>{points}</span>
-        </div>
+        </button>
         {selectMode ? (
           <button onClick={exitSelectMode} className="ml-auto px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button>
         ) : (
@@ -444,6 +446,9 @@ export default function ChatPage() {
           </div>
         </div>
       )}
+      <div className="text-center text-xs pb-1" style={{ color: 'var(--text-secondary)' }}>
+        每次请求消耗10积分，失败将退还
+      </div>
       <ChatInput ref={inputRef} onSubmit={handleSubmit} loading={loading} />
 
       {selectedCardIndex !== null && allImages.length > 0 && (

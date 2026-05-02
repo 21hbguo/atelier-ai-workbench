@@ -882,43 +882,40 @@ export default function AdminPage() {
         ) : tab === 'codes' ? (
           <div>
             {/* 生成兑换码区域 */}
-            <div className="p-5 rounded-2xl border mb-5" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
-              <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
-                <Ticket size={16} className="inline mr-1.5 -mt-0.5" />生成兑换码
-              </h3>
-              <div className="flex flex-wrap items-end gap-4">
+            <div className="p-4 rounded-xl border mb-4" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+              <div className="flex flex-wrap items-end gap-3">
                 <div>
-                  <label className="block text-xs font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>积分额度</label>
-                  <div className="flex gap-2 mb-2">
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>积分额度</label>
+                  <div className="flex gap-1.5 mb-1.5">
                     {[10, 50, 100, 500].map(p => (
                       <button key={p} onClick={() => { setCodePoints(p); setCustomCode('') }}
-                        className={`px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all ${codePoints === p && !customCode ? 'bg-accent text-white shadow-sm' : 'border hover:border-accent/50'}`}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${codePoints === p && !customCode ? 'bg-accent text-white shadow-sm' : 'border hover:border-accent/50'}`}
                         style={codePoints === p && !customCode ? {} : { borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
                         {p}
                       </button>
                     ))}
                   </div>
                   <input type="number" value={customCode} onChange={e => { setCustomCode(e.target.value); setCodePoints(parseInt(e.target.value) || 0) }}
-                    placeholder="自定义额度" min={1}
-                    className="w-32 px-3 py-2 rounded-lg text-sm border outline-none focus:border-accent/50 transition-colors"
+                    placeholder="自定义" min={1}
+                    className="w-24 px-2.5 py-1.5 rounded-lg text-xs border outline-none focus:border-accent/50 transition-colors"
                     style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>生成数量</label>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>数量</label>
                   <input type="number" value={codeCount} onChange={e => setCodeCount(Math.max(1, Math.min(100, parseInt(e.target.value) || 1)))}
                     min={1} max={100}
-                    className="w-24 px-3 py-2 rounded-lg text-sm border outline-none focus:border-accent/50 transition-colors"
+                    className="w-20 px-2.5 py-1.5 rounded-lg text-xs border outline-none focus:border-accent/50 transition-colors"
                     style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <button onClick={handleGenerateCodes} disabled={generatingCodes || codePoints <= 0}
-                  className="px-5 py-2 rounded-lg text-sm font-semibold bg-accent text-white hover:opacity-90 disabled:opacity-50 transition-all shadow-sm">
-                  {generatingCodes ? '生成中...' : '生成兑换码'}
+                  className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-accent text-white hover:opacity-90 disabled:opacity-50 transition-all shadow-sm">
+                  {generatingCodes ? '生成中...' : '生成'}
                 </button>
               </div>
               {generatedCodes.length > 0 && (
-                <div className="mt-4 p-3 rounded-xl text-xs" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: '#22c55e20', color: '#22c55e' }}>成功</span>
+                <div className="mt-3 p-2.5 rounded-lg text-xs" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium" style={{ background: '#22c55e20', color: '#22c55e' }}>成功</span>
                     <span style={{ color: 'var(--text-secondary)' }}>已生成 {generatedCodes.length} 个兑换码</span>
                   </div>
                   <div className="font-mono break-all leading-relaxed" style={{ color: 'var(--accent)' }}>{generatedCodes.join('、')}</div>
