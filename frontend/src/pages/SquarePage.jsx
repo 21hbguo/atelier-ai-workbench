@@ -1,13 +1,62 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Heart, User, Plus, Image, BookOpen, Trash2, Download, Upload, X, RefreshCw, Share2 } from 'lucide-react'
+import { Image, BookOpen, Share2, Plus, Trash2, Download, Upload, X } from 'lucide-react'
 import { squareAPI, promptAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 import SearchInput from '../components/SearchInput'
-import ImageDetailModal from '../components/ImageDetailModal'
-import PromptCard from '../components/PromptCard'
-import PromptDetailModal from '../components/PromptDetailModal'
+import CardGrid from '../components/CardGrid'
+import UnifiedDetailModal from '../components/UnifiedDetailModal'
 import CategoryFilter from '../components/CategoryFilter'
+import { useCardData } from '../hooks/useCardData'
+
+function useImageActions() {
+  const navigate = useNavigate()
+
+  const handleUsePrompt = (prompt) => {
+    localStorage.setItem('pending_prompt', prompt)
+    navigate('/')
+  }
+
+  const handleUseImage = async (card) => {
+    try {
+      const res = await fetch(card.fullUrl)
+      const blob = await res.blob()
+      const reader = new FileReader()
+      reader.onload = () => {
+        localStorage.setItem('pending_image', JSON.stringify({ dataUrl: reader.result, name: card.filename || card.title || 'image' }))
+        navigate('/')
+      }
+      reader.readAsDataURL(blob)
+    } catch {}
+  }
+
+  return { handleUsePrompt, handleUseImage }
+}
+
+function usePromptActions() {
+  const navigate = useNavigate()
+
+  const handleUsePrompt = (prompt) => {
+    localStorage.setItem('pending_prompt', prompt)
+    navigate('/')
+  }
+
+  const handleUseImage = async (card) => {
+    if (!card.fullUrl) return
+    try {
+      const res = await fetch(card.fullUrl)
+      const blob = await res.blob()
+      const reader = new FileReader()
+      reader.onload = () => {
+        localStorage.setItem('pending_image', JSON.stringify({ dataUrl: reader.result, name: (card.name || 'prompt') + '.jpg' }))
+        navigate('/')
+      }
+      reader.readAsDataURL(blob)
+    } catch {}
+  }
+
+  return { handleUsePrompt, handleUseImage }
+}
 
 export default function SquarePage() {
   const user = JSON.parse(localStorage.getItem('user') || 'null')
@@ -32,294 +81,23 @@ export default function SquarePage() {
   )
 }
 
-function MySharesTab() {
-  const navigate = useNavigate()
-  const [images, setImages] = useState([])
-  const [page, setPage] = useState(1)
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
-  const [selectedImageIndex, setSelectedImageIndex] = useState(null)
-
-  const handleUsePrompt = (prompt) => {
-    localStorage.setItem('pending_prompt', prompt)
-    navigate('/')
-  }
-
-  const handleUseImage = async (imgUrl) => {
-    try {
-      const res = await fetch(imgUrl)
-      const blob = await res.blob()
-      const reader = new FileReader()
-      reader.onload = () => {
-        localStorage.setItem('pending_image', JSON.stringify({ dataUrl: reader.result, name: imgUrl.split('/').pop() }))
-        navigate('/')
-      }
-      reader.readAsDataURL(blob)
-    } catch {}
-  }
-
-  useEffect(() => { fetchImages() }, [page])
-
-  const handleRefresh = async () => {
-    setRefreshing(true)
-    await fetchImages()
-    setRefreshing(false)
-  }
-
-  const fetchImages = async () => {
-    setLoading(true)
-    try {
-      const { data } = await squareAPI.my(page, 20)
-      setImages(data.images)
-      setTotal(data.total)
-    } catch {
-      setImages([])
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleLike = async (imageId) => {
-    try {
-      const { data } = await squareAPI.like(imageId)
-      setImages(prev =>
-        prev.map(img =>
-          img.id === imageId
-            ? { ...img, is_liked: data.liked, likes_count: img.likes_count + (data.liked ? 1 : -1) }
-            : img
-        )
-      )
-    } catch {}
-  }
-
-  const getImageUrl = (img) => `/api/images/file/${img.filename}`
-  const getThumbUrl = (img) => `/api/images/thumb/${img.filename}`
-
-  return (
-    <>
-      <div className="flex items-center gap-3 mb-4">
-        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{total} 张作品</span>
-        <button onClick={handleRefresh} disabled={refreshing}
-          className="p-1.5 rounded-lg hover:bg-black/5 transition-colors disabled:opacity-50 ml-auto"
-          style={{ color: 'var(--text-secondary)' }}>
-          <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
-        </button>
-      </div>
-
-      {loading ? (
-        <div className="flex justify-center py-20">
-          <div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} />
-        </div>
-      ) : images.length === 0 ? (
-        <div className="text-center py-20" style={{ color: 'var(--text-secondary)' }}>暂无分享</div>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-            {images.map((img) => (
-              <div
-                key={img.id}
-                className="group relative rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-                onClick={() => setSelectedImageIndex(images.findIndex(i => i.id === img.id))}
-              >
-                <img
-                  src={getThumbUrl(img)}
-                  alt={img.filename}
-                  className="w-full aspect-square object-cover"
-                  loading="lazy"
-                />
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors hidden md:flex items-center justify-center gap-1.5">
-                  {img.prompt && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleUsePrompt(img.prompt) }}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"
-                    >
-                      <Plus size={12} /> 提示词
-                    </button>
-                  )}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleUseImage(getImageUrl(img)) }}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"
-                  >
-                    <Image size={12} /> 参考图
-                  </button>
-                </div>
-                <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 bg-gradient-to-t from-black/70 to-transparent">
-                  <p className="text-white text-xs truncate">{img.prompt || '无提示词'}</p>
-                </div>
-                <div onClick={(e) => { e.stopPropagation(); handleLike(img.id) }} className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded-full bg-black/50 backdrop-blur-sm cursor-pointer hover:bg-black/70 transition-colors">
-                  <Heart size={12} className={img.is_liked ? 'fill-red-500 text-red-500' : 'text-white'} />
-                  <span className="text-white text-xs">{img.likes_count}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {total > 20 && (
-            <div className="flex justify-center gap-2 mt-6">
-              {Array.from({ length: Math.ceil(total / 20) }, (_, i) => i + 1).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPage(p)}
-                  className={`w-8 h-8 rounded-lg text-sm font-medium ${p === page ? 'bg-accent text-white' : 'hover:bg-black/5'}`}
-                  style={{ color: p !== page ? 'var(--text-primary)' : undefined }}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-
-      {selectedImageIndex !== null && images.length > 0 && (
-        <ImageDetailModal
-          image={{
-            url: getImageUrl(images[selectedImageIndex]),
-            filename: images[selectedImageIndex].filename,
-            metadata: {
-              prompt: images[selectedImageIndex].prompt,
-              created_at: images[selectedImageIndex].created_at,
-              type: images[selectedImageIndex].metadata?.type,
-              size: images[selectedImageIndex].metadata?.size,
-            },
-          }}
-          images={images.map(img => ({
-            url: getImageUrl(img),
-            filename: img.filename,
-            metadata: {
-              prompt: img.prompt,
-              created_at: img.created_at,
-              type: img.metadata?.type,
-              size: img.metadata?.size,
-            },
-          }))}
-          currentIndex={selectedImageIndex}
-          onNavigate={setSelectedImageIndex}
-          onClose={() => setSelectedImageIndex(null)}
-          onAddPrompt={images[selectedImageIndex].prompt ? () => handleUsePrompt(images[selectedImageIndex].prompt) : undefined}
-          onAddImage={() => handleUseImage(getImageUrl(images[selectedImageIndex]))}
-          title="我的作品"
-          detailContent={
-            <div className="flex flex-col gap-4">
-              {images[selectedImageIndex].prompt && (
-                <div>
-                  <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>提示词</label>
-                  <p className="text-sm p-3 rounded-lg max-h-48 md:max-h-72 overflow-y-auto whitespace-pre-wrap break-words" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
-                    {images[selectedImageIndex].prompt}
-                  </p>
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-3">
-                {images[selectedImageIndex].metadata?.type && (
-                  <div>
-                    <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>类型</label>
-                    <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                      {images[selectedImageIndex].metadata.type === 'text' ? '纯文本' : '文本+图像'}
-                    </p>
-                  </div>
-                )}
-                {images[selectedImageIndex].metadata?.size && (
-                  <div>
-                    <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>尺寸</label>
-                    <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{images[selectedImageIndex].metadata.size}</p>
-                  </div>
-                )}
-                <div>
-                  <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>创建时间</label>
-                  <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{images[selectedImageIndex].created_at}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => handleLike(images[selectedImageIndex].id)}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                style={{
-                  background: images[selectedImageIndex].is_liked ? '#ef444415' : 'var(--bg-primary)',
-                  color: images[selectedImageIndex].is_liked ? '#ef4444' : 'var(--text-primary)',
-                }}
-              >
-                <Heart size={16} className={images[selectedImageIndex].is_liked ? 'fill-current' : ''} />
-                {images[selectedImageIndex].is_liked ? '已点赞' : '点赞'} ({images[selectedImageIndex].likes_count})
-              </button>
-            </div>
-          }
-        />
-      )}
-    </>
-  )
-}
-
 function WorksTab() {
-  const navigate = useNavigate()
-  const [images, setImages] = useState([])
-  const [page, setPage] = useState(1)
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [sort, setSort] = useState('likes')
-  const [refreshing, setRefreshing] = useState(false)
-  const [selectedImageIndex, setSelectedImageIndex] = useState(null)
+  const [detailIdx, setDetailIdx] = useState(null)
+  const { handleUsePrompt, handleUseImage } = useImageActions()
 
-  const handleUsePrompt = (prompt) => {
-    localStorage.setItem('pending_prompt', prompt)
-    navigate('/')
-  }
+  const { cards, total, page, setPage, loading, refreshing, refresh, handleLike } = useCardData({
+    type: 'image',
+    apiFn: (p, s) => squareAPI.list(p, s, searchQuery || undefined, sort),
+    deps: [searchQuery, sort],
+  })
 
-  const handleUseImage = async (imgUrl) => {
-    try {
-      const res = await fetch(imgUrl)
-      const blob = await res.blob()
-      const reader = new FileReader()
-      reader.onload = () => {
-        localStorage.setItem('pending_image', JSON.stringify({ dataUrl: reader.result, name: imgUrl.split('/').pop() }))
-        navigate('/')
-      }
-      reader.readAsDataURL(blob)
-    } catch {}
-  }
-
-  useEffect(() => { setPage(1) }, [searchQuery, sort])
-  useEffect(() => { fetchImages() }, [page, searchQuery, sort])
-
-  const handleRefresh = async () => {
-    setRefreshing(true)
-    await fetchImages()
-    setRefreshing(false)
-  }
-
-  const fetchImages = async () => {
-    setLoading(true)
-    try {
-      const { data } = await squareAPI.list(page, 20, searchQuery || undefined, sort)
-      setImages(data.images)
-      setTotal(data.total)
-    } catch {
-      setImages([])
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleLike = async (imageId) => {
-    try {
-      const { data } = await squareAPI.like(imageId)
-      setImages(prev =>
-        prev.map(img =>
-          img.id === imageId
-            ? { ...img, is_liked: data.liked, likes_count: img.likes_count + (data.liked ? 1 : -1) }
-            : img
-        )
-      )
-    } catch {}
-  }
-
-  const getImageUrl = (img) => `/api/images/file/${img.filename}`
-  const getThumbUrl = (img) => `/api/images/thumb/${img.filename}`
+  const totalPages = Math.ceil(total / 20)
 
   return (
     <>
       <div className="flex items-center gap-3 mb-4">
-        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{total} 张作品</span>
         <div className="flex gap-1 ml-auto">
           <button onClick={() => setSort('likes')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${sort === 'likes' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
             style={{ color: sort === 'likes' ? 'var(--accent)' : 'var(--text-secondary)' }}>最热</button>
@@ -327,157 +105,82 @@ function WorksTab() {
             style={{ color: sort === 'time' ? 'var(--accent)' : 'var(--text-secondary)' }}>最新</button>
         </div>
         <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="搜索提示词/作者..." />
-        <button onClick={handleRefresh} disabled={refreshing}
-          className="p-1.5 rounded-lg hover:bg-black/5 transition-colors disabled:opacity-50"
-          style={{ color: 'var(--text-secondary)' }}>
-          <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
-        </button>
       </div>
 
-      {loading ? (
-        <div className="flex justify-center py-20">
-          <div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} />
-        </div>
-      ) : images.length === 0 ? (
-        <div className="text-center py-20" style={{ color: 'var(--text-secondary)' }}>暂无作品</div>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-            {images.map((img) => (
-              <div
-                key={img.id}
-                className="group relative rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-                onClick={() => setSelectedImageIndex(images.findIndex(i => i.id === img.id))}
-              >
-                <img
-                  src={getThumbUrl(img)}
-                  alt={img.filename}
-                  className="w-full aspect-square object-cover"
-                  loading="lazy"
-                />
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors hidden md:flex items-center justify-center gap-1.5">
-                  {img.prompt && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleUsePrompt(img.prompt) }}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"
-                    >
-                      <Plus size={12} /> 提示词
-                    </button>
-                  )}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleUseImage(getImageUrl(img)) }}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"
-                  >
-                    <Image size={12} /> 参考图
-                  </button>
-                </div>
-                <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 bg-gradient-to-t from-black/70 to-transparent">
-                  <p className="text-white text-xs truncate">{img.prompt || '无提示词'}</p>
-                </div>
-                <div onClick={(e) => { e.stopPropagation(); handleLike(img.id) }} className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded-full bg-black/50 backdrop-blur-sm cursor-pointer hover:bg-black/70 transition-colors">
-                  <Heart size={12} className={img.is_liked ? 'fill-red-500 text-red-500' : 'text-white'} />
-                  <span className="text-white text-xs">{img.likes_count}</span>
-                </div>
-                <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-1 rounded-full bg-black/50 backdrop-blur-sm">
-                  <User size={12} className="text-white" />
-                  <span className="text-white text-xs truncate max-w-[80px]">{img.nickname || img.username}</span>
-                </div>
-              </div>
-            ))}
-          </div>
+      <CardGrid
+        cards={cards}
+        loading={loading}
+        refreshing={refreshing}
+        onRefresh={refresh}
+        total={total}
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        onCardClick={(_, idx) => setDetailIdx(idx)}
+        onLike={handleLike}
+        onUsePrompt={handleUsePrompt}
+        onUseImage={handleUseImage}
+        showAuthor
+      />
 
-          {total > 20 && (
-            <div className="flex justify-center gap-2 mt-6">
-              {Array.from({ length: Math.ceil(total / 20) }, (_, i) => i + 1).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPage(p)}
-                  className={`w-8 h-8 rounded-lg text-sm font-medium ${p === page ? 'bg-accent text-white' : 'hover:bg-black/5'}`}
-                  style={{ color: p !== page ? 'var(--text-primary)' : undefined }}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-          )}
-        </>
+      {detailIdx !== null && cards[detailIdx] && (
+        <UnifiedDetailModal
+          card={cards[detailIdx]}
+          cards={cards}
+          currentIndex={detailIdx}
+          onNavigate={setDetailIdx}
+          onClose={() => setDetailIdx(null)}
+          onLike={handleLike}
+          onUsePrompt={handleUsePrompt}
+          onUseImage={handleUseImage}
+          title={`${cards[detailIdx].author} 的作品`}
+        />
       )}
+    </>
+  )
+}
 
-      {selectedImageIndex !== null && images.length > 0 && (
-        <ImageDetailModal
-          image={{
-            url: getImageUrl(images[selectedImageIndex]),
-            filename: images[selectedImageIndex].filename,
-            metadata: {
-              prompt: images[selectedImageIndex].prompt,
-              created_at: images[selectedImageIndex].created_at,
-              type: images[selectedImageIndex].metadata?.type,
-              size: images[selectedImageIndex].metadata?.size,
-            },
-          }}
-          images={images.map(img => ({
-            url: getImageUrl(img),
-            filename: img.filename,
-            metadata: {
-              prompt: img.prompt,
-              created_at: img.created_at,
-              type: img.metadata?.type,
-              size: img.metadata?.size,
-            },
-          }))}
-          currentIndex={selectedImageIndex}
-          onNavigate={setSelectedImageIndex}
-          onClose={() => setSelectedImageIndex(null)}
-          onAddPrompt={images[selectedImageIndex].prompt ? () => handleUsePrompt(images[selectedImageIndex].prompt) : undefined}
-          onAddImage={() => handleUseImage(getImageUrl(images[selectedImageIndex]))}
-          title={`${images[selectedImageIndex].nickname || images[selectedImageIndex].username} 的作品`}
-          detailContent={
-            <div className="flex flex-col gap-4">
-              {images[selectedImageIndex].prompt && (
-                <div>
-                  <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>提示词</label>
-                  <p className="text-sm p-3 rounded-lg max-h-48 md:max-h-72 overflow-y-auto whitespace-pre-wrap break-words" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
-                    {images[selectedImageIndex].prompt}
-                  </p>
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-3">
-                {images[selectedImageIndex].metadata?.type && (
-                  <div>
-                    <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>类型</label>
-                    <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                      {images[selectedImageIndex].metadata.type === 'text' ? '纯文本' : '文本+图像'}
-                    </p>
-                  </div>
-                )}
-                {images[selectedImageIndex].metadata?.size && (
-                  <div>
-                    <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>尺寸</label>
-                    <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{images[selectedImageIndex].metadata.size}</p>
-                  </div>
-                )}
-                <div>
-                  <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>作者</label>
-                  <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{images[selectedImageIndex].nickname || images[selectedImageIndex].username}</p>
-                </div>
-                <div>
-                  <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>创建时间</label>
-                  <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{images[selectedImageIndex].created_at}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => handleLike(images[selectedImageIndex].id)}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                style={{
-                  background: images[selectedImageIndex].is_liked ? '#ef444415' : 'var(--bg-primary)',
-                  color: images[selectedImageIndex].is_liked ? '#ef4444' : 'var(--text-primary)',
-                }}
-              >
-                <Heart size={16} className={images[selectedImageIndex].is_liked ? 'fill-current' : ''} />
-                {images[selectedImageIndex].is_liked ? '已点赞' : '点赞'} ({images[selectedImageIndex].likes_count})
-              </button>
-            </div>
-          }
+function MySharesTab() {
+  const [detailIdx, setDetailIdx] = useState(null)
+  const { handleUsePrompt, handleUseImage } = useImageActions()
+
+  const { cards, total, page, setPage, loading, refreshing, refresh, handleLike } = useCardData({
+    type: 'image',
+    apiFn: (p, s) => squareAPI.my(p, s),
+    deps: [],
+  })
+
+  const totalPages = Math.ceil(total / 20)
+
+  return (
+    <>
+      <CardGrid
+        cards={cards}
+        loading={loading}
+        refreshing={refreshing}
+        onRefresh={refresh}
+        total={total}
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        onCardClick={(_, idx) => setDetailIdx(idx)}
+        onLike={handleLike}
+        onUsePrompt={handleUsePrompt}
+        onUseImage={handleUseImage}
+        emptyText="暂无分享"
+      />
+
+      {detailIdx !== null && cards[detailIdx] && (
+        <UnifiedDetailModal
+          card={cards[detailIdx]}
+          cards={cards}
+          currentIndex={detailIdx}
+          onNavigate={setDetailIdx}
+          onClose={() => setDetailIdx(null)}
+          onLike={handleLike}
+          onUsePrompt={handleUsePrompt}
+          onUseImage={handleUseImage}
+          title="我的作品"
         />
       )}
     </>
@@ -485,26 +188,20 @@ function WorksTab() {
 }
 
 function PromptsTab({ isAdmin }) {
-  const navigate = useNavigate()
   const user = JSON.parse(localStorage.getItem('user') || 'null')
-  const [prompts, setPrompts] = useState([])
-  const [total, setTotal] = useState(0)
   const [query, setQuery] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [sort, setSort] = useState('likes')
+  const [activeCategory, setActiveCategory] = useState(null)
+  const [detailIdx, setDetailIdx] = useState(null)
+  const [selected, setSelected] = useState(new Set())
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState({ name: '', prompt: '', negative_prompt: '', tags: '', category: '' })
-  const [detail, setDetail] = useState(null)
-  const [selected, setSelected] = useState(new Set())
-  const [sort, setSort] = useState('likes')
-  const [refreshing, setRefreshing] = useState(false)
-  const [page, setPage] = useState(1)
   const [categories, setCategories] = useState([])
-  const [activeCategory, setActiveCategory] = useState(null)
   const fileRef = useRef(null)
+  const { handleUsePrompt, handleUseImage } = usePromptActions()
 
   useEffect(() => { fetchCategories() }, [])
-  useEffect(() => { setPage(1); fetchPrompts() }, [query, sort, activeCategory, page])
 
   const fetchCategories = async () => {
     try {
@@ -513,49 +210,16 @@ function PromptsTab({ isAdmin }) {
     } catch {}
   }
 
-  const handleRefresh = async () => {
-    setRefreshing(true)
-    await fetchPrompts()
-    setRefreshing(false)
-  }
+  const { cards, total, page, setPage, loading, refreshing, refresh, handleLike } = useCardData({
+    type: 'prompt',
+    apiFn: (p, s) => {
+      if (!user) return promptAPI.listPublic(query, sort, activeCategory, p)
+      return promptAPI.list(query, null, isAdmin ? 'all' : 'community', sort, activeCategory, p)
+    },
+    deps: [query, sort, activeCategory, isAdmin],
+  })
 
-  const fetchPrompts = async () => {
-    setLoading(true)
-    try {
-      let data
-      if (!user) {
-        ({ data } = await promptAPI.listPublic(query, sort, activeCategory, page))
-      } else {
-        ({ data } = await promptAPI.list(query, null, isAdmin ? 'all' : 'community', sort, activeCategory, page))
-      }
-      setPrompts(data.prompts)
-      setTotal(data.total)
-    } catch {
-      setPrompts([])
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleLike = async (promptId) => {
-    try {
-      const { data } = await promptAPI.like(promptId)
-      setPrompts(prev =>
-        prev.map(p =>
-          p.id === promptId
-            ? { ...p, is_liked: data.liked, likes_count: p.likes_count + (data.liked ? 1 : -1) }
-            : p
-        )
-      )
-      if (detail?.id === promptId) {
-        setDetail(prev => ({
-          ...prev,
-          is_liked: data.liked,
-          likes_count: prev.likes_count + (data.liked ? 1 : -1),
-        }))
-      }
-    } catch {}
-  }
+  const totalPages = Math.ceil(total / 50)
 
   const handleSubmit = async () => {
     if (!form.name || !form.prompt) return
@@ -573,40 +237,26 @@ function PromptsTab({ isAdmin }) {
       setForm({ name: '', prompt: '', negative_prompt: '', tags: '', category: '' })
       setShowForm(false)
       setEditing(null)
-      fetchPrompts()
+      refresh()
     } catch (e) { alert('失败: ' + e.message) }
   }
 
   const handleDelete = async (id) => {
     if (!confirm('确定删除？')) return
-    try { await promptAPI.delete(id); fetchPrompts(); fetchCategories() } catch {}
+    try { await promptAPI.delete(id); refresh(); fetchCategories() } catch {}
   }
 
   const handleBatchDelete = async () => {
     if (selected.size === 0 || !confirm(`删除 ${selected.size} 条？`)) return
-    try { await promptAPI.batchDelete([...selected]); setSelected(new Set()); fetchPrompts(); fetchCategories() } catch {}
+    try { await promptAPI.batchDelete([...selected]); setSelected(new Set()); refresh(); fetchCategories() } catch {}
   }
 
-  const handleUse = (p) => {
-    localStorage.setItem('pending_prompt', p.prompt)
-    navigate('/')
-  }
-
-  const handleUseImage = async (p) => {
-    if (!p.image_path) return
-    try {
-      const resp = await fetch(`/api/prompts/evo-thumb/${p.image_path}?size=800`)
-      const blob = await resp.blob()
-      const reader = new FileReader()
-      reader.onload = () => {
-        localStorage.setItem('pending_image', JSON.stringify({
-          dataUrl: reader.result,
-          name: p.name + '.jpg',
-        }))
-        navigate('/')
-      }
-      reader.readAsDataURL(blob)
-    } catch {}
+  const handleToggleSelect = (id) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
   }
 
   const handleImport = async (e) => {
@@ -615,7 +265,7 @@ function PromptsTab({ isAdmin }) {
     try {
       const { data } = await promptAPI.importPublic(file)
       alert(`成功: ${data.success}, 失败: ${data.failed}`)
-      fetchPrompts()
+      refresh()
       fetchCategories()
     } catch {}
     e.target.value = ''
@@ -633,12 +283,9 @@ function PromptsTab({ isAdmin }) {
     } catch {}
   }
 
-  const totalPages = Math.ceil(total / 50)
-
   return (
     <>
       <div className="flex items-center gap-3 mb-3">
-        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{total} 条提示词</span>
         <div className="flex gap-1 ml-auto">
           <button onClick={() => setSort('likes')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${sort === 'likes' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
             style={{ color: sort === 'likes' ? 'var(--accent)' : 'var(--text-secondary)' }}>最热</button>
@@ -646,11 +293,6 @@ function PromptsTab({ isAdmin }) {
             style={{ color: sort === 'time' ? 'var(--accent)' : 'var(--text-secondary)' }}>最新</button>
         </div>
         <SearchInput value={query} onChange={setQuery} placeholder="搜索提示词..." />
-        <button onClick={handleRefresh} disabled={refreshing}
-          className="p-1.5 rounded-lg hover:bg-black/5 transition-colors disabled:opacity-50"
-          style={{ color: 'var(--text-secondary)' }}>
-          <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
-        </button>
       </div>
 
       {categories.length > 0 && (
@@ -708,47 +350,38 @@ function PromptsTab({ isAdmin }) {
         </div>
       )}
 
-      {loading ? (
-        <div className="flex justify-center py-20">
-          <div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} />
-        </div>
-      ) : prompts.length === 0 ? (
-        <div className="text-center py-20" style={{ color: 'var(--text-secondary)' }}>暂无提示词</div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {prompts.map(p => (
-            <PromptCard
-              key={p.id}
-              prompt={p}
-              isAdmin={isAdmin}
-              isSelected={selected.has(p.id)}
-              onSelect={(id) => { const n = new Set(selected); n.has(id) ? n.delete(id) : n.add(id); setSelected(n) }}
-              onLike={handleLike}
-              onUse={handleUse}
-              onUseImage={handleUseImage}
-              onClick={setDetail}
-            />
-          ))}
-        </div>
-      )}
+      <CardGrid
+        cards={cards}
+        loading={loading}
+        refreshing={refreshing}
+        onRefresh={refresh}
+        total={total}
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        onCardClick={(_, idx) => setDetailIdx(idx)}
+        onLike={handleLike}
+        onUsePrompt={handleUsePrompt}
+        onUseImage={handleUseImage}
+        selectable={isAdmin}
+        selected={selected}
+        onToggleSelect={handleToggleSelect}
+        emptyText="暂无提示词"
+      />
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 mt-6">
-          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50"
-            style={{ background: 'var(--bg-ai-bubble)', color: 'var(--text-primary)' }}>
-            上一页
-          </button>
-          <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{page} / {totalPages}</span>
-          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50"
-            style={{ background: 'var(--bg-ai-bubble)', color: 'var(--text-primary)' }}>
-            下一页
-          </button>
-        </div>
+      {detailIdx !== null && cards[detailIdx] && (
+        <UnifiedDetailModal
+          card={cards[detailIdx]}
+          cards={cards}
+          currentIndex={detailIdx}
+          onNavigate={setDetailIdx}
+          onClose={() => setDetailIdx(null)}
+          onLike={handleLike}
+          onUsePrompt={handleUsePrompt}
+          onUseImage={handleUseImage}
+          title="提示词详情"
+        />
       )}
-
-      <PromptDetailModal prompt={detail} onClose={() => setDetail(null)} onLike={handleLike} />
     </>
   )
 }

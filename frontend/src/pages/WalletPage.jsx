@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Coins, ArrowUpCircle, ArrowDownCircle, RefreshCw, User, Mail } from 'lucide-react'
+import { Coins, ArrowUpCircle, ArrowDownCircle, RefreshCw, User, Mail, Gift } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
 import { pointsAPI } from '../api'
 
@@ -21,6 +21,9 @@ export default function WalletPage() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const size = 15
+  const [redeemCode, setRedeemCode] = useState('')
+  const [redeemLoading, setRedeemLoading] = useState(false)
+  const [redeemMsg, setRedeemMsg] = useState(null)
 
   const fetchData = async (p = 1) => {
     setLoading(true)
@@ -49,6 +52,26 @@ export default function WalletPage() {
     return () => window.removeEventListener('points-updated', handleUpdate)
   }, [])
 
+  const handleRedeem = async () => {
+    if (!redeemCode.trim()) return
+    setRedeemLoading(true)
+    setRedeemMsg(null)
+    try {
+      const res = await pointsAPI.redeem(redeemCode.trim())
+      setPoints(res.data.balance)
+      setRedeemMsg({ type: 'success', text: `兑换成功！+${res.data.points_awarded} 积分` })
+      setRedeemCode('')
+      const u = JSON.parse(localStorage.getItem('user') || 'null')
+      if (u) { u.points = res.data.balance; localStorage.setItem('user', JSON.stringify(u)) }
+      window.dispatchEvent(new Event('points-updated'))
+      fetchData(page)
+    } catch (e) {
+      setRedeemMsg({ type: 'error', text: e.message })
+    } finally {
+      setRedeemLoading(false)
+    }
+  }
+
   const totalPages = Math.ceil(total / size)
 
   return (
@@ -75,6 +98,38 @@ export default function WalletPage() {
             </div>
           </div>
         </div>
+
+        {!user?.is_admin && (
+          <div className="mb-6 p-4 rounded-xl border" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
+            <div className="flex items-center gap-2 mb-3">
+              <Gift size={16} style={{ color: 'var(--accent)' }} />
+              <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>兑换码</span>
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={redeemCode}
+                onChange={e => setRedeemCode(e.target.value.toUpperCase())}
+                onKeyDown={e => e.key === 'Enter' && handleRedeem()}
+                placeholder="输入兑换码"
+                className="flex-1 px-3 py-2 rounded-lg text-sm font-mono outline-none transition-colors"
+                style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
+              />
+              <button
+                onClick={handleRedeem}
+                disabled={redeemLoading || !redeemCode.trim()}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors disabled:opacity-50"
+                style={{ background: 'var(--accent)' }}
+              >{redeemLoading ? '兑换中...' : '兑换'}</button>
+            </div>
+            {redeemMsg && (
+              <div className={`mt-2 px-3 py-2 rounded-lg text-xs ${redeemMsg.type === 'success' ? 'text-green-600' : 'text-red-500'}`}
+                style={{ background: redeemMsg.type === 'success' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)' }}>
+                {redeemMsg.text}
+              </div>
+            )}
+          </div>
+        )}
 
         <div>
           <div className="flex items-center justify-between mb-3">
