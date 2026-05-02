@@ -11,6 +11,12 @@ function formatLocalTime(d) {
   const pad = n => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
+function withTimeout(promise, ms, message) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms)
+    promise.then(v => { clearTimeout(timer); resolve(v) }).catch(e => { clearTimeout(timer); reject(e) })
+  })
+}
 
 export default function ChatPage() {
   const user = JSON.parse(localStorage.getItem('user') || 'null')
@@ -27,40 +33,55 @@ export default function ChatPage() {
   const [userList, setUserList] = useState([])
   const [selectedUserId, setSelectedUserId] = useState(null)
   const [points, setPoints] = useState(user?.points ?? 0)
+  const [loadError, setLoadError] = useState('')
   const [selectedCardIndex, setSelectedCardIndex] = useState(null)
   const feedRef = useRef(null)
   const inputRef = useRef(null)
   const dragCounter = useRef(0)
 
   const refreshTasks = useCallback(async () => {
+    const uid = isAdmin ? selectedUserId : undefined
+    const q = searchQuery || undefined
+    let allTasks
+    let allImages
     try {
-      const uid = isAdmin ? selectedUserId : undefined
-      const q = searchQuery || undefined
-      const [taskRes, imgRes] = await Promise.all([taskAPI.list(50, 0, uid, q), imageAPI.list(1, 100, uid)])
-      const allTasks = taskRes.data
-      const allImages = imgRes.data.images || []
-      const taskImageFiles = new Set()
-      for (const t of allTasks) {
-        for (const u of (t.result_urls || [])) taskImageFiles.add(u.split('/').pop())
-      }
-      let orphans = allImages.filter(img => !taskImageFiles.has(img.filename)).map(img => ({
-        task_id: 'img-' + img.filename,
-        status: 'completed',
-        result_urls: [img.url],
-        params: img.metadata || {},
-        created_at: img.created_at,
-        started_at: img.created_at,
-        completed_at: img.created_at,
-        username: img.username || '',
-      }))
-      if (q) {
-        const lower = q.toLowerCase()
-        orphans = orphans.filter(o => ((o.params?.prompt || '').toLowerCase().includes(lower)))
-      }
-      const merged = [...orphans, ...allTasks].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
-      setTasks(merged)
+      const taskRes = await withTimeout(taskAPI.list(50, 0, uid, q), 10000, '任务列表加载超时，请重试')
+      allTasks = taskRes.data || []
+    } catch (e) {
+      setLoadError(e.message || '任务列表加载失败')
+      if (!loaded) setTasks([])
       if (!loaded) setLoaded(true)
-    } catch {}
+      return
+    }
+    try {
+      const imgRes = await withTimeout(imageAPI.list(1, 100, uid), 12000, '图片列表加载超时，已仅显示任务列表')
+      allImages = imgRes.data.images || []
+      setLoadError('')
+    } catch (e) {
+      allImages = []
+      setLoadError(e.message || '图片列表加载失败，已仅显示任务列表')
+    }
+    const taskImageFiles = new Set()
+    for (const t of allTasks) {
+      for (const u of (t.result_urls || [])) taskImageFiles.add(u.split('/').pop())
+    }
+    let orphans = allImages.filter(img => !taskImageFiles.has(img.filename)).map(img => ({
+      task_id: 'img-' + img.filename,
+      status: 'completed',
+      result_urls: [img.url],
+      params: img.metadata || {},
+      created_at: img.created_at,
+      started_at: img.created_at,
+      completed_at: img.created_at,
+      username: img.username || '',
+    }))
+    if (q) {
+      const lower = q.toLowerCase()
+      orphans = orphans.filter(o => ((o.params?.prompt || '').toLowerCase().includes(lower)))
+    }
+    const merged = [...orphans, ...allTasks].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
+    setTasks(merged)
+    if (!loaded) setLoaded(true)
   }, [loaded, isAdmin, selectedUserId, searchQuery])
 
   useEffect(() => { refreshTasks() }, [refreshTasks])
@@ -396,6 +417,7 @@ export default function ChatPage() {
           <button onClick={() => setSelectMode(true)} className="ml-auto px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>选择</button>
         )}
       </div>
+      {loadError && <div className="mx-4 mt-2 px-3 py-2 rounded-lg text-xs" style={{ background: 'rgba(245,158,11,.12)', color: '#b45309' }}>{loadError}</div>}
       <div ref={feedRef} className="flex-1 overflow-y-auto px-4 pb-6">
         {!loaded ? (
           <div className="flex justify-center items-center h-full"><div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} /></div>

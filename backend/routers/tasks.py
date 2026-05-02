@@ -1,4 +1,5 @@
 import logging
+import time
 from fastapi import APIRouter, HTTPException, Depends, Query
 
 from backend.services.task_manager import TaskManager
@@ -35,6 +36,7 @@ async def list_tasks(
     query: str = Query(None),
     user=Depends(get_current_user),
 ):
+    started = time.perf_counter()
     try:
         if user.get("is_admin"):
             uid = user_id
@@ -43,6 +45,11 @@ async def list_tasks(
         tasks = TaskManager.list_tasks(limit=limit, offset=offset, user_id=uid, query=query)
         if user.get("is_admin"):
             tasks = _enrich_tasks_with_username(tasks)
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        if elapsed_ms > 800:
+            logger.warning(f"tasks.list slow elapsed_ms={elapsed_ms} limit={limit} offset={offset} count={len(tasks)} uid={uid} query={'1' if query else '0'}")
+        else:
+            logger.info(f"tasks.list elapsed_ms={elapsed_ms} limit={limit} offset={offset} count={len(tasks)} uid={uid} query={'1' if query else '0'}")
         return tasks
     except Exception as e:
         logger.exception("获取任务列表失败")

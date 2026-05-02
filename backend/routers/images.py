@@ -2,6 +2,7 @@ import os
 import json
 import hashlib
 import logging
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -30,61 +31,77 @@ def get_image_metadata(filename: str) -> dict:
     return {}
 
 
+def _parse_metadata(raw: Optional[str]) -> dict:
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
+def _format_timestamp(ts: float) -> str:
+    return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+
+
 @router.get("/images")
 async def list_images(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100), user_id: int = Query(None), user=Depends(get_current_user)):
+    started = time.perf_counter()
     try:
         if not GENERATED_IMAGES_DIR.exists():
             return {"images": [], "total": 0, "page": page, "page_size": page_size}
-
-        is_admin = user.get("is_admin")
+        is_admin = bool(user.get("is_admin"))
         if is_admin and user_id:
             filter_uid = user_id
         elif is_admin:
             filter_uid = None
         else:
             filter_uid = user["user_id"]
-
+        where = []
+        params = []
         if filter_uid is not None:
-            with get_db() as conn:
-                rows = conn.execute("SELECT filename FROM image_metadata WHERE user_id = ?", (filter_uid,)).fetchall()
-                allowed_files = {r["filename"] for r in rows}
+            where.append("m.user_id = ?")
+            params.append(filter_uid)
+        where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+        offset = (page - 1) * page_size
+        with get_db() as conn:
+            total_row = conn.execute(f"SELECT COUNT(*) AS cnt FROM image_metadata m {where_sql}", params).fetchone()
+            total = total_row["cnt"] if total_row else 0
+            rows = conn.execute(
+                f"""
+                SELECT m.filename,m.metadata,m.user_id,m.created_at,u.username,u.nickname
+                FROM image_metadata m
+                LEFT JOIN users u ON m.user_id=u.id
+                {where_sql}
+                ORDER BY COALESCE(m.created_at,'') DESC
+                LIMIT ? OFFSET ?
+                """,
+                params + [page_size, offset],
+            ).fetchall()
+        images = []
+        for row in rows:
+            filename = row["filename"]
+            f = GENERATED_IMAGES_DIR / filename
+            if not f.exists() or not f.is_file() or f.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+                continue
+            stat = f.stat()
+            created_at = row["created_at"] or _format_timestamp(stat.st_mtime)
+            metadata = _parse_metadata(row["metadata"])
+            username = (row["nickname"] or row["username"] or "") if is_admin else ""
+            images.append({
+                "filename": filename,
+                "path": str(f),
+                "url": f"/api/images/file/{filename}",
+                "created_at": created_at,
+                "metadata": metadata,
+                "username": username,
+            })
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        if elapsed_ms > 1200:
+            logger.warning(f"images.list slow elapsed_ms={elapsed_ms} page={page} page_size={page_size} total={total} returned={len(images)} uid={filter_uid}")
         else:
-            allowed_files = None
-
-        image_files = []
-        user_map = {}
-        if is_admin:
-            with get_db() as conn:
-                rows = conn.execute("SELECT id, username, nickname FROM users").fetchall()
-                user_map = {r["id"]: (r["nickname"] or r["username"]) for r in rows}
-
-        for f in GENERATED_IMAGES_DIR.iterdir():
-            if f.is_file() and f.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
-                if allowed_files is not None and f.name not in allowed_files:
-                    continue
-                stat = f.stat()
-                metadata = get_image_metadata(f.name)
-                username = ""
-                if is_admin:
-                    uid = metadata.get("user_id")
-                    username = user_map.get(uid, "") if uid else ""
-                image_files.append({
-                    "filename": f.name,
-                    "path": str(f),
-                    "url": f"/api/images/file/{f.name}",
-                    "created_at": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
-                    "metadata": metadata,
-                    "username": username,
-                })
-
-        image_files.sort(key=lambda x: x["created_at"], reverse=True)
-
-        total = len(image_files)
-        start = (page - 1) * page_size
-        end = start + page_size
-        paginated = image_files[start:end]
-
-        return {"images": paginated, "total": total, "page": page, "page_size": page_size}
+            logger.info(f"images.list elapsed_ms={elapsed_ms} page={page} page_size={page_size} total={total} returned={len(images)} uid={filter_uid}")
+        return {"images": images, "total": total, "page": page, "page_size": page_size}
 
     except Exception as e:
         logger.exception("获取图片列表失败")

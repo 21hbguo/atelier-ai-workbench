@@ -220,6 +220,7 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_prompts_user_id ON prompts(user_id);
             CREATE INDEX IF NOT EXISTS idx_image_mappings_hash ON image_mappings(content_hash);
             CREATE INDEX IF NOT EXISTS idx_image_metadata_filename ON image_metadata(filename);
+            CREATE INDEX IF NOT EXISTS idx_image_metadata_created_at ON image_metadata(created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_redemption_codes_code ON redemption_codes(code);
             CREATE INDEX IF NOT EXISTS idx_redemption_codes_is_used ON redemption_codes(is_used);
             CREATE INDEX IF NOT EXISTS idx_point_tx_user_id ON point_transactions(user_id);
@@ -281,7 +282,9 @@ def init_db():
         meta_cols = [row[1] for row in conn.execute("PRAGMA table_info(image_metadata)").fetchall()]
         if "user_id" not in meta_cols:
             conn.execute("ALTER TABLE image_metadata ADD COLUMN user_id INTEGER")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_image_metadata_user_id ON image_metadata(user_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_image_metadata_user_id ON image_metadata(user_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_image_metadata_user_created ON image_metadata(user_id, created_at DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_image_metadata_created_at ON image_metadata(created_at DESC)")
 
         prompt_cols = [row[1] for row in conn.execute("PRAGMA table_info(prompts)").fetchall()]
         if "user_id" not in prompt_cols:
