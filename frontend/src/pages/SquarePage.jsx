@@ -5,6 +5,9 @@ import { squareAPI, promptAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 import SearchInput from '../components/SearchInput'
 import ImageDetailModal from '../components/ImageDetailModal'
+import PromptCard from '../components/PromptCard'
+import PromptDetailModal from '../components/PromptDetailModal'
+import CategoryFilter from '../components/CategoryFilter'
 
 export default function SquarePage() {
   const navigate = useNavigate()
@@ -476,19 +479,30 @@ function PromptsTab({ isAdmin }) {
   const navigate = useNavigate()
   const user = JSON.parse(localStorage.getItem('user') || 'null')
   const [prompts, setPrompts] = useState([])
+  const [total, setTotal] = useState(0)
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState({ name: '', prompt: '', negative_prompt: '', tags: '' })
   const [detail, setDetail] = useState(null)
-  const [editForm, setEditForm] = useState(null)
   const [selected, setSelected] = useState(new Set())
   const [sort, setSort] = useState('likes')
   const [refreshing, setRefreshing] = useState(false)
+  const [page, setPage] = useState(1)
+  const [categories, setCategories] = useState([])
+  const [activeCategory, setActiveCategory] = useState(null)
   const fileRef = useRef(null)
 
-  useEffect(() => { fetchPrompts() }, [query, sort])
+  useEffect(() => { fetchCategories() }, [])
+  useEffect(() => { setPage(1); fetchPrompts() }, [query, sort, activeCategory, page])
+
+  const fetchCategories = async () => {
+    try {
+      const { data } = await promptAPI.categories()
+      setCategories(data.categories)
+    } catch {}
+  }
 
   const handleRefresh = async () => {
     setRefreshing(true)
@@ -501,11 +515,12 @@ function PromptsTab({ isAdmin }) {
     try {
       let data
       if (!user) {
-        ({ data } = await promptAPI.listPublic(query, sort))
+        ({ data } = await promptAPI.listPublic(query, sort, activeCategory, page))
       } else {
-        ({ data } = await promptAPI.list(query, null, isAdmin ? 'all' : 'community', sort))
+        ({ data } = await promptAPI.list(query, null, isAdmin ? 'all' : 'community', sort, activeCategory, page))
       }
       setPrompts(data.prompts)
+      setTotal(data.total)
     } catch {
       setPrompts([])
     } finally {
@@ -554,33 +569,34 @@ function PromptsTab({ isAdmin }) {
 
   const handleDelete = async (id) => {
     if (!confirm('确定删除？')) return
-    try { await promptAPI.delete(id); fetchPrompts() } catch {}
+    try { await promptAPI.delete(id); fetchPrompts(); fetchCategories() } catch {}
   }
 
   const handleBatchDelete = async () => {
     if (selected.size === 0 || !confirm(`删除 ${selected.size} 条？`)) return
-    try { await promptAPI.batchDelete([...selected]); setSelected(new Set()); fetchPrompts() } catch {}
+    try { await promptAPI.batchDelete([...selected]); setSelected(new Set()); fetchPrompts(); fetchCategories() } catch {}
   }
 
-  const handleEdit = (p) => {
-    setForm({ name: p.name, prompt: p.prompt, negative_prompt: p.negative_prompt || '', tags: (p.tags || []).join(', ') })
-    setEditing(p.id)
-    setShowForm(true)
+  const handleUse = (p) => {
+    localStorage.setItem('pending_prompt', p.prompt)
+    navigate('/')
   }
 
-  const handleSaveDetail = async () => {
-    if (!editForm || !detail) return
+  const handleUseImage = async (p) => {
+    if (!p.image_path) return
     try {
-      await promptAPI.update(detail.id, {
-        name: editForm.name,
-        prompt: editForm.prompt,
-        negative_prompt: editForm.negative_prompt,
-        tags: editForm.tags ? editForm.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
-      })
-      setDetail(null)
-      setEditForm(null)
-      fetchPrompts()
-    } catch (e) { alert('保存失败: ' + e.message) }
+      const resp = await fetch(`/api/prompts/evo-thumb/${p.image_path}?size=800`)
+      const blob = await resp.blob()
+      const reader = new FileReader()
+      reader.onload = () => {
+        localStorage.setItem('pending_image', JSON.stringify({
+          dataUrl: reader.result,
+          name: p.name + '.jpg',
+        }))
+        navigate('/')
+      }
+      reader.readAsDataURL(blob)
+    } catch {}
   }
 
   const handleImport = async (e) => {
@@ -590,6 +606,7 @@ function PromptsTab({ isAdmin }) {
       const { data } = await promptAPI.importPublic(file)
       alert(`成功: ${data.success}, 失败: ${data.failed}`)
       fetchPrompts()
+      fetchCategories()
     } catch {}
     e.target.value = ''
   }
@@ -606,10 +623,12 @@ function PromptsTab({ isAdmin }) {
     } catch {}
   }
 
+  const totalPages = Math.ceil(total / 50)
+
   return (
     <>
-      <div className="flex items-center gap-3 mb-4">
-        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{prompts.length} 条提示词</span>
+      <div className="flex items-center gap-3 mb-3">
+        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{total} 条提示词</span>
         <div className="flex gap-1 ml-auto">
           <button onClick={() => setSort('likes')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${sort === 'likes' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
             style={{ color: sort === 'likes' ? 'var(--accent)' : 'var(--text-secondary)' }}>最热</button>
@@ -623,6 +642,12 @@ function PromptsTab({ isAdmin }) {
           <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
         </button>
       </div>
+
+      {categories.length > 0 && (
+        <div className="mb-4">
+          <CategoryFilter categories={categories} active={activeCategory} onChange={setActiveCategory} />
+        </div>
+      )}
 
       {isAdmin && (
         <div className="flex flex-wrap gap-2 mb-4">
@@ -675,123 +700,40 @@ function PromptsTab({ isAdmin }) {
       ) : prompts.length === 0 ? (
         <div className="text-center py-20" style={{ color: 'var(--text-secondary)' }}>暂无提示词</div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {prompts.map(p => (
-            <div key={p.id} className={`p-4 rounded-xl border cursor-pointer hover:shadow-md transition-shadow ${selected.has(p.id) ? 'ring-2 ring-accent/50' : ''}`}
-              style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}
-              onClick={(e) => { if (e.target.type === 'checkbox' || e.target.closest('button')) return; setDetail(p) }}>
-              <div className="flex items-start gap-3">
-                {isAdmin && (
-                  <input type="checkbox" checked={selected.has(p.id)} onChange={() => { const n = new Set(selected); n.has(p.id) ? n.delete(p.id) : n.add(p.id); setSelected(n) }} className="mt-1" />
-                )}
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-medium text-sm mb-1" style={{ color: 'var(--text-primary)' }}>{p.name}</h3>
-                  {isAdmin && (p.nickname || p.username) && (
-                    <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>{p.nickname || p.username}</p>
-                  )}
-                  <p className="text-xs whitespace-pre-wrap line-clamp-3 mb-2" style={{ color: 'var(--text-secondary)' }}>{p.prompt}</p>
-                  {p.tags?.length > 0 && <div className="flex flex-wrap gap-1 mb-2">{p.tags.map((t, i) => <span key={i} className="px-2 py-0.5 rounded text-xs" style={{ background: 'var(--accent)15', color: 'var(--accent)' }}>{t}</span>)}</div>}
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{p.created_at}</span>
-                    <div className="ml-auto flex gap-1">
-                      <button onClick={(e) => { e.stopPropagation(); handleLike(p.id) }}
-                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium ${p.is_liked ? 'bg-red-50 dark:bg-red-900/20' : 'hover:bg-black/5'}`}
-                        style={{ color: p.is_liked ? '#ef4444' : 'var(--text-secondary)' }}>
-                        <Heart size={12} className={p.is_liked ? 'fill-current' : ''} />{p.likes_count || 0}
-                      </button>
-                      <button onClick={() => { localStorage.setItem('pending_prompt', p.prompt); navigate('/') }} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-white" style={{ background: 'var(--accent)' }}><Send size={12} /> 使用</button>
-                      <button onClick={() => navigator.clipboard.writeText(p.prompt)} className="p-1 rounded hover:bg-black/5 text-xs" style={{ color: 'var(--text-secondary)' }}>复制</button>
-                      {isAdmin && (
-                        <button onClick={() => handleDelete(p.id)} className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20" style={{ color: '#ef4444' }}><Trash2 size={14} /></button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <PromptCard
+              key={p.id}
+              prompt={p}
+              isAdmin={isAdmin}
+              isSelected={selected.has(p.id)}
+              onSelect={(id) => { const n = new Set(selected); n.has(id) ? n.delete(id) : n.add(id); setSelected(n) }}
+              onLike={handleLike}
+              onUse={handleUse}
+              onUseImage={handleUseImage}
+              onClick={setDetail}
+            />
           ))}
         </div>
       )}
 
-      {detail && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => { setDetail(null); setEditForm(null) }}>
-          <div className="bg-white dark:bg-gray-900 rounded-2xl overflow-hidden max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
-              <h2 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>{editForm?.name ?? detail.name}</h2>
-              <button onClick={() => { setDetail(null); setEditForm(null) }} className="p-1 rounded hover:bg-black/5"><X size={18} style={{ color: 'var(--text-secondary)' }} /></button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4">
-              <div>
-                <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>名称</label>
-                <input
-                  value={editForm?.name ?? detail.name}
-                  onChange={e => {
-                    if (!editForm) setEditForm({ name: detail.name, prompt: detail.prompt, negative_prompt: detail.negative_prompt || '', tags: (detail.tags || []).join(', ') })
-                    setEditForm(f => ({ ...f, name: e.target.value }))
-                  }}
-                  className="text-sm px-3 py-2 rounded-lg w-full border outline-none"
-                  style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)', borderColor: 'var(--border-color)' }}
-                  placeholder="提示词名称"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>提示词内容</label>
-                <textarea
-                  value={editForm?.prompt ?? detail.prompt}
-                  onChange={e => {
-                    if (!editForm) setEditForm({ name: detail.name, prompt: detail.prompt, negative_prompt: detail.negative_prompt || '', tags: (detail.tags || []).join(', ') })
-                    setEditForm(f => ({ ...f, prompt: e.target.value }))
-                  }}
-                  className="text-sm p-3 rounded-lg whitespace-pre-wrap w-full min-h-[120px] border outline-none resize-none"
-                  style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)', borderColor: 'var(--border-color)' }}
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>标签</label>
-                <input
-                  value={editForm?.tags ?? (detail.tags || []).join(', ')}
-                  onChange={e => {
-                    if (!editForm) setEditForm({ name: detail.name, prompt: detail.prompt, negative_prompt: detail.negative_prompt || '', tags: (detail.tags || []).join(', ') })
-                    setEditForm(f => ({ ...f, tags: e.target.value }))
-                  }}
-                  className="text-sm px-3 py-2 rounded-lg w-full border outline-none"
-                  style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)', borderColor: 'var(--border-color)' }}
-                  placeholder="标签，逗号分隔"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>创建时间</label>
-                <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{detail.created_at}</p>
-              </div>
-              {isAdmin && (detail.nickname || detail.username) && (
-                <div>
-                  <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>作者</label>
-                  <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{detail.nickname || detail.username}</p>
-                </div>
-              )}
-            </div>
-            <div className="flex gap-2 px-5 py-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
-              <button onClick={() => { localStorage.setItem('pending_prompt', editForm?.prompt ?? detail.prompt); navigate('/') }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}><Send size={14} /> 使用</button>
-              <button onClick={() => navigator.clipboard.writeText(editForm?.prompt ?? detail.prompt)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>复制</button>
-              <button onClick={() => handleLike(detail.id)}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                style={{
-                  background: detail.is_liked ? '#ef444415' : 'var(--bg-primary)',
-                  color: detail.is_liked ? '#ef4444' : 'var(--text-primary)',
-                }}>
-                <Heart size={14} className={detail.is_liked ? 'fill-current' : ''} />
-                {detail.is_liked ? '已点赞' : '点赞'} ({detail.likes_count || 0})
-              </button>
-              {editForm && (
-                <button onClick={handleSaveDetail} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}>保存</button>
-              )}
-              {isAdmin && (
-                <button onClick={() => { setDetail(null); setEditForm(null); handleDelete(detail.id) }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 ml-auto"><Trash2 size={14} /> 删除</button>
-              )}
-            </div>
-          </div>
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 mt-6">
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50"
+            style={{ background: 'var(--bg-ai-bubble)', color: 'var(--text-primary)' }}>
+            上一页
+          </button>
+          <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{page} / {totalPages}</span>
+          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50"
+            style={{ background: 'var(--bg-ai-bubble)', color: 'var(--text-primary)' }}>
+            下一页
+          </button>
         </div>
       )}
+
+      <PromptDetailModal prompt={detail} onClose={() => setDetail(null)} onLike={handleLike} />
     </>
   )
 }

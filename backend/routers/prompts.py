@@ -36,16 +36,21 @@ async def get_prompts(
     tags: Optional[str] = Query(None),
     scope: str = Query("private"),
     sort: str = Query("likes", regex="^(likes|time)$"),
+    category: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=200),
     user=Depends(get_current_user),
 ):
     try:
         tag_list = [t.strip() for t in tags.split(",")] if tags else None
         uid = user["user_id"]
         if query or tag_list:
-            results = PromptService.search(query=query or "", tags=tag_list, scope=scope, user_id=uid, sort=sort)
+            result = PromptService.search(query=query or "", tags=tag_list, scope=scope,
+                                          user_id=uid, sort=sort, category=category, page=page, size=size)
         else:
-            results = PromptService.get_all(scope=scope, user_id=uid, sort=sort)
-        return {"prompts": results, "total": len(results)}
+            result = PromptService.get_all(scope=scope, user_id=uid, sort=sort,
+                                          category=category, page=page, size=size)
+        return result
     except Exception as e:
         logger.exception("获取提示词列表失败")
         raise HTTPException(status_code=500, detail="获取提示词列表失败")
@@ -55,20 +60,63 @@ async def get_prompts(
 async def get_public_prompts(
     query: Optional[str] = Query(None),
     tags: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
     sort: str = Query("likes", regex="^(likes|time)$"),
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=200),
     user=Depends(get_optional_user),
 ):
     try:
         tag_list = [t.strip() for t in tags.split(",")] if tags else None
         uid = user["user_id"] if user else None
         if query or tag_list:
-            results = PromptService.search(query=query or "", tags=tag_list, scope="community", user_id=uid, sort=sort)
+            result = PromptService.search(query=query or "", tags=tag_list, scope="community",
+                                          user_id=uid, sort=sort, category=category, page=page, size=size)
         else:
-            results = PromptService.get_all(scope="community", user_id=uid, sort=sort)
-        return {"prompts": results, "total": len(results)}
+            result = PromptService.get_all(scope="community", user_id=uid, sort=sort,
+                                          category=category, page=page, size=size)
+        return result
     except Exception as e:
         logger.exception("获取公开提示词列表失败")
         raise HTTPException(status_code=500, detail="获取公开提示词列表失败")
+
+
+@router.get("/categories")
+async def get_categories(user=Depends(get_optional_user)):
+    try:
+        return {"categories": PromptService.get_categories()}
+    except Exception as e:
+        logger.exception("获取分类列表失败")
+        raise HTTPException(status_code=500, detail="获取分类列表失败")
+
+
+@router.get("/evo-thumb/{path:path}")
+async def serve_evo_thumbnail(path: str, size: int = Query(400)):
+    from pathlib import Path
+    from fastapi.responses import FileResponse
+    from backend.config import EVO_IMAGES_DIR, EVO_THUMBS_DIR
+
+    source = EVO_IMAGES_DIR / path
+    if not source.exists():
+        raise HTTPException(status_code=404, detail="图片不存在")
+
+    thumb_name = f"{size}_{Path(path).stem}.jpg"
+    thumb = EVO_THUMBS_DIR / thumb_name
+    if thumb.exists():
+        return FileResponse(str(thumb), media_type="image/jpeg")
+
+    try:
+        from PIL import Image
+        img = Image.open(source)
+        img.thumbnail((size, size))
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        img.save(thumb, "JPEG", quality=80)
+        return FileResponse(str(thumb), media_type="image/jpeg")
+    except ImportError:
+        return FileResponse(str(source))
+    except Exception:
+        raise HTTPException(status_code=500, detail="生成缩略图失败")
 
 
 @router.post("", response_model=PromptItem)

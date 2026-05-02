@@ -67,17 +67,20 @@ export const imageAPI = {
 }
 
 export const promptAPI = {
-  list: (query, tags, scope = 'private', sort = 'likes') => {
-    const params = { scope, sort }
+  list: (query, tags, scope = 'private', sort = 'likes', category, page = 1, size = 50) => {
+    const params = { scope, sort, page, size }
     if (query) params.query = query
     if (tags) params.tags = tags
+    if (category) params.category = category
     return api.get('/prompts', { params })
   },
-  listPublic: (query, sort = 'likes') => {
-    const params = { sort }
+  listPublic: (query, sort = 'likes', category, page = 1, size = 50) => {
+    const params = { sort, page, size }
     if (query) params.query = query
+    if (category) params.category = category
     return api.get('/prompts/public', { params })
   },
+  categories: () => api.get('/prompts/categories'),
   like: (promptId) => api.post(`/prompts/like?prompt_id=${promptId}`),
   create: (data) => api.post('/prompts', data),
   createPublic: (data) => api.post('/prompts/public', data),
