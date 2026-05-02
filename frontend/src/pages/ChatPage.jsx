@@ -19,6 +19,11 @@ function withTimeout(promise, ms, message) {
     promise.then(v => { clearTimeout(timer); resolve(v) }).catch(e => { clearTimeout(timer); reject(e) })
   })
 }
+function makeTaskId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') { const b = crypto.getRandomValues(new Uint8Array(16)); b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128; const h = Array.from(b, v => v.toString(16).padStart(2, '0')).join(''); return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}` }
+  return `task-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`
+}
 
 export default function ChatPage() {
   const user = readUser()
@@ -187,12 +192,12 @@ export default function ChatPage() {
   }, [isAdmin])
 
   const pollTask = useCallback(async (taskId, startTime, shareToSquare, prompt, params, hasImages) => {
-    const maxAttempts = 40
+    const maxWaitMs = 5 * 60 * 1000
     const getDelay = (attempt) => Math.min(2000 + attempt * 500, 10000)
     let missingCount = 0
     let errorCount = 0
 
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    for (let attempt = 0; Date.now() - startTime < maxWaitMs; attempt++) {
       await new Promise(r => setTimeout(r, getDelay(attempt)))
       try {
         const { data: st } = await taskAPI.get(taskId)
@@ -229,7 +234,7 @@ export default function ChatPage() {
         }
       }
     }
-    updateTask(taskId, { status: 'failed', error: '生成超时', _active: false })
+    updateTask(taskId, { status: 'failed', error: '生成超时（已等待5分钟）', _active: false })
     refreshPointsOnFailed()
   }, [updateTask, shareImageToSquare, refreshPointsOnFailed])
 
@@ -269,7 +274,7 @@ export default function ChatPage() {
     }
 
     const hasImages = imageUrls.length > 0
-    const taskId = crypto.randomUUID()
+    const taskId = makeTaskId()
 
     try {
       const data = hasImages

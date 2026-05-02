@@ -162,11 +162,12 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
 
 
 async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = None, user_id: int = None) -> list:
-    max_attempts = 300
+    max_wait_seconds = 300
     consecutive_errors = 0
     start_time = datetime.now()
     first_poll = True
-    for attempt in range(max_attempts):
+    attempt = 0
+    while (datetime.now() - start_time).total_seconds() < max_wait_seconds:
         if first_poll:
             await asyncio.sleep(10)
             first_poll = False
@@ -194,10 +195,15 @@ async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = N
             continue
 
         if result is None:
+            attempt += 1
             continue
 
-        if isinstance(result, dict) and result.get("status") == 0:
+        if isinstance(result, dict) and str(result.get("status")) in {"0", "1"}:
+            attempt += 1
             continue
+        if isinstance(result, dict) and str(result.get("status")) in {"3", "4", "5", "failed", "error"}:
+            msg = (result.get("message") or result.get("msg") or "生成失败").strip()
+            raise Exception(msg)
 
         if isinstance(result, dict):
             raw_urls = result.get("result") or result.get("urls") or result.get("images")
@@ -236,7 +242,11 @@ async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = N
                         "INSERT INTO image_metadata (filename, metadata, created_at, user_id) VALUES (%s, %s, %s, %s) ON CONFLICT(filename) DO UPDATE SET metadata=EXCLUDED.metadata, created_at=EXCLUDED.created_at, user_id=EXCLUDED.user_id",
                         (filename, json.dumps(image_meta, ensure_ascii=False), image_meta["created_at"], user_id),
                     )
-
+        if not local_paths and isinstance(result, dict):
+            msg = (result.get("message") or result.get("msg") or "").strip()
+            if msg:
+                raise Exception(msg)
         return local_paths
+        attempt += 1
 
-    raise Exception("轮询超时未返回结果")
+    raise Exception("轮询超时（已等待5分钟）")
