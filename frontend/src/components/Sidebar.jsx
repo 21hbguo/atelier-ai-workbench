@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useLocation, Link, useNavigate } from 'react-router-dom'
-import { Sun, Moon, BookOpen, MessageSquare, X, Settings, Globe, LogOut, User, Shield, Coins, Wallet } from 'lucide-react'
+import { Sun, Moon, BookOpen, MessageSquare, X, Settings, Globe, LogOut, User, Shield, Coins, Wallet, Megaphone } from 'lucide-react'
 import { useTheme } from '../ThemeContext'
 import { pointsAPI } from '../api'
 
@@ -9,6 +9,7 @@ const navItems = [
   { path: '/square', icon: Globe, label: '广场' },
   { path: '/prompts', icon: BookOpen, label: '我的提示词' },
   { path: '/wallet', icon: Wallet, label: '小金库' },
+  { path: '/announcements', icon: Megaphone, label: '公告' },
 ]
 
 export default function Sidebar({ open, onClose }) {

@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from backend.routers import generate, upload, tasks, images, prompts, stats, config, auth, square, admin, points
+from backend.routers import generate, upload, tasks, images, prompts, stats, config, auth, square, admin, points, announcements
 from backend.config import GENERATED_IMAGES_DIR, UPLOAD_DIR
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -46,6 +46,7 @@ app.include_router(auth.router)
 app.include_router(square.router)
 app.include_router(admin.router)
 app.include_router(points.router)
+app.include_router(announcements.router)
 
 app.mount("/generated_images", StaticFiles(directory=str(GENERATED_IMAGES_DIR)), name="generated_images")
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")

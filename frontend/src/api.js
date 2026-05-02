@@ -175,4 +175,12 @@ export const pointsAPI = {
   transactions: (page = 1, size = 20) => api.get('/points/transactions', { params: { page, size } }),
 }
 
+export const announcementAPI = {
+  create: (data) => api.post('/announcements', data),
+  list: (page = 1, size = 20) => api.get('/announcements', { params: { page, size } }),
+  delete: (id) => api.delete(`/announcements/${id}`),
+  getUnread: () => api.get('/announcements/unread'),
+  markRead: (id) => api.post(`/announcements/${id}/read`),
+}
+
 export default api

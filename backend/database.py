@@ -195,7 +195,29 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_redemption_codes_is_used ON redemption_codes(is_used);
             CREATE INDEX IF NOT EXISTS idx_point_tx_user_id ON point_transactions(user_id);
             CREATE INDEX IF NOT EXISTS idx_point_tx_created_at ON point_transactions(created_at DESC);
+            CREATE TABLE IF NOT EXISTS announcements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_by INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (created_by) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS announcement_reads (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                announcement_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                read_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (announcement_id) REFERENCES announcements(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                UNIQUE(announcement_id, user_id)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_daily_checkins_user_date ON daily_checkins(user_id, checkin_date);
+            CREATE INDEX IF NOT EXISTS idx_announcements_created_at ON announcements(created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_announcement_reads_user ON announcement_reads(user_id);
+            CREATE INDEX IF NOT EXISTS idx_announcement_reads_ann ON announcement_reads(announcement_id);
         """)
 
         # 检查新列是否存在，不存在则添加
