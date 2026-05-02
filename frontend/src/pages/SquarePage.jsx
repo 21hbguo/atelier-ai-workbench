@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Heart, User, Plus, Image, BookOpen, Edit2, Trash2, Download, Upload, X, Send, RefreshCw } from 'lucide-react'
+import { Heart, User, Plus, Image, BookOpen, Edit2, Trash2, Download, Upload, X, Send, RefreshCw, Share2 } from 'lucide-react'
 import { squareAPI, promptAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 import SearchInput from '../components/SearchInput'
@@ -16,7 +16,7 @@ export default function SquarePage() {
     <MainLayout>
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="flex gap-1 p-0.5 rounded-lg mb-4" style={{ background: 'var(--border-color)' }}>
-          {[{ k: 'works', l: '用户作品库', i: Image }, { k: 'prompts', l: '提示词库', i: BookOpen }].map(({ k, l, i: Icon }) => (
+          {[{ k: 'works', l: '用户作品库', i: Image }, { k: 'my', l: '我的分享', i: Share2 }, { k: 'prompts', l: '提示词库', i: BookOpen }].map(({ k, l, i: Icon }) => (
             <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
               <Icon size={14} />{l}
@@ -24,9 +24,221 @@ export default function SquarePage() {
           ))}
         </div>
 
-        {tab === 'works' ? <WorksTab /> : <PromptsTab isAdmin={isAdmin} />}
+        {tab === 'works' ? <WorksTab /> : tab === 'my' ? <MySharesTab /> : <PromptsTab isAdmin={isAdmin} />}
       </div>
     </MainLayout>
+  )
+}
+
+function MySharesTab() {
+  const navigate = useNavigate()
+  const [images, setImages] = useState([])
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const [selected, setSelected] = useState(null)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const handleUsePrompt = (prompt) => {
+    localStorage.setItem('pending_prompt', prompt)
+    navigate('/')
+  }
+
+  const handleUseImage = async (imgUrl) => {
+    try {
+      const res = await fetch(imgUrl)
+      const blob = await res.blob()
+      const reader = new FileReader()
+      reader.onload = () => {
+        localStorage.setItem('pending_image', JSON.stringify({ dataUrl: reader.result, name: imgUrl.split('/').pop() }))
+        navigate('/')
+      }
+      reader.readAsDataURL(blob)
+    } catch {}
+  }
+
+  useEffect(() => { fetchImages() }, [page])
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    await fetchImages()
+    setRefreshing(false)
+  }
+
+  const fetchImages = async () => {
+    setLoading(true)
+    try {
+      const { data } = await squareAPI.my(page, 20)
+      setImages(data.images)
+      setTotal(data.total)
+    } catch {
+      setImages([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleLike = async (imageId) => {
+    try {
+      const { data } = await squareAPI.like(imageId)
+      setImages(prev =>
+        prev.map(img =>
+          img.id === imageId
+            ? { ...img, is_liked: data.liked, likes_count: img.likes_count + (data.liked ? 1 : -1) }
+            : img
+        )
+      )
+      if (selected?.id === imageId) {
+        setSelected(prev => ({
+          ...prev,
+          is_liked: data.liked,
+          likes_count: prev.likes_count + (data.liked ? 1 : -1),
+        }))
+      }
+    } catch {}
+  }
+
+  const getImageUrl = (img) => `/api/images/file/${img.filename}`
+  const getThumbUrl = (img) => `/api/images/thumb/${img.filename}`
+
+  return (
+    <>
+      <div className="flex items-center gap-3 mb-4">
+        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{total} 张作品</span>
+        <button onClick={handleRefresh} disabled={refreshing}
+          className="p-1.5 rounded-lg hover:bg-black/5 transition-colors disabled:opacity-50 ml-auto"
+          style={{ color: 'var(--text-secondary)' }}>
+          <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-20">
+          <div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} />
+        </div>
+      ) : images.length === 0 ? (
+        <div className="text-center py-20" style={{ color: 'var(--text-secondary)' }}>暂无分享</div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+            {images.map((img) => (
+              <div
+                key={img.id}
+                className="group relative rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                onClick={() => setSelected(img)}
+              >
+                <img
+                  src={getThumbUrl(img)}
+                  alt={img.filename}
+                  className="w-full aspect-square object-cover"
+                  loading="lazy"
+                />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors hidden md:flex items-center justify-center gap-1.5">
+                  {img.prompt && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleUsePrompt(img.prompt) }}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"
+                    >
+                      <Plus size={12} /> 提示词
+                    </button>
+                  )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleUseImage(getImageUrl(img)) }}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"
+                  >
+                    <Image size={12} /> 参考图
+                  </button>
+                </div>
+                <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 bg-gradient-to-t from-black/70 to-transparent">
+                  <p className="text-white text-xs truncate">{img.prompt || '无提示词'}</p>
+                </div>
+                <div onClick={(e) => { e.stopPropagation(); handleLike(img.id) }} className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded-full bg-black/50 backdrop-blur-sm cursor-pointer hover:bg-black/70 transition-colors">
+                  <Heart size={12} className={img.is_liked ? 'fill-red-500 text-red-500' : 'text-white'} />
+                  <span className="text-white text-xs">{img.likes_count}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {total > 20 && (
+            <div className="flex justify-center gap-2 mt-6">
+              {Array.from({ length: Math.ceil(total / 20) }, (_, i) => i + 1).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPage(p)}
+                  className={`w-8 h-8 rounded-lg text-sm font-medium ${p === page ? 'bg-accent text-white' : 'hover:bg-black/5'}`}
+                  style={{ color: p !== page ? 'var(--text-primary)' : undefined }}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {selected && (
+        <ImageDetailModal
+          image={{
+            url: getImageUrl(selected),
+            filename: selected.filename,
+            metadata: {
+              prompt: selected.prompt,
+              created_at: selected.created_at,
+              type: selected.metadata?.type,
+              size: selected.metadata?.size,
+            },
+          }}
+          onClose={() => setSelected(null)}
+          onAddPrompt={selected.prompt ? () => handleUsePrompt(selected.prompt) : undefined}
+          onAddImage={() => handleUseImage(getImageUrl(selected))}
+          title="我的作品"
+          detailContent={
+            <div className="flex flex-col gap-4">
+              {selected.prompt && (
+                <div>
+                  <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>提示词</label>
+                  <p className="text-sm p-3 rounded-lg" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+                    {selected.prompt}
+                  </p>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                {selected.metadata?.type && (
+                  <div>
+                    <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>类型</label>
+                    <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                      {selected.metadata.type === 'text' ? '纯文本' : '文本+图像'}
+                    </p>
+                  </div>
+                )}
+                {selected.metadata?.size && (
+                  <div>
+                    <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>尺寸</label>
+                    <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{selected.metadata.size}</p>
+                  </div>
+                )}
+                <div>
+                  <label className="text-xs" style={{ color: 'var(--text-secondary)' }}>创建时间</label>
+                  <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{selected.created_at}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => handleLike(selected.id)}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                style={{
+                  background: selected.is_liked ? '#ef444415' : 'var(--bg-primary)',
+                  color: selected.is_liked ? '#ef4444' : 'var(--text-primary)',
+                }}
+              >
+                <Heart size={16} className={selected.is_liked ? 'fill-current' : ''} />
+                {selected.is_liked ? '已点赞' : '点赞'} ({selected.likes_count})
+              </button>
+            </div>
+          }
+        />
+      )}
+    </>
   )
 }
 

@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ThemeProvider } from './ThemeContext'
 import ErrorBoundary from './components/ErrorBoundary'
+import { useUserSync } from './hooks/useUserSync'
 import ChatPage from './pages/ChatPage'
 import PromptsPage from './pages/PromptsPage'
 import SettingsPage from './pages/SettingsPage'
@@ -11,6 +12,7 @@ import AgreementPage from './pages/AgreementPage'
 import PrivacyPage from './pages/PrivacyPage'
 import RefundPage from './pages/RefundPage'
 import RedeemPage from './pages/RedeemPage'
+import WalletPage from './pages/WalletPage'
 
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem('token')
@@ -26,7 +28,8 @@ function AdminRoute({ children }) {
   return children
 }
 
-export default function App() {
+function AppContent() {
+  useUserSync()
   return (
     <ErrorBoundary>
     <ThemeProvider>
@@ -37,6 +40,7 @@ export default function App() {
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/refund" element={<RefundPage />} />
           <Route path="/redeem" element={<ProtectedRoute><RedeemPage /></ProtectedRoute>} />
+          <Route path="/wallet" element={<ProtectedRoute><WalletPage /></ProtectedRoute>} />
           <Route path="/" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
           <Route path="/square" element={<ProtectedRoute><SquarePage /></ProtectedRoute>} />
           <Route path="/prompts" element={<ProtectedRoute><PromptsPage /></ProtectedRoute>} />
@@ -47,4 +51,8 @@ export default function App() {
     </ThemeProvider>
     </ErrorBoundary>
   )
+}
+
+export default function App() {
+  return <AppContent />
 }

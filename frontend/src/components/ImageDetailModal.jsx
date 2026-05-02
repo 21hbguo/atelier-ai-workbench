@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { X, Copy, Download, Trash2, Plus, Image, Maximize2 } from 'lucide-react'
+import { X, Copy, Download, Trash2, Plus, Image, Maximize2, Edit2, Check } from 'lucide-react'
+import { imageAPI } from '../api'
 
 function InfoItem({ label, value }) {
   return (
@@ -16,6 +17,7 @@ export default function ImageDetailModal({
   onDelete,
   onAddImage,
   onAddPrompt,
+  onMetadataSaved,
   title = '生成详情',
   detailContent,
   downloadUrl,
@@ -24,11 +26,34 @@ export default function ImageDetailModal({
 }) {
   const [lightbox, setLightbox] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editForm, setEditForm] = useState(null)
+  const [saving, setSaving] = useState(false)
 
   if (!image) return null
 
   const meta = image.metadata || {}
   const url = downloadUrl || image.url
+
+  const handleSaveMetadata = async () => {
+    if (!editForm || !image.filename) return
+    setSaving(true)
+    try {
+      await imageAPI.saveMetadata(image.filename, editForm)
+      setEditing(false)
+      setEditForm(null)
+      if (onMetadataSaved) onMetadataSaved(editForm)
+    } catch (e) {
+      alert('保存失败: ' + e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const startEditing = () => {
+    setEditForm({ ...meta })
+    setEditing(true)
+  }
 
   const handleCopy = async (text) => {
     try {
@@ -64,44 +89,83 @@ export default function ImageDetailModal({
           <div className="md:w-2/5 p-5 flex flex-col gap-4 overflow-y-auto" style={{ color: 'var(--text-primary)' }}>
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{title}</span>
-              <button onClick={onClose} className="p-1 rounded hover:bg-black/5"><X size={18} /></button>
+              <div className="flex items-center gap-2">
+                {!detailContent && image.filename && (
+                  editing ? (
+                    <button onClick={handleSaveMetadata} disabled={saving} className="p-1 rounded hover:bg-black/5" style={{ color: 'var(--accent)' }}>
+                      <Check size={16} />
+                    </button>
+                  ) : (
+                    <button onClick={startEditing} className="p-1 rounded hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>
+                      <Edit2 size={16} />
+                    </button>
+                  )
+                )}
+                <button onClick={onClose} className="p-1 rounded hover:bg-black/5"><X size={18} /></button>
+              </div>
             </div>
 
             {detailContent || (
               <>
-                {meta.prompt && (
-                  <div>
-                    <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>提示词</label>
-                    <div className="relative">
-                      <p className="text-sm p-3 rounded-lg pr-9" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>{meta.prompt}</p>
-                      <button onClick={() => handleCopy(meta.prompt)} className="absolute right-2 top-2 p-1 rounded hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>
-                        <Copy size={14} />
-                      </button>
+                {editing && editForm ? (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>提示词</label>
+                      <textarea
+                        value={editForm.prompt || ''}
+                        onChange={e => setEditForm(f => ({ ...f, prompt: e.target.value }))}
+                        className="w-full px-3 py-2 rounded-lg text-sm border outline-none resize-none"
+                        style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                        rows={3}
+                      />
                     </div>
-                    {copied && <span className="text-xs mt-1" style={{ color: 'var(--accent)' }}>已复制</span>}
+                    {meta.size && (
+                      <div>
+                        <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>尺寸</label>
+                        <input
+                          value={editForm.size || ''}
+                          onChange={e => setEditForm(f => ({ ...f, size: e.target.value }))}
+                          className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
+                          style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                        />
+                      </div>
+                    )}
                   </div>
-                )}
+                ) : (
+                  <>
+                    {meta.prompt && (
+                      <div>
+                        <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>提示词</label>
+                        <div className="relative">
+                          <p className="text-sm p-3 rounded-lg pr-9" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>{meta.prompt}</p>
+                          <button onClick={() => handleCopy(meta.prompt)} className="absolute right-2 top-2 p-1 rounded hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>
+                            <Copy size={14} />
+                          </button>
+                        </div>
+                        {copied && <span className="text-xs mt-1" style={{ color: 'var(--accent)' }}>已复制</span>}
+                      </div>
+                    )}
 
-                <div className="grid grid-cols-2 gap-3">
-                  {meta.type && <InfoItem label="类型" value={meta.type === 'text' ? '纯文本' : '文本+图像'} />}
-                  {meta.size && <InfoItem label="尺寸" value={meta.size} />}
-                  {meta.task_id && <InfoItem label="任务ID" value={meta.task_id} />}
-                  {meta.created_at && <InfoItem label="创建时间" value={meta.created_at} />}
-                  {meta.started_at && meta.completed_at && (() => {
-                    const s = meta.started_at.includes('T') ? meta.started_at : meta.started_at.replace(' ', 'T')
-                    const e = meta.completed_at.includes('T') ? meta.completed_at : meta.completed_at.replace(' ', 'T')
-                    const sec = Math.round((new Date(e) - new Date(s)) / 1000)
-                    const val = sec >= 60 ? `${Math.floor(sec / 60)}分${sec % 60}秒` : `${sec}秒`
-                    return <InfoItem label="耗时" value={val} />
-                  })()}
-                </div>
-
-                {meta.input_urls?.length > 0 && (
-                  <div>
-                    <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>输入图片</label>
-                    <div className="flex gap-2 flex-wrap">
-                      {meta.input_urls.map((url, i) => <img key={i} src={url} className="w-16 h-16 rounded-lg object-cover" />)}
+                    <div className="grid grid-cols-2 gap-3">
+                      {meta.type && <InfoItem label="类型" value={meta.type === 'text' ? '纯文本' : '文本+图像'} />}
+                      {meta.size && <InfoItem label="尺寸" value={meta.size} />}
+                      {meta.task_id && <InfoItem label="任务ID" value={meta.task_id} />}
+                      {meta.created_at && <InfoItem label="创建时间" value={meta.created_at} />}
+                      {meta.started_at && meta.completed_at && (() => {
+                        const s = meta.started_at.includes('T') ? meta.started_at : meta.started_at.replace(' ', 'T')
+                        const e = meta.completed_at.includes('T') ? meta.completed_at : meta.completed_at.replace(' ', 'T')
+                        const sec = Math.round((new Date(e) - new Date(s)) / 1000)
+                        const val = sec >= 60 ? `${Math.floor(sec / 60)}分${sec % 60}秒` : `${sec}秒`
+                        return <InfoItem label="耗时" value={val} />
+                      })()}
                     </div>
+
+                    {meta.input_urls?.length > 0 && (
+                      <div>
+                        <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>输入图片</label>
+                        <div className="flex gap-2 flex-wrap">
+                          {meta.input_urls.map((url, i) => <img key={i} src={url} className="w-16 h-16 rounded-lg object-cover" />)}
+                        </div>
                   </div>
                 )}
               </>

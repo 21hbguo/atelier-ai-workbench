@@ -17,17 +17,12 @@ export default function Sidebar({ open, onClose }) {
   const navigate = useNavigate()
   const user = JSON.parse(localStorage.getItem('user') || 'null')
   const [points, setPoints] = useState(user?.points ?? 0)
-  const [checkedIn, setCheckedIn] = useState(false)
 
   useEffect(() => {
     pointsAPI.balance().then(res => {
       setPoints(res.data.points)
       const u = JSON.parse(localStorage.getItem('user') || 'null')
       if (u) { u.points = res.data.points; localStorage.setItem('user', JSON.stringify(u)) }
-    }).catch(() => {})
-
-    pointsAPI.hasCheckedInToday().then(res => {
-      setCheckedIn(res.data.checked_in)
     }).catch(() => {})
 
     const handleUpdate = () => {
@@ -42,11 +37,13 @@ export default function Sidebar({ open, onClose }) {
     try {
       const res = await pointsAPI.checkin()
       setPoints(res.data.points)
-      setCheckedIn(true)
       const u = JSON.parse(localStorage.getItem('user') || 'null')
       if (u) { u.points = res.data.points; localStorage.setItem('user', JSON.stringify(u)) }
       window.dispatchEvent(new Event('points-updated'))
-    } catch {}
+      alert(res.data.message || '签到成功')
+    } catch (err) {
+      alert(err.message || '签到失败')
+    }
   }
 
   const handleLogout = () => {
@@ -109,10 +106,9 @@ export default function Sidebar({ open, onClose }) {
                 {!user?.is_admin && (
                   <button
                     onClick={handleCheckIn}
-                    disabled={checkedIn}
-                    className="ml-auto text-xs px-2 py-0.5 rounded transition-colors disabled:opacity-40"
-                    style={{ background: checkedIn ? 'var(--bg-secondary)' : 'var(--accent)', color: checkedIn ? 'var(--text-secondary)' : '#fff' }}
-                  >{checkedIn ? '已签到' : '签到'}</button>
+                    className="ml-auto text-xs px-2 py-0.5 rounded transition-colors"
+                    style={{ background: 'var(--accent)', color: '#fff' }}
+                  >签到</button>
                 )}
               </div>
             </>

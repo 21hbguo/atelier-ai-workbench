@@ -171,7 +171,6 @@ export const adminAPI = {
 export const pointsAPI = {
   balance: () => api.get('/points/balance'),
   checkin: () => api.post('/points/checkin'),
-  hasCheckedInToday: () => api.get('/points/has-checked-in-today'),
   redeem: (code) => api.post('/points/redeem', { code }),
   transactions: (page = 1, size = 20) => api.get('/points/transactions', { params: { page, size } }),
 }

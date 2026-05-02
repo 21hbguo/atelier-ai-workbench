@@ -349,12 +349,10 @@ export default function ChatPage() {
           style={{ color: 'var(--text-secondary)' }}>
           <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
         </button>
-        {!isAdmin && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium" style={{ color: 'var(--accent)' }}>
-            <Coins size={14} />
-            <span>{points}</span>
-          </div>
-        )}
+        <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium" style={{ color: 'var(--accent)' }}>
+          <Coins size={14} />
+          <span>{points}</span>
+        </div>
         {selectMode ? (
           <button onClick={exitSelectMode} className="ml-auto px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button>
         ) : (

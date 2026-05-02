@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Trash2, Users, Image, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket } from 'lucide-react'
+import { Trash2, Users, Image, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket, BarChart3 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { adminAPI } from '../api'
+import { adminAPI, statsAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 import PageLayout from '../components/PageLayout'
 import SearchInput from '../components/SearchInput'
@@ -59,6 +59,10 @@ export default function AdminPage() {
   const [adjustAmount, setAdjustAmount] = useState('')
   const [adjustDesc, setAdjustDesc] = useState('')
 
+  // 用户统计
+  const [userStats, setUserStats] = useState([])
+  const [userStatsLoading, setUserStatsLoading] = useState(false)
+
   useEffect(() => { setUserPage(1) }, [userQuery])
   useEffect(() => { setImagePage(1) }, [imageQuery])
   useEffect(() => { setHistoryPage(1) }, [historyQuery])
@@ -70,6 +74,7 @@ export default function AdminPage() {
   useEffect(() => { fetchHostingStats() }, [])
   useEffect(() => { fetchBannedWords() }, [bannedWordsPage, bannedWordsQuery])
   useEffect(() => { fetchCodes() }, [codesPage, codesSort, codesOrder])
+  useEffect(() => { if (tab === 'stats') fetchUserStats() }, [tab])
 
   const fetchUsers = async () => {
     setLoading(true)
@@ -103,6 +108,14 @@ export default function AdminPage() {
       const { data } = await adminAPI.imageStats()
       setHostingStats(data)
     } catch {}
+  }
+
+  const fetchUserStats = async () => {
+    setUserStatsLoading(true)
+    try {
+      const { data } = await statsAPI.users()
+      setUserStats(data.users || [])
+    } catch {} finally { setUserStatsLoading(false) }
   }
 
   const fetchHostingImages = async () => {
@@ -280,7 +293,7 @@ export default function AdminPage() {
     <MainLayout>
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="flex gap-1 p-0.5 rounded-lg mb-4" style={{ background: 'var(--border-color)' }}>
-          {[{ k: 'users', l: '用户管理', i: Users }, { k: 'images', l: '广场管理', i: Image }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'codes', l: '兑换码管理', i: Ticket }].map(({ k, l, i: Icon }) => (
+          {[{ k: 'users', l: '用户管理', i: Users }, { k: 'images', l: '广场管理', i: Image }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'codes', l: '兑换码管理', i: Ticket }, { k: 'stats', l: '用户统计', i: BarChart3 }].map(({ k, l, i: Icon }) => (
             <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
               <Icon size={14} />{l}
@@ -759,6 +772,51 @@ export default function AdminPage() {
               </div>
             )}
             </>
+            )}
+          </div>
+        ) : tab === 'stats' ? (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>共 {userStats.length} 个用户</span>
+            </div>
+            {userStatsLoading ? (
+              <div className="flex justify-center py-20">
+                <div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} />
+              </div>
+            ) : (
+              <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr style={{ background: 'var(--bg-secondary)' }}>
+                      <th className="text-left px-4 py-2.5 font-medium" style={{ color: 'var(--text-secondary)' }}>用户</th>
+                      <th className="text-center px-4 py-2.5 font-medium" style={{ color: 'var(--text-secondary)' }}>成功</th>
+                      <th className="text-center px-4 py-2.5 font-medium" style={{ color: 'var(--text-secondary)' }}>失败</th>
+                      <th className="text-center px-4 py-2.5 font-medium" style={{ color: 'var(--text-secondary)' }}>处理中</th>
+                      <th className="text-right px-4 py-2.5 font-medium" style={{ color: 'var(--text-secondary)' }}>最后活跃</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {userStats.map((u) => (
+                      <tr key={u.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
+                        <td className="px-4 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{u.nickname || u.username}</span>
+                            {u.is_admin && <span className="px-1.5 py-0.5 rounded text-xs" style={{ background: 'var(--accent)15', color: 'var(--accent)' }}>管理员</span>}
+                            {u.is_frozen && <span className="px-1.5 py-0.5 rounded text-xs bg-red-100 text-red-600 dark:bg-red-900/20">已冻结</span>}
+                          </div>
+                          <div className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>@{u.username}</div>
+                        </td>
+                        <td className="px-4 py-2.5 text-center tabular-nums" style={{ color: '#22c55e' }}>{u.success_count}</td>
+                        <td className="px-4 py-2.5 text-center tabular-nums" style={{ color: '#ef4444' }}>{u.failed_count}</td>
+                        <td className="px-4 py-2.5 text-center tabular-nums" style={{ color: 'var(--text-secondary)' }}>{u.processing_count}</td>
+                        <td className="px-4 py-2.5 text-right text-xs" style={{ color: 'var(--text-secondary)' }}>
+                          {u.last_active ? new Date(u.last_active).toLocaleString('zh-CN') : '从未'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         )}
