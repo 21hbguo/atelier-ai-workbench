@@ -10,23 +10,39 @@ import bcrypt
 from backend.database import get_db
 from backend.config import DATA_DIR
 
+JWT_SECRET_FILE = DATA_DIR / ".jwt_secret"
+
+def _save_jwt_secret(secret):
+    try:
+        fd = os.open(JWT_SECRET_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(secret)
+    except FileExistsError:
+        pass
+
 def _get_jwt_secret():
     secret = os.getenv("JWT_SECRET")
     if secret:
+        _save_jwt_secret(secret)
         return secret
-    secret_file = DATA_DIR / ".jwt_secret"
-    if secret_file.exists():
-        return secret_file.read_text().strip()
+    if JWT_SECRET_FILE.exists():
+        saved = JWT_SECRET_FILE.read_text().strip()
+        if saved:
+            return saved
     new_secret = secrets.token_hex(32)
-    secret_file.write_text(new_secret)
+    _save_jwt_secret(new_secret)
+    if JWT_SECRET_FILE.exists():
+        saved = JWT_SECRET_FILE.read_text().strip()
+        if saved:
+            return saved
     return new_secret
 
 
 JWT_SECRET = _get_jwt_secret()
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRE_HOURS = 72
+JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "720"))
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 
 async def hash_password(password: str) -> str:
@@ -60,7 +76,9 @@ def decode_token(token: str) -> dict:
         raise HTTPException(status_code=401, detail="Token 无效")
 
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security)) -> dict:
+def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Security(security)) -> dict:
+    if not credentials:
+        raise HTTPException(status_code=401, detail="请先登录")
     payload = decode_token(credentials.credentials)
     user_id = payload["user_id"]
 
