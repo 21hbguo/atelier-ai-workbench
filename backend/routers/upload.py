@@ -45,9 +45,6 @@ async def _do_upload(file: UploadFile) -> UploadResponse:
         raise HTTPException(status_code=400, detail="文件大小超过10MB限制")
 
     content_hash = _file_hash(content)
-    existing_url = ImageUrlMapping.get_url_by_hash(content_hash)
-    if existing_url:
-        return UploadResponse(url=existing_url, is_duplicate=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{timestamp}_{_safe_filename(file.filename)}"
@@ -55,7 +52,9 @@ async def _do_upload(file: UploadFile) -> UploadResponse:
     await asyncio.to_thread(_write_file, save_path, content)
 
     url, delete_token = await ImageHostingService.upload_image(str(save_path))
-    ImageUrlMapping.save_url(str(save_path), url, content_hash, delete_token or "")
+    existing_url = ImageUrlMapping.save_url(str(save_path), url, content_hash, delete_token or "")
+    if existing_url:
+        return UploadResponse(url=existing_url, is_duplicate=True)
     return UploadResponse(url=url, is_duplicate=False)
 
 

@@ -161,6 +161,7 @@ export const adminAPI = {
     return api.get('/admin/hosting', { params })
   },
   batchDeleteHosting: (urls) => api.post('/admin/hosting/batch-delete', { urls }),
+  cleanDuplicates: () => api.post('/admin/hosting/clean-duplicates'),
   bannedWords: (page = 1, size = 20, query) => {
     const params = { page, size }
     if (query) params.query = query

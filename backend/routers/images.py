@@ -168,6 +168,41 @@ async def proxy_thumbnail(url: str = Query(...), size: int = Query(400, ge=50, l
         raise HTTPException(status_code=502, detail="缩略图生成失败")
 
 
+@router.get("/images/local-thumb")
+async def local_thumbnail(path: str = Query(...), size: int = Query(400, ge=50, le=1000)):
+    import os
+    import hashlib
+
+    abs_path = os.path.abspath(path)
+    if not os.path.isfile(abs_path):
+        raise HTTPException(status_code=404, detail="本地文件不存在")
+
+    url_hash = hashlib.md5(abs_path.encode()).hexdigest()[:12]
+    ext = os.path.splitext(abs_path)[1].lower().lstrip('.')
+    if ext not in {"png", "jpg", "jpeg", "webp", "gif"}:
+        raise HTTPException(status_code=400, detail="不支持的图片格式")
+    thumb_name = f"{size}_{url_hash}.{ext}"
+    thumb_path = THUMBS_DIR / thumb_name
+
+    if thumb_path.exists():
+        return FileResponse(str(thumb_path), media_type="image/jpeg")
+
+    try:
+        from PIL import Image
+        img = Image.open(abs_path)
+        img.thumbnail((size, size), Image.LANCZOS)
+        if img.mode == "RGBA":
+            bg = Image.new("RGB", img.size, (255, 255, 255))
+            bg.paste(img, mask=img.split()[3])
+            img = bg
+        elif img.mode != "RGB":
+            img = img.convert("RGB")
+        img.save(thumb_path, "JPEG", quality=80)
+        return FileResponse(str(thumb_path), media_type="image/jpeg")
+    except ImportError:
+        return FileResponse(abs_path, media_type="image/png")
+
+
 @router.get("/images/file/{filename}")
 async def serve_image(filename: str):
     image_path = GENERATED_IMAGES_DIR / filename

@@ -96,8 +96,7 @@ export default function AdminPage() {
   useEffect(() => { if (tab === 'history') fetchHistory() }, [tab, historyPage, historyQuery])
   useEffect(() => { if (tab === 'hosting') { fetchHostingImages(); fetchHostingStats() } }, [tab, hostingPage])
   useEffect(() => { if (tab === 'banned') fetchBannedWords() }, [tab, bannedWordsPage, bannedWordsQuery])
-  useEffect(() => { if (tab === 'codes') fetchCodes() }, [tab, codesPage, codesSort, codesOrder])
-  useEffect(() => { if (tab === 'recharge') fetchRechargeRequests() }, [tab, rechargePage, rechargeStatus, rechargeQuery])
+  useEffect(() => { if (tab === 'finance') { fetchCodes(); fetchRechargeRequests() } }, [tab, codesPage, codesSort, codesOrder, rechargePage, rechargeStatus, rechargeQuery])
   useEffect(() => { if (tab === 'stats') fetchUserStats() }, [tab])
   useEffect(() => { if (tab === 'announcements') fetchAnnouncements() }, [tab, announcementPage])
 
@@ -321,6 +320,17 @@ export default function AdminPage() {
     } catch {}
   }, [hostingChecked, hostingImages])
 
+  const handleCleanDuplicates = async () => {
+    if (!confirm('确定清理重复的图床映射？将基于URL去重，保留最早的记录。')) return
+    try {
+      const { data } = await adminAPI.cleanDuplicates()
+      alert(`清理完成，删除了 ${data.deleted} 条重复记录`)
+      fetchHostingImages(); fetchHostingStats()
+    } catch (e) {
+      alert(e.message || '清理失败')
+    }
+  }
+
   const handleDeleteHistory = async (taskId) => {
     if (!confirm('确定删除此任务？')) return
     try {
@@ -410,7 +420,7 @@ export default function AdminPage() {
     <MainLayout>
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="flex gap-1 p-0.5 rounded-lg mb-4" style={{ background: 'var(--border-color)' }}>
-          {[{ k: 'users', l: '用户管理', i: Users }, { k: 'images', l: '广场图片', i: Image }, { k: 'prompts', l: '广场提示词', i: BookOpen }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'codes', l: '兑换码管理', i: Ticket }, { k: 'recharge', l: '充值审核', i: Wallet }, { k: 'stats', l: '用户统计', i: BarChart3 }, { k: 'announcements', l: '公告管理', i: Megaphone }].map(({ k, l, i: Icon }) => (
+          {[{ k: 'users', l: '用户管理', i: Users }, { k: 'images', l: '广场图片', i: Image }, { k: 'prompts', l: '广场提示词', i: BookOpen }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'finance', l: '充值与兑换', i: Wallet }, { k: 'stats', l: '用户统计', i: BarChart3 }, { k: 'announcements', l: '公告管理', i: Megaphone }].map(({ k, l, i: Icon }) => (
             <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
               <Icon size={14} />{l}
@@ -739,6 +749,10 @@ export default function AdminPage() {
                   <div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{hostingStats.total_size_fmt}</div>
                   <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>本地文件大小</div>
                 </div>
+                <button onClick={handleCleanDuplicates} className="px-3 py-2 rounded-xl border hover:bg-black/5 transition-colors" style={{ borderColor: 'var(--border-color)' }}>
+                  <div className="text-sm font-medium" style={{ color: 'var(--accent)' }}>清理重复</div>
+                  <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>基于URL去重</div>
+                </button>
               </div>
             )}
             <div className="flex items-center justify-between mb-4">
@@ -784,7 +798,13 @@ export default function AdminPage() {
                     </div>
                   )}
                   {hostingSelectMode && hostingChecked.has(img.url) && <div className="absolute inset-0 bg-accent/10 pointer-events-none z-10" />}
-                  <img src={`/api/images/proxy-thumb?url=${encodeURIComponent(img.url)}&size=400`} alt="" className="w-full aspect-square object-cover" loading="lazy" />
+                  {img.exists ? (
+                    <img src={`/api/images/local-thumb?path=${encodeURIComponent(img.local_path)}&size=400`} alt="" className="w-full aspect-square object-cover" loading="lazy" />
+                  ) : (
+                    <div className="w-full aspect-square flex items-center justify-center" style={{ background: 'var(--border-color)' }}>
+                      <HardDrive size={24} style={{ color: 'var(--text-secondary)', opacity: 0.5 }} />
+                    </div>
+                  )}
                   <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
                     <p className="text-white text-[10px] truncate">{img.filename}</p>
                   </div>
@@ -879,10 +899,11 @@ export default function AdminPage() {
             </>
             )}
           </div>
-        ) : tab === 'codes' ? (
-          <div>
-            {/* 生成兑换码区域 */}
-            <div className="p-4 rounded-xl border mb-4" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+        ) : tab === 'finance' ? (
+          <div className="space-y-6">
+            {/* 生成兑换码 */}
+            <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+              <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>生成兑换码</h3>
               <div className="flex flex-wrap items-end gap-3">
                 <div>
                   <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>积分额度</label>
@@ -923,175 +944,144 @@ export default function AdminPage() {
               )}
             </div>
 
-            {/* 筛选排序 */}
-            <div className="flex items-center gap-3 mb-4">
-              <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>共 <span style={{ color: 'var(--text-primary)' }}>{codesTotal}</span> 个兑换码</span>
-              <div className="flex items-center gap-1.5 ml-auto">
-                <select value={codesSort} onChange={e => setCodesSort(e.target.value)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium border outline-none cursor-pointer"
-                  style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
-                  <option value="created_at">按创建时间</option>
-                  <option value="is_used">按使用状态</option>
-                  <option value="points">按积分额度</option>
-                </select>
-                <button onClick={() => setCodesOrder(o => o === 'desc' ? 'asc' : 'desc')}
-                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium border hover:bg-black/5 transition-colors"
-                  style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
-                  {codesOrder === 'desc' ? '↓ 降序' : '↑ 升序'}
-                </button>
+            {/* 待审核充值 */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>待审核充值</h3>
+                <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#f59e0b20', color: '#f59e0b' }}>
+                  {rechargeItems.filter(i => i.status === 'pending').length} 条待处理
+                </span>
               </div>
-            </div>
-
-            {loading ? (
-              <div className="flex justify-center py-20">
-                <div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} />
-              </div>
-            ) : (
-            <>
-            <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr style={{ background: 'var(--bg-secondary)' }}>
-                      <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>兑换码</th>
-                      <th className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--text-secondary)' }}>积分</th>
-                      <th className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--text-secondary)' }}>状态</th>
-                      <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>来源</th>
-                      <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>使用者</th>
-                      <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>创建时间</th>
-                      <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>使用时间</th>
-                      <th className="px-4 py-3 text-right font-semibold" style={{ color: 'var(--text-secondary)' }}>操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {codes.map(c => (
-                      <tr key={c.id} className="border-t transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style={{ borderColor: 'var(--border-color)' }}>
-                        <td className="px-4 py-3">
-                          <span className="px-2 py-1 rounded-lg text-xs font-mono font-semibold" style={{ background: 'var(--accent)12', color: 'var(--accent)' }}>{c.code}</span>
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{c.points}</span>
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${c.is_used ? 'bg-gray-100 text-gray-500 dark:bg-gray-800' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400'}`}>
-                            {c.is_used ? '已使用' : '未使用'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          {c.recharge_id ? (
-                            <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ background: '#8b5cf620', color: '#8b5cf6' }}>
-                              {c.recharge_nickname || c.recharge_username || '用户'} · {c.recharge_channel === 'wechat' ? '微信' : '支付宝'} ¥{c.recharge_amount}
-                            </span>
-                          ) : (
-                            <span className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>手动创建</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3" style={{ color: c.used_by_name ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
-                          {c.used_by_name || '-'}
-                        </td>
-                        <td className="px-4 py-3 text-[11px]" style={{ color: 'var(--text-secondary)' }}>{c.created_at || '-'}</td>
-                        <td className="px-4 py-3 text-[11px]" style={{ color: 'var(--text-secondary)' }}>{c.used_at || '-'}</td>
-                        <td className="px-4 py-3 text-right">
-                          {!c.is_used && (
-                            <button onClick={() => handleDeleteCode(c.id, c.code)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500" title="删除">
-                              <Trash2 size={14} />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                    {codes.length === 0 && (
-                      <tr><td colSpan={8} className="text-center py-16" style={{ color: 'var(--text-secondary)' }}>
-                        <Ticket size={32} className="mx-auto mb-2 opacity-30" />
-                        <p>暂无兑换码</p>
-                      </td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            {codesTotal > 20 && (
-              <div className="flex justify-center gap-2 mt-4">
-                {Array.from({ length: Math.ceil(codesTotal / 20) }, (_, i) => i + 1).map(p => (
-                  <button key={p} onClick={() => setCodesPage(p)} className={`w-8 h-8 rounded-lg text-sm font-medium ${p === codesPage ? 'bg-accent text-white' : 'hover:bg-black/5'}`}
-                    style={{ color: p !== codesPage ? 'var(--text-primary)' : undefined }}>{p}</button>
-                ))}
-              </div>
-            )}
-            </>
-            )}
-          </div>
-        ) : tab === 'recharge' ? (
-          <div>
-            <div className="flex items-center gap-3 mb-4">
-              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>共 {rechargeTotal} 条申请</span>
-              <select value={rechargeStatus} onChange={e => setRechargeStatus(e.target.value)} className="px-2 py-1.5 rounded-lg text-xs border-0 outline-none" style={{ background: 'var(--border-color)', color: 'var(--text-primary)' }}>
-                <option value="all">全部状态</option>
-                <option value="pending">待审核</option>
-                <option value="approved">已通过</option>
-                <option value="rejected">已拒绝</option>
-              </select>
-              <SearchInput value={rechargeQuery} onChange={setRechargeQuery} placeholder="搜索用户名/交易单号..." />
-            </div>
-            {loading ? (
-              <div className="flex justify-center py-20">
-                <div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} />
-              </div>
-            ) : (
-            <>
-            <div className="space-y-2">
-              {rechargeItems.map(item => {
-                const st = { pending: { c: '#f59e0b', l: '待审核' }, approved: { c: '#22c55e', l: '已通过' }, rejected: { c: '#ef4444', l: '已拒绝' } }
-                const s = st[item.status] || st.pending
-                return (
-                  <div key={item.id} className="rounded-xl border px-4 py-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{item.nickname || item.username || '-'}</span>
-                          <span className="text-xs px-2 py-0.5 rounded-full" style={{ color: s.c, background: s.c + '20' }}>{s.l}</span>
+              {rechargeItems.filter(i => i.status === 'pending').length === 0 ? (
+                <div className="text-center py-6 rounded-xl border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
+                  暂无待审核充值
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {rechargeItems.filter(i => i.status === 'pending').map(item => (
+                    <div key={item.id} className="rounded-xl border px-4 py-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{item.nickname || item.username || '-'}</span>
+                            <span className="text-xs px-2 py-0.5 rounded-full" style={{ color: '#f59e0b', background: '#f59e0b20' }}>待审核</span>
+                          </div>
+                          <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                            <span>{item.channel === 'wechat' ? '微信' : item.channel === 'alipay' ? '支付宝' : item.channel}</span>
+                            <span> · 金额 ¥{item.amount}</span>
+                            <span> · 申请积分 {item.points}</span>
+                            <span> · 单号 {item.tx_no || '-'}</span>
+                          </div>
+                          <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>提交：{item.created_at}</div>
+                          {item.payer_name && <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>付款人：{item.payer_name}</div>}
+                          {item.remark && <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>备注：{item.remark}</div>}
+                          {item.proof_url && <a href={item.proof_url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs underline" style={{ color: 'var(--accent)' }}>查看支付凭证</a>}
                         </div>
-                        <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                          <span>{item.channel === 'wechat' ? '微信' : item.channel === 'alipay' ? '支付宝' : item.channel}</span>
-                          <span> · 金额 ¥{item.amount}</span>
-                          <span> · 申请积分 {item.points}</span>
-                          <span> · 单号 {item.tx_no || '-'}</span>
-                        </div>
-                        <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                          <span>提交：{item.created_at}</span>
-                          {item.reviewed_at && <span> · 审核：{item.reviewed_at}</span>}
-                          {item.reviewed_by_name && <span> · 审核人：{item.reviewed_by_name}</span>}
-                        </div>
-                        {item.payer_name && <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>付款人：{item.payer_name}</div>}
-                        {item.remark && <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>备注：{item.remark}</div>}
-                        {item.review_note && <div className="mt-1 text-xs" style={{ color: item.status === 'rejected' ? '#ef4444' : 'var(--text-secondary)' }}>审核备注：{item.review_note}</div>}
-                        {item.redeem_code && <div className="mt-1 text-xs font-mono" style={{ color: 'var(--accent)' }}>发放兑换码：{item.redeem_code}</div>}
-                        {item.proof_url && <a href={item.proof_url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs underline" style={{ color: 'var(--accent)' }}>查看支付凭证</a>}
-                      </div>
-                      {item.status === 'pending' && (
                         <div className="flex items-center gap-2">
                           <button onClick={() => handleApproveRecharge(item)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: '#22c55e' }}>通过并发码</button>
                           <button onClick={() => handleRejectRecharge(item)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: '#ef4444' }}>拒绝</button>
                         </div>
-                      )}
+                      </div>
                     </div>
-                  </div>
-                )
-              })}
-              {rechargeItems.length === 0 && (
-                <div className="text-center py-20" style={{ color: 'var(--text-secondary)' }}>暂无充值申请</div>
+                  ))}
+                </div>
               )}
             </div>
-            {rechargeTotal > 20 && (
-              <div className="flex justify-center gap-2 mt-4">
-                {Array.from({ length: Math.ceil(rechargeTotal / 20) }, (_, i) => i + 1).map(p => (
-                  <button key={p} onClick={() => setRechargePage(p)} className={`w-8 h-8 rounded-lg text-sm font-medium ${p === rechargePage ? 'bg-accent text-white' : 'hover:bg-black/5'}`}
-                    style={{ color: p !== rechargePage ? 'var(--text-primary)' : undefined }}>{p}</button>
-                ))}
+
+            {/* 所有兑换码 */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>所有兑换码</h3>
+                <div className="flex items-center gap-1.5">
+                  <select value={codesSort} onChange={e => setCodesSort(e.target.value)}
+                    className="px-2 py-1 rounded-lg text-xs font-medium border outline-none cursor-pointer"
+                    style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+                    <option value="created_at">按创建时间</option>
+                    <option value="is_used">按使用状态</option>
+                    <option value="points">按积分额度</option>
+                  </select>
+                  <button onClick={() => setCodesOrder(o => o === 'desc' ? 'asc' : 'desc')}
+                    className="px-2 py-1 rounded-lg text-xs font-medium border hover:bg-black/5 transition-colors"
+                    style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
+                    {codesOrder === 'desc' ? '↓' : '↑'}
+                  </button>
+                </div>
               </div>
-            )}
-            </>
-            )}
+              {loading ? (
+                <div className="flex justify-center py-10">
+                  <div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} />
+                </div>
+              ) : (
+                <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr style={{ background: 'var(--bg-secondary)' }}>
+                          <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>兑换码</th>
+                          <th className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--text-secondary)' }}>积分</th>
+                          <th className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--text-secondary)' }}>状态</th>
+                          <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>来源</th>
+                          <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>使用者</th>
+                          <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>创建时间</th>
+                          <th className="px-4 py-3 text-right font-semibold" style={{ color: 'var(--text-secondary)' }}>操作</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {codes.map(c => (
+                          <tr key={c.id} className="border-t transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style={{ borderColor: 'var(--border-color)' }}>
+                            <td className="px-4 py-3">
+                              <span className="px-2 py-1 rounded-lg text-xs font-mono font-semibold" style={{ background: 'var(--accent)12', color: 'var(--accent)' }}>{c.code}</span>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{c.points}</span>
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${c.is_used ? 'bg-gray-100 text-gray-500 dark:bg-gray-800' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400'}`}>
+                                {c.is_used ? '已使用' : '未使用'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              {c.recharge_id ? (
+                                <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ background: '#8b5cf620', color: '#8b5cf6' }}>
+                                  {c.recharge_nickname || c.recharge_username || '用户'} · {c.recharge_channel === 'wechat' ? '微信' : '支付宝'} ¥{c.recharge_amount}
+                                </span>
+                              ) : (
+                                <span className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>手动创建</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3" style={{ color: c.used_by_name ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                              {c.used_by_name || '-'}
+                            </td>
+                            <td className="px-4 py-3 text-[11px]" style={{ color: 'var(--text-secondary)' }}>{c.created_at || '-'}</td>
+                            <td className="px-4 py-3 text-right">
+                              {!c.is_used && (
+                                <button onClick={() => handleDeleteCode(c.id, c.code)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500" title="删除">
+                                  <Trash2 size={14} />
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                        {codes.length === 0 && (
+                          <tr><td colSpan={7} className="text-center py-16" style={{ color: 'var(--text-secondary)' }}>
+                            <Ticket size={32} className="mx-auto mb-2 opacity-30" />
+                            <p>暂无兑换码</p>
+                          </td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {codesTotal > 20 && (
+                <div className="flex justify-center gap-2 mt-4">
+                  {Array.from({ length: Math.ceil(codesTotal / 20) }, (_, i) => i + 1).map(p => (
+                    <button key={p} onClick={() => setCodesPage(p)} className={`w-8 h-8 rounded-lg text-sm font-medium ${p === codesPage ? 'bg-accent text-white' : 'hover:bg-black/5'}`}
+                      style={{ color: p !== codesPage ? 'var(--text-primary)' : undefined }}>{p}</button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         ) : tab === 'stats' ? (
           <div>

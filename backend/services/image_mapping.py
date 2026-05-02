@@ -25,13 +25,21 @@ class ImageUrlMapping:
             return row["url"] if row else None
 
     @classmethod
-    def save_url(cls, local_path: str, url: str, content_hash: str = "", delete_token: str = "") -> None:
+    def save_url(cls, local_path: str, url: str, content_hash: str = "", delete_token: str = "") -> Optional[str]:
+        """保存映射，返回已存在的URL（如果去重命中），否则返回None"""
         abs_path = os.path.abspath(local_path)
         with get_db() as conn:
+            # 如果有content_hash，先检查是否已有相同内容的记录
+            if content_hash:
+                row = conn.execute("SELECT url FROM image_mappings WHERE content_hash = ?", (content_hash,)).fetchone()
+                if row:
+                    return row["url"]
+
             conn.execute(
                 "INSERT OR IGNORE INTO image_mappings (local_path, url, upload_time, content_hash, delete_token) VALUES (?, ?, ?, ?, ?)",
                 (abs_path, url, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), content_hash, delete_token),
             )
+            return None
 
     @classmethod
     def get_delete_tokens(cls, urls: List[str]) -> Dict[str, str]:

@@ -302,6 +302,29 @@ async def batch_delete_hosting(body: dict, admin=Depends(require_admin)):
     return {"deleted": count, "deleted_hosting": deleted_hosting}
 
 
+@router.post("/hosting/clean-duplicates")
+async def clean_duplicate_hosting(admin=Depends(require_admin)):
+    """清理重复的图床映射，基于URL去重"""
+    with get_db() as conn:
+        # 找出重复的URL（保留id最小的，删除其他的）
+        duplicates = conn.execute("""
+            SELECT url, COUNT(*) as cnt, MIN(id) as keep_id
+            FROM image_mappings
+            GROUP BY url
+            HAVING cnt > 1
+        """).fetchall()
+
+        deleted = 0
+        for row in duplicates:
+            url = row["url"]
+            keep_id = row["keep_id"]
+            # 删除除keep_id以外的所有重复记录
+            cur = conn.execute("DELETE FROM image_mappings WHERE url = ? AND id != ?", (url, keep_id))
+            deleted += cur.rowcount
+
+        return {"deleted": deleted, "duplicate_urls": len(duplicates)}
+
+
 # ============ 违禁词管理 ============
 
 @router.get("/banned-words")
