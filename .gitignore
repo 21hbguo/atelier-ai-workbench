@@ -16,6 +16,6 @@ data/app.db-wal
 data/evo_thumbs/
 .codex/
 .claude/data/database.db
-
+.claude/
 data/database.db
 data/uploads/
