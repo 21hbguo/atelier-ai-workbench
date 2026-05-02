@@ -72,7 +72,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading }, ref) {
 
   return (
     <>
-      <div className="w-full px-4 py-4">
+      <div className="w-full px-4 pt-4 pb-2">
         <div
           className="rounded-xl border-2 transition-all duration-150"
           style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-md)', position: 'relative' }}

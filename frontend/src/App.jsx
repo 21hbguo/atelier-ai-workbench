@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { ThemeProvider } from './ThemeContext'
 import ErrorBoundary from './components/ErrorBoundary'
 import { useUserSync } from './hooks/useUserSync'
@@ -32,35 +32,61 @@ function AdminRoute({ children }) {
   return children
 }
 
-function AppContent() {
-  useUserSync()
+function AnnouncementManager() {
+  const location = useLocation()
   const [unreadQueue, setUnreadQueue] = useState([])
   const [currentAnnouncement, setCurrentAnnouncement] = useState(null)
+  const fetchingRef = useRef(false)
+
+  const fetchUnread = useCallback(async () => {
+    const token = localStorage.getItem('token')
+    if (!token || fetchingRef.current) return
+    fetchingRef.current = true
+    try {
+      const { data } = await announcementAPI.getUnread()
+      if (data.items?.length) {
+        setUnreadQueue(prev => {
+          const prevIds = new Set(prev.map(a => a.id))
+          const newItems = data.items.filter(a => !prevIds.has(a.id))
+          if (newItems.length) {
+            const next = [...newItems, ...prev]
+            setCurrentAnnouncement(next[0])
+            return next
+          }
+          return prev
+        })
+      }
+    } catch {}
+    fetchingRef.current = false
+  }, [])
 
   useEffect(() => {
-    const token = localStorage.getItem('token')
-    if (!token) return
-    announcementAPI.getUnread().then(({ data }) => {
-      if (data.items?.length) {
-        setUnreadQueue(data.items)
-        setCurrentAnnouncement(data.items[0])
-      }
-    }).catch(() => {})
-  }, [])
+    if (location.pathname === '/login') return
+    fetchUnread()
+  }, [location.pathname, fetchUnread])
 
   const handleReadAnnouncement = async (ann) => {
     try {
       await announcementAPI.markRead(ann.id)
     } catch {}
-    const next = unreadQueue.slice(1)
-    setUnreadQueue(next)
-    setCurrentAnnouncement(next.length ? next[0] : null)
+    setUnreadQueue(prev => {
+      const next = prev.slice(1)
+      setCurrentAnnouncement(next.length ? next[0] : null)
+      return next
+    })
   }
+
+  return <AnnouncementModal announcement={currentAnnouncement} onRead={handleReadAnnouncement} onClose={() => setCurrentAnnouncement(null)} />
+}
+
+function AppContent() {
+  useUserSync()
 
   return (
     <ErrorBoundary>
     <ThemeProvider>
       <BrowserRouter>
+        <AnnouncementManager />
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/agreement" element={<AgreementPage />} />
@@ -76,7 +102,6 @@ function AppContent() {
           <Route path="/admin" element={<AdminRoute><AdminPage /></AdminRoute>} />
         </Routes>
       </BrowserRouter>
-      <AnnouncementModal announcement={currentAnnouncement} onRead={handleReadAnnouncement} onClose={() => setCurrentAnnouncement(null)} />
     </ThemeProvider>
     </ErrorBoundary>
   )

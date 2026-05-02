@@ -446,10 +446,10 @@ export default function ChatPage() {
           </div>
         </div>
       )}
-      <div className="text-center text-xs pb-1" style={{ color: 'var(--text-secondary)' }}>
+      <ChatInput ref={inputRef} onSubmit={handleSubmit} loading={loading} />
+      <div className="text-center text-[10px] -mt-1" style={{ color: 'var(--text-secondary)', opacity: 0.6 }}>
         每次请求消耗10积分，失败将退还
       </div>
-      <ChatInput ref={inputRef} onSubmit={handleSubmit} loading={loading} />
 
       {selectedCardIndex !== null && allImages.length > 0 && (
         <ImageDetailModal

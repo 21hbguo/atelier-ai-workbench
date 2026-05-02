@@ -136,9 +136,10 @@ class PointsService:
             for user in users:
                 uid = user["id"]
                 conn.execute("UPDATE users SET points = points + ? WHERE id = ?", (cls.MIGRATION_AMOUNT, uid))
+                new_balance = conn.execute("SELECT points FROM users WHERE id = ?", (uid,)).fetchone()["points"]
                 conn.execute(
                     "INSERT INTO point_transactions (user_id, amount, balance_after, type, description) VALUES (?, ?, ?, ?, ?)",
-                    (uid, cls.MIGRATION_AMOUNT, cls.MIGRATION_AMOUNT, "migration_bonus", "系统补发积分"),
+                    (uid, cls.MIGRATION_AMOUNT, new_balance, "migration", "系统补发"),
                 )
                 count += 1
             return {"migrated": count}
