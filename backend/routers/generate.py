@@ -199,8 +199,11 @@ async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = N
         except Exception as e:
             consecutive_errors += 1
             logger.warning(f"[poll] task={task_id} error={e} consecutive={consecutive_errors}")
+            msg = str(e)
+            if msg.startswith("任务失败:"):
+                raise Exception(msg)
             if consecutive_errors >= 10:
-                return []
+                raise Exception(f"轮询连续失败: {msg}")
             continue
 
         if result is None:
@@ -249,4 +252,4 @@ async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = N
 
         return local_paths
 
-    return []
+    raise Exception("轮询超时未返回结果")

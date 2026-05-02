@@ -53,6 +53,7 @@ def _issue_session(response: Response, user_id: int, username: str, is_admin: bo
     access_token = create_token(user_id, username, is_admin)
     refresh_token = create_refresh_token(user_id, ip=ip, user_agent=user_agent)
     set_auth_cookies(response, access_token, refresh_token)
+    return access_token
 
 
 @router.post("/register")
@@ -68,8 +69,8 @@ async def register(req: RegisterRequest, request: Request, response: Response):
         user_id = cursor.fetchone()["id"]
         update_user_ip(user_id, ip, conn=conn)
         PointsService.add_points(user_id, PointsService.REGISTER_BONUS, "register_bonus", "注册赠送")
-    _issue_session(response, user_id, req.username, False, ip, request.headers.get("user-agent", ""))
-    return {"user": {"id": user_id, "username": req.username, "nickname": req.nickname or req.username, "is_admin": False, "points": PointsService.REGISTER_BONUS}}
+    access_token = _issue_session(response, user_id, req.username, False, ip, request.headers.get("user-agent", ""))
+    return {"token": access_token, "user": {"id": user_id, "username": req.username, "nickname": req.nickname or req.username, "is_admin": False, "points": PointsService.REGISTER_BONUS}}
 
 
 @router.post("/login")
@@ -83,8 +84,8 @@ async def login(req: LoginRequest, request: Request, response: Response):
         update_user_ip(user["id"], ip, conn=conn)
         conn.execute("UPDATE users SET last_active = %s WHERE id = %s", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user["id"]))
         payload = {"id": user["id"], "username": user["username"], "nickname": user["nickname"], "is_admin": bool(user["is_admin"]), "points": user["points"]}
-    _issue_session(response, payload["id"], payload["username"], payload["is_admin"], ip, request.headers.get("user-agent", ""))
-    return {"user": payload}
+    access_token = _issue_session(response, payload["id"], payload["username"], payload["is_admin"], ip, request.headers.get("user-agent", ""))
+    return {"token": access_token, "user": payload}
 
 
 @router.post("/refresh")
@@ -95,7 +96,7 @@ async def refresh(request: Request, response: Response):
         clear_auth_cookies(response)
         raise HTTPException(status_code=401, detail="登录已失效")
     set_auth_cookies(response, session["access_token"], session["refresh_token"])
-    return {"user": session["user"]}
+    return {"token": session["access_token"], "user": session["user"]}
 
 
 @router.post("/logout")

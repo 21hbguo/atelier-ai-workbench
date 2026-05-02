@@ -17,6 +17,7 @@ class TaskManager:
         try:
             with get_db() as conn:
                 rows = conn.execute("SELECT * FROM tasks").fetchall()
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 for row in rows:
                     d = dict(row)
                     val = d.get("params")
@@ -25,6 +26,12 @@ class TaskManager:
                     d["result_urls"] = json.loads(val) if isinstance(val, str) else (val or [])
                     val = d.get("external_result")
                     d["external_result"] = json.loads(val) if isinstance(val, str) else val
+                    if str(d.get("status", "")).lower() in {"pending", "queued", "processing", "running", "generating"}:
+                        d["status"] = "failed"
+                        d["error"] = d.get("error") or "服务重启导致任务中断"
+                        d["completed_at"] = d.get("completed_at") or now
+                        d["updated_at"] = now
+                        conn.execute("UPDATE tasks SET status = %s, error = %s, completed_at = %s, updated_at = %s WHERE task_id = %s", (d["status"], d["error"], d["completed_at"], d["updated_at"], d["task_id"]))
                     tasks[d["task_id"]] = d
         except Exception:
             pass
@@ -129,6 +136,9 @@ class TaskManager:
             return None
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         task = cls._tasks[task_id]
+        prev_status = task.get("status")
+        prev_progress = task.get("progress")
+        prev_error = task.get("error")
         new_status = kwargs.get("status")
         if new_status == "processing" and not task.get("started_at"):
             kwargs.setdefault("started_at", now)
@@ -141,8 +151,8 @@ class TaskManager:
         if new_status in ("completed", "failed"):
             cls._save_to_db(task_id, task)
         else:
-            # 非终态只更新进度和状态到内存，不立即写库
-            pass
+            if ("status" in kwargs and kwargs.get("status") != prev_status) or ("progress" in kwargs and kwargs.get("progress") != prev_progress) or ("error" in kwargs and kwargs.get("error") != prev_error):
+                cls._save_to_db(task_id, task, fields=["status", "progress", "updated_at", "started_at", "completed_at", "error"])
 
         return task
 

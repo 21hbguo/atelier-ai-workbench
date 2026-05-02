@@ -28,12 +28,13 @@ async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
                 SELECT u.id, u.username, u.nickname, u.is_admin, u.is_frozen, u.points, u.last_ip, u.last_active, u.created_at,
                        COALESCE(img.cnt, 0) as success_count,
                        COUNT(CASE WHEN ur.status = 'failed' THEN 1 END) as failed_count,
-                       COUNT(CASE WHEN ur.status = 'processing' THEN 1 END) as processing_count
+                       COALESCE(proc.cnt, 0) as processing_count
                 FROM users u
                 LEFT JOIN user_requests ur ON u.id = ur.user_id
                 LEFT JOIN (SELECT user_id, COUNT(*) as cnt FROM image_metadata GROUP BY user_id) img ON u.id = img.user_id
+                LEFT JOIN (SELECT user_id, COUNT(*) as cnt FROM tasks WHERE LOWER(status) IN ('pending', 'queued', 'processing', 'running', 'generating') GROUP BY user_id) proc ON u.id = proc.user_id
                 WHERE u.username LIKE %s OR u.nickname LIKE %s
-                GROUP BY u.id, img.cnt
+                GROUP BY u.id, img.cnt, proc.cnt
                 ORDER BY u.last_active DESC
                 LIMIT %s OFFSET %s
                 """,
@@ -46,11 +47,12 @@ async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
                 SELECT u.id, u.username, u.nickname, u.is_admin, u.is_frozen, u.points, u.last_ip, u.last_active, u.created_at,
                        COALESCE(img.cnt, 0) as success_count,
                        COUNT(CASE WHEN ur.status = 'failed' THEN 1 END) as failed_count,
-                       COUNT(CASE WHEN ur.status = 'processing' THEN 1 END) as processing_count
+                       COALESCE(proc.cnt, 0) as processing_count
                 FROM users u
                 LEFT JOIN user_requests ur ON u.id = ur.user_id
                 LEFT JOIN (SELECT user_id, COUNT(*) as cnt FROM image_metadata GROUP BY user_id) img ON u.id = img.user_id
-                GROUP BY u.id, img.cnt
+                LEFT JOIN (SELECT user_id, COUNT(*) as cnt FROM tasks WHERE LOWER(status) IN ('pending', 'queued', 'processing', 'running', 'generating') GROUP BY user_id) proc ON u.id = proc.user_id
+                GROUP BY u.id, img.cnt, proc.cnt
                 ORDER BY u.last_active DESC
                 LIMIT %s OFFSET %s
                 """,

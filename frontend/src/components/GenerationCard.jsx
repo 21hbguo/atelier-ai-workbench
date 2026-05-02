@@ -6,6 +6,8 @@ const statusConfig = {
   queued: { color: '#f59e0b', bg: '#f59e0b20', label: '排队中' },
   pending: { color: 'var(--text-secondary)', bg: 'var(--border-color)', label: '等待中' },
   processing: { color: '#f59e0b', bg: '#f59e0b20', label: '生成中' },
+  running: { color: '#f59e0b', bg: '#f59e0b20', label: '生成中' },
+  generating: { color: '#f59e0b', bg: '#f59e0b20', label: '生成中' },
   completed: { color: 'var(--accent)', bg: 'var(--accent)20', label: '已完成' },
   failed: { color: '#ef4444', bg: '#ef444420', label: '失败' },
 }
@@ -22,12 +24,13 @@ export default function GenerationCard({ task, onAddImage, onAddPrompt, onRetry,
   const [progress, setProgress] = useState(() => getProgress(task.started_at, task.status))
   const [shared, setShared] = useState(false)
   const [sharing, setSharing] = useState(false)
+  const isProcessing = ['processing', 'queued', 'running', 'generating'].includes(task.status)
 
   useEffect(() => {
-    if (task.status !== 'processing' && task.status !== 'queued') return
+    if (!isProcessing) return
     const timer = setInterval(() => setProgress(getProgress(task.started_at, task.status)), 1000)
     return () => clearInterval(timer)
-  }, [task.started_at, task.status])
+  }, [task.started_at, task.status, isProcessing])
 
   useEffect(() => {
     if (task.status === 'completed') setProgress(100)
@@ -79,7 +82,7 @@ export default function GenerationCard({ task, onAddImage, onAddPrompt, onRetry,
           <img src={images[0].thumb} alt="" className="w-full aspect-square object-cover" />
         ) : (
           <div className="w-full aspect-square flex flex-col items-center justify-center gap-3" style={{ background: cfg.bg }}>
-            {task.status === 'processing' || task.status === 'queued' ? (
+            {isProcessing ? (
               <>
                 <div className="w-10 h-10 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: cfg.color, borderTopColor: 'transparent' }} />
                 <span className="text-xs font-medium" style={{ color: cfg.color }}>{cfg.label} {Math.round(progress)}%</span>
@@ -153,7 +156,7 @@ export default function GenerationCard({ task, onAddImage, onAddPrompt, onRetry,
         )}
 
         {/* progress bar */}
-        {(task.status === 'processing' || task.status === 'queued') && (
+        {isProcessing && (
           <div className="absolute bottom-0 left-0 right-0 h-1">
             <div className="h-full transition-all duration-1000" style={{ width: `${progress}%`, background: cfg.color }} />
           </div>

@@ -1138,7 +1138,7 @@ export default function AdminPage() {
                 </thead>
                 <tbody>
                   {history.map(item => {
-                    const st = { pending: { c: '#6b7280', l: '等待中' }, queued: { c: '#f59e0b', l: '排队中' }, processing: { c: '#f59e0b', l: '生成中' }, completed: { c: '#22c55e', l: '已完成' }, failed: { c: '#ef4444', l: '失败' } }
+                    const st = { pending: { c: '#6b7280', l: '等待中' }, queued: { c: '#f59e0b', l: '排队中' }, processing: { c: '#f59e0b', l: '生成中' }, running: { c: '#f59e0b', l: '生成中' }, generating: { c: '#f59e0b', l: '生成中' }, completed: { c: '#22c55e', l: '已完成' }, failed: { c: '#ef4444', l: '失败' } }
                     const s = st[item.status] || st.pending
                     const duration = item.started_at && item.completed_at
                       ? Math.round((new Date(item.completed_at) - new Date(item.started_at)) / 1000)

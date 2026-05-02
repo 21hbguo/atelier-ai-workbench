@@ -58,27 +58,26 @@ class ImageGenService:
     @classmethod
     async def get_task_result(cls, task_id: str) -> Optional[Dict[str, Any]]:
         params = {"key": IMAGE_GEN_API_KEY(), "id": task_id}
-
+        client = get_http_client()
         try:
-            client = get_http_client()
-            response = await client.get(
-                f"{IMAGE_GEN_API_URL()}/detail",
-                params=params,
-            )
-        except Exception:
-            return None
-
+            response = await client.get(f"{IMAGE_GEN_API_URL()}/detail", params=params)
+        except Exception as e:
+            raise Exception(f"查询任务状态失败: {str(e)}")
         if response.status_code != 200:
-            return None
-
-        data = response.json()
+            raise Exception(f"查询任务状态失败 ({response.status_code}): {response.text}")
+        try:
+            data = response.json()
+        except Exception as e:
+            raise Exception(f"查询任务状态返回非JSON: {str(e)}")
         code = data.get("code")
-
         if code in (1, 200):
             return data.get("data")
+        elif code in (0, "0"):
+            return None
         elif code == 2:
             raise Exception(f"任务失败: {data.get('msg', '未知错误')}")
-
+        elif code is not None:
+            raise Exception(f"查询任务状态异常 code={code} msg={data.get('msg', '未知错误')}")
         return None
 
     @classmethod

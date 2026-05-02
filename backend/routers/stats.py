@@ -38,7 +38,7 @@ async def get_system_stats(user=Depends(get_current_user)):
     # 存储用量 + 处理中的任务数
     with get_db() as conn:
         db_size = conn.execute("SELECT pg_database_size(current_database()) as size").fetchone()["size"]
-        processing = conn.execute("SELECT COUNT(*) as cnt FROM tasks WHERE status IN ('processing', 'queued')").fetchone()["cnt"]
+        processing = conn.execute("SELECT COUNT(*) as cnt FROM tasks WHERE LOWER(status) IN ('pending', 'queued', 'processing', 'running', 'generating')").fetchone()["cnt"]
 
     # API 配置状态
     from backend.config import get_config
@@ -82,11 +82,12 @@ async def get_user_stats(user=Depends(get_current_user)):
             SELECT u.id, u.username, u.nickname, u.is_admin, u.is_frozen, u.last_active, u.last_ip,
                    COALESCE(img.cnt, 0) as success_count,
                    COUNT(CASE WHEN ur.status = 'failed' THEN 1 END) as failed_count,
-                   COUNT(CASE WHEN ur.status = 'processing' THEN 1 END) as processing_count
+                   COALESCE(proc.cnt, 0) as processing_count
             FROM users u
             LEFT JOIN user_requests ur ON u.id = ur.user_id
             LEFT JOIN (SELECT user_id, COUNT(*) as cnt FROM image_metadata GROUP BY user_id) img ON u.id = img.user_id
-            GROUP BY u.id, img.cnt
+            LEFT JOIN (SELECT user_id, COUNT(*) as cnt FROM tasks WHERE LOWER(status) IN ('pending', 'queued', 'processing', 'running', 'generating') GROUP BY user_id) proc ON u.id = proc.user_id
+            GROUP BY u.id, img.cnt, proc.cnt
             ORDER BY u.last_active DESC
             """
         ).fetchall()
