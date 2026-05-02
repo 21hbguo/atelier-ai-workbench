@@ -185,8 +185,8 @@ export const adminAPI = {
   adjustPoints: (userId, data) => api.post(`/admin/users/${userId}/points`, data),
   resetPassword: (userId, password) => api.post(`/admin/users/${userId}/reset-password`, { password }),
   migratePoints: () => api.post('/admin/migrate-points'),
-  rechargeRequests: (page = 1, size = 20, status = 'all', query) => {
-    const params = { page, size, status }
+  rechargeRequests: (page = 1, size = 20, status = 'all', query, sort = 'created_at', order = 'desc') => {
+    const params = { page, size, status, sort, order }
     if (query) params.query = query
     return api.get('/admin/recharge-requests', { params })
   },

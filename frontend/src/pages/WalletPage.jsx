@@ -3,7 +3,7 @@ import { Coins, ArrowUpCircle, ArrowDownCircle, RefreshCw, User, Mail, Gift, Wal
 import MainLayout from '../components/MainLayout'
 import Pagination from '../components/Pagination'
 import api, { pointsAPI, uploadAPI } from '../api'
-const typeMap={register_bonus:{label:'注册赠送',color:'var(--accent)'},daily_checkin:{label:'每日签到',color:'var(--accent)'},generate_consume:{label:'生成消耗',color:'#ef4444'},generate_refund:{label:'生成退款',color:'#22c55e'},redeem_code:{label:'兑换码兑换',color:'var(--accent)'},admin_grant:{label:'管理员调整',color:'#8b5cf6'},migration:{label:'历史补偿',color:'var(--accent)'},migration_bonus:{label:'历史补偿',color:'var(--accent)'}}
+const typeMap={register_bonus:{label:'注册赠送',color:'var(--accent)'},daily_checkin:{label:'每日签到',color:'var(--accent)'},generate_consume:{label:'生成消耗',color:'#ef4444'},generate_refund:{label:'生成退款',color:'#22c55e'},redeem_code:{label:'兑换码兑换',color:'var(--accent)'},admin_grant:{label:'管理员调整',color:'#8b5cf6'},migration:{label:'历史补偿',color:'var(--accent)'},migration_bonus:{label:'历史补偿',color:'var(--accent)'},recharge_pending:{label:'充值待审核',color:'#f59e0b'}}
 const rechargePackages=[{amount:9.9,points:120,label:'体验包'},{amount:29.9,points:400,label:'进阶包'},{amount:59.9,points:900,label:'超值包'}]
 const channelLabel={wechat:'微信',alipay:'支付宝'}
 const statusMap={pending:{label:'待审核',color:'#f59e0b'},approved:{label:'已通过',color:'#22c55e'},rejected:{label:'已拒绝',color:'#ef4444'}}
@@ -120,8 +120,6 @@ await pointsAPI.createRechargeRequest({channel:rechargeChannel,amount:rechargeAm
 setProofUrl('')
 setRemark('')
 setRechargeMsg({type:'success',text:'充值申请已提交，审核通过后会自动发放兑换码'})
-setRechargePage(1)
-fetchRechargeRequests(1)
 }catch(err){
 setRechargeMsg({type:'error',text:err.message||'提交失败'})
 }finally{

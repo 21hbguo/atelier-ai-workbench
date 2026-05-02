@@ -92,6 +92,11 @@ async def create_recharge_request(body: RechargeCreateRequest, user=Depends(get_
             (user["user_id"], channel, body.amount, body.points, payer_name, tx_no, proof_url, remark),
         )
         request_id = cursor.lastrowid
+        balance = conn.execute("SELECT points FROM users WHERE id = ?", (user["user_id"],)).fetchone()["points"]
+        conn.execute(
+            "INSERT INTO point_transactions (user_id, amount, balance_after, type, description, recharge_request_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (user["user_id"], 0, balance, "recharge_pending", f"充值申请待审核 (¥{body.amount})", request_id),
+        )
     return {"id": request_id, "tx_no": tx_no, "message": "充值申请已提交，等待审核"}
 
 

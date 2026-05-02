@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Trash2, Users, Image, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket, BarChart3, Megaphone, BookOpen, Wallet, Key } from 'lucide-react'
+import { Trash2, Users, Image, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket, Megaphone, BookOpen, Wallet, Key } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { adminAPI, statsAPI, announcementAPI } from '../api'
+import { adminAPI, announcementAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 import PageLayout from '../components/PageLayout'
 import SearchInput from '../components/SearchInput'
@@ -62,10 +62,11 @@ export default function AdminPage() {
   const [proofLightbox, setProofLightbox] = useState(null)
   const [resetPwdUserId, setResetPwdUserId] = useState(null)
   const [resetPwdValue, setResetPwdValue] = useState('')
+  const [rechargeStatusFilter, setRechargeStatusFilter] = useState('all')
+  const [reviewModal, setReviewModal] = useState(null)
+  const [reviewNote, setReviewNote] = useState('')
+  const [reviewPoints, setReviewPoints] = useState('')
 
-  // 用户统计
-  const [userStats, setUserStats] = useState([])
-  const [userStatsLoading, setUserStatsLoading] = useState(false)
 
   // 公告管理
   const [announcements, setAnnouncements] = useState([])
@@ -94,8 +95,7 @@ export default function AdminPage() {
   useEffect(() => { if (tab === 'history') fetchHistory() }, [tab, historyPage, historyQuery])
   useEffect(() => { if (tab === 'hosting') { fetchHostingImages(); fetchHostingStats() } }, [tab, hostingPage])
   useEffect(() => { if (tab === 'banned') fetchBannedWords() }, [tab, bannedWordsPage, bannedWordsQuery])
-  useEffect(() => { if (tab === 'finance') fetchCodes() }, [tab, codesPage, codesSort, codesOrder])
-  useEffect(() => { if (tab === 'stats') fetchUserStats() }, [tab])
+  useEffect(() => { if (tab === 'recharge') fetchRechargeRequests() }, [tab, codesPage, codesSort, codesOrder, rechargeStatusFilter])
   useEffect(() => { if (tab === 'announcements') fetchAnnouncements() }, [tab, announcementPage])
 
   const fetchUsers = async () => {
@@ -132,13 +132,6 @@ export default function AdminPage() {
     } catch {}
   }
 
-  const fetchUserStats = async () => {
-    setUserStatsLoading(true)
-    try {
-      const { data } = await statsAPI.users()
-      setUserStats(data.users || [])
-    } catch {} finally { setUserStatsLoading(false) }
-  }
 
   const fetchAnnouncements = async () => {
     setLoading(true)
@@ -234,13 +227,32 @@ export default function AdminPage() {
     } catch {}
   }
 
-  const fetchCodes = async () => {
+  const fetchRechargeRequests = async () => {
     setLoading(true)
     try {
-      const { data } = await adminAPI.codes(codesPage, 20, codesSort, codesOrder)
+      const { data } = await adminAPI.rechargeRequests(codesPage, 20, rechargeStatusFilter === 'all' ? undefined : rechargeStatusFilter, undefined, codesSort, codesOrder)
       setCodes(data.items)
       setCodesTotal(data.total)
     } catch {} finally { setLoading(false) }
+  }
+
+  const handleApproveRecharge = async (id) => {
+    const points = parseInt(reviewPoints) || 0
+    if (points <= 0) { alert('发放积分必须大于0'); return }
+    try {
+      await adminAPI.approveRecharge(id, { points, review_note: reviewNote || '审核通过' })
+      setReviewModal(null); setReviewNote(''); setReviewPoints('')
+      fetchRechargeRequests()
+    } catch (e) { alert(e.message || '操作失败') }
+  }
+
+  const handleRejectRecharge = async (id) => {
+    if (!reviewNote.trim()) { alert('拒绝原因不能为空'); return }
+    try {
+      await adminAPI.rejectRecharge(id, { review_note: reviewNote })
+      setReviewModal(null); setReviewNote('')
+      fetchRechargeRequests()
+    } catch (e) { alert(e.message || '操作失败') }
   }
 
   const handleGenerateCodes = async () => {
@@ -250,7 +262,7 @@ export default function AdminPage() {
       const { data } = await adminAPI.generateCodes({ count: codeCount, points: codePoints, custom_code: customCode.trim() || undefined })
       setGeneratedCodes(data.codes)
       setCustomCode('')
-      fetchCodes()
+      fetchRechargeRequests()
     } catch (e) {
       alert(e.message || '生成失败')
     } finally { setGeneratingCodes(false) }
@@ -260,7 +272,7 @@ export default function AdminPage() {
     if (!confirm(`确定删除兑换码 "${code}"？`)) return
     try {
       await adminAPI.deleteCode(codeId)
-      fetchCodes()
+      fetchRechargeRequests()
     } catch (e) { alert(e.message || '删除失败') }
   }
 
@@ -401,7 +413,7 @@ export default function AdminPage() {
     <MainLayout>
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="flex gap-1 p-0.5 rounded-lg mb-4 overflow-x-auto scrollbar-hide" style={{ background: 'var(--border-color)', scrollbarWidth: 'none' }}>
-          {[{ k: 'users', l: '用户管理', i: Users }, { k: 'images', l: '广场图片', i: Image }, { k: 'prompts', l: '广场提示词', i: BookOpen }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'finance', l: '充值与兑换', i: Wallet }, { k: 'stats', l: '用户统计', i: BarChart3 }, { k: 'announcements', l: '公告管理', i: Megaphone }].map(({ k, l, i: Icon }) => (
+          {[{ k: 'users', l: '用户管理', i: Users }, { k: 'images', l: '广场图片', i: Image }, { k: 'prompts', l: '广场提示词', i: BookOpen }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'recharge', l: '充值审核', i: Wallet }, { k: 'announcements', l: '公告管理', i: Megaphone }].map(({ k, l, i: Icon }) => (
             <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
               <Icon size={14} />{l}
@@ -433,8 +445,8 @@ export default function AdminPage() {
                       <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>失败</th>
                       <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>处理中</th>
                       <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>状态</th>
-                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>IP</th>
-                      <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>最后活跃</th>
+                      <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>IP</th>
+                      <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>最后活跃</th>
                       <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>操作</th>
                     </tr>
                   </thead>
@@ -447,6 +459,7 @@ export default function AdminPage() {
                             {u.is_admin ? <span className="px-1 py-0.5 rounded text-[10px] font-medium" style={{ background: 'var(--accent)20', color: 'var(--accent)' }}>管</span> : null}
                             <span style={{ color: 'var(--text-primary)' }}>{u.nickname || u.username}</span>
                           </div>
+                          <div className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>@{u.username}</div>
                         </td>
                         <td className="px-3 py-2 text-center">
                           <button onClick={() => { setAdjustUserId(u.id); setAdjustAmount(''); setAdjustDesc('') }}
@@ -460,8 +473,8 @@ export default function AdminPage() {
                         <td className="px-3 py-2 text-center">
                           {u.is_frozen ? <UserX size={12} className="inline" style={{ color: '#ef4444' }} /> : <UserCheck size={12} className="inline" style={{ color: '#22c55e' }} />}
                         </td>
-                        <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{u.last_ip || '-'}</td>
-                        <td className="px-3 py-2 text-right" style={{ color: 'var(--text-secondary)' }}>{u.last_active || '-'}</td>
+                        <td className="px-3 py-2 text-center" style={{ color: 'var(--text-secondary)' }}>{u.last_ip || '-'}</td>
+                        <td className="px-3 py-2 text-center" style={{ color: 'var(--text-secondary)' }}>{u.last_active || '-'}</td>
                         <td className="px-3 py-2 text-right">
                           {!u.is_admin && (
                             <div className="flex items-center justify-end gap-1">
@@ -870,7 +883,7 @@ export default function AdminPage() {
             </>
             )}
           </div>
-        ) : tab === 'finance' ? (
+        ) : tab === 'recharge' ? (
           <div className="space-y-6">
             {/* 生成兑换码 */}
             <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
@@ -915,11 +928,19 @@ export default function AdminPage() {
               )}
             </div>
 
-            {/* 兑换码记录 */}
+            {/* 充值记录 */}
             <div>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>兑换码记录</h3>
+                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>充值记录</h3>
                 <div className="flex items-center gap-1.5">
+                  <select value={rechargeStatusFilter} onChange={e => { setRechargeStatusFilter(e.target.value); setCodesPage(1) }}
+                    className="px-2 py-1 rounded-lg text-xs font-medium border outline-none cursor-pointer"
+                    style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+                    <option value="all">全部</option>
+                    <option value="pending">待审核</option>
+                    <option value="approved">已通过</option>
+                    <option value="rejected">已拒绝</option>
+                  </select>
                   <select value={codesSort} onChange={e => setCodesSort(e.target.value)}
                     className="px-2 py-1 rounded-lg text-xs font-medium border outline-none cursor-pointer"
                     style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
@@ -944,70 +965,77 @@ export default function AdminPage() {
                     <table className="w-full text-xs">
                       <thead>
                         <tr style={{ background: 'var(--bg-secondary)' }}>
-                          <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>兑换码</th>
-                          <th className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--text-secondary)' }}>积分</th>
-                          <th className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--text-secondary)' }}>状态</th>
+                          <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>用户</th>
                           <th className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--text-secondary)' }}>渠道</th>
                           <th className="px-4 py-3 text-right font-semibold" style={{ color: 'var(--text-secondary)' }}>金额</th>
-                          <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>单号</th>
+                          <th className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--text-secondary)' }}>积分</th>
+                          <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>交易号</th>
                           <th className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--text-secondary)' }}>审核状态</th>
                           <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>审核备注</th>
                           <th className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--text-secondary)' }}>支付凭证</th>
-                          <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>使用者</th>
-                          <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>创建时间</th>
+                          <th className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--text-secondary)' }}>创建时间</th>
+                          <th className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--text-secondary)' }}>操作</th>
                         </tr>
                       </thead>
                       <tbody>
                         {codes.map(c => (
                           <tr key={c.id} className="border-t transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style={{ borderColor: 'var(--border-color)' }}>
                             <td className="px-4 py-3">
-                              <span className="px-2 py-1 rounded-lg text-xs font-mono font-semibold" style={{ background: 'var(--accent)12', color: 'var(--accent)' }}>{c.code}</span>
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{c.points}</span>
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${c.is_used ? 'bg-gray-100 text-gray-500 dark:bg-gray-800' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400'}`}>
-                                {c.is_used ? '已使用' : '未使用'}
-                              </span>
+                              <div style={{ color: 'var(--text-primary)' }}>{c.nickname || c.username}</div>
+                              <div className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>@{c.username}</div>
                             </td>
                             <td className="px-4 py-3 text-center text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                              {c.recharge_channel ? (c.recharge_channel === 'wechat' ? '微信' : '支付宝') : '-'}
+                              {c.channel === 'wechat' ? '微信' : '支付宝'}
                             </td>
-                            <td className="px-4 py-3 text-right text-[11px] tabular-nums" style={{ color: 'var(--text-secondary)' }}>
-                              {c.recharge_amount ? `¥${c.recharge_amount}` : '-'}
-                            </td>
-                            <td className="px-4 py-3 text-left text-[11px] truncate max-w-[100px]" style={{ color: 'var(--text-secondary)' }}>
-                              {c.recharge_tx_no || '-'}
+                            <td className="px-4 py-3 text-right text-[11px] tabular-nums font-medium" style={{ color: 'var(--text-primary)' }}>
+                              ¥{c.amount}
                             </td>
                             <td className="px-4 py-3 text-center">
-                              {c.recharge_status ? (
-                                <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{
-                                  color: c.recharge_status === 'approved' ? '#22c55e' : c.recharge_status === 'rejected' ? '#ef4444' : '#f59e0b',
-                                  background: c.recharge_status === 'approved' ? '#22c55e20' : c.recharge_status === 'rejected' ? '#ef444420' : '#f59e0b20'
-                                }}>
-                                  {{ pending: '待审核', approved: '已通过', rejected: '已拒绝' }[c.recharge_status]}
-                                </span>
-                              ) : '-'}
+                              <span className="text-sm font-bold" style={{ color: 'var(--accent)' }}>{c.points}</span>
                             </td>
                             <td className="px-4 py-3 text-left text-[11px] truncate max-w-[120px]" style={{ color: 'var(--text-secondary)' }}>
-                              {c.recharge_review_note || '-'}
+                              {c.tx_no || '-'}
                             </td>
                             <td className="px-4 py-3 text-center">
-                              {c.recharge_proof_url ? (
-                                <button onClick={() => setProofLightbox(c.recharge_proof_url)} className="text-xs underline" style={{ color: 'var(--accent)' }}>查看</button>
+                              <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{
+                                color: c.status === 'approved' ? '#22c55e' : c.status === 'rejected' ? '#ef4444' : '#f59e0b',
+                                background: c.status === 'approved' ? '#22c55e20' : c.status === 'rejected' ? '#ef444420' : '#f59e0b20'
+                              }}>
+                                {{ pending: '待审核', approved: '已通过', rejected: '已拒绝' }[c.status]}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-left text-[11px] truncate max-w-[120px]" style={{ color: 'var(--text-secondary)' }}>
+                              {c.review_note || '-'}
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              {c.proof_url ? (
+                                <button onClick={() => setProofLightbox(c.proof_url)} className="text-xs underline" style={{ color: 'var(--accent)' }}>查看</button>
                               ) : '-'}
                             </td>
-                            <td className="px-4 py-3" style={{ color: c.used_by_name ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
-                              {c.used_by_name || '-'}
+                            <td className="px-4 py-3 text-center text-[11px]" style={{ color: 'var(--text-secondary)' }}>{c.created_at || '-'}</td>
+                            <td className="px-4 py-3 text-center">
+                              {c.status === 'pending' && (
+                                <div className="flex items-center justify-center gap-1">
+                                  <button onClick={() => { setReviewModal({ ...c, action: 'approve' }); setReviewPoints(String(c.points || 10)); setReviewNote('') }}
+                                    className="px-2 py-1 rounded-lg text-[11px] font-medium bg-green-500 text-white hover:bg-green-600">
+                                    通过
+                                  </button>
+                                  <button onClick={() => { setReviewModal({ ...c, action: 'reject' }); setReviewNote('') }}
+                                    className="px-2 py-1 rounded-lg text-[11px] font-medium bg-red-500 text-white hover:bg-red-600">
+                                    拒绝
+                                  </button>
+                                </div>
+                              )}
+                              {c.status === 'approved' && c.redeem_code && (
+                                <span className="text-[10px] font-mono" style={{ color: 'var(--accent)' }}>{c.redeem_code}</span>
+                              )}
                             </td>
-                            <td className="px-4 py-3 text-[11px]" style={{ color: 'var(--text-secondary)' }}>{c.created_at || '-'}</td>
                           </tr>
                         ))}
                         {codes.length === 0 && (
-                          <tr><td colSpan={11} className="text-center py-16" style={{ color: 'var(--text-secondary)' }}>
+                          <tr><td colSpan={10} className="text-center py-16" style={{ color: 'var(--text-secondary)' }}>
                             <Ticket size={32} className="mx-auto mb-2 opacity-30" />
-                            <p>暂无兑换码</p>
+                            <p>暂无记录</p>
                           </td></tr>
                         )}
                       </tbody>
@@ -1017,53 +1045,6 @@ export default function AdminPage() {
               )}
               <Pagination page={codesPage} totalPages={Math.ceil(codesTotal / 20)} onPageChange={setCodesPage} />
             </div>
-          </div>
-        ) : tab === 'stats' ? (
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>共 {userStats.length} 个用户</span>
-            </div>
-            {userStatsLoading ? (
-              <div className="flex justify-center py-20">
-                <div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} />
-              </div>
-            ) : (
-              <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
-                <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr style={{ background: 'var(--bg-secondary)' }}>
-                      <th className="text-left px-4 py-2.5 font-medium" style={{ color: 'var(--text-secondary)' }}>用户</th>
-                      <th className="text-center px-4 py-2.5 font-medium" style={{ color: 'var(--text-secondary)' }}>成功</th>
-                      <th className="text-center px-4 py-2.5 font-medium" style={{ color: 'var(--text-secondary)' }}>失败</th>
-                      <th className="text-center px-4 py-2.5 font-medium" style={{ color: 'var(--text-secondary)' }}>处理中</th>
-                      <th className="text-right px-4 py-2.5 font-medium" style={{ color: 'var(--text-secondary)' }}>最后活跃</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {userStats.map((u) => (
-                      <tr key={u.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
-                        <td className="px-4 py-2.5">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{u.nickname || u.username}</span>
-                            {Boolean(u.is_admin) && <span className="px-1.5 py-0.5 rounded text-xs" style={{ background: 'var(--accent)15', color: 'var(--accent)' }}>管理员</span>}
-                            {Boolean(u.is_frozen) && <span className="px-1.5 py-0.5 rounded text-xs bg-red-100 text-red-600 dark:bg-red-900/20">已冻结</span>}
-                          </div>
-                          <div className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>@{u.username}</div>
-                        </td>
-                        <td className="px-4 py-2.5 text-center tabular-nums" style={{ color: '#22c55e' }}>{u.success_count}</td>
-                        <td className="px-4 py-2.5 text-center tabular-nums" style={{ color: '#ef4444' }}>{u.failed_count}</td>
-                        <td className="px-4 py-2.5 text-center tabular-nums" style={{ color: 'var(--text-secondary)' }}>{u.processing_count}</td>
-                        <td className="px-4 py-2.5 text-right text-xs" style={{ color: 'var(--text-secondary)' }}>
-                          {u.last_active ? new Date(u.last_active).toLocaleString('zh-CN') : '从未'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                </div>
-              </div>
-            )}
           </div>
         ) : (
           <div>
@@ -1085,9 +1066,9 @@ export default function AdminPage() {
                     <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>用户</th>
                     <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>提示词</th>
                     <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>状态</th>
-                    <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>耗时</th>
-                    <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>IP</th>
-                    <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>时间</th>
+                    <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>耗时</th>
+                    <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>IP</th>
+                    <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>时间</th>
                     <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>操作</th>
                   </tr>
                 </thead>
@@ -1103,9 +1084,9 @@ export default function AdminPage() {
                         <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{item.nickname || item.username || '-'}</td>
                         <td className="px-3 py-2 truncate max-w-[200px]" style={{ color: 'var(--text-secondary)' }}>{item.prompt || '无提示词'}</td>
                         <td className="px-3 py-2 text-center"><span className="px-2 py-0.5 rounded-full" style={{ color: s.c, background: s.c + '20' }}>{s.l}</span></td>
-                        <td className="px-3 py-2 text-right tabular-nums" style={{ color: 'var(--text-secondary)' }}>{duration !== null ? `${duration}s` : '-'}</td>
-                        <td className="px-3 py-2 text-right" style={{ color: 'var(--text-secondary)' }}>{item.last_ip || '-'}</td>
-                        <td className="px-3 py-2 text-right whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{item.created_at}</td>
+                        <td className="px-3 py-2 text-center tabular-nums" style={{ color: 'var(--text-secondary)' }}>{duration !== null ? `${duration}s` : '-'}</td>
+                        <td className="px-3 py-2 text-center" style={{ color: 'var(--text-secondary)' }}>{item.last_ip || '-'}</td>
+                        <td className="px-3 py-2 text-center whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{item.created_at}</td>
                         <td className="px-3 py-2 text-right">
                           <button onClick={() => handleDeleteHistory(item.task_id)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500" title="删除">
                             <Trash2 size={14} />
@@ -1266,6 +1247,61 @@ export default function AdminPage() {
                 className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {batchImporting ? '导入中...' : '确认导入'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 审核弹窗 */}
+      {reviewModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setReviewModal(null)}>
+          <div className="absolute inset-0 bg-black/50" />
+          <div className="relative w-full max-w-md rounded-2xl overflow-hidden" style={{ background: 'var(--bg-primary)' }} onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                {reviewModal.action === 'approve' ? '审核通过' : '拒绝申请'}
+              </h3>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                {reviewModal.username || reviewModal.code} - ¥{reviewModal.recharge_amount}
+              </p>
+            </div>
+            <div className="p-4 space-y-3">
+              {reviewModal.action === 'approve' && (
+                <div>
+                  <label className="block text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>发放积分</label>
+                  <input type="number" value={reviewPoints} onChange={e => setReviewPoints(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
+                    style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)', color: 'var(--text-primary)' }} />
+                </div>
+              )}
+              <div>
+                <label className="block text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
+                  {reviewModal.action === 'approve' ? '审核备注（可选）' : '拒绝原因（必填）'}
+                </label>
+                {reviewModal.action === 'reject' && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {['凭证不清晰', '金额不符', '重复提交', '信息不完整'].map(text => (
+                      <button key={text} onClick={() => setReviewNote(text)}
+                        className={`px-2 py-1 rounded-lg text-[11px] font-medium transition-colors ${reviewNote === text ? 'bg-red-500 text-white' : 'border hover:border-red-500/50'}`}
+                        style={reviewNote === text ? {} : { borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
+                        {text}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <textarea value={reviewNote} onChange={e => setReviewNote(e.target.value)}
+                  rows={3} placeholder={reviewModal.action === 'approve' ? '审核通过' : '请输入拒绝原因'}
+                  className="w-full px-3 py-2 rounded-lg text-sm border resize-none outline-none"
+                  style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)', color: 'var(--text-primary)' }} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
+              <button onClick={() => setReviewModal(null)} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button>
+              <button onClick={() => reviewModal.action === 'approve' ? handleApproveRecharge(reviewModal.id) : handleRejectRecharge(reviewModal.id)}
+                disabled={reviewModal.action === 'reject' && !reviewNote.trim()}
+                className={`px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50 ${reviewModal.action === 'approve' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'}`}>
+                {reviewModal.action === 'approve' ? '确认通过' : '确认拒绝'}
               </button>
             </div>
           </div>

@@ -547,7 +547,7 @@ async def migrate_points(admin=Depends(require_admin)):
 # ============ 人工充值审核 ============
 
 @router.get("/recharge-requests")
-async def list_recharge_requests(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), status: str = Query("all"), query: str = Query(None), admin=Depends(require_admin)):
+async def list_recharge_requests(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), status: str = Query("all"), query: str = Query(None), sort: str = Query("created_at"), order: str = Query("desc"), admin=Depends(require_admin)):
     offset = (page - 1) * size
     where = []
     params = []
@@ -559,6 +559,9 @@ async def list_recharge_requests(page: int = Query(1, ge=1), size: int = Query(2
         where.append("(u.username LIKE ? OR u.nickname LIKE ? OR rr.tx_no LIKE ?)")
         params.extend([q, q, q])
     where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+    allowed_sort = {"created_at", "amount", "points", "status"}
+    sort_field = f"rr.{sort}" if sort in allowed_sort else "rr.created_at"
+    sort_order = "ASC" if order == "asc" else "DESC"
     with get_db() as conn:
         total = conn.execute(
             f"""SELECT COUNT(*) FROM recharge_requests rr
@@ -572,7 +575,7 @@ async def list_recharge_requests(page: int = Query(1, ge=1), size: int = Query(2
                 LEFT JOIN users u ON rr.user_id = u.id
                 LEFT JOIN users au ON rr.reviewed_by = au.id
                 {where_sql}
-                ORDER BY rr.created_at DESC
+                ORDER BY {sort_field} {sort_order}
                 LIMIT ? OFFSET ?""",
             params + [size, offset],
         ).fetchall()
