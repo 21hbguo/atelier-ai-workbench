@@ -1,14 +1,10 @@
 import os
 import logging
 from contextlib import asynccontextmanager
-
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
-
 from backend.routers import generate, upload, tasks, images, prompts, stats, config, auth, square, admin, points, announcements
-from backend.config import GENERATED_IMAGES_DIR, UPLOAD_DIR
 from backend.services.image_gen import close_http_client
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -21,16 +17,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="AI Image Generator", version="1.0.0", lifespan=lifespan)
-
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
+ENABLE_HSTS = os.getenv("ENABLE_HSTS", "false").lower() in {"1", "true", "yes", "on"}
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Authorization", "Content-Type"],
-)
+app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credentials=True, allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["Authorization", "Content-Type", "X-Requested-With"])
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -39,11 +29,18 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(),microphone=(),geolocation=()"
+        response.headers["Content-Security-Policy"] = "default-src 'self';img-src 'self' data: blob: https:;script-src 'self';style-src 'self' 'unsafe-inline';font-src 'self' data: https:;connect-src 'self' https:;frame-ancestors 'none';base-uri 'self';form-action 'self'"
+        if ENABLE_HSTS and request.url.scheme == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        if request.url.path.startswith("/api/uploads/"):
+            response.headers["Cache-Control"] = "private, no-store"
+        elif request.url.path.startswith("/api/images/"):
+            response.headers["Cache-Control"] = "private, max-age=300"
         return response
 
 
 app.add_middleware(SecurityHeadersMiddleware)
-
 app.include_router(generate.router)
 app.include_router(upload.router)
 app.include_router(tasks.router)
@@ -56,9 +53,6 @@ app.include_router(square.router)
 app.include_router(admin.router)
 app.include_router(points.router)
 app.include_router(announcements.router)
-
-app.mount("/generated_images", StaticFiles(directory=str(GENERATED_IMAGES_DIR)), name="generated_images")
-app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 
 @app.get("/api/health")
