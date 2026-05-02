@@ -51,7 +51,7 @@ export default function CardGrid({
             )}
 
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors hidden md:flex items-center justify-center gap-1.5">
-              {card.prompt && (
+              {Boolean(card.prompt) && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onUsePrompt?.(card.prompt) }}
                   className="opacity-0 group-hover:opacity-100 transition-opacity px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"
@@ -59,7 +59,7 @@ export default function CardGrid({
                   <Plus size={12} /> 提示词
                 </button>
               )}
-              {card.fullUrl && (
+              {Boolean(card.fullUrl) && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onUseImage?.(card) }}
                   className="opacity-0 group-hover:opacity-100 transition-opacity px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"
@@ -78,7 +78,7 @@ export default function CardGrid({
               {(card.likesCount > 0 || card.isLiked) && <span className="text-white text-xs">{card.likesCount}</span>}
             </div>
 
-            {showAuthor && card.author && (
+            {showAuthor && Boolean(card.author) && (
               <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-1 rounded-full bg-black/50 backdrop-blur-sm">
                 <User size={12} className="text-white" />
                 <span className="text-white text-xs truncate max-w-[80px]">{card.author}</span>

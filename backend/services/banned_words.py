@@ -30,11 +30,14 @@ class BannedWordsService:
     @classmethod
     def add(cls, word: str) -> bool:
         import time
+        word = word.strip()
+        if len(word) < 2 or len(word) > 50:
+            return False
         with get_db() as conn:
             try:
                 conn.execute(
                     "INSERT INTO banned_words (word, created_at) VALUES (?, datetime('now'))",
-                    (word.strip(),),
+                    (word,),
                 )
                 cls._cache = None
                 return True
@@ -45,9 +48,9 @@ class BannedWordsService:
     def remove(cls, word_id: int) -> bool:
         import time
         with get_db() as conn:
-            conn.execute("DELETE FROM banned_words WHERE id = ?", (word_id,))
+            cur = conn.execute("DELETE FROM banned_words WHERE id = ?", (word_id,))
             cls._cache = None
-            return True
+            return cur.rowcount > 0
 
     @classmethod
     def batch_add(cls, words: list[str]) -> dict:
@@ -56,7 +59,7 @@ class BannedWordsService:
         with get_db() as conn:
             for word in words:
                 word = word.strip()
-                if not word or len(word) > 50:
+                if len(word) < 2 or len(word) > 50:
                     skipped += 1
                     continue
                 try:

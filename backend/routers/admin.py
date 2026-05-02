@@ -12,6 +12,9 @@ from backend.services.points_service import PointsService
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
+def _normalize_banned_word(word: str) -> str:
+    return " ".join((word or "").replace("\u3000", " ").strip().split())
+
 
 @router.get("/users")
 async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), query: str = Query(None), admin=Depends(require_admin)):
@@ -306,9 +309,11 @@ async def list_banned_words(page: int = Query(1, ge=1), size: int = Query(20, ge
 
 @router.post("/banned-words")
 async def add_banned_word(body: dict, admin=Depends(require_admin)):
-    word = body.get("word", "").strip()
+    word = _normalize_banned_word(body.get("word", ""))
     if not word:
         raise HTTPException(status_code=400, detail="违禁词不能为空")
+    if len(word) < 2:
+        raise HTTPException(status_code=400, detail="违禁词至少2个字符")
     if len(word) > 50:
         raise HTTPException(status_code=400, detail="违禁词长度不能超过50个字符")
     if not BannedWordsService.add(word):
@@ -328,11 +333,81 @@ async def batch_import_banned_words(body: dict, admin=Depends(require_admin)):
     text = body.get("text", "")
     if not text.strip():
         raise HTTPException(status_code=400, detail="内容不能为空")
-    words = [line.strip() for line in text.splitlines() if line.strip()]
+    words = [_normalize_banned_word(line) for line in text.splitlines()]
+    words = [w for w in words if 2 <= len(w) <= 50]
     if not words:
         raise HTTPException(status_code=400, detail="未解析到有效违禁词")
     result = BannedWordsService.batch_add(words)
     return {"message": f"导入完成：新增 {result['added']} 个，跳过 {result['skipped']} 个", **result}
+
+
+# ============ 提示词管理 ============
+
+@router.get("/prompts")
+async def list_all_prompts(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), query: str = Query(None), admin=Depends(require_admin)):
+    offset = (page - 1) * size
+    with get_db() as conn:
+        if query:
+            q = f"%{query}%"
+            total = conn.execute(
+                "SELECT COUNT(*) FROM prompts p LEFT JOIN users u ON p.user_id = u.id WHERE p.name LIKE ? OR p.prompt LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?",
+                (q, q, q, q),
+            ).fetchone()[0]
+            rows = conn.execute(
+                """
+                SELECT p.*, u.username, u.nickname
+                FROM prompts p
+                LEFT JOIN users u ON p.user_id = u.id
+                WHERE p.name LIKE ? OR p.prompt LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?
+                ORDER BY p.created_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                (q, q, q, q, size, offset),
+            ).fetchall()
+        else:
+            total = conn.execute("SELECT COUNT(*) FROM prompts").fetchone()[0]
+            rows = conn.execute(
+                """
+                SELECT p.*, u.username, u.nickname
+                FROM prompts p
+                LEFT JOIN users u ON p.user_id = u.id
+                ORDER BY p.created_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                (size, offset),
+            ).fetchall()
+        items = []
+        for row in rows:
+            d = dict(row)
+            try:
+                d["tags"] = json.loads(d.get("tags") or "[]")
+            except (json.JSONDecodeError, TypeError):
+                d["tags"] = []
+            items.append(d)
+        return {"items": items, "total": total}
+
+
+@router.delete("/prompts/{prompt_id}")
+async def delete_prompt(prompt_id: str, admin=Depends(require_admin)):
+    with get_db() as conn:
+        prompt = conn.execute("SELECT id FROM prompts WHERE id = ?", (prompt_id,)).fetchone()
+        if not prompt:
+            raise HTTPException(status_code=404, detail="提示词不存在")
+        conn.execute("DELETE FROM prompt_likes WHERE prompt_id = ?", (prompt_id,))
+        conn.execute("DELETE FROM prompts WHERE id = ?", (prompt_id,))
+        return {"message": "删除成功"}
+
+
+@router.post("/prompts/batch-delete")
+async def batch_delete_prompts(body: dict, admin=Depends(require_admin)):
+    ids = body.get("ids", [])
+    if not ids:
+        raise HTTPException(status_code=400, detail="未提供要删除的ID")
+    with get_db() as conn:
+        placeholders = ",".join("?" * len(ids))
+        conn.execute(f"DELETE FROM prompt_likes WHERE prompt_id IN ({placeholders})", ids)
+        conn.execute(f"DELETE FROM prompts WHERE id IN ({placeholders})", ids)
+        return {"message": f"已删除 {len(ids)} 条提示词"}
 
 
 # ============ 兑换码管理 ============

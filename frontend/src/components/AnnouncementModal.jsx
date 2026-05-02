@@ -29,7 +29,7 @@ export default function AnnouncementModal({ announcement, onRead, onClose }) {
         <div className="p-4 max-h-[60vh] overflow-y-auto">
           <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--text-primary)' }}>{announcement.content}</p>
           <div className="mt-3 text-xs" style={{ color: 'var(--text-secondary)' }}>
-            {announcement.author_name && <span>{announcement.author_name} · </span>}
+            {Boolean(announcement.author_name) && <span>{announcement.author_name} · </span>}
             {announcement.created_at}
           </div>
         </div>

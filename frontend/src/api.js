@@ -142,6 +142,13 @@ export const adminAPI = {
     return api.get('/admin/square', { params })
   },
   deleteSquare: (imageId) => api.delete(`/admin/square/${imageId}`),
+  prompts: (page = 1, size = 20, query) => {
+    const params = { page, size }
+    if (query) params.query = query
+    return api.get('/admin/prompts', { params })
+  },
+  deletePrompt: (promptId) => api.delete(`/admin/prompts/${promptId}`),
+  batchDeletePrompts: (ids) => api.post('/admin/prompts/batch-delete', { ids }),
   history: (page = 1, size = 20, query) => {
     const params = { page, size }
     if (query) params.query = query

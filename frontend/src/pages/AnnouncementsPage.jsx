@@ -60,7 +60,7 @@ export default function AnnouncementsPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-3 mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                  {item.author_name && <span>{item.author_name}</span>}
+                  {Boolean(item.author_name) && <span>{item.author_name}</span>}
                   <span>{item.created_at}</span>
                 </div>
               </div>

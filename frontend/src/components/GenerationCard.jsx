@@ -34,7 +34,7 @@ export default function GenerationCard({ task, onAddImage, onAddPrompt, onRetry,
   }, [task.status])
 
   const cfg = statusConfig[task.status] || statusConfig.pending
-  const isCompleted = task.status === 'completed' && task.result_urls?.length
+  const isCompleted = task.status === 'completed' && Array.isArray(task.result_urls) && task.result_urls.length > 0
   const images = isCompleted
     ? task.result_urls.map(u => { const f = u.split('/').pop(); return { thumb: `/api/images/thumb/${f}`, full: `/api/images/file/${f}` } })
     : (task.previewImages || []).map(u => ({ thumb: u, full: u }))

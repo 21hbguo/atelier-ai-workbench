@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Trash2, Users, Image, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket, BarChart3, Megaphone } from 'lucide-react'
+import { Trash2, Users, Image, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket, BarChart3, Megaphone, BookOpen } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { adminAPI, statsAPI, announcementAPI } from '../api'
 import MainLayout from '../components/MainLayout'
@@ -71,6 +71,14 @@ export default function AdminPage() {
   const [newContent, setNewContent] = useState('')
   const [creatingAnnouncement, setCreatingAnnouncement] = useState(false)
 
+  // 提示词管理
+  const [promptItems, setPromptItems] = useState([])
+  const [promptTotal, setPromptTotal] = useState(0)
+  const [promptPage, setPromptPage] = useState(1)
+  const [promptQuery, setPromptQuery] = useState('')
+  const [promptChecked, setPromptChecked] = useState(new Set())
+  const [promptSelectMode, setPromptSelectMode] = useState(false)
+
   useEffect(() => { setUserPage(1) }, [userQuery])
   useEffect(() => { setImagePage(1) }, [imageQuery])
   useEffect(() => { setHistoryPage(1) }, [historyQuery])
@@ -84,6 +92,7 @@ export default function AdminPage() {
   useEffect(() => { fetchCodes() }, [codesPage, codesSort, codesOrder])
   useEffect(() => { if (tab === 'stats') fetchUserStats() }, [tab])
   useEffect(() => { if (tab === 'announcements') fetchAnnouncements() }, [tab, announcementPage])
+  useEffect(() => { fetchPrompts() }, [promptPage, promptQuery])
 
   const fetchUsers = async () => {
     setLoading(true)
@@ -135,6 +144,33 @@ export default function AdminPage() {
       setAnnouncementTotal(data.total)
     } catch {} finally { setLoading(false) }
   }
+
+  const fetchPrompts = async () => {
+    setLoading(true)
+    try {
+      const { data } = await adminAPI.prompts(promptPage, 20, promptQuery || undefined)
+      setPromptItems(data.items)
+      setPromptTotal(data.total)
+    } catch {} finally { setLoading(false) }
+  }
+
+  const handleDeletePrompt = async (promptId) => {
+    if (!confirm('确定删除此提示词？')) return
+    try {
+      await adminAPI.deletePrompt(promptId)
+      fetchPrompts()
+    } catch {}
+  }
+
+  const handleBatchDeletePrompts = useCallback(async () => {
+    if (!confirm(`确定删除选中的 ${promptChecked.size} 条提示词？`)) return
+    try {
+      await adminAPI.batchDeletePrompts([...promptChecked])
+      setPromptChecked(new Set())
+      setPromptSelectMode(false)
+      fetchPrompts()
+    } catch {}
+  }, [promptChecked])
 
   const handleCreateAnnouncement = async () => {
     if (!newTitle.trim() || !newContent.trim()) return
@@ -331,7 +367,7 @@ export default function AdminPage() {
     <MainLayout>
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="flex gap-1 p-0.5 rounded-lg mb-4" style={{ background: 'var(--border-color)' }}>
-          {[{ k: 'users', l: '用户管理', i: Users }, { k: 'images', l: '广场管理', i: Image }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'codes', l: '兑换码管理', i: Ticket }, { k: 'stats', l: '用户统计', i: BarChart3 }, { k: 'announcements', l: '公告管理', i: Megaphone }].map(({ k, l, i: Icon }) => (
+          {[{ k: 'users', l: '用户管理', i: Users }, { k: 'images', l: '广场图片', i: Image }, { k: 'prompts', l: '广场提示词', i: BookOpen }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'codes', l: '兑换码管理', i: Ticket }, { k: 'stats', l: '用户统计', i: BarChart3 }, { k: 'announcements', l: '公告管理', i: Megaphone }].map(({ k, l, i: Icon }) => (
             <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
               <Icon size={14} />{l}
@@ -493,6 +529,103 @@ export default function AdminPage() {
             </>
             )}
           </div>
+        ) : tab === 'prompts' ? (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3 flex-1">
+                <span className="text-sm flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>共 {promptTotal} 条提示词</span>
+                <SearchInput value={promptQuery} onChange={setPromptQuery} placeholder="搜索名称/内容/用户名..." />
+              </div>
+              <div className="flex items-center gap-2">
+                {promptSelectMode && (
+                  <button onClick={() => {
+                    if (promptChecked.size === promptItems.length) setPromptChecked(new Set())
+                    else setPromptChecked(new Set(promptItems.map(i => i.id)))
+                  }} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>
+                    {promptChecked.size === promptItems.length ? '取消全选' : '全选'}
+                  </button>
+                )}
+                {promptSelectMode && promptChecked.size > 0 && (
+                  <button onClick={handleBatchDeletePrompts}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500 text-white hover:bg-red-600">
+                    <Trash2 size={14} /> 删除 {promptChecked.size} 条
+                  </button>
+                )}
+                {promptSelectMode ? (
+                  <button onClick={() => { setPromptSelectMode(false); setPromptChecked(new Set()) }}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button>
+                ) : (
+                  <button onClick={() => setPromptSelectMode(true)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>选择</button>
+                )}
+              </div>
+            </div>
+            {loading ? (
+              <div className="flex justify-center py-20">
+                <div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} />
+              </div>
+            ) : (
+            <>
+            <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr style={{ background: 'var(--bg-primary)' }}>
+                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>名称</th>
+                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>提示词</th>
+                      <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>点赞</th>
+                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>作者</th>
+                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>创建时间</th>
+                      <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {promptItems.map(p => (
+                      <tr key={p.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
+                        <td className="px-3 py-2">
+                          {promptSelectMode && (
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input type="checkbox" checked={promptChecked.has(p.id)}
+                                onChange={() => setPromptChecked(prev => { const next = new Set(prev); next.has(p.id) ? next.delete(p.id) : next.add(p.id); return next })}
+                                className="w-4 h-4 rounded" />
+                              <span className="font-medium truncate max-w-[120px]" style={{ color: 'var(--text-primary)' }}>{p.name}</span>
+                            </label>
+                          )}
+                          {!promptSelectMode && <span className="font-medium truncate max-w-[120px] block" style={{ color: 'var(--text-primary)' }}>{p.name}</span>}
+                        </td>
+                        <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>
+                          <span className="truncate max-w-[200px] block">{p.prompt}</span>
+                        </td>
+                        <td className="px-3 py-2 text-center" style={{ color: 'var(--text-primary)' }}>{p.likes_count}</td>
+                        <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{p.nickname || p.username || '-'}</td>
+                        <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{p.created_at || '-'}</td>
+                        <td className="px-3 py-2 text-right">
+                          {!promptSelectMode && (
+                            <button onClick={() => handleDeletePrompt(p.id)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500" title="删除">
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {promptItems.length === 0 && (
+                      <tr><td colSpan={6} className="text-center py-10" style={{ color: 'var(--text-secondary)' }}>暂无提示词</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            {promptTotal > 20 && (
+              <div className="flex justify-center gap-2 mt-4">
+                {Array.from({ length: Math.ceil(promptTotal / 20) }, (_, i) => i + 1).map(p => (
+                  <button key={p} onClick={() => setPromptPage(p)} className={`w-8 h-8 rounded-lg text-sm font-medium ${p === promptPage ? 'bg-accent text-white' : 'hover:bg-black/5'}`}
+                    style={{ color: p !== promptPage ? 'var(--text-primary)' : undefined }}>{p}</button>
+                ))}
+              </div>
+            )}
+            </>
+            )}
+          </div>
         ) : tab === 'announcements' ? (
           <div>
             <div className="p-4 rounded-xl border mb-4" style={{ borderColor: 'var(--border-color)' }}>
@@ -608,7 +741,7 @@ export default function AdminPage() {
                     </div>
                   )}
                   {hostingSelectMode && hostingChecked.has(img.url) && <div className="absolute inset-0 bg-accent/10 pointer-events-none z-10" />}
-                  <img src={img.url} alt="" className="w-full aspect-square object-cover" loading="lazy" />
+                  <img src={`/api/images/proxy-thumb?url=${encodeURIComponent(img.url)}&size=400`} alt="" className="w-full aspect-square object-cover" loading="lazy" />
                   <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
                     <p className="text-white text-[10px] truncate">{img.filename}</p>
                   </div>
@@ -1036,7 +1169,7 @@ export default function AdminPage() {
               />
               {batchImportText.trim() && (
                 <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>
-                  待导入 {batchImportText.splitlines().filter(l => l.trim()).length} 个违禁词
+                  待导入 {batchImportText.split('\n').filter(l => l.trim()).length} 个违禁词
                 </p>
               )}
             </div>
