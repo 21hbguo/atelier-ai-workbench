@@ -222,11 +222,13 @@ class PromptService:
         return {"success": success, "failed": failed}
 
     @classmethod
-    def export_prompts(cls, ids: Optional[List[str]] = None, format: str = "json") -> bytes:
+    def export_prompts(cls, ids: Optional[List[str]] = None, format: str = "json", user_id: int = None) -> bytes:
         with get_db() as conn:
             if ids:
                 placeholders = ",".join("?" for _ in ids)
                 rows = conn.execute(f"SELECT * FROM prompts WHERE id IN ({placeholders}) ORDER BY created_at DESC", ids).fetchall()
+            elif user_id is not None:
+                rows = conn.execute("SELECT * FROM prompts WHERE user_id = ? ORDER BY created_at DESC", (user_id,)).fetchall()
             else:
                 rows = conn.execute("SELECT * FROM prompts ORDER BY created_at DESC").fetchall()
 

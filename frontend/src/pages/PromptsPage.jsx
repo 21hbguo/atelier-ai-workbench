@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Trash2, Download, Upload, X, Send } from 'lucide-react'
+import { Plus, Trash2, Download, Upload, X, Send, CheckSquare, Square } from 'lucide-react'
 import { promptAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 import SearchInput from '../components/SearchInput'
@@ -89,16 +89,33 @@ export default function PromptsPage() {
     })
   }
 
+  const handleSelectAll = useCallback(() => {
+    setSelected(new Set(cards.map(c => c.id)))
+  }, [cards])
+
+  const handleDeselectAll = useCallback(() => {
+    setSelected(new Set())
+  }, [])
+
   return (
     <MainLayout>
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="flex flex-wrap gap-2 mb-4">
           <button onClick={() => { setForm({ name: '', prompt: '', tags: '', category: '' }); setShowNewForm(true) }}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}><Plus size={16} /> 新增</button>
-          <button onClick={handleExport} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}><Download size={16} /> 导出</button>
+          <button onClick={handleExport} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}><Download size={16} /> 导出{selected.size > 0 ? ` (${selected.size})` : ''}</button>
           <button onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}><Upload size={16} /> 导入</button>
           <input ref={fileRef} type="file" accept=".json,.csv" className="hidden" onChange={handleImport} />
           {selected.size > 0 && <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-red-500"><Trash2 size={16} /> 删除 ({selected.size})</button>}
+          {cards.length > 0 && (
+            <>
+              {selected.size === cards.length ? (
+                <button onClick={handleDeselectAll} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}><CheckSquare size={16} /> 取消全选</button>
+              ) : (
+                <button onClick={handleSelectAll} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}><Square size={16} /> 全选</button>
+              )}
+            </>
+          )}
         </div>
         <div className="flex gap-2 mb-4">
           <SearchInput value={query} onChange={setQuery} placeholder="搜索..." />

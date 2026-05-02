@@ -11,7 +11,8 @@ export function useUserSync() {
         const { data } = await authAPI.me()
         const local = JSON.parse(localStorage.getItem('user') || 'null')
         if (local) {
-          const updated = { ...local, ...data }
+          const normalized = { ...data, ...(Object.prototype.hasOwnProperty.call(data, 'is_admin') ? { is_admin: Boolean(data.is_admin) } : {}), ...(Object.prototype.hasOwnProperty.call(data, 'is_frozen') ? { is_frozen: Boolean(data.is_frozen) } : {}) }
+          const updated = { ...local, ...normalized }
           localStorage.setItem('user', JSON.stringify(updated))
           window.dispatchEvent(new Event('points-updated'))
         }

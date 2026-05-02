@@ -14,7 +14,7 @@ function formatLocalTime(d) {
 
 export default function ChatPage() {
   const user = JSON.parse(localStorage.getItem('user') || 'null')
-  const isAdmin = user?.is_admin
+  const isAdmin = Boolean(user?.is_admin)
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState('all')

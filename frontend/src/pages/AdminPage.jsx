@@ -970,8 +970,8 @@ export default function AdminPage() {
                         <td className="px-4 py-2.5">
                           <div className="flex items-center gap-2">
                             <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{u.nickname || u.username}</span>
-                            {u.is_admin && <span className="px-1.5 py-0.5 rounded text-xs" style={{ background: 'var(--accent)15', color: 'var(--accent)' }}>管理员</span>}
-                            {u.is_frozen && <span className="px-1.5 py-0.5 rounded text-xs bg-red-100 text-red-600 dark:bg-red-900/20">已冻结</span>}
+                            {Boolean(u.is_admin) && <span className="px-1.5 py-0.5 rounded text-xs" style={{ background: 'var(--accent)15', color: 'var(--accent)' }}>管理员</span>}
+                            {Boolean(u.is_frozen) && <span className="px-1.5 py-0.5 rounded text-xs bg-red-100 text-red-600 dark:bg-red-900/20">已冻结</span>}
                           </div>
                           <div className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>@{u.username}</div>
                         </td>

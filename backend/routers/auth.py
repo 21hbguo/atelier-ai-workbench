@@ -95,4 +95,6 @@ async def get_me(user=Depends(get_current_user)):
         u = conn.execute("SELECT id, username, nickname, avatar, is_admin, points, created_at FROM users WHERE id = ?", (user["user_id"],)).fetchone()
         if not u:
             raise HTTPException(status_code=404, detail="用户不存在")
-        return dict(u)
+        d = dict(u)
+        d["is_admin"] = bool(d.get("is_admin"))
+        return d

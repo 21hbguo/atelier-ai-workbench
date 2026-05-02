@@ -60,6 +60,8 @@ async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
         users = []
         for row in rows:
             user = dict(row)
+            user["is_admin"] = bool(user.get("is_admin"))
+            user["is_frozen"] = bool(user.get("is_frozen"))
             # 获取最近一次请求时间
             last_request = conn.execute(
                 "SELECT created_at FROM user_requests WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",

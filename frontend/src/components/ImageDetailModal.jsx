@@ -125,7 +125,7 @@ export default function ImageDetailModal({
           {hasNavigation && canPrev && (
             <button
               onClick={handlePrev}
-              className="absolute left-3 top-1/2 -translate-y-1/2 z-10 p-3 rounded-full bg-black/30 backdrop-blur-sm hover:bg-black/50 hover:scale-110 text-white transition-all flex items-center justify-center"
+              className="hidden md:flex absolute left-3 top-1/2 -translate-y-1/2 z-10 p-3 rounded-full bg-black/30 backdrop-blur-sm hover:bg-black/50 hover:scale-110 text-white transition-all items-center justify-center"
             >
               <ChevronLeft size={24} />
             </button>
@@ -134,15 +134,15 @@ export default function ImageDetailModal({
           {hasNavigation && canNext && (
             <button
               onClick={handleNext}
-              className="absolute right-3 top-1/2 -translate-y-1/2 z-10 p-3 rounded-full bg-black/30 backdrop-blur-sm hover:bg-black/50 hover:scale-110 text-white transition-all flex items-center justify-center"
+              className="hidden md:flex absolute right-3 top-1/2 -translate-y-1/2 z-10 p-3 rounded-full bg-black/30 backdrop-blur-sm hover:bg-black/50 hover:scale-110 text-white transition-all items-center justify-center"
               style={{ right: 'calc(40% + 12px)' }}
             >
               <ChevronRight size={24} />
             </button>
           )}
 
-          <div className="md:w-3/5 bg-black flex items-center justify-center min-h-[200px] md:min-h-0 relative group cursor-pointer" onClick={() => setLightbox(true)}>
-            <img src={image.url} alt="" className="max-w-full max-h-[60vh] md:max-h-[90vh] object-contain" />
+          <div className="md:w-3/5 bg-black flex items-center justify-center min-h-[200px] md:min-h-0 relative group cursor-pointer overflow-hidden" onClick={() => setLightbox(true)}>
+            <img src={image.url} alt="" className="max-w-full max-h-[60vh] md:max-h-full object-contain" />
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
               <Maximize2 size={24} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>

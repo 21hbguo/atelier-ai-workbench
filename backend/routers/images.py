@@ -122,9 +122,12 @@ async def proxy_thumbnail(url: str = Query(...), size: int = Query(400, ge=50, l
     if thumb_path.exists():
         return FileResponse(str(thumb_path), media_type="image/jpeg")
 
+    from backend.config import IMAGE_HOSTING_REFERER
+    headers = {"Referer": IMAGE_HOSTING_REFERER(), "User-Agent": "Mozilla/5.0"}
+
     try:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
-            resp = await client.get(url)
+            resp = await client.get(url, headers=headers)
         if resp.status_code != 200:
             raise Exception(f"下载失败: {resp.status_code}")
 

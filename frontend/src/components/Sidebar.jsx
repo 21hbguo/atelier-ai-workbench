@@ -17,6 +17,7 @@ export default function Sidebar({ open, onClose }) {
   const location = useLocation()
   const navigate = useNavigate()
   const user = JSON.parse(localStorage.getItem('user') || 'null')
+  const isAdmin = Boolean(user?.is_admin)
   const [points, setPoints] = useState(user?.points ?? 0)
   const [checkedInToday, setCheckedInToday] = useState(false)
 
@@ -83,7 +84,7 @@ export default function Sidebar({ open, onClose }) {
               </Link>
             )
           })}
-          {user?.is_admin && (
+          {isAdmin && (
             <>
               <Link to="/settings"
                 className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-colors duration-150 ${location.pathname === '/settings' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
@@ -109,8 +110,8 @@ export default function Sidebar({ open, onClose }) {
               </div>
               <div className="flex items-center gap-2 px-2.5 py-1.5">
                 <Coins size={14} className="shrink-0" style={{ color: 'var(--accent)' }} />
-                <span className="text-xs font-medium" style={{ color: 'var(--accent)' }}>{user?.is_admin ? '∞' : points}</span>
-                {!user?.is_admin && (
+                <span className="text-xs font-medium" style={{ color: 'var(--accent)' }}>{isAdmin ? '∞' : points}</span>
+                {!isAdmin && (
                   <button
                     onClick={handleCheckIn}
                     disabled={checkedInToday}
@@ -131,8 +132,8 @@ export default function Sidebar({ open, onClose }) {
           </button>
         </div>
         <div className="px-3 py-2 border-t flex flex-wrap gap-x-1 gap-y-0.5 text-xs opacity-50" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
-          {!user?.is_admin && <Link to="/wallet" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>兑换积分</Link>}
-          {!user?.is_admin && <span>|</span>}
+          {!isAdmin && <Link to="/wallet" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>兑换积分</Link>}
+          {!isAdmin && <span>|</span>}
           <Link to="/agreement" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>用户协议</Link>
           <span>|</span>
           <Link to="/privacy" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>隐私政策</Link>

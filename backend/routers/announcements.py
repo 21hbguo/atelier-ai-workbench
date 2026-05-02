@@ -34,7 +34,12 @@ async def list_announcements(page: int = Query(1, ge=1), size: int = Query(20, g
             LEFT JOIN announcement_reads ar ON a.id = ar.announcement_id AND ar.user_id = ?
             ORDER BY a.created_at DESC LIMIT ? OFFSET ?
         """, (user["user_id"], size, offset)).fetchall()
-        return {"total": total, "items": [dict(r) for r in rows], "page": page, "size": size}
+        items = []
+        for row in rows:
+            item = dict(row)
+            item["is_read"] = bool(item.get("is_read"))
+            items.append(item)
+        return {"total": total, "items": items, "page": page, "size": size}
 
 
 @router.get("/unread")

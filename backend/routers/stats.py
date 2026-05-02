@@ -93,4 +93,10 @@ async def get_user_stats(user=Depends(get_current_user)):
             ORDER BY u.last_active DESC
             """
         ).fetchall()
-        return {"users": [dict(r) for r in rows]}
+        users = []
+        for row in rows:
+            item = dict(row)
+            item["is_admin"] = bool(item.get("is_admin"))
+            item["is_frozen"] = bool(item.get("is_frozen"))
+            users.append(item)
+        return {"users": users}
