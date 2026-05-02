@@ -375,7 +375,7 @@ async def list_all_prompts(page: int = Query(1, ge=1), size: int = Query(20, ge=
         if query:
             q = f"%{query}%"
             total = conn.execute(
-                "SELECT COUNT(*) FROM prompts p LEFT JOIN users u ON p.user_id = u.id WHERE p.name LIKE ? OR p.prompt LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?",
+                "SELECT COUNT(*) FROM prompts p LEFT JOIN users u ON p.user_id = u.id WHERE p.user_id IS NULL AND (p.name LIKE ? OR p.prompt LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?)",
                 (q, q, q, q),
             ).fetchone()[0]
             rows = conn.execute(
@@ -383,19 +383,20 @@ async def list_all_prompts(page: int = Query(1, ge=1), size: int = Query(20, ge=
                 SELECT p.*, u.username, u.nickname
                 FROM prompts p
                 LEFT JOIN users u ON p.user_id = u.id
-                WHERE p.name LIKE ? OR p.prompt LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?
+                WHERE p.user_id IS NULL AND (p.name LIKE ? OR p.prompt LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?)
                 ORDER BY p.created_at DESC
                 LIMIT ? OFFSET ?
                 """,
                 (q, q, q, q, size, offset),
             ).fetchall()
         else:
-            total = conn.execute("SELECT COUNT(*) FROM prompts").fetchone()[0]
+            total = conn.execute("SELECT COUNT(*) FROM prompts WHERE user_id IS NULL").fetchone()[0]
             rows = conn.execute(
                 """
                 SELECT p.*, u.username, u.nickname
                 FROM prompts p
                 LEFT JOIN users u ON p.user_id = u.id
+                WHERE p.user_id IS NULL
                 ORDER BY p.created_at DESC
                 LIMIT ? OFFSET ?
                 """,
@@ -449,6 +450,8 @@ async def list_codes(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
         rows = conn.execute(
             f"""SELECT rc.*, u.username as used_by_name,
                 rr.id as recharge_id, rr.channel as recharge_channel, rr.amount as recharge_amount,
+                rr.tx_no as recharge_tx_no, rr.status as recharge_status, rr.review_note as recharge_review_note,
+                rr.proof_url as recharge_proof_url, rr.payer_name as recharge_payer_name, rr.remark as recharge_remark,
                 ru.username as recharge_username, ru.nickname as recharge_nickname
                 FROM redemption_codes rc
                 LEFT JOIN users u ON rc.used_by = u.id
@@ -604,8 +607,8 @@ async def approve_recharge_request(request_id: int, body: dict, admin=Depends(re
         conn.execute("UPDATE users SET points = points + ? WHERE id = ?", (points, user_id))
         new_balance = conn.execute("SELECT points FROM users WHERE id = ?", (user_id,)).fetchone()["points"]
         conn.execute(
-            "INSERT INTO point_transactions (user_id, amount, balance_after, type, description) VALUES (?, ?, ?, ?, ?)",
-            (user_id, points, new_balance, "redeem_code", f"充值审核通过 (¥{item['amount']})"),
+            "INSERT INTO point_transactions (user_id, amount, balance_after, type, description, recharge_request_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, points, new_balance, "redeem_code", f"充值审核通过 (¥{item['amount']})", request_id),
         )
         conn.execute(
             "UPDATE recharge_requests SET status = 'approved', points = ?, redeem_code = ?, review_note = ?, reviewed_at = ?, reviewed_by = ? WHERE id = ?",

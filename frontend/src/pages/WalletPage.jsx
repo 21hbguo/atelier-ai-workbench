@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Coins, ArrowUpCircle, ArrowDownCircle, RefreshCw, User, Mail, Gift, Wallet, Upload } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
+import Pagination from '../components/Pagination'
 import api, { pointsAPI, uploadAPI } from '../api'
 const typeMap={register_bonus:{label:'注册赠送',color:'var(--accent)'},daily_checkin:{label:'每日签到',color:'var(--accent)'},generate_consume:{label:'生成消耗',color:'#ef4444'},generate_refund:{label:'生成退款',color:'#22c55e'},redeem_code:{label:'兑换码兑换',color:'var(--accent)'},admin_grant:{label:'管理员调整',color:'#8b5cf6'},migration:{label:'历史补偿',color:'var(--accent)'},migration_bonus:{label:'历史补偿',color:'var(--accent)'}}
 const rechargePackages=[{amount:9.9,points:120,label:'体验包'},{amount:29.9,points:400,label:'进阶包'},{amount:59.9,points:900,label:'超值包'}]
@@ -32,10 +33,6 @@ const [proofLightbox,setProofLightbox]=useState(false)
 const [checkedInToday,setCheckedInToday]=useState(null)
 const [checkinLoading,setCheckinLoading]=useState(false)
 const [rechargeMsg,setRechargeMsg]=useState(null)
-const [rechargeItems,setRechargeItems]=useState([])
-const [rechargeTotal,setRechargeTotal]=useState(0)
-const [rechargePage,setRechargePage]=useState(1)
-const rechargeSize=8
 const fetchData=async(p=1)=>{
 setLoading(true)
 try{
@@ -48,15 +45,7 @@ if(u){u.points=balRes.data.points;localStorage.setItem('user',JSON.stringify(u))
 }catch{}
 setLoading(false)
 }
-const fetchRechargeRequests=async(p=1)=>{
-try{
-const {data}=await pointsAPI.rechargeRequests(p,rechargeSize)
-setRechargeItems(data.items||[])
-setRechargeTotal(data.total||0)
-}catch{}
-}
 useEffect(()=>{fetchData(page)},[page])
-useEffect(()=>{fetchRechargeRequests(rechargePage)},[rechargePage])
 useEffect(()=>{
 api.get('/config').then(({data})=>{setPayConfig({wechat_pay_qr_url:data.wechat_pay_qr_url||'',alipay_pay_qr_url:data.alipay_pay_qr_url||'',manual_recharge_notice:data.manual_recharge_notice||'请备注用户名并在下方提交支付凭证，审核通过后自动发放兑换码'})}).catch(()=>{})
 },[])
@@ -140,7 +129,6 @@ setSubmittingRecharge(false)
 }
 }
 const totalPages=Math.ceil(total/size)
-const rechargeTotalPages=Math.ceil(rechargeTotal/rechargeSize)
 const activeQr=rechargeChannel==='wechat'?payConfig.wechat_pay_qr_url:payConfig.alipay_pay_qr_url
 return(
 <>
@@ -189,15 +177,11 @@ return(
 <div className="flex flex-wrap items-center gap-2 mb-2"><label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium cursor-pointer hover:bg-black/5" style={{color:'var(--text-primary)',border:'1px solid var(--border-color)'}}><Upload size={14} />{uploadingProof?'上传中...':'上传支付凭证'}<input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleUploadProof} /></label>{proofUrl&&<button type="button" onClick={()=>setProofLightbox(true)} className="text-xs underline" style={{color:'var(--accent)'}}>查看已上传凭证</button>}</div>
 <button onClick={handleSubmitRecharge} disabled={submittingRecharge||!proofUrl.trim()} className="w-full px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors disabled:opacity-50" style={{background:'var(--accent)'}}>{submittingRecharge?'提交中...':`提交充值申请（¥${rechargeAmount} / ${rechargePoints}积分）`}</button>
 {rechargeMsg&&<div className={`mt-2 px-3 py-2 rounded-lg text-xs ${rechargeMsg.type==='success'?'text-green-600':'text-red-500'}`} style={{background:rechargeMsg.type==='success'?'rgba(34,197,94,0.1)':'rgba(239,68,68,0.1)'}}>{rechargeMsg.text}</div>}
-<div className="mt-4">
-<div className="text-sm font-medium mb-2" style={{color:'var(--text-primary)'}}>我的充值申请</div>
-{rechargeItems.length===0?(<div className="text-xs py-4 text-center" style={{color:'var(--text-secondary)'}}>暂无充值申请</div>):(<div className="space-y-2">{rechargeItems.map(item=>{const st=statusMap[item.status]||statusMap.pending;return(<div key={item.id} className="rounded-lg border p-3" style={{borderColor:'var(--border-color)',background:'var(--bg-primary)'}}><div className="flex items-center justify-between gap-2"><div className="text-sm font-medium" style={{color:'var(--text-primary)'}}>{channelLabel[item.channel]||item.channel} ¥{item.amount} / {item.points}积分</div><span className="text-xs px-2 py-0.5 rounded-full" style={{color:st.color,background:st.color+'1A'}}>{st.label}</span></div><div className="text-xs mt-1" style={{color:'var(--text-secondary)'}}>单号：{item.tx_no||'-'} · 提交：{item.created_at}</div>{item.status==='approved'&&item.redeem_code&&(<div className="mt-2 text-xs" style={{color:'var(--text-secondary)'}}>积分已发放，+{item.points} 积分</div>)}{item.status==='rejected'&&item.review_note&&<div className="text-xs mt-2 text-red-500">原因：{item.review_note}</div>}</div>)})}{rechargeTotalPages>1&&(<div className="flex items-center justify-center gap-2 pt-1"><button onClick={()=>setRechargePage(p=>Math.max(1,p-1))} disabled={rechargePage===1} className="px-2.5 py-1 rounded text-xs disabled:opacity-40" style={{color:'var(--text-secondary)',background:'var(--bg-secondary)'}}>上一页</button><span className="text-xs tabular-nums" style={{color:'var(--text-secondary)'}}>{rechargePage}/{rechargeTotalPages}</span><button onClick={()=>setRechargePage(p=>Math.min(rechargeTotalPages,p+1))} disabled={rechargePage===rechargeTotalPages} className="px-2.5 py-1 rounded text-xs disabled:opacity-40" style={{color:'var(--text-secondary)',background:'var(--bg-secondary)'}}>下一页</button></div>)}</div>)}
-</div>
 </div>
 )}
 <div>
 <div className="flex items-center justify-between mb-3"><h3 className="text-sm font-semibold" style={{color:'var(--text-primary)'}}>积分记录</h3><button onClick={()=>fetchData(page)} disabled={loading} className="p-1.5 rounded-lg hover:bg-black/5 transition-colors disabled:opacity-50" style={{color:'var(--text-secondary)'}}><RefreshCw size={14} className={loading?'animate-spin':''} /></button></div>
-{loading?(<div className="flex justify-center py-10"><div className="w-6 h-6 border-2 rounded-full animate-spin-slow" style={{borderTopColor:'var(--accent)',borderColor:'var(--border-color)'}} /></div>):transactions.length===0?(<div className="text-center py-10 text-sm" style={{color:'var(--text-secondary)'}}>暂无记录</div>):(<><div className="rounded-xl border overflow-hidden" style={{borderColor:'var(--border-color)'}}><table className="w-full text-sm"><thead><tr style={{background:'var(--bg-secondary)'}}><th className="text-left px-4 py-2.5 font-medium" style={{color:'var(--text-secondary)'}}>类型</th><th className="text-left px-4 py-2.5 font-medium" style={{color:'var(--text-secondary)'}}>说明</th><th className="text-right px-4 py-2.5 font-medium" style={{color:'var(--text-secondary)'}}>积分变动</th><th className="text-right px-4 py-2.5 font-medium" style={{color:'var(--text-secondary)'}}>余额</th><th className="text-right px-4 py-2.5 font-medium" style={{color:'var(--text-secondary)'}}>时间</th></tr></thead><tbody>{transactions.map((tx)=>{const info=typeMap[tx.type]||{label:tx.type,color:'var(--text-secondary)'};const isPositive=tx.amount>0;return(<tr key={tx.id} className="border-t" style={{borderColor:'var(--border-color)'}}><td className="px-4 py-2.5"><span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full" style={{background:info.color+'18',color:info.color}}>{isPositive?<ArrowUpCircle size={12} />:<ArrowDownCircle size={12} />}{info.label}</span></td><td className="px-4 py-2.5 truncate max-w-[200px]" style={{color:'var(--text-primary)'}}>{tx.description||'-'}</td><td className="px-4 py-2.5 text-right font-medium tabular-nums" style={{color:isPositive?'#22c55e':'#ef4444'}}>{isPositive?'+':''}{tx.amount}</td><td className="px-4 py-2.5 text-right tabular-nums" style={{color:'var(--text-secondary)'}}>{tx.balance_after}</td><td className="px-4 py-2.5 text-right whitespace-nowrap text-xs" style={{color:'var(--text-secondary)'}}>{new Date(tx.created_at).toLocaleString('zh-CN')}</td></tr>)})}</tbody></table></div>{totalPages>1&&(<div className="flex items-center justify-center gap-2 mt-4"><button onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page===1} className="px-3 py-1 rounded-lg text-xs font-medium disabled:opacity-40" style={{color:'var(--text-secondary)',background:'var(--bg-secondary)'}}>上一页</button><span className="text-xs tabular-nums" style={{color:'var(--text-secondary)'}}>{page}/{totalPages}</span><button onClick={()=>setPage(p=>Math.min(totalPages,p+1))} disabled={page===totalPages} className="px-3 py-1 rounded-lg text-xs font-medium disabled:opacity-40" style={{color:'var(--text-secondary)',background:'var(--bg-secondary)'}}>下一页</button></div>)}</>)}
+{loading?(<div className="flex justify-center py-10"><div className="w-6 h-6 border-2 rounded-full animate-spin-slow" style={{borderTopColor:'var(--accent)',borderColor:'var(--border-color)'}} /></div>):transactions.length===0?(<div className="text-center py-10 text-sm" style={{color:'var(--text-secondary)'}}>暂无记录</div>):(<><div className="rounded-xl border overflow-hidden" style={{borderColor:'var(--border-color)'}}><table className="w-full text-sm"><thead><tr style={{background:'var(--bg-secondary)'}}><th className="text-left px-4 py-2.5 font-medium" style={{color:'var(--text-secondary)'}}>类型</th><th className="text-left px-4 py-2.5 font-medium" style={{color:'var(--text-secondary)'}}>说明</th><th className="text-right px-4 py-2.5 font-medium" style={{color:'var(--text-secondary)'}}>积分变动</th><th className="text-right px-4 py-2.5 font-medium" style={{color:'var(--text-secondary)'}}>余额</th><th className="text-center px-4 py-2.5 font-medium" style={{color:'var(--text-secondary)'}}>渠道</th><th className="text-left px-4 py-2.5 font-medium" style={{color:'var(--text-secondary)'}}>单号</th><th className="text-center px-4 py-2.5 font-medium" style={{color:'var(--text-secondary)'}}>状态</th><th className="text-left px-4 py-2.5 font-medium" style={{color:'var(--text-secondary)'}}>审核备注</th><th className="text-right px-4 py-2.5 font-medium" style={{color:'var(--text-secondary)'}}>时间</th></tr></thead><tbody>{transactions.map((tx)=>{const info=typeMap[tx.type]||{label:tx.type,color:'var(--text-secondary)'};const isPositive=tx.amount>0;const st=tx.recharge_status?(statusMap[tx.recharge_status]||null):null;return(<tr key={tx.id} className="border-t" style={{borderColor:'var(--border-color)'}}><td className="px-4 py-2.5"><span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full" style={{background:info.color+'18',color:info.color}}>{isPositive?<ArrowUpCircle size={12} />:<ArrowDownCircle size={12} />}{info.label}</span></td><td className="px-4 py-2.5 truncate max-w-[200px]" style={{color:'var(--text-primary)'}}>{tx.type==='redeem_code'?'-':tx.description||'-'}</td><td className="px-4 py-2.5 text-right font-medium tabular-nums" style={{color:isPositive?'#22c55e':'#ef4444'}}>{isPositive?'+':''}{tx.amount}</td><td className="px-4 py-2.5 text-right tabular-nums" style={{color:'var(--text-secondary)'}}>{tx.balance_after}</td><td className="px-4 py-2.5 text-center text-xs" style={{color:'var(--text-secondary)'}}>{tx.channel?channelLabel[tx.channel]||tx.channel:'-'}</td><td className="px-4 py-2.5 text-left text-xs truncate max-w-[120px]" style={{color:'var(--text-secondary)'}}>{tx.tx_no||'-'}</td><td className="px-4 py-2.5 text-center">{st?<span className="px-2 py-0.5 rounded-full text-xs" style={{color:st.color,background:st.color+'1A'}}>{st.label}</span>:'-'}</td><td className="px-4 py-2.5 text-left text-xs truncate max-w-[120px]" style={{color:'var(--text-secondary)'}}>{tx.review_note||'-'}</td><td className="px-4 py-2.5 text-right whitespace-nowrap text-xs" style={{color:'var(--text-secondary)'}}>{new Date(tx.created_at).toLocaleString('zh-CN')}</td></tr>)})}</tbody></table></div><Pagination page={page} totalPages={totalPages} onPageChange={setPage} /></>)}
 </div>
 </div>
 </MainLayout>

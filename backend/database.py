@@ -185,8 +185,10 @@ def init_db():
                 balance_after INTEGER NOT NULL,
                 type TEXT NOT NULL,
                 description TEXT,
+                recharge_request_id INTEGER,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(id)
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (recharge_request_id) REFERENCES recharge_requests(id)
             );
 
             CREATE TABLE IF NOT EXISTS daily_checkins (
@@ -312,6 +314,10 @@ def init_db():
         code_cols = [row[1] for row in conn.execute("PRAGMA table_info(redemption_codes)").fetchall()]
         if "recharge_request_id" not in code_cols:
             conn.execute("ALTER TABLE redemption_codes ADD COLUMN recharge_request_id INTEGER")
+
+        tx_cols = [row[1] for row in conn.execute("PRAGMA table_info(point_transactions)").fetchall()]
+        if "recharge_request_id" not in tx_cols:
+            conn.execute("ALTER TABLE point_transactions ADD COLUMN recharge_request_id INTEGER")
 
         # 初始化默认分类（如果 categories 表为空）
         if conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0] == 0:

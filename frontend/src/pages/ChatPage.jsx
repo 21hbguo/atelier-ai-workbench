@@ -383,8 +383,8 @@ export default function ChatPage() {
         </div>
       )}
       <div className="flex items-center gap-2 px-4 pt-3 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
-        <button onClick={() => navigate('/wallet')} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5 transition-colors" style={{ color: 'var(--accent)' }}>
-          <Coins size={14} />
+        <button onClick={() => navigate('/wallet')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all hover:scale-105" style={{ background: 'var(--accent)', color: 'white' }}>
+          <Coins size={16} />
           <span>{points}</span>
         </button>
         {isAdmin && userList.length > 0 && (

@@ -60,7 +60,13 @@ async def get_transactions(page: int = 1, size: int = 20, user=Depends(get_curre
             (user["user_id"],)
         ).fetchone()["cnt"]
         rows = conn.execute(
-            "SELECT * FROM point_transactions WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            """SELECT t.*, rr.channel, rr.amount as recharge_amount, rr.points as recharge_points,
+                      rr.payer_name, rr.tx_no, rr.proof_url, rr.remark, rr.status as recharge_status,
+                      rr.redeem_code, rr.review_note, rr.created_at as recharge_created_at,
+                      rr.reviewed_at, rr.reviewed_by
+               FROM point_transactions t
+               LEFT JOIN recharge_requests rr ON t.recharge_request_id = rr.id
+               WHERE t.user_id = ? ORDER BY t.created_at DESC LIMIT ? OFFSET ?""",
             (user["user_id"], size, offset)
         ).fetchall()
         return {"total": total, "items": [dict(r) for r in rows], "page": page, "size": size}

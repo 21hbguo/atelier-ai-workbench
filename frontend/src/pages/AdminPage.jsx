@@ -5,6 +5,7 @@ import { adminAPI, statsAPI, announcementAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 import PageLayout from '../components/PageLayout'
 import SearchInput from '../components/SearchInput'
+import Pagination from '../components/Pagination'
 
 export default function AdminPage() {
   const navigate = useNavigate()
@@ -58,16 +59,6 @@ export default function AdminPage() {
   const [adjustUserId, setAdjustUserId] = useState(null)
   const [adjustAmount, setAdjustAmount] = useState('')
   const [adjustDesc, setAdjustDesc] = useState('')
-  const [rechargeItems, setRechargeItems] = useState([])
-  const [rechargeTotal, setRechargeTotal] = useState(0)
-  const [rechargePage, setRechargePage] = useState(1)
-  const [rechargeStatus, setRechargeStatus] = useState('pending')
-  const [rechargeQuery, setRechargeQuery] = useState('')
-  const [rechargeFormId, setRechargeFormId] = useState(null)
-  const [rechargeFormPoints, setRechargeFormPoints] = useState('')
-  const [rechargeFormNote, setRechargeFormNote] = useState('')
-  const [rejectFormId, setRejectFormId] = useState(null)
-  const [rejectFormNote, setRejectFormNote] = useState('')
   const [proofLightbox, setProofLightbox] = useState(null)
   const [resetPwdUserId, setResetPwdUserId] = useState(null)
   const [resetPwdValue, setResetPwdValue] = useState('')
@@ -96,7 +87,6 @@ export default function AdminPage() {
   useEffect(() => { setImagePage(1) }, [imageQuery])
   useEffect(() => { setHistoryPage(1) }, [historyQuery])
   useEffect(() => { setBannedWordsPage(1) }, [bannedWordsQuery])
-  useEffect(() => { setRechargePage(1) }, [rechargeStatus, rechargeQuery])
 
   useEffect(() => { if (tab === 'users') fetchUsers() }, [tab, userPage, userQuery])
   useEffect(() => { if (tab === 'images') fetchImages() }, [tab, imagePage, imageQuery])
@@ -104,7 +94,7 @@ export default function AdminPage() {
   useEffect(() => { if (tab === 'history') fetchHistory() }, [tab, historyPage, historyQuery])
   useEffect(() => { if (tab === 'hosting') { fetchHostingImages(); fetchHostingStats() } }, [tab, hostingPage])
   useEffect(() => { if (tab === 'banned') fetchBannedWords() }, [tab, bannedWordsPage, bannedWordsQuery])
-  useEffect(() => { if (tab === 'finance') { fetchCodes(); fetchRechargeRequests() } }, [tab, codesPage, codesSort, codesOrder, rechargePage, rechargeStatus, rechargeQuery])
+  useEffect(() => { if (tab === 'finance') fetchCodes() }, [tab, codesPage, codesSort, codesOrder])
   useEffect(() => { if (tab === 'stats') fetchUserStats() }, [tab])
   useEffect(() => { if (tab === 'announcements') fetchAnnouncements() }, [tab, announcementPage])
 
@@ -252,14 +242,6 @@ export default function AdminPage() {
       setCodesTotal(data.total)
     } catch {} finally { setLoading(false) }
   }
-  const fetchRechargeRequests = async () => {
-    setLoading(true)
-    try {
-      const { data } = await adminAPI.rechargeRequests(rechargePage, 20, rechargeStatus, rechargeQuery || undefined)
-      setRechargeItems(data.items || [])
-      setRechargeTotal(data.total || 0)
-    } catch {} finally { setLoading(false) }
-  }
 
   const handleGenerateCodes = async () => {
     if (codePoints <= 0) return
@@ -402,36 +384,6 @@ export default function AdminPage() {
     setChecked(new Set()); setSelectMode(false)
     fetchImages()
   }, [checked])
-  const handleApproveRecharge = async (item) => {
-    setRechargeFormId(item.id)
-    setRechargeFormPoints(String(item.points))
-    setRechargeFormNote('')
-    setRejectFormId(null)
-  }
-  const handleConfirmApprove = async (item) => {
-    const points = parseInt(rechargeFormPoints, 10)
-    if (!points || points <= 0) return
-    try {
-      const { data } = await adminAPI.approveRecharge(item.id, { points, review_note: rechargeFormNote })
-      if (data.code) alert(`审核通过，兑换码：${data.code}`)
-      setRechargeFormId(null)
-      fetchRechargeRequests()
-    } catch (e) { alert(e.message || '审核失败') }
-  }
-  const handleRejectRecharge = async (item) => {
-    setRejectFormId(item.id)
-    setRejectFormNote('信息不符')
-    setRechargeFormId(null)
-  }
-  const handleConfirmReject = async (item) => {
-    if (!rejectFormNote.trim()) return
-    try {
-      await adminAPI.rejectRecharge(item.id, { review_note: rejectFormNote.trim() })
-      setRejectFormId(null)
-      fetchRechargeRequests()
-    } catch (e) { alert(e.message || '操作失败') }
-  }
-
   const user = JSON.parse(localStorage.getItem('user') || 'null')
   if (!user?.is_admin) {
     return (
@@ -548,14 +500,7 @@ export default function AdminPage() {
                 </table>
               </div>
             </div>
-            {userTotal > 20 && (
-              <div className="flex justify-center gap-2 mt-4">
-                {Array.from({ length: Math.ceil(userTotal / 20) }, (_, i) => i + 1).map(p => (
-                  <button key={p} onClick={() => setUserPage(p)} className={`w-8 h-8 rounded-lg text-sm font-medium ${p === userPage ? 'bg-accent text-white' : 'hover:bg-black/5'}`}
-                    style={{ color: p !== userPage ? 'var(--text-primary)' : undefined }}>{p}</button>
-                ))}
-              </div>
-            )}
+            <Pagination page={userPage} totalPages={Math.ceil(userTotal / 20)} onPageChange={setUserPage} />
             </>
             )}
           </div>
@@ -620,14 +565,7 @@ export default function AdminPage() {
                 </div>
               ))}
             </div>
-            {imageTotal > 20 && (
-              <div className="flex justify-center gap-2 mt-4">
-                {Array.from({ length: Math.ceil(imageTotal / 20) }, (_, i) => i + 1).map(p => (
-                  <button key={p} onClick={() => setImagePage(p)} className={`w-8 h-8 rounded-lg text-sm font-medium ${p === imagePage ? 'bg-accent text-white' : 'hover:bg-black/5'}`}
-                    style={{ color: p !== imagePage ? 'var(--text-primary)' : undefined }}>{p}</button>
-                ))}
-              </div>
-            )}
+            <Pagination page={imagePage} totalPages={Math.ceil(imageTotal / 20)} onPageChange={setImagePage} />
             </>
             )}
           </div>
@@ -717,14 +655,7 @@ export default function AdminPage() {
                 </table>
               </div>
             </div>
-            {promptTotal > 20 && (
-              <div className="flex justify-center gap-2 mt-4">
-                {Array.from({ length: Math.ceil(promptTotal / 20) }, (_, i) => i + 1).map(p => (
-                  <button key={p} onClick={() => setPromptPage(p)} className={`w-8 h-8 rounded-lg text-sm font-medium ${p === promptPage ? 'bg-accent text-white' : 'hover:bg-black/5'}`}
-                    style={{ color: p !== promptPage ? 'var(--text-primary)' : undefined }}>{p}</button>
-                ))}
-              </div>
-            )}
+            <Pagination page={promptPage} totalPages={Math.ceil(promptTotal / 20)} onPageChange={setPromptPage} />
             </>
             )}
           </div>
@@ -756,33 +687,36 @@ export default function AdminPage() {
               </div>
             ) : (
             <>
-            <div className="space-y-2">
-              {announcements.map(item => (
-                <div key={item.id} className="flex items-center justify-between px-4 py-3 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{item.title}</p>
-                    <div className="flex items-center gap-3 mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                      <span>{item.author_name || '管理员'}</span>
-                      <span>{item.created_at}</span>
-                    </div>
-                  </div>
-                  <button onClick={() => handleDeleteAnnouncement(item.id)} className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 flex-shrink-0" title="删除">
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))}
-              {announcements.length === 0 && (
-                <div className="text-center py-20" style={{ color: 'var(--text-secondary)' }}>暂无公告</div>
-              )}
+            <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr style={{ background: 'var(--bg-secondary)' }}>
+                    <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>标题</th>
+                    <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>作者</th>
+                    <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>时间</th>
+                    <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {announcements.map(item => (
+                    <tr key={item.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
+                      <td className="px-3 py-2 truncate max-w-[300px] font-medium" style={{ color: 'var(--text-primary)' }}>{item.title}</td>
+                      <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{item.author_name || '管理员'}</td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{item.created_at}</td>
+                      <td className="px-3 py-2 text-right">
+                        <button onClick={() => handleDeleteAnnouncement(item.id)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500" title="删除">
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            {announcementTotal > 20 && (
-              <div className="flex justify-center gap-2 mt-4">
-                {Array.from({ length: Math.ceil(announcementTotal / 20) }, (_, i) => i + 1).map(p => (
-                  <button key={p} onClick={() => setAnnouncementPage(p)} className={`w-8 h-8 rounded-lg text-sm font-medium ${p === announcementPage ? 'bg-accent text-white' : 'hover:bg-black/5'}`}
-                    style={{ color: p !== announcementPage ? 'var(--text-primary)' : undefined }}>{p}</button>
-                ))}
-              </div>
+            {announcements.length === 0 && (
+              <div className="text-center py-20" style={{ color: 'var(--text-secondary)' }}>暂无公告</div>
             )}
+            <Pagination page={announcementPage} totalPages={Math.ceil(announcementTotal / 20)} onPageChange={setAnnouncementPage} />
             </>
             )}
           </div>
@@ -861,14 +795,7 @@ export default function AdminPage() {
                 </div>
               ))}
             </div>
-            {hostingTotal > 50 && (
-              <div className="flex justify-center gap-2 mt-4">
-                {Array.from({ length: Math.ceil(hostingTotal / 50) }, (_, i) => i + 1).map(p => (
-                  <button key={p} onClick={() => setHostingPage(p)} className={`w-8 h-8 rounded-lg text-sm font-medium ${p === hostingPage ? 'bg-accent text-white' : 'hover:bg-black/5'}`}
-                    style={{ color: p !== hostingPage ? 'var(--text-primary)' : undefined }}>{p}</button>
-                ))}
-              </div>
-            )}
+            <Pagination page={hostingPage} totalPages={Math.ceil(hostingTotal / 50)} onPageChange={setHostingPage} />
             </>
             )}
           </div>
@@ -937,14 +864,7 @@ export default function AdminPage() {
                 <div className="text-center py-20" style={{ color: 'var(--text-secondary)' }}>暂无违禁词</div>
               )}
             </div>
-            {bannedWordsTotal > 20 && (
-              <div className="flex justify-center gap-2 mt-4">
-                {Array.from({ length: Math.ceil(bannedWordsTotal / 20) }, (_, i) => i + 1).map(p => (
-                  <button key={p} onClick={() => setBannedWordsPage(p)} className={`w-8 h-8 rounded-lg text-sm font-medium ${p === bannedWordsPage ? 'bg-accent text-white' : 'hover:bg-black/5'}`}
-                    style={{ color: p !== bannedWordsPage ? 'var(--text-primary)' : undefined }}>{p}</button>
-                ))}
-              </div>
-            )}
+            <Pagination page={bannedWordsPage} totalPages={Math.ceil(bannedWordsTotal / 20)} onPageChange={setBannedWordsPage} />
             </>
             )}
           </div>
@@ -993,97 +913,10 @@ export default function AdminPage() {
               )}
             </div>
 
-            {/* 充值审核 */}
+            {/* 兑换码记录 */}
             <div>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>充值审核</h3>
-                <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
-                  {['pending', 'approved', 'rejected', 'all'].map(s => (
-                    <button key={s} onClick={() => setRechargeStatus(s)}
-                      className={`px-2 py-1 rounded text-xs font-medium transition-colors`}
-                      style={{ background: rechargeStatus === s ? 'var(--accent)' : 'var(--bg-secondary)', color: rechargeStatus === s ? '#fff' : 'var(--text-secondary)' }}>
-                      {{ pending: '待审核', approved: '已通过', rejected: '已拒绝', all: '全部' }[s]}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {rechargeItems.length === 0 ? (
-                <div className="text-center py-6 rounded-xl border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
-                  暂无记录
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {rechargeItems.map(item => {
-                    const statusMap = { pending: { label: '待审核', color: '#f59e0b' }, approved: { label: '已通过', color: '#22c55e' }, rejected: { label: '已拒绝', color: '#ef4444' } }
-                    const st = statusMap[item.status] || statusMap.pending
-                    return (
-                    <div key={item.id} className="rounded-xl border px-4 py-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
-                      <div className="flex items-center gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{item.nickname || item.username || '-'}</span>
-                            <span className="text-xs px-2 py-0.5 rounded-full" style={{ color: st.color, background: st.color + '20' }}>{st.label}</span>
-                          </div>
-                          <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                            <span>{item.channel === 'wechat' ? '微信' : item.channel === 'alipay' ? '支付宝' : item.channel}</span>
-                            <span> · 金额 ¥{item.amount}</span>
-                            <span> · 申请积分 {item.points}</span>
-                            <span> · 单号 {item.tx_no || '-'}</span>
-                          </div>
-                          <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>提交：{item.created_at}</div>
-                          {item.payer_name && <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>付款人：{item.payer_name}</div>}
-                          {item.remark && <div className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>备注：{item.remark}</div>}
-                          {item.proof_url && <button onClick={() => setProofLightbox(item.proof_url)} className="mt-1 inline-block text-xs underline text-left" style={{ color: 'var(--accent)' }}>查看支付凭证</button>}
-                          {item.status === 'approved' && item.redeem_code && <div className="mt-1 text-xs" style={{ color: '#22c55e' }}>兑换码：{item.redeem_code}</div>}
-                          {item.status === 'rejected' && item.review_note && <div className="mt-1 text-xs" style={{ color: '#ef4444' }}>原因：{item.review_note}</div>}
-                        </div>
-                        {item.status === 'pending' && rechargeFormId !== item.id && rejectFormId !== item.id && (
-                          <div className="flex items-center gap-2">
-                            <button onClick={() => handleApproveRecharge(item)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: '#22c55e' }}>通过并发码</button>
-                            <button onClick={() => handleRejectRecharge(item)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: '#ef4444' }}>拒绝</button>
-                          </div>
-                        )}
-                      </div>
-                      {rechargeFormId === item.id && (
-                        <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>发放积分</span>
-                            <input type="number" value={rechargeFormPoints} onChange={e => setRechargeFormPoints(e.target.value)}
-                              className="w-24 px-2 py-1 rounded text-xs border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
-                            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>备注</span>
-                            <input type="text" value={rechargeFormNote} onChange={e => setRechargeFormNote(e.target.value)} placeholder="可选"
-                              className="flex-1 px-2 py-1 rounded text-xs border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button onClick={() => handleConfirmApprove(item)} className="px-3 py-1 rounded text-xs font-medium text-white" style={{ background: '#22c55e' }}>确认通过</button>
-                            <button onClick={() => setRechargeFormId(null)} className="px-3 py-1 rounded text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>取消</button>
-                          </div>
-                        </div>
-                      )}
-                      {rejectFormId === item.id && (
-                        <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>拒绝原因</span>
-                            <input type="text" value={rejectFormNote} onChange={e => setRejectFormNote(e.target.value)} placeholder="请输入原因"
-                              className="flex-1 px-2 py-1 rounded text-xs border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button onClick={() => handleConfirmReject(item)} disabled={!rejectFormNote.trim()} className="px-3 py-1 rounded text-xs font-medium text-white disabled:opacity-50" style={{ background: '#ef4444' }}>确认拒绝</button>
-                            <button onClick={() => setRejectFormId(null)} className="px-3 py-1 rounded text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>取消</button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* 所有兑换码 */}
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>所有兑换码</h3>
+                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>兑换码记录</h3>
                 <div className="flex items-center gap-1.5">
                   <select value={codesSort} onChange={e => setCodesSort(e.target.value)}
                     className="px-2 py-1 rounded-lg text-xs font-medium border outline-none cursor-pointer"
@@ -1112,10 +945,14 @@ export default function AdminPage() {
                           <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>兑换码</th>
                           <th className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--text-secondary)' }}>积分</th>
                           <th className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--text-secondary)' }}>状态</th>
-                          <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>来源</th>
+                          <th className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--text-secondary)' }}>渠道</th>
+                          <th className="px-4 py-3 text-right font-semibold" style={{ color: 'var(--text-secondary)' }}>金额</th>
+                          <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>单号</th>
+                          <th className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--text-secondary)' }}>审核状态</th>
+                          <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>审核备注</th>
+                          <th className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--text-secondary)' }}>支付凭证</th>
                           <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>使用者</th>
                           <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>创建时间</th>
-                          <th className="px-4 py-3 text-right font-semibold" style={{ color: 'var(--text-secondary)' }}>操作</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1132,30 +969,41 @@ export default function AdminPage() {
                                 {c.is_used ? '已使用' : '未使用'}
                               </span>
                             </td>
-                            <td className="px-4 py-3">
-                              {c.recharge_id ? (
-                                <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ background: '#8b5cf620', color: '#8b5cf6' }}>
-                                  {c.recharge_nickname || c.recharge_username || '用户'} · {c.recharge_channel === 'wechat' ? '微信' : '支付宝'} ¥{c.recharge_amount}
+                            <td className="px-4 py-3 text-center text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                              {c.recharge_channel ? (c.recharge_channel === 'wechat' ? '微信' : '支付宝') : '-'}
+                            </td>
+                            <td className="px-4 py-3 text-right text-[11px] tabular-nums" style={{ color: 'var(--text-secondary)' }}>
+                              {c.recharge_amount ? `¥${c.recharge_amount}` : '-'}
+                            </td>
+                            <td className="px-4 py-3 text-left text-[11px] truncate max-w-[100px]" style={{ color: 'var(--text-secondary)' }}>
+                              {c.recharge_tx_no || '-'}
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              {c.recharge_status ? (
+                                <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{
+                                  color: c.recharge_status === 'approved' ? '#22c55e' : c.recharge_status === 'rejected' ? '#ef4444' : '#f59e0b',
+                                  background: c.recharge_status === 'approved' ? '#22c55e20' : c.recharge_status === 'rejected' ? '#ef444420' : '#f59e0b20'
+                                }}>
+                                  {{ pending: '待审核', approved: '已通过', rejected: '已拒绝' }[c.recharge_status]}
                                 </span>
-                              ) : (
-                                <span className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>手动创建</span>
-                              )}
+                              ) : '-'}
+                            </td>
+                            <td className="px-4 py-3 text-left text-[11px] truncate max-w-[120px]" style={{ color: 'var(--text-secondary)' }}>
+                              {c.recharge_review_note || '-'}
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              {c.recharge_proof_url ? (
+                                <button onClick={() => setProofLightbox(c.recharge_proof_url)} className="text-xs underline" style={{ color: 'var(--accent)' }}>查看</button>
+                              ) : '-'}
                             </td>
                             <td className="px-4 py-3" style={{ color: c.used_by_name ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
                               {c.used_by_name || '-'}
                             </td>
                             <td className="px-4 py-3 text-[11px]" style={{ color: 'var(--text-secondary)' }}>{c.created_at || '-'}</td>
-                            <td className="px-4 py-3 text-right">
-                              {!c.is_used && (
-                                <button onClick={() => handleDeleteCode(c.id, c.code)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500" title="删除">
-                                  <Trash2 size={14} />
-                                </button>
-                              )}
-                            </td>
                           </tr>
                         ))}
                         {codes.length === 0 && (
-                          <tr><td colSpan={7} className="text-center py-16" style={{ color: 'var(--text-secondary)' }}>
+                          <tr><td colSpan={11} className="text-center py-16" style={{ color: 'var(--text-secondary)' }}>
                             <Ticket size={32} className="mx-auto mb-2 opacity-30" />
                             <p>暂无兑换码</p>
                           </td></tr>
@@ -1165,14 +1013,7 @@ export default function AdminPage() {
                   </div>
                 </div>
               )}
-              {codesTotal > 20 && (
-                <div className="flex justify-center gap-2 mt-4">
-                  {Array.from({ length: Math.ceil(codesTotal / 20) }, (_, i) => i + 1).map(p => (
-                    <button key={p} onClick={() => setCodesPage(p)} className={`w-8 h-8 rounded-lg text-sm font-medium ${p === codesPage ? 'bg-accent text-white' : 'hover:bg-black/5'}`}
-                      style={{ color: p !== codesPage ? 'var(--text-primary)' : undefined }}>{p}</button>
-                  ))}
-                </div>
-              )}
+              <Pagination page={codesPage} totalPages={Math.ceil(codesTotal / 20)} onPageChange={setCodesPage} />
             </div>
           </div>
         ) : tab === 'stats' ? (
@@ -1232,50 +1073,50 @@ export default function AdminPage() {
               </div>
             ) : (
             <>
-            <div className="space-y-2">
-              {history.map(item => {
-                const st = { pending: { c: '#6b7280', l: '等待中' }, queued: { c: '#f59e0b', l: '排队中' }, processing: { c: '#f59e0b', l: '生成中' }, completed: { c: '#22c55e', l: '已完成' }, failed: { c: '#ef4444', l: '失败' } }
-                const s = st[item.status] || st.pending
-                const thumbFile = item.result_urls?.[0]?.split('/').pop()
-                const duration = item.started_at && item.completed_at
-                  ? Math.round((new Date(item.completed_at) - new Date(item.started_at)) / 1000)
-                  : null
-                return (
-                  <div key={item.task_id} className="flex items-center gap-3 px-4 py-3 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
-                    <div className="w-14 h-14 rounded-lg overflow-hidden flex-shrink-0" style={{ background: 'var(--border-color)' }}>
-                      {thumbFile ? (
-                        <img src={`/api/images/thumb/${thumbFile}`} alt="" className="w-full h-full object-cover" loading="lazy" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-xs" style={{ color: 'var(--text-secondary)' }}>无图</div>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm truncate" style={{ color: 'var(--text-primary)' }}>{item.prompt || '无提示词'}</p>
-                      <div className="flex items-center gap-3 mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                        <span>{item.nickname || item.username || '未知用户'}</span>
-                        <span>IP: {item.last_ip || '未知'}</span>
-                        <span>{item.created_at}</span>
-                        {duration !== null && <span>耗时 {duration}s</span>}
-                      </div>
-                    </div>
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium flex-shrink-0" style={{ color: s.c, background: s.c + '20' }}>{s.l}</span>
-                    <button onClick={() => handleDeleteHistory(item.task_id)} className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 flex-shrink-0" title="删除">
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                )
-              })}
-              {history.length === 0 && (
-                <div className="text-center py-20" style={{ color: 'var(--text-secondary)' }}>暂无记录</div>
-              )}
+            <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr style={{ background: 'var(--bg-secondary)' }}>
+                    <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>用户</th>
+                    <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>提示词</th>
+                    <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>状态</th>
+                    <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>耗时</th>
+                    <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>IP</th>
+                    <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>时间</th>
+                    <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map(item => {
+                    const st = { pending: { c: '#6b7280', l: '等待中' }, queued: { c: '#f59e0b', l: '排队中' }, processing: { c: '#f59e0b', l: '生成中' }, completed: { c: '#22c55e', l: '已完成' }, failed: { c: '#ef4444', l: '失败' } }
+                    const s = st[item.status] || st.pending
+                    const duration = item.started_at && item.completed_at
+                      ? Math.round((new Date(item.completed_at) - new Date(item.started_at)) / 1000)
+                      : null
+                    return (
+                      <tr key={item.task_id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
+                        <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{item.nickname || item.username || '-'}</td>
+                        <td className="px-3 py-2 truncate max-w-[200px]" style={{ color: 'var(--text-secondary)' }}>{item.prompt || '无提示词'}</td>
+                        <td className="px-3 py-2 text-center"><span className="px-2 py-0.5 rounded-full" style={{ color: s.c, background: s.c + '20' }}>{s.l}</span></td>
+                        <td className="px-3 py-2 text-right tabular-nums" style={{ color: 'var(--text-secondary)' }}>{duration !== null ? `${duration}s` : '-'}</td>
+                        <td className="px-3 py-2 text-right" style={{ color: 'var(--text-secondary)' }}>{item.last_ip || '-'}</td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{item.created_at}</td>
+                        <td className="px-3 py-2 text-right">
+                          <button onClick={() => handleDeleteHistory(item.task_id)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500" title="删除">
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
+            {history.length === 0 && (
+              <div className="text-center py-20" style={{ color: 'var(--text-secondary)' }}>暂无记录</div>
+            )}
             {historyTotal > 20 && (
-              <div className="flex justify-center gap-2 mt-4">
-                {Array.from({ length: Math.ceil(historyTotal / 20) }, (_, i) => i + 1).map(p => (
-                  <button key={p} onClick={() => setHistoryPage(p)} className={`w-8 h-8 rounded-lg text-sm font-medium ${p === historyPage ? 'bg-accent text-white' : 'hover:bg-black/5'}`}
-                    style={{ color: p !== historyPage ? 'var(--text-primary)' : undefined }}>{p}</button>
-                ))}
-              </div>
+              <Pagination page={historyPage} totalPages={Math.ceil(historyTotal / 20)} onPageChange={setHistoryPage} />
             )}
             </>
             )}
