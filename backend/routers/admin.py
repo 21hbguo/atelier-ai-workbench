@@ -33,7 +33,7 @@ async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
                 LEFT JOIN user_requests ur ON u.id = ur.user_id
                 LEFT JOIN (SELECT user_id, COUNT(*) as cnt FROM image_metadata GROUP BY user_id) img ON u.id = img.user_id
                 WHERE u.username LIKE %s OR u.nickname LIKE %s
-                GROUP BY u.id
+                GROUP BY u.id, img.cnt
                 ORDER BY u.last_active DESC
                 LIMIT %s OFFSET %s
                 """,
@@ -50,7 +50,7 @@ async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
                 FROM users u
                 LEFT JOIN user_requests ur ON u.id = ur.user_id
                 LEFT JOIN (SELECT user_id, COUNT(*) as cnt FROM image_metadata GROUP BY user_id) img ON u.id = img.user_id
-                GROUP BY u.id
+                GROUP BY u.id, img.cnt
                 ORDER BY u.last_active DESC
                 LIMIT %s OFFSET %s
                 """,

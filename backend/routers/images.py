@@ -77,7 +77,7 @@ async def list_images(page: int = Query(1, ge=1), page_size: int = Query(20, ge=
                 FROM image_metadata m
                 LEFT JOIN users u ON m.user_id=u.id
                 {where_sql}
-                ORDER BY COALESCE(m.created_at,'') DESC
+                ORDER BY m.created_at DESC NULLS LAST
                 LIMIT %s OFFSET %s
                 """,
                 params + [page_size, offset],
