@@ -50,7 +50,7 @@ async def list_square_images(
         if query:
             q = f"%{query}%"
             total = conn.execute(
-                "SELECT COUNT(*) AS cnt FROM square_images si JOIN users u ON si.user_id = u.id WHERE si.prompt LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s",
+                "SELECT COUNT(*) AS cnt FROM square_images si JOIN users u ON si.user_id = u.id WHERE si.is_frozen = FALSE AND (si.prompt LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s)",
                 (q, q, q),
             ).fetchone()["cnt"]
             rows = conn.execute(
@@ -58,19 +58,20 @@ async def list_square_images(
                 SELECT si.*, u.username, u.nickname, u.avatar
                 FROM square_images si
                 JOIN users u ON si.user_id = u.id
-                WHERE si.prompt LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s
+                WHERE si.is_frozen = FALSE AND (si.prompt LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s)
                 ORDER BY {order}
                 LIMIT %s OFFSET %s
                 """,
                 (q, q, q, size, offset),
             ).fetchall()
         else:
-            total = conn.execute("SELECT COUNT(*) AS cnt FROM square_images").fetchone()["cnt"]
+            total = conn.execute("SELECT COUNT(*) AS cnt FROM square_images si WHERE si.is_frozen = FALSE").fetchone()["cnt"]
             rows = conn.execute(
                 f"""
                 SELECT si.*, u.username, u.nickname, u.avatar
                 FROM square_images si
                 JOIN users u ON si.user_id = u.id
+                WHERE si.is_frozen = FALSE
                 ORDER BY {order}
                 LIMIT %s OFFSET %s
                 """,

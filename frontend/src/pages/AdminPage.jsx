@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Trash2, Users, Image, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket, Megaphone, BookOpen, Wallet, Key } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { adminAPI, announcementAPI } from '../api'
@@ -6,22 +6,185 @@ import MainLayout from '../components/MainLayout'
 import PageLayout from '../components/PageLayout'
 import SearchInput from '../components/SearchInput'
 import Pagination from '../components/Pagination'
+import CardGrid from '../components/CardGrid'
+import UnifiedDetailModal from '../components/UnifiedDetailModal'
+import { useCardData } from '../hooks/useCardData'
+
+function AdminSquareTab({ imageQuery, setImageQuery }) {
+  const [status, setStatus] = useState('all')
+  const [selectMode, setSelectMode] = useState(false)
+  const [checked, setChecked] = useState(new Set())
+  const [detailIdx, setDetailIdx] = useState(null)
+  const deps = useMemo(() => [imageQuery, status], [imageQuery, status])
+
+  const { cards, total, page, setPage, loading, refreshing, refresh } = useCardData({
+    type: 'image',
+    apiFn: (p, s) => adminAPI.square(p, s, imageQuery || undefined, status),
+    deps,
+  })
+
+  const toggleCheck = useCallback((id) => {
+    setChecked(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
+  }, [])
+
+  const toggleSelectAll = useCallback(() => {
+    if (checked.size === cards.length) setChecked(new Set())
+    else setChecked(new Set(cards.map(c => c.id)))
+  }, [checked.size, cards])
+
+  const handleBatchFreeze = useCallback(async (frozen) => {
+    const ids = [...checked]
+    try {
+      await adminAPI.freezeSquare(ids, frozen)
+      setChecked(new Set())
+      setSelectMode(false)
+      refresh()
+    } catch {}
+  }, [checked, refresh])
+
+  const handleBatchDelete = useCallback(async () => {
+    if (!confirm(`确定删除选中的 ${checked.size} 张图片？`)) return
+    try {
+      await adminAPI.batchDeleteSquare([...checked])
+      setChecked(new Set())
+      setSelectMode(false)
+      refresh()
+    } catch {}
+  }, [checked, refresh])
+
+  const handleSingleFreeze = useCallback(async (id, frozen) => {
+    try {
+      await adminAPI.freezeSquare([id], frozen)
+      refresh()
+    } catch {}
+  }, [refresh])
+
+  const handleSingleDelete = useCallback(async (id) => {
+    if (!confirm('确定删除这张图片？')) return
+    try {
+      await adminAPI.batchDeleteSquare([id])
+      refresh()
+    } catch {}
+  }, [refresh])
+
+  return (
+    <div>
+      {/* 状态筛选 */}
+      <div className="flex items-center gap-1 mb-4 p-0.5 rounded-lg" style={{ background: 'var(--border-color)' }}>
+        {[{ k: 'all', l: '全部' }, { k: 'active', l: '正常' }, { k: 'frozen', l: '冻结' }].map(({ k, l }) => (
+          <button key={k} onClick={() => setStatus(k)}
+            className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${status === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`}
+            style={{ color: status === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {/* 操作栏 */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3 flex-1">
+          <span className="text-sm flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>共 {total} 张图片</span>
+          <SearchInput value={imageQuery} onChange={setImageQuery} placeholder="搜索提示词/用户名..." />
+        </div>
+        <div className="flex items-center gap-2">
+          {selectMode && (
+            <button onClick={toggleSelectAll}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>
+              {checked.size === cards.length ? '取消全选' : '全选'}
+            </button>
+          )}
+          {selectMode && checked.size > 0 && (
+            <>
+              <button onClick={() => handleBatchFreeze(false)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500 text-white hover:bg-blue-600">
+                <Sun size={14} /> 解冻 {checked.size} 项
+              </button>
+              <button onClick={() => handleBatchFreeze(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500 text-white hover:bg-amber-600">
+                <Snowflake size={14} /> 冻结 {checked.size} 项
+              </button>
+              <button onClick={handleBatchDelete}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500 text-white hover:bg-red-600">
+                <Trash2 size={14} /> 删除 {checked.size} 项
+              </button>
+            </>
+          )}
+          {selectMode ? (
+            <button onClick={() => { setSelectMode(false); setChecked(new Set()) }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button>
+          ) : (
+            <button onClick={() => setSelectMode(true)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>选择</button>
+          )}
+        </div>
+      </div>
+
+      <CardGrid
+        cards={cards}
+        loading={loading}
+        refreshing={refreshing}
+        onRefresh={refresh}
+        total={total}
+        page={page}
+        totalPages={Math.ceil(total / 20)}
+        onPageChange={setPage}
+        onCardClick={(_, idx) => setDetailIdx(idx)}
+        showAuthor
+        emptyText="暂无图片"
+        selectable={selectMode}
+        selected={checked}
+        onToggleSelect={toggleCheck}
+        renderOverlay={(card) => (
+          <>
+            {card.isFrozen && (
+              <div className="absolute top-2 right-2 z-10 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/90 text-white">
+                <Snowflake size={10} className="inline mr-0.5" />冻结
+              </div>
+            )}
+            {!selectMode && (
+              <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-between">
+                <p className="text-white text-xs truncate flex-1">{card.prompt || '无提示词'}</p>
+                <div className="flex items-center gap-1 ml-2">
+                  <button onClick={(e) => { e.stopPropagation(); handleSingleFreeze(card.id, !card.isFrozen) }}
+                    className="p-1 rounded bg-black/50 text-white hover:bg-blue-500" title={card.isFrozen ? '解冻' : '冻结'}>
+                    {card.isFrozen ? <Sun size={12} /> : <Snowflake size={12} />}
+                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); handleSingleDelete(card.id) }}
+                    className="p-1 rounded bg-black/50 text-white hover:bg-red-500" title="删除">
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      />
+
+      {detailIdx !== null && cards[detailIdx] && (
+        <UnifiedDetailModal
+          card={cards[detailIdx]}
+          cards={cards}
+          currentIndex={detailIdx}
+          onNavigate={setDetailIdx}
+          onClose={() => setDetailIdx(null)}
+          title={`${cards[detailIdx].author || cards[detailIdx].nickname || cards[detailIdx].username} 的作品`}
+          hideDownload
+        />
+      )}
+    </div>
+  )
+}
 
 export default function AdminPage() {
   const navigate = useNavigate()
   const [tab, setTab] = useState('users')
   const [users, setUsers] = useState([])
-  const [images, setImages] = useState([])
   const [history, setHistory] = useState([])
   const [userPage, setUserPage] = useState(1)
-  const [imagePage, setImagePage] = useState(1)
   const [historyPage, setHistoryPage] = useState(1)
   const [userTotal, setUserTotal] = useState(0)
-  const [imageTotal, setImageTotal] = useState(0)
   const [historyTotal, setHistoryTotal] = useState(0)
   const [loading, setLoading] = useState(false)
-  const [selectMode, setSelectMode] = useState(false)
-  const [checked, setChecked] = useState(new Set())
   const [userQuery, setUserQuery] = useState('')
   const [imageQuery, setImageQuery] = useState('')
   const [historyQuery, setHistoryQuery] = useState('')
@@ -85,12 +248,10 @@ export default function AdminPage() {
   const [promptSelectMode, setPromptSelectMode] = useState(false)
 
   useEffect(() => { setUserPage(1) }, [userQuery])
-  useEffect(() => { setImagePage(1) }, [imageQuery])
   useEffect(() => { setHistoryPage(1) }, [historyQuery])
   useEffect(() => { setBannedWordsPage(1) }, [bannedWordsQuery])
 
   useEffect(() => { if (tab === 'users') fetchUsers() }, [tab, userPage, userQuery])
-  useEffect(() => { if (tab === 'images') fetchImages() }, [tab, imagePage, imageQuery])
   useEffect(() => { if (tab === 'prompts') fetchPrompts() }, [tab, promptPage, promptQuery])
   useEffect(() => { if (tab === 'history') fetchHistory() }, [tab, historyPage, historyQuery])
   useEffect(() => { if (tab === 'hosting') { fetchHostingImages(); fetchHostingStats() } }, [tab, hostingPage])
@@ -104,15 +265,6 @@ export default function AdminPage() {
       const { data } = await adminAPI.users(userPage, 20, userQuery || undefined)
       setUsers(data.users)
       setUserTotal(data.total)
-    } catch {} finally { setLoading(false) }
-  }
-
-  const fetchImages = async () => {
-    setLoading(true)
-    try {
-      const { data } = await adminAPI.square(imagePage, 20, imageQuery || undefined)
-      setImages(data.images)
-      setImageTotal(data.total)
     } catch {} finally { setLoading(false) }
   }
 
@@ -367,35 +519,10 @@ export default function AdminPage() {
     } catch (e) { alert(e.message || '重置失败') }
   }
 
-  const handleDeleteImage = async (imageId) => {
-    if (!confirm('确定删除这张图片？')) return
-    try {
-      await adminAPI.deleteSquare(imageId)
-      fetchImages()
-    } catch {}
-  }
-
-  const toggleCheck = useCallback((imageId) => {
-    setChecked(prev => { const next = new Set(prev); next.has(imageId) ? next.delete(imageId) : next.add(imageId); return next })
-  }, [])
-
   const toggleHostingCheck = useCallback((filename) => {
     setHostingChecked(prev => { const next = new Set(prev); next.has(filename) ? next.delete(filename) : next.add(filename); return next })
   }, [])
 
-  const toggleSelectAll = useCallback(() => {
-    if (checked.size === images.length) setChecked(new Set())
-    else setChecked(new Set(images.map(i => i.id)))
-  }, [checked.size, images])
-
-  const handleBatchDelete = useCallback(async () => {
-    if (!confirm(`确定删除选中的 ${checked.size} 张图片？`)) return
-    for (const imageId of checked) {
-      try { await adminAPI.deleteSquare(imageId) } catch {}
-    }
-    setChecked(new Set()); setSelectMode(false)
-    fetchImages()
-  }, [checked])
   const user = JSON.parse(localStorage.getItem('user') || 'null')
   if (!user?.is_admin) {
     return (
@@ -518,70 +645,7 @@ export default function AdminPage() {
             )}
           </div>
         ) : tab === 'images' ? (
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3 flex-1">
-                <span className="text-sm flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>共 {imageTotal} 张图片</span>
-                <SearchInput value={imageQuery} onChange={setImageQuery} placeholder="搜索提示词/用户名..." />
-              </div>
-              <div className="flex items-center gap-2">
-                {selectMode && (
-                  <button onClick={toggleSelectAll}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>
-                    {checked.size === images.length ? '取消全选' : '全选'}
-                  </button>
-                )}
-                {selectMode && checked.size > 0 && (
-                  <button onClick={handleBatchDelete}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500 text-white hover:bg-red-600">
-                    <Trash2 size={14} /> 删除 {checked.size} 项
-                  </button>
-                )}
-                {selectMode ? (
-                  <button onClick={() => { setSelectMode(false); setChecked(new Set()) }}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button>
-                ) : (
-                  <button onClick={() => setSelectMode(true)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>选择</button>
-                )}
-              </div>
-            </div>
-            {loading ? (
-              <div className="flex justify-center py-20">
-                <div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} />
-              </div>
-            ) : (
-            <>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-              {images.map(img => (
-                <div key={img.id}
-                  className={`group relative rounded-xl overflow-hidden shadow-sm cursor-pointer ${checked.has(img.id) ? 'ring-2 ring-accent/50' : ''}`}
-                  onClick={() => selectMode && toggleCheck(img.id)}>
-                  {selectMode && (
-                    <div className={`absolute top-2 left-2 z-20 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${checked.has(img.id) ? 'bg-accent border-accent' : 'bg-white/80 border-gray-300'}`}>
-                      {checked.has(img.id) && <Check size={12} className="text-white" />}
-                    </div>
-                  )}
-                  {selectMode && checked.has(img.id) && <div className="absolute inset-0 bg-accent/10 pointer-events-none z-10" />}
-                  <img src={`/api/images/thumb/${img.filename}`} alt="" className="w-full aspect-square object-cover" loading="lazy" />
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors" />
-                  <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                    <p className="text-white text-xs truncate">{img.prompt || '无提示词'}</p>
-                    <p className="text-white/70 text-xs mt-0.5">{img.nickname || img.username}</p>
-                  </div>
-                  {!selectMode && (
-                    <button onClick={(e) => { e.stopPropagation(); handleDeleteImage(img.id) }}
-                      className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500">
-                      <Trash2 size={14} />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-            <Pagination page={imagePage} totalPages={Math.ceil(imageTotal / 20)} onPageChange={setImagePage} />
-            </>
-            )}
-          </div>
+          <AdminSquareTab imageQuery={imageQuery} setImageQuery={setImageQuery} />
         ) : tab === 'prompts' ? (
           <div>
             <div className="flex items-center justify-between mb-4">

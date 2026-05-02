@@ -7,6 +7,7 @@ export default function CardGrid({
   loading = false, refreshing = false, onRefresh,
   total = 0, page = 1, totalPages = 1, onPageChange,
   emptyText = '暂无作品',
+  renderOverlay,
 }) {
   if (loading && cards.length === 0) {
     return (
@@ -104,6 +105,8 @@ export default function CardGrid({
                 />
               </div>
             )}
+
+            {renderOverlay && renderOverlay(card, idx)}
           </div>
         ))}
       </div>

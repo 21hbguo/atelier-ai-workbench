@@ -95,6 +95,7 @@ def init_db():
                 prompt TEXT,
                 metadata JSONB,
                 likes_count INTEGER DEFAULT 0,
+                is_frozen BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP DEFAULT NOW()
             )""",
             "CREATE INDEX IF NOT EXISTS idx_square_images_user_id ON square_images(user_id)",
@@ -258,6 +259,10 @@ def init_db():
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_prompts_source ON prompts(source) WHERE source IS NOT NULL"
         )
+
+        # 迁移：给 square_images 添加 is_frozen 字段
+        if not _column_exists(conn, "square_images", "is_frozen"):
+            conn.execute("ALTER TABLE square_images ADD COLUMN is_frozen BOOLEAN DEFAULT FALSE")
 
         # 初始化默认分类
         count = conn.execute("SELECT COUNT(*) AS cnt FROM categories").fetchone()["cnt"]

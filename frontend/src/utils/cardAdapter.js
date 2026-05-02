@@ -13,6 +13,7 @@ export function normalizeImage(raw) {
     createdAt: raw.created_at || '',
     likesCount: raw.likes_count || 0,
     isLiked: !!raw.is_liked,
+    isFrozen: !!raw.is_frozen,
     filename: raw.filename,
     metadataType: metadata.type || null,
     metadataSize: metadata.size || null,

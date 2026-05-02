@@ -104,46 +104,69 @@ async def delete_user(user_id: int, admin=Depends(require_admin)):
 
 
 @router.get("/square")
-async def list_all_square(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), query: str = Query(None), admin=Depends(require_admin)):
+async def list_all_square(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), query: str = Query(None), status: str = Query("all"), admin=Depends(require_admin)):
     with get_db() as conn:
         import json
         offset = (page - 1) * size
+        where = []
+        params = []
         if query:
             q = f"%{query}%"
-            total = conn.execute(
-                "SELECT COUNT(*) as cnt FROM square_images si JOIN users u ON si.user_id = u.id WHERE si.prompt LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s",
-                (q, q, q),
-            ).fetchone()["cnt"]
-            rows = conn.execute(
-                """
-                SELECT si.*, u.username, u.nickname
-                FROM square_images si
-                JOIN users u ON si.user_id = u.id
-                WHERE si.prompt LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s
-                ORDER BY si.created_at DESC
-                LIMIT %s OFFSET %s
-                """,
-                (q, q, q, size, offset),
-            ).fetchall()
-        else:
-            total = conn.execute("SELECT COUNT(*) as cnt FROM square_images").fetchone()["cnt"]
-            rows = conn.execute(
-                """
-                SELECT si.*, u.username, u.nickname
-                FROM square_images si
-                JOIN users u ON si.user_id = u.id
-                ORDER BY si.created_at DESC
-                LIMIT %s OFFSET %s
-                """,
-                (size, offset),
-            ).fetchall()
+            where.append("(si.prompt LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s)")
+            params.extend([q, q, q])
+        if status == "frozen":
+            where.append("si.is_frozen = TRUE")
+        elif status == "active":
+            where.append("si.is_frozen = FALSE")
+        where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+
+        total = conn.execute(
+            f"SELECT COUNT(*) as cnt FROM square_images si JOIN users u ON si.user_id = u.id {where_sql}",
+            params,
+        ).fetchone()["cnt"]
+        rows = conn.execute(
+            f"""
+            SELECT si.*, u.username, u.nickname
+            FROM square_images si
+            JOIN users u ON si.user_id = u.id
+            {where_sql}
+            ORDER BY si.created_at DESC
+            LIMIT %s OFFSET %s
+            """,
+            params + [size, offset],
+        ).fetchall()
         images = []
         for row in rows:
             item = dict(row)
             meta = item["metadata"]
             item["metadata"] = json.loads(meta) if isinstance(meta, str) else meta
+            item["is_frozen"] = bool(item.get("is_frozen"))
             images.append(item)
         return {"images": images, "total": total}
+
+
+@router.post("/square/freeze")
+async def batch_freeze_square(body: dict, admin=Depends(require_admin)):
+    ids = body.get("ids", [])
+    frozen = body.get("frozen", True)
+    if not ids:
+        raise HTTPException(status_code=400, detail="未提供要操作的ID")
+    with get_db() as conn:
+        placeholders = ",".join("%s" * len(ids))
+        conn.execute(f"UPDATE square_images SET is_frozen = %s WHERE id IN ({placeholders})", [frozen] + ids)
+        return {"message": f"已{'冻结' if frozen else '解冻'} {len(ids)} 张图片", "updated": len(ids)}
+
+
+@router.post("/square/batch-delete")
+async def batch_delete_square(body: dict, admin=Depends(require_admin)):
+    ids = body.get("ids", [])
+    if not ids:
+        raise HTTPException(status_code=400, detail="未提供要删除的ID")
+    with get_db() as conn:
+        placeholders = ",".join("%s" * len(ids))
+        conn.execute(f"DELETE FROM square_likes WHERE image_id IN ({placeholders})", ids)
+        conn.execute(f"DELETE FROM square_images WHERE id IN ({placeholders})", ids)
+        return {"message": f"已删除 {len(ids)} 张图片", "deleted": len(ids)}
 
 
 @router.delete("/square/{image_id}")
