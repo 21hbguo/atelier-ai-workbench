@@ -103,7 +103,9 @@ export default function PromptsPage() {
         <div className="flex flex-wrap gap-2 mb-4">
           <button onClick={() => { setForm({ name: '', prompt: '', tags: '', category: '' }); setShowNewForm(true) }}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}><Plus size={16} /> 新增</button>
-          <button onClick={handleExport} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}><Download size={16} /> 导出{selected.size > 0 ? ` (${selected.size})` : ''}</button>
+          <button onClick={handleExport} disabled={selected.size === 0}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium hover:bg-black/5 disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ color: 'var(--text-primary)' }}><Download size={16} /> 导出{selected.size > 0 ? ` (${selected.size})` : ''}</button>
           <button onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}><Upload size={16} /> 导入</button>
           <input ref={fileRef} type="file" accept=".json,.csv" className="hidden" onChange={handleImport} />
           {selected.size > 0 && <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-red-500"><Trash2 size={16} /> 删除 ({selected.size})</button>}

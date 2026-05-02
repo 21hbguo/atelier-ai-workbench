@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Megaphone, Check } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
 import AnnouncementModal from '../components/AnnouncementModal'
+import Pagination from '../components/Pagination'
 import { announcementAPI } from '../api'
 
 export default function AnnouncementsPage() {
@@ -75,14 +76,7 @@ export default function AnnouncementsPage() {
             <div className="text-center py-20" style={{ color: 'var(--text-secondary)' }}>暂无公告</div>
           )}
         </div>
-        {total > 20 && (
-          <div className="flex justify-center gap-2 mt-4">
-            {Array.from({ length: Math.ceil(total / 20) }, (_, i) => i + 1).map(p => (
-              <button key={p} onClick={() => setPage(p)} className={`w-8 h-8 rounded-lg text-sm font-medium ${p === page ? 'bg-accent text-white' : 'hover:bg-black/5'}`}
-                style={{ color: p !== page ? 'var(--text-primary)' : undefined }}>{p}</button>
-            ))}
-          </div>
-        )}
+        <Pagination page={page} totalPages={Math.ceil(total / 20)} onPageChange={setPage} />
         </>
         )}
       </div>

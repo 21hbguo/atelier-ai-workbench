@@ -1,4 +1,5 @@
 import { Heart, User, Plus, Image as ImageIcon, RefreshCw, Loader2 } from 'lucide-react'
+import Pagination from './Pagination'
 
 export default function CardGrid({
   cards, onCardClick, onLike, onUsePrompt, onUseImage,
@@ -45,8 +46,15 @@ export default function CardGrid({
             {card.thumbUrl ? (
               <img src={card.thumbUrl} alt="" className="w-full aspect-square object-cover" loading="lazy" />
             ) : (
-              <div className="w-full aspect-square flex items-center justify-center" style={{ background: 'linear-gradient(135deg, var(--accent)08, var(--accent)15)' }}>
-                <ImageIcon size={40} style={{ color: 'var(--accent)', opacity: 0.3 }} />
+              <div className="w-full aspect-square flex items-center justify-center p-3" style={{ background: 'linear-gradient(135deg, var(--accent)12, var(--accent)20)' }}>
+                {(() => {
+                  const text = card.title || card.subtitle || '无提示词'
+                  const len = text.length
+                  const fontSize = len <= 4 ? '2rem' : len <= 8 ? '1.5rem' : len <= 16 ? '1.125rem' : '0.875rem'
+                  return <p className="text-center font-bold leading-tight line-clamp-4" style={{ color: 'var(--accent)', fontSize }}>
+                    {text}
+                  </p>
+                })()}
               </div>
             )}
 
@@ -100,17 +108,7 @@ export default function CardGrid({
         ))}
       </div>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 mt-4">
-          <button onClick={() => onPageChange?.(page - 1)} disabled={page === 1}
-            className="px-3 py-1 rounded-lg text-xs font-medium disabled:opacity-40"
-            style={{ color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}>上一页</button>
-          <span className="text-xs tabular-nums" style={{ color: 'var(--text-secondary)' }}>{page}/{totalPages}</span>
-          <button onClick={() => onPageChange?.(page + 1)} disabled={page === totalPages}
-            className="px-3 py-1 rounded-lg text-xs font-medium disabled:opacity-40"
-            style={{ color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}>下一页</button>
-        </div>
-      )}
+      <Pagination page={page} totalPages={totalPages} onPageChange={onPageChange} />
     </>
   )
 }
