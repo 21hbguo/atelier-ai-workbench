@@ -27,11 +27,15 @@ class TaskManager:
                     val = d.get("external_result")
                     d["external_result"] = json.loads(val) if isinstance(val, str) else val
                     if str(d.get("status", "")).lower() in {"pending", "queued", "processing", "running", "generating"}:
-                        d["status"] = "failed"
-                        d["error"] = d.get("error") or "服务重启导致任务中断"
-                        d["completed_at"] = d.get("completed_at") or now
-                        d["updated_at"] = now
-                        conn.execute("UPDATE tasks SET status = %s, error = %s, completed_at = %s, updated_at = %s WHERE task_id = %s", (d["status"], d["error"], d["completed_at"], d["updated_at"], d["task_id"]))
+                        if d.get("params", {}).get("external_task_id"):
+                            d["status"] = "processing"
+                            d["_recover"] = True
+                        else:
+                            d["status"] = "failed"
+                            d["error"] = d.get("error") or "服务重启导致任务中断"
+                            d["completed_at"] = d.get("completed_at") or now
+                            d["updated_at"] = now
+                            conn.execute("UPDATE tasks SET status = %s, error = %s, completed_at = %s, updated_at = %s WHERE task_id = %s", (d["status"], d["error"], d["completed_at"], d["updated_at"], d["task_id"]))
                     tasks[d["task_id"]] = d
         except Exception:
             pass
@@ -262,6 +266,40 @@ class TaskManager:
                             "UPDATE tasks SET result_urls = %s WHERE task_id = %s",
                             (json.dumps(new_urls, ensure_ascii=False), row["task_id"]),
                         )
+
+
+    @classmethod
+    async def recover_orphaned_tasks(cls):
+        """启动时恢复服务中断前正在轮询的任务"""
+        from backend.routers.generate import _poll_and_download
+        recovered = 0
+        for task_id, task in list(cls._tasks.items()):
+            if task.pop("_recover", None):
+                external_task_id = task["params"].get("external_task_id")
+                if external_task_id:
+                    meta = {
+                        "prompt": task["params"].get("prompt", ""),
+                        "size": task["params"].get("size"),
+                        "type": task.get("type", "text"),
+                        "task_id": task_id,
+                    }
+                    asyncio.create_task(cls._recover_task(task_id, external_task_id, meta, task.get("user_id")))
+                    recovered += 1
+        if recovered:
+            logger = __import__("logging").getLogger(__name__)
+            logger.info(f"[recover] 恢复了 {recovered} 个中断的任务")
+
+    @classmethod
+    async def _recover_task(cls, task_id, external_task_id, meta, user_id):
+        from backend.routers.generate import _poll_and_download
+        try:
+            urls = await _poll_and_download(external_task_id, task_id, meta, user_id=user_id)
+            if urls:
+                cls.update_task(task_id, status="completed", progress=100, result_urls=urls)
+            else:
+                cls.update_task(task_id, status="failed", error="恢复轮询未获取到结果")
+        except Exception as e:
+            cls.update_task(task_id, status="failed", error=f"恢复轮询失败: {e}")
 
 
 # 启动时从数据库加载

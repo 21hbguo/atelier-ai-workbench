@@ -77,6 +77,7 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
             raise HTTPException(status_code=500, detail="提交任务失败")
 
         external_task_id = result["task_id"]
+        TaskManager.update_task(task_id, params={"prompt": request.prompt, "size": request.size, "external_task_id": external_task_id})
         meta = {"prompt": request.prompt, "size": request.size, "type": "text", "task_id": task_id}
         urls = await _poll_and_download(external_task_id, task_id, meta, user_id=user_id)
 
@@ -147,6 +148,7 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
             raise HTTPException(status_code=500, detail="提交任务失败")
 
         external_task_id = result["task_id"]
+        TaskManager.update_task(task_id, params={"prompt": request.prompt, "size": request.size, "image_urls": request.image_urls, "external_task_id": external_task_id})
         meta = {"prompt": request.prompt, "size": request.size, "type": "text_image", "task_id": task_id, "input_urls": request.image_urls}
         urls = await _poll_and_download(external_task_id, task_id, meta, user_id=user_id)
 

@@ -6,12 +6,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from backend.routers import generate, upload, tasks, images, prompts, stats, config, auth, square, admin, points, announcements
 from backend.services.image_gen import close_http_client
+from backend.services.task_manager import TaskManager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await TaskManager.recover_orphaned_tasks()
     yield
     await close_http_client()
 

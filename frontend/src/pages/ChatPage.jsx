@@ -38,6 +38,7 @@ export default function ChatPage() {
   const feedRef = useRef(null)
   const inputRef = useRef(null)
   const dragCounter = useRef(0)
+  const recoveringRef = useRef(new Set())
   const navigate = useNavigate()
 
   const refreshTasks = useCallback(async () => {
@@ -86,6 +87,18 @@ export default function ChatPage() {
   }, [loaded, isAdmin, selectedUserId, searchQuery])
 
   useEffect(() => { refreshTasks() }, [refreshTasks])
+
+  // 刷新后自动恢复 processing 任务的轮询
+  useEffect(() => {
+    for (const t of tasks) {
+      if (t.status === 'processing' && !t._active && !recoveringRef.current.has(t.task_id)) {
+        recoveringRef.current.add(t.task_id)
+        updateTask(t.task_id, { _active: true })
+        const p = t.params || {}
+        pollTask(t.task_id, Date.now(), false, p.prompt || '', p, t.type === 'text_image')
+      }
+    }
+  }, [tasks, pollTask, updateTask])
 
   useEffect(() => {
     if (!isAdmin) return
