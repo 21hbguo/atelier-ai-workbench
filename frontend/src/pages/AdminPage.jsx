@@ -8,6 +8,7 @@ import SearchInput from '../components/SearchInput'
 import Pagination from '../components/Pagination'
 import CardGrid from '../components/CardGrid'
 import UnifiedDetailModal from '../components/UnifiedDetailModal'
+import UnifiedCard from '../components/UnifiedCard'
 import { useCardData } from '../hooks/useCardData'
 
 function AdminSquareTab({ imageQuery, setImageQuery }) {
@@ -851,27 +852,15 @@ export default function AdminPage() {
             <>
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
               {hostingImages.map(img => (
-                <div key={img.url}
-                  className={`group relative rounded-xl overflow-hidden shadow-sm cursor-pointer ${hostingChecked.has(img.url) ? 'ring-2 ring-accent/50' : ''}`}
-                  onClick={() => hostingSelectMode ? toggleHostingCheck(img.url) : setHostingDetail(img)}>
-                  {hostingSelectMode && (
-                    <div className={`absolute top-2 left-2 z-20 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${hostingChecked.has(img.url) ? 'bg-accent border-accent' : 'bg-white/80 border-gray-300'}`}>
-                      {hostingChecked.has(img.url) && <Check size={12} className="text-white" />}
-                    </div>
-                  )}
-                  {hostingSelectMode && hostingChecked.has(img.url) && <div className="absolute inset-0 bg-accent/10 pointer-events-none z-10" />}
-                  {img.exists ? (
-                    <img src={`/api/images/local-thumb?path=${encodeURIComponent(img.local_path)}&size=400`} alt="" className="w-full aspect-square object-cover" loading="lazy" />
-                  ) : (
-                    <div className="w-full aspect-square flex items-center justify-center" style={{ background: 'var(--border-color)' }}>
-                      <HardDrive size={24} style={{ color: 'var(--text-secondary)', opacity: 0.5 }} />
-                    </div>
-                  )}
-                  <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                    <p className="text-white text-[10px] truncate">{img.filename}</p>
-                  </div>
-                  {!img.exists && <div className="absolute inset-0 bg-red-500/20 pointer-events-none" title="本地文件已不存在" />}
-                </div>
+                <UnifiedCard
+                  key={img.url}
+                  checked={hostingChecked.has(img.url)}
+                  onClick={() => hostingSelectMode ? toggleHostingCheck(img.url) : setHostingDetail(img)}
+                  mediaNode={img.exists ? <img src={`/api/images/local-thumb?path=${encodeURIComponent(img.local_path)}&size=400`} alt="" className="w-full aspect-square object-cover" loading="lazy" /> : <div className="w-full aspect-square flex items-center justify-center" style={{ background: 'var(--border-color)' }}><HardDrive size={24} style={{ color: 'var(--text-secondary)', opacity: 0.5 }} /></div>}
+                  bottomNode={<div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"><p className="text-white text-[10px] truncate">{img.filename}</p></div>}
+                  selectNode={hostingSelectMode ? <><div className={`absolute top-2 left-2 z-20 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${hostingChecked.has(img.url) ? 'bg-accent border-accent' : 'bg-white/80 border-gray-300'}`}>{hostingChecked.has(img.url) && <Check size={12} className="text-white" />}</div>{hostingChecked.has(img.url) && <div className="absolute inset-0 bg-accent/10 pointer-events-none z-10" />}</> : null}
+                  overlayNode={!img.exists ? <div className="absolute inset-0 bg-red-500/20 pointer-events-none" title="本地文件已不存在" /> : null}
+                />
               ))}
             </div>
             <Pagination page={hostingPage} totalPages={Math.ceil(hostingTotal / 50)} onPageChange={setHostingPage} />

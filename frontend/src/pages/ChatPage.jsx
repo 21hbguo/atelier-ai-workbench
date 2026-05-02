@@ -5,7 +5,7 @@ import ChatInput from '../components/ChatInput'
 import GenerationCard from '../components/GenerationCard'
 import SearchInput from '../components/SearchInput'
 import MainLayout from '../components/MainLayout'
-import ImageDetailModal from '../components/ImageDetailModal'
+import UnifiedDetailModal from '../components/UnifiedDetailModal'
 import { generateAPI, uploadAPI, taskAPI, imageAPI, squareAPI, adminAPI, pointsAPI } from '../api'
 
 function formatLocalTime(d) {
@@ -263,22 +263,19 @@ export default function ChatPage() {
 
   const completedTasks = filtered.filter(t => t.status === 'completed' && t.result_urls?.length)
 
-  const allImages = completedTasks.flatMap(task => {
+  const detailCards = completedTasks.flatMap(task => {
     const prompt = task.params?.prompt || task.prompt || ''
-    return task.result_urls.map(url => ({
-      url: `/api/images/file/${url.split('/').pop()}`,
-      filename: url.split('/').pop(),
-      metadata: {
+    return task.result_urls.map((url, idx) => {
+      const filename = url.split('/').pop()
+      return {
+        _type: 'image',
+        _raw: { filename, metadata: { prompt, task_id: task.task_id, created_at: task.created_at, started_at: task.started_at, completed_at: task.completed_at, type: task.params?.image_urls?.length ? 'image' : 'text', size: task.params?.size, input_urls: task.params?.image_urls } },
+        id: `${task.task_id}-${idx}`,
         prompt,
-        task_id: task.task_id,
-        created_at: task.created_at,
-        started_at: task.started_at,
-        completed_at: task.completed_at,
-        type: task.params?.image_urls?.length ? 'image' : 'text',
-        size: task.params?.size,
-        input_urls: task.params?.image_urls,
-      },
-    }))
+        fullUrl: `/api/images/file/${filename}`,
+        filename,
+      }
+    })
   })
 
   const handleCardViewDetail = useCallback((taskIndex) => {
@@ -444,16 +441,17 @@ export default function ChatPage() {
         每次请求消耗10积分，失败将退还
       </div>
 
-      {selectedCardIndex !== null && allImages.length > 0 && (
-        <ImageDetailModal
-          image={allImages[selectedCardIndex]}
-          images={allImages}
+      {selectedCardIndex !== null && detailCards.length > 0 && detailCards[selectedCardIndex] && (
+        <UnifiedDetailModal
+          card={detailCards[selectedCardIndex]}
+          cards={detailCards}
           currentIndex={selectedCardIndex}
           onNavigate={handleModalNavigate}
           onClose={() => setSelectedCardIndex(null)}
-          onAddImage={url => inputRef.current?.addImage(url)}
-          onAddPrompt={handleAddPrompt}
+          onUseImage={card => inputRef.current?.addImage(card.fullUrl)}
+          onUsePrompt={handleAddPrompt}
           title="生成详情"
+          allowMetadataEdit
         />
       )}
     </MainLayout>
