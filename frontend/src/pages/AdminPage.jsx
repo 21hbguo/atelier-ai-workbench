@@ -688,6 +688,7 @@ export default function AdminPage() {
             ) : (
             <>
             <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+              <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary)' }}>
@@ -712,6 +713,7 @@ export default function AdminPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
             {announcements.length === 0 && (
               <div className="text-center py-20" style={{ color: 'var(--text-secondary)' }}>暂无公告</div>
@@ -1027,6 +1029,7 @@ export default function AdminPage() {
               </div>
             ) : (
               <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr style={{ background: 'var(--bg-secondary)' }}>
@@ -1058,6 +1061,7 @@ export default function AdminPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
           </div>
@@ -1074,6 +1078,7 @@ export default function AdminPage() {
             ) : (
             <>
             <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+              <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary)' }}>
@@ -1111,6 +1116,7 @@ export default function AdminPage() {
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
             {history.length === 0 && (
               <div className="text-center py-20" style={{ color: 'var(--text-secondary)' }}>暂无记录</div>
