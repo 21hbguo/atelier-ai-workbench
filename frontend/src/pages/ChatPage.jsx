@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Download, Trash2, Check, RefreshCw, Coins } from 'lucide-react'
+import { Download, Trash2, RefreshCw, Coins } from 'lucide-react'
 import ChatInput from '../components/ChatInput'
 import GenerationCard from '../components/GenerationCard'
 import SearchInput from '../components/SearchInput'
 import MainLayout from '../components/MainLayout'
+import ImageDetailModal from '../components/ImageDetailModal'
 import { generateAPI, uploadAPI, taskAPI, imageAPI, squareAPI, adminAPI, pointsAPI } from '../api'
 
 function formatLocalTime(d) {
@@ -26,6 +27,7 @@ export default function ChatPage() {
   const [userList, setUserList] = useState([])
   const [selectedUserId, setSelectedUserId] = useState(null)
   const [points, setPoints] = useState(user?.points ?? 0)
+  const [selectedCardIndex, setSelectedCardIndex] = useState(null)
   const feedRef = useRef(null)
   const inputRef = useRef(null)
   const dragCounter = useRef(0)
@@ -239,6 +241,41 @@ export default function ChatPage() {
     : filter === 'processing' ? tasks.filter(t => t.status === 'processing' || t.status === 'queued')
     : tasks.filter(t => t.status === filter)
 
+  const completedTasks = filtered.filter(t => t.status === 'completed' && t.result_urls?.length)
+
+  const allImages = completedTasks.flatMap(task => {
+    const prompt = task.params?.prompt || task.prompt || ''
+    return task.result_urls.map(url => ({
+      url: `/api/images/file/${url.split('/').pop()}`,
+      filename: url.split('/').pop(),
+      metadata: {
+        prompt,
+        task_id: task.task_id,
+        created_at: task.created_at,
+        started_at: task.started_at,
+        completed_at: task.completed_at,
+        type: task.params?.image_urls?.length ? 'image' : 'text',
+        size: task.params?.size,
+        input_urls: task.params?.image_urls,
+      },
+    }))
+  })
+
+  const handleCardViewDetail = useCallback((taskIndex) => {
+    const completedIndex = completedTasks.findIndex(t => t.task_id === taskIndex)
+    if (completedIndex >= 0) {
+      let imageIndex = 0
+      for (let i = 0; i < completedIndex; i++) {
+        imageIndex += completedTasks[i].result_urls.length
+      }
+      setSelectedCardIndex(imageIndex)
+    }
+  }, [completedTasks])
+
+  const handleModalNavigate = useCallback((newIndex) => {
+    setSelectedCardIndex(newIndex)
+  }, [])
+
   const toggleCheck = useCallback((taskId) => {
     setChecked(prev => { const next = new Set(prev); next.has(taskId) ? next.delete(taskId) : next.add(taskId); return next })
   }, [])
@@ -369,7 +406,7 @@ export default function ChatPage() {
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 pt-4">
-            {filtered.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onAddPrompt={handleAddPrompt} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id)} onToggleCheck={() => toggleCheck(task.task_id)} showUsername={isAdmin} username={task.username} />)}
+            {filtered.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onAddPrompt={handleAddPrompt} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id)} onToggleCheck={() => toggleCheck(task.task_id)} showUsername={isAdmin} username={task.username} onViewDetail={() => handleCardViewDetail(task.task_id)} />)}
           </div>
         )}
       </div>
@@ -386,6 +423,19 @@ export default function ChatPage() {
         </div>
       )}
       <ChatInput ref={inputRef} onSubmit={handleSubmit} loading={loading} />
+
+      {selectedCardIndex !== null && allImages.length > 0 && (
+        <ImageDetailModal
+          image={allImages[selectedCardIndex]}
+          images={allImages}
+          currentIndex={selectedCardIndex}
+          onNavigate={handleModalNavigate}
+          onClose={() => setSelectedCardIndex(null)}
+          onAddImage={url => inputRef.current?.addImage(url)}
+          onAddPrompt={handleAddPrompt}
+          title="生成详情"
+        />
+      )}
     </MainLayout>
   )
 }
