@@ -26,11 +26,14 @@ DATA_FILE = EVO_ROOT / "data" / "ingested_tweets.json"
 CATEGORY_MAP = {
     "Portrait & Photography Cases": "portrait",
     "Poster & Illustration Cases": "poster",
-    "UI & Social Media Cases": "ui",
-    "Comparison Cases": "comparison",
+    "UI & Social Media Mockup Cases": "ui",
+    "Comparison & Community Examples": "comparison",
     "Ad Creative Cases": "ad-creative",
     "E-commerce Cases": "ecommerce",
     "Character Design Cases": "character",
+    "portrait": "portrait",
+    "poster": "poster",
+    "ui": "ui",
 }
 
 FILE_CATEGORY_MAP = {
