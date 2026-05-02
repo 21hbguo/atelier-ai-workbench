@@ -23,6 +23,8 @@ function withTimeout(promise, ms, message) {
 export default function ChatPage() {
   const user = readUser()
   const isAdmin = Boolean(user?.is_admin)
+  const activeStatuses = ['pending', 'queued', 'processing', 'running', 'generating']
+  const activeCacheKey = user?.id ? `active_tasks_${user.id}` : 'active_tasks_guest'
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
@@ -41,6 +43,23 @@ export default function ChatPage() {
   const dragCounter = useRef(0)
   const recoveringRef = useRef(new Set())
   const navigate = useNavigate()
+  const loadCachedActiveTasks = useCallback(() => {
+    try {
+      const raw = localStorage.getItem(activeCacheKey)
+      if (!raw) return []
+      const arr = JSON.parse(raw)
+      if (!Array.isArray(arr)) return []
+      return arr.filter(t => t?.task_id && activeStatuses.includes(t.status))
+    } catch {
+      return []
+    }
+  }, [activeCacheKey])
+  const saveCachedActiveTasks = useCallback((taskList) => {
+    try {
+      const arr = (Array.isArray(taskList) ? taskList : []).filter(t => t?.task_id && activeStatuses.includes(t.status)).map(t => ({ task_id: t.task_id, status: t.status, progress: t.progress ?? 0, error: t.error || null, type: t.type || 'text', params: t.params || {}, prompt: t.prompt || '', created_at: t.created_at || '', started_at: t.started_at || '', completed_at: t.completed_at || null, result_urls: t.result_urls || [], _active: true }))
+      localStorage.setItem(activeCacheKey, JSON.stringify(arr.slice(0, 100)))
+    } catch {}
+  }, [activeCacheKey])
 
   const refreshTasks = useCallback(async () => {
     const uid = isAdmin ? selectedUserId : undefined
@@ -52,9 +71,18 @@ export default function ChatPage() {
       allTasks = taskRes.data || []
     } catch (e) {
       setLoadError(e.message || '任务列表加载失败')
-      if (!loaded) setTasks([])
+      const cached = loadCachedActiveTasks()
+      if (cached.length > 0) setTasks(prev => [...cached, ...prev.filter(t => !cached.some(c => c.task_id === t.task_id))])
+      else if (!loaded) setTasks([])
       if (!loaded) setLoaded(true)
       return
+    }
+    const cachedActive = loadCachedActiveTasks()
+    if (cachedActive.length > 0) {
+      const ids = new Set(allTasks.map(t => t.task_id))
+      for (const t of cachedActive) {
+        if (!ids.has(t.task_id)) allTasks.push(t)
+      }
     }
     try {
       const imgRes = await withTimeout(imageAPI.list(1, 100, uid), 12000, '图片列表加载超时，已仅显示任务列表')
@@ -84,10 +112,16 @@ export default function ChatPage() {
     }
     const merged = [...orphans, ...allTasks].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
     setTasks(merged)
+    saveCachedActiveTasks(merged)
     if (!loaded) setLoaded(true)
-  }, [loaded, isAdmin, selectedUserId, searchQuery])
+  }, [loaded, isAdmin, selectedUserId, searchQuery, loadCachedActiveTasks, saveCachedActiveTasks])
 
   useEffect(() => { refreshTasks() }, [refreshTasks])
+  useEffect(() => {
+    if (loaded) return
+    const cached = loadCachedActiveTasks()
+    if (cached.length > 0) setTasks(prev => prev.length ? prev : cached)
+  }, [loaded, loadCachedActiveTasks])
 
   useEffect(() => {
     if (!isAdmin) return
@@ -126,8 +160,12 @@ export default function ChatPage() {
   }, [])
 
   const updateTask = useCallback((taskId, updates) => {
-    setTasks(prev => prev.map(t => t.task_id === taskId ? { ...t, ...updates } : t))
-  }, [])
+    setTasks(prev => {
+      const next = prev.map(t => t.task_id === taskId ? { ...t, ...updates } : t)
+      saveCachedActiveTasks(next)
+      return next
+    })
+  }, [saveCachedActiveTasks])
 
   const shareImageToSquare = useCallback(async (filename, prompt, params, hasImages) => {
     try {
@@ -138,15 +176,28 @@ export default function ChatPage() {
       })
     } catch {}
   }, [])
+  const refreshPointsOnFailed = useCallback(() => {
+    if (isAdmin) return
+    pointsAPI.balance().then(res => {
+      setPoints(res.data.points)
+      const u = readUser()
+      if (u) { u.points = res.data.points; localStorage.setItem('user', JSON.stringify(u)) }
+      window.dispatchEvent(new Event('points-updated'))
+    }).catch(() => {})
+  }, [isAdmin])
 
   const pollTask = useCallback(async (taskId, startTime, shareToSquare, prompt, params, hasImages) => {
     const maxAttempts = 40
     const getDelay = (attempt) => Math.min(2000 + attempt * 500, 10000)
+    let missingCount = 0
+    let errorCount = 0
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       await new Promise(r => setTimeout(r, getDelay(attempt)))
       try {
         const { data: st } = await taskAPI.get(taskId)
+        missingCount = 0
+        errorCount = 0
         if (st.status === 'completed') {
           updateTask(taskId, { ...st, _active: false })
           if (shareToSquare && st.result_urls?.length) {
@@ -156,21 +207,31 @@ export default function ChatPage() {
         }
         if (st.status === 'failed') {
           updateTask(taskId, { ...st, _active: false })
-          if (!isAdmin) {
-            pointsAPI.balance().then(res => {
-              setPoints(res.data.points)
-              const u = readUser()
-              if (u) { u.points = res.data.points; localStorage.setItem('user', JSON.stringify(u)) }
-              window.dispatchEvent(new Event('points-updated'))
-            }).catch(() => {})
-          }
+          refreshPointsOnFailed()
           return
         }
-        updateTask(taskId, st)
-      } catch { continue }
+        updateTask(taskId, { ...st, _active: true })
+      } catch (e) {
+        const msg = (e?.message || '').toLowerCase()
+        if (msg.includes('404') || msg.includes('任务不存在') || msg.includes('not found')) {
+          missingCount += 1
+          if (missingCount >= 3) {
+            updateTask(taskId, { status: 'failed', error: '后端未找到任务，提交可能失败', _active: false })
+            refreshPointsOnFailed()
+            return
+          }
+        } else {
+          errorCount += 1
+          if (errorCount >= 5) {
+            updateTask(taskId, { status: 'failed', error: '任务状态查询失败，请重试', _active: false })
+            return
+          }
+        }
+      }
     }
     updateTask(taskId, { status: 'failed', error: '生成超时', _active: false })
-  }, [updateTask, shareImageToSquare])
+    refreshPointsOnFailed()
+  }, [updateTask, shareImageToSquare, refreshPointsOnFailed])
 
   const handleSubmit = useCallback(async ({ prompt, images, params, shareToSquare }) => {
     setLoading(true)
@@ -186,7 +247,11 @@ export default function ChatPage() {
       started_at: formatLocalTime(new Date()),
       _active: true,
     }
-    setTasks(prev => [...prev, tempTask])
+    setTasks(prev => {
+      const next = [...prev, tempTask]
+      saveCachedActiveTasks(next)
+      return next
+    })
     scroll()
 
     let imageUrls = []
@@ -219,7 +284,11 @@ export default function ChatPage() {
       }
 
       const realId = data.task_id
-      setTasks(prev => prev.map(t => t.task_id === tempId ? { ...t, task_id: realId } : t))
+      setTasks(prev => {
+        const next = prev.map(t => t.task_id === tempId ? { ...t, task_id: realId } : t)
+        saveCachedActiveTasks(next)
+        return next
+      })
       setLoading(false)
 
       if (data.status === 'completed') {
@@ -239,14 +308,41 @@ export default function ChatPage() {
       }
       const isTimeout = e.message?.includes('timeout') || e.message?.includes('超时')
       if (isTimeout) {
-        setTasks(prev => prev.map(t => t.task_id === tempId ? { ...t, task_id: taskId } : t))
+        setTasks(prev => {
+          const next = prev.map(t => t.task_id === tempId ? { ...t, task_id: taskId } : t)
+          saveCachedActiveTasks(next)
+          return next
+        })
+        try {
+          const { data: st } = await taskAPI.get(taskId)
+          if (st.status === 'completed') {
+            updateTask(taskId, { ...st, _active: false })
+            if (shareToSquare && st.result_urls?.length) shareImageToSquare(st.result_urls[0].split('/').pop(), prompt, params, imageUrls.length > 0)
+            setLoading(false)
+            return
+          }
+          if (st.status === 'failed') {
+            updateTask(taskId, { ...st, _active: false })
+            refreshPointsOnFailed()
+            setLoading(false)
+            return
+          }
+          updateTask(taskId, { ...st, _active: true })
+        } catch (se) {
+          const sm = (se?.message || '').toLowerCase()
+          if (sm.includes('404') || sm.includes('任务不存在') || sm.includes('not found')) {
+            updateTask(taskId, { status: 'failed', error: '提交失败：后端未创建任务', _active: false })
+            setLoading(false)
+            return
+          }
+        }
         pollTask(taskId, Date.now(), shareToSquare, prompt, params, imageUrls.length > 0)
       } else {
         updateTask(tempId, { status: 'failed', error: '提交失败: ' + e.message, _active: false })
       }
       setLoading(false)
     }
-  }, [scroll, updateTask, pollTask, shareImageToSquare])
+  }, [scroll, updateTask, pollTask, shareImageToSquare, refreshPointsOnFailed, saveCachedActiveTasks])
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true)
@@ -264,7 +360,7 @@ export default function ChatPage() {
   // 刷新后自动恢复 processing 任务的轮询
   useEffect(() => {
     for (const t of tasks) {
-      if (t.status === 'processing' && !t._active && !recoveringRef.current.has(t.task_id)) {
+      if (['pending', 'queued', 'processing', 'running', 'generating'].includes(t.status) && !t._active && !recoveringRef.current.has(t.task_id)) {
         recoveringRef.current.add(t.task_id)
         updateTask(t.task_id, { _active: true })
         const p = t.params || {}

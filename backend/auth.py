@@ -86,10 +86,12 @@ def _hash_refresh_token(token: str) -> str:
 def create_refresh_token(user_id: int, ip: str = "", user_agent: str = "") -> str:
     token = secrets.token_urlsafe(48)
     expires_at = (datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
+    safe_ip = (ip or "")[:45]
+    safe_ua = (user_agent or "")[:255]
     with get_db() as conn:
         conn.execute(
             "INSERT INTO auth_refresh_tokens (user_id, token_hash, expires_at, last_ip, user_agent) VALUES (%s, %s, %s, %s, %s)",
-            (user_id, _hash_refresh_token(token), expires_at, ip[:45], (user_agent or "")[:255]),
+            (user_id, _hash_refresh_token(token), expires_at, safe_ip, safe_ua),
         )
     return token
 
@@ -169,7 +171,7 @@ def record_request(user_id: int, status: str):
 
 
 def get_client_ip(request: Request) -> str:
-    remote_ip = request.client.host if request.client else ""
+    remote_ip = request.client.host if request.client and request.client.host else ""
     if TRUST_PROXY_HEADERS and remote_ip and (not TRUSTED_PROXY_IPS or remote_ip in TRUSTED_PROXY_IPS):
         forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
         if forwarded:

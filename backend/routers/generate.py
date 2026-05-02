@@ -34,9 +34,42 @@ def _check_generate_rate(user_id: int):
             raise HTTPException(status_code=429, detail="生成请求过于频繁，请稍后再试")
 
 
+async def _run_generation(task_id: str, task_type: str, submit_payload: dict, meta: dict, user_id: int, is_admin: bool):
+    try:
+        if task_type == "text_image":
+            result = await ImageGenService.submit_task(prompt=submit_payload["prompt"], size=submit_payload["size"], urls=submit_payload.get("image_urls") or [])
+        else:
+            result = await ImageGenService.submit_task(prompt=submit_payload["prompt"], size=submit_payload["size"])
+        external_task_id = result["task_id"]
+        logger.info(f"[submit.accepted] type={task_type} task={task_id} user={user_id} external={external_task_id}")
+        task_params = dict(submit_payload)
+        task_params["external_task_id"] = external_task_id
+        TaskManager.update_task(task_id, params=task_params)
+        urls = await _poll_and_download(external_task_id, task_id, meta, user_id=user_id)
+        if urls:
+            TaskManager.update_task(task_id, status="completed", progress=100, result_urls=urls)
+            StatsService.record_success()
+            record_request(user_id, "success")
+            logger.info(f"[submit.done] type={task_type} task={task_id} user={user_id} count={len(urls)}")
+            return
+        raise Exception("未获取到图片结果")
+    except Exception as e:
+        logger.warning(f"[submit.fail] type={task_type} task={task_id} user={user_id} error={e}")
+        TaskManager.update_task(task_id, status="failed", error=str(e))
+        StatsService.record_failed()
+        record_request(user_id, "failed")
+        if not is_admin:
+            try:
+                PointsService.refund(user_id, PointsService.COST_PER_GENERATION, "生成失败退还")
+            except Exception:
+                logger.exception(f"[submit.refund.fail] type={task_type} task={task_id} user={user_id}")
+
+
 @router.post("/text", response_model=GenerateResponse)
 async def generate_text(request: GenerateTextRequest, req: Request, user=Depends(get_current_user)):
     user_id = user["user_id"]
+    task_id = request.task_id or str(uuid.uuid4())
+    logger.info(f"[submit.start] type=text task={task_id} user={user_id} prompt_len={len(request.prompt or '')}")
     _check_generate_rate(user_id)
 
     is_admin = user.get("is_admin")
@@ -51,10 +84,9 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
 
     try:
         StatsService.record_request()
-        task_id = request.task_id or str(uuid.uuid4())
-
         banned_word = BannedWordsService.check(request.prompt)
         if banned_word:
+            logger.info(f"[submit.reject] type=text task={task_id} user={user_id} reason=banned_word word={banned_word}")
             TaskManager.update_task(task_id, status="failed", error="提示词包含违禁词")
             StatsService.record_failed()
             record_request(user_id, "failed")
@@ -64,39 +96,15 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
 
         TaskManager.create_task(task_id, "text", {"prompt": request.prompt, "size": request.size}, user_id=user_id)
         TaskManager.update_task(task_id, status="processing", progress=10)
-
-        try:
-            result = await ImageGenService.submit_task(prompt=request.prompt, size=request.size)
-        except Exception as e:
-            TaskManager.update_task(task_id, status="failed", error=str(e))
-            StatsService.record_failed()
-            record_request(user_id, "failed")
-            if not is_admin:
-                PointsService.refund(user_id, PointsService.COST_PER_GENERATION, "提交失败退还")
-            logger.exception("提交任务失败")
-            raise HTTPException(status_code=500, detail="提交任务失败")
-
-        external_task_id = result["task_id"]
-        TaskManager.update_task(task_id, params={"prompt": request.prompt, "size": request.size, "external_task_id": external_task_id})
+        logger.info(f"[submit.task_created] type=text task={task_id} user={user_id}")
         meta = {"prompt": request.prompt, "size": request.size, "type": "text", "task_id": task_id}
-        urls = await _poll_and_download(external_task_id, task_id, meta, user_id=user_id)
-
-        if urls:
-            TaskManager.update_task(task_id, status="completed", progress=100, result_urls=urls)
-            StatsService.record_success()
-            record_request(user_id, "success")
-            return GenerateResponse(task_id=task_id, status="completed", message="生成完成")
-        else:
-            TaskManager.update_task(task_id, status="failed", error="未获取到图片结果")
-            StatsService.record_failed()
-            record_request(user_id, "failed")
-            if not is_admin:
-                PointsService.refund(user_id, PointsService.COST_PER_GENERATION, "无结果退还")
-            raise HTTPException(status_code=500, detail="生成失败: 未获取到图片结果")
+        asyncio.create_task(_run_generation(task_id, "text", {"prompt": request.prompt, "size": request.size}, meta, user_id, bool(is_admin)))
+        return GenerateResponse(task_id=task_id, status="processing", message="任务已提交")
 
     except HTTPException:
         raise
     except Exception as e:
+        logger.exception(f"[submit.exception] type=text task={task_id} user={user_id}")
         TaskManager.update_task(task_id, status="failed", error=str(e))
         record_request(user_id, "failed")
         if not is_admin:
@@ -108,6 +116,8 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
 @router.post("/text-image", response_model=GenerateResponse)
 async def generate_text_image(request: GenerateTextImageRequest, req: Request, user=Depends(get_current_user)):
     user_id = user["user_id"]
+    task_id = request.task_id or str(uuid.uuid4())
+    logger.info(f"[submit.start] type=text_image task={task_id} user={user_id} prompt_len={len(request.prompt or '')} images={len(request.image_urls or [])}")
     _check_generate_rate(user_id)
 
     is_admin = user.get("is_admin")
@@ -122,10 +132,9 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
 
     try:
         StatsService.record_request()
-        task_id = request.task_id or str(uuid.uuid4())
-
         banned_word = BannedWordsService.check(request.prompt)
         if banned_word:
+            logger.info(f"[submit.reject] type=text_image task={task_id} user={user_id} reason=banned_word word={banned_word}")
             TaskManager.update_task(task_id, status="failed", error="提示词包含违禁词")
             StatsService.record_failed()
             record_request(user_id, "failed")
@@ -135,39 +144,15 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
 
         TaskManager.create_task(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "image_urls": request.image_urls}, user_id=user_id)
         TaskManager.update_task(task_id, status="processing", progress=10)
-
-        try:
-            result = await ImageGenService.submit_task(prompt=request.prompt, size=request.size, urls=request.image_urls)
-        except Exception as e:
-            TaskManager.update_task(task_id, status="failed", error=str(e))
-            StatsService.record_failed()
-            record_request(user_id, "failed")
-            if not is_admin:
-                PointsService.refund(user_id, PointsService.COST_PER_GENERATION, "提交失败退还")
-            logger.exception("提交任务失败")
-            raise HTTPException(status_code=500, detail="提交任务失败")
-
-        external_task_id = result["task_id"]
-        TaskManager.update_task(task_id, params={"prompt": request.prompt, "size": request.size, "image_urls": request.image_urls, "external_task_id": external_task_id})
+        logger.info(f"[submit.task_created] type=text_image task={task_id} user={user_id}")
         meta = {"prompt": request.prompt, "size": request.size, "type": "text_image", "task_id": task_id, "input_urls": request.image_urls}
-        urls = await _poll_and_download(external_task_id, task_id, meta, user_id=user_id)
-
-        if urls:
-            TaskManager.update_task(task_id, status="completed", progress=100, result_urls=urls)
-            StatsService.record_success()
-            record_request(user_id, "success")
-            return GenerateResponse(task_id=task_id, status="completed", message="生成完成")
-        else:
-            TaskManager.update_task(task_id, status="failed", error="未获取到图片结果")
-            StatsService.record_failed()
-            record_request(user_id, "failed")
-            if not is_admin:
-                PointsService.refund(user_id, PointsService.COST_PER_GENERATION, "无结果退还")
-            raise HTTPException(status_code=500, detail="生成失败: 未获取到图片结果")
+        asyncio.create_task(_run_generation(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "image_urls": request.image_urls}, meta, user_id, bool(is_admin)))
+        return GenerateResponse(task_id=task_id, status="processing", message="任务已提交")
 
     except HTTPException:
         raise
     except Exception as e:
+        logger.exception(f"[submit.exception] type=text_image task={task_id} user={user_id}")
         TaskManager.update_task(task_id, status="failed", error=str(e))
         record_request(user_id, "failed")
         if not is_admin:

@@ -62,15 +62,11 @@ class PointsService:
             return new_balance
 
     @classmethod
-    def add_points(cls, user_id: int, amount: int, tx_type: str, description: str = "") -> int:
-        with get_db() as conn:
-            conn.execute("UPDATE users SET points = points + %s WHERE id = %s", (amount, user_id))
-            new_balance = conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()["points"]
-            conn.execute(
-                "INSERT INTO point_transactions (user_id, amount, balance_after, type, description) VALUES (%s, %s, %s, %s, %s)",
-                (user_id, amount, new_balance, tx_type, description),
-            )
-            return new_balance
+    def add_points(cls, user_id: int, amount: int, tx_type: str, description: str = "", conn=None) -> int:
+        if conn is not None:
+            return cls._add_points_in_conn(conn, user_id, amount, tx_type, description)
+        with get_db() as c:
+            return cls._add_points_in_conn(c, user_id, amount, tx_type, description)
 
     @classmethod
     def check_in(cls, user_id: int) -> dict:
@@ -143,3 +139,15 @@ class PointsService:
                 )
                 count += 1
             return {"migrated": count}
+    @classmethod
+    def _add_points_in_conn(cls, conn, user_id: int, amount: int, tx_type: str, description: str = "") -> int:
+        conn.execute("UPDATE users SET points = points + %s WHERE id = %s", (amount, user_id))
+        row = conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()
+        if not row:
+            raise ValueError("用户不存在")
+        new_balance = row["points"]
+        conn.execute(
+            "INSERT INTO point_transactions (user_id, amount, balance_after, type, description) VALUES (%s, %s, %s, %s, %s)",
+            (user_id, amount, new_balance, tx_type, description),
+        )
+        return new_balance

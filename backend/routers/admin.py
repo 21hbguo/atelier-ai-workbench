@@ -11,6 +11,7 @@ from backend.services.image_mapping import ImageUrlMapping
 from backend.services.points_service import PointsService
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+ACTIVE_TASK_TIMEOUT_MINUTES = 20
 
 def _normalize_banned_word(word: str) -> str:
     return " ".join((word or "").replace("\u3000", " ").strip().split())
@@ -19,6 +20,15 @@ def _normalize_banned_word(word: str) -> str:
 @router.get("/users")
 async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), query: str = Query(None), admin=Depends(require_admin)):
     with get_db() as conn:
+        conn.execute(
+            """
+            UPDATE tasks
+            SET status='failed', error=COALESCE(NULLIF(error,''),'任务超时未完成'), completed_at=COALESCE(completed_at,NOW()), updated_at=NOW()
+            WHERE LOWER(status) IN ('pending','queued','processing','running','generating')
+              AND COALESCE(updated_at,created_at,NOW()) < NOW() - (%s || ' minutes')::interval
+            """,
+            (str(ACTIVE_TASK_TIMEOUT_MINUTES),),
+        )
         offset = (page - 1) * size
         if query:
             q = f"%{query}%"
@@ -32,13 +42,13 @@ async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
                 FROM users u
                 LEFT JOIN user_requests ur ON u.id = ur.user_id
                 LEFT JOIN (SELECT user_id, COUNT(*) as cnt FROM image_metadata GROUP BY user_id) img ON u.id = img.user_id
-                LEFT JOIN (SELECT user_id, COUNT(*) as cnt FROM tasks WHERE LOWER(status) IN ('pending', 'queued', 'processing', 'running', 'generating') GROUP BY user_id) proc ON u.id = proc.user_id
+                LEFT JOIN (SELECT user_id, COUNT(*) as cnt FROM tasks WHERE LOWER(status) IN ('pending', 'queued', 'processing', 'running', 'generating') AND completed_at IS NULL AND COALESCE(updated_at,created_at,NOW()) >= NOW() - (%s || ' minutes')::interval GROUP BY user_id) proc ON u.id = proc.user_id
                 WHERE u.username LIKE %s OR u.nickname LIKE %s
                 GROUP BY u.id, img.cnt, proc.cnt
                 ORDER BY u.last_active DESC
                 LIMIT %s OFFSET %s
                 """,
-                (q, q, size, offset),
+                (str(ACTIVE_TASK_TIMEOUT_MINUTES), q, q, size, offset),
             ).fetchall()
         else:
             total = conn.execute("SELECT COUNT(*) as cnt FROM users").fetchone()["cnt"]
@@ -51,12 +61,12 @@ async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
                 FROM users u
                 LEFT JOIN user_requests ur ON u.id = ur.user_id
                 LEFT JOIN (SELECT user_id, COUNT(*) as cnt FROM image_metadata GROUP BY user_id) img ON u.id = img.user_id
-                LEFT JOIN (SELECT user_id, COUNT(*) as cnt FROM tasks WHERE LOWER(status) IN ('pending', 'queued', 'processing', 'running', 'generating') GROUP BY user_id) proc ON u.id = proc.user_id
+                LEFT JOIN (SELECT user_id, COUNT(*) as cnt FROM tasks WHERE LOWER(status) IN ('pending', 'queued', 'processing', 'running', 'generating') AND completed_at IS NULL AND COALESCE(updated_at,created_at,NOW()) >= NOW() - (%s || ' minutes')::interval GROUP BY user_id) proc ON u.id = proc.user_id
                 GROUP BY u.id, img.cnt, proc.cnt
                 ORDER BY u.last_active DESC
                 LIMIT %s OFFSET %s
                 """,
-                (size, offset),
+                (str(ACTIVE_TASK_TIMEOUT_MINUTES), size, offset),
             ).fetchall()
 
         users = []

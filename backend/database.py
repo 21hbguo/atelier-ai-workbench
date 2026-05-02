@@ -18,7 +18,9 @@ def _exec(conn, sql):
 
 def init_db():
     with get_db() as conn:
-        statements = [
+        conn.execute("SELECT pg_advisory_lock(%s,%s)", (58231, 19001))
+        try:
+            statements = [
             """CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 username VARCHAR(64) UNIQUE NOT NULL,
@@ -252,42 +254,49 @@ def init_db():
             "CREATE INDEX IF NOT EXISTS idx_auth_refresh_tokens_user_id ON auth_refresh_tokens(user_id)",
             "CREATE INDEX IF NOT EXISTS idx_auth_refresh_tokens_expires_at ON auth_refresh_tokens(expires_at)",
         ]
-        for sql in statements:
-            conn.execute(sql)
+            for sql in statements:
+                conn.execute(sql)
 
         # 唯一索引需要条件判断（source 可能为 NULL）
-        conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_prompts_source ON prompts(source) WHERE source IS NOT NULL"
-        )
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_prompts_source ON prompts(source) WHERE source IS NOT NULL"
+            )
 
         # 迁移：给 square_images 添加 is_frozen 字段
-        if not _column_exists(conn, "square_images", "is_frozen"):
-            conn.execute("ALTER TABLE square_images ADD COLUMN is_frozen BOOLEAN DEFAULT FALSE")
+            if not _column_exists(conn, "square_images", "is_frozen"):
+                conn.execute("ALTER TABLE square_images ADD COLUMN is_frozen BOOLEAN DEFAULT FALSE")
 
         # 初始化默认分类
-        count = conn.execute("SELECT COUNT(*) AS cnt FROM categories").fetchone()["cnt"]
-        if count == 0:
-            default_categories = [
-                ("poster", "海报与插画", 1),
-                ("portrait", "人像摄影", 2),
-                ("ui", "UI设计", 3),
-                ("comparison", "模型对比", 4),
-                ("ad-creative", "广告创意", 5),
-                ("ecommerce", "电商案例", 6),
-                ("character", "角色设计", 7),
-            ]
-            with conn.cursor() as cur:
-                cur.executemany(
-                    "INSERT INTO categories (slug, label, sort_order) VALUES (%s, %s, %s)",
-                    default_categories,
-                )
+            count = conn.execute("SELECT COUNT(*) AS cnt FROM categories").fetchone()["cnt"]
+            if count == 0:
+                default_categories = [
+                    ("poster", "海报与插画", 1),
+                    ("portrait", "人像摄影", 2),
+                    ("ui", "UI设计", 3),
+                    ("comparison", "模型对比", 4),
+                    ("ad-creative", "广告创意", 5),
+                    ("ecommerce", "电商案例", 6),
+                    ("character", "角色设计", 7),
+                ]
+                with conn.cursor() as cur:
+                    cur.executemany(
+                        "INSERT INTO categories (slug, label, sort_order) VALUES (%s, %s, %s)",
+                        default_categories,
+                    )
 
         # 清理历史脏数据
-        conn.execute("""
-            DELETE FROM user_requests WHERE status = 'processing' AND user_id IN (
-                SELECT DISTINCT user_id FROM user_requests WHERE status IN ('success', 'failed')
-            )
-        """)
+            conn.execute("SAVEPOINT init_cleanup_sp")
+            try:
+                conn.execute("""
+                    DELETE FROM user_requests WHERE status = 'processing' AND user_id IN (
+                        SELECT DISTINCT user_id FROM user_requests WHERE status IN ('success', 'failed')
+                    )
+                """)
+            except Exception:
+                conn.execute("ROLLBACK TO SAVEPOINT init_cleanup_sp")
+            conn.execute("RELEASE SAVEPOINT init_cleanup_sp")
+        finally:
+            conn.execute("SELECT pg_advisory_unlock(%s,%s)", (58231, 19001))
 
 
 def create_admin_if_not_exists():

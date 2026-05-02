@@ -68,7 +68,7 @@ async def register(req: RegisterRequest, request: Request, response: Response):
         cursor = conn.execute("INSERT INTO users (username, password_hash, nickname) VALUES (%s, %s, %s) RETURNING id", (req.username, password_hash, req.nickname or req.username))
         user_id = cursor.fetchone()["id"]
         update_user_ip(user_id, ip, conn=conn)
-        PointsService.add_points(user_id, PointsService.REGISTER_BONUS, "register_bonus", "注册赠送")
+        PointsService.add_points(user_id, PointsService.REGISTER_BONUS, "register_bonus", "注册赠送", conn=conn)
     access_token = _issue_session(response, user_id, req.username, False, ip, request.headers.get("user-agent", ""))
     return {"token": access_token, "user": {"id": user_id, "username": req.username, "nickname": req.nickname or req.username, "is_admin": False, "points": PointsService.REGISTER_BONUS}}
 

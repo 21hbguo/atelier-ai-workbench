@@ -10,6 +10,18 @@ from backend.services.image_gen import ImageGenService
 class TaskManager:
     _polling_tasks: Dict[str, asyncio.Task] = {}
     _tasks: Dict[str, Dict[str, Any]] = {}
+    _active_status = {"pending", "queued", "processing", "running", "generating"}
+
+    @classmethod
+    def _normalize_task(cls, raw: Dict[str, Any]) -> Dict[str, Any]:
+        d = dict(raw or {})
+        val = d.get("params")
+        d["params"] = json.loads(val) if isinstance(val, str) else (val or {})
+        val = d.get("result_urls")
+        d["result_urls"] = json.loads(val) if isinstance(val, str) else (val or [])
+        val = d.get("external_result")
+        d["external_result"] = json.loads(val) if isinstance(val, str) else val
+        return d
 
     @classmethod
     def _load_from_db(cls) -> Dict[str, Dict[str, Any]]:
@@ -19,14 +31,8 @@ class TaskManager:
                 rows = conn.execute("SELECT * FROM tasks").fetchall()
                 now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 for row in rows:
-                    d = dict(row)
-                    val = d.get("params")
-                    d["params"] = json.loads(val) if isinstance(val, str) else (val or {})
-                    val = d.get("result_urls")
-                    d["result_urls"] = json.loads(val) if isinstance(val, str) else (val or [])
-                    val = d.get("external_result")
-                    d["external_result"] = json.loads(val) if isinstance(val, str) else val
-                    if str(d.get("status", "")).lower() in {"pending", "queued", "processing", "running", "generating"}:
+                    d = cls._normalize_task(row)
+                    if str(d.get("status", "")).lower() in cls._active_status:
                         if d.get("params", {}).get("external_task_id"):
                             d["status"] = "processing"
                             d["_recover"] = True
@@ -40,6 +46,16 @@ class TaskManager:
         except Exception:
             pass
         return tasks
+
+    @classmethod
+    def _load_task_from_db(cls, task_id: str) -> Optional[Dict[str, Any]]:
+        with get_db() as conn:
+            row = conn.execute("SELECT * FROM tasks WHERE task_id = %s", (task_id,)).fetchone()
+        if not row:
+            return None
+        task = cls._normalize_task(row)
+        cls._tasks[task_id] = task
+        return task
 
     @classmethod
     def _save_to_db(cls, task_id: str, task: Dict[str, Any], fields: Optional[List[str]] = None) -> None:
@@ -119,27 +135,43 @@ class TaskManager:
 
     @classmethod
     def get_task(cls, task_id: str) -> Optional[Dict[str, Any]]:
-        return cls._tasks.get(task_id)
+        task = cls._tasks.get(task_id)
+        if task:
+            return task
+        try:
+            return cls._load_task_from_db(task_id)
+        except Exception:
+            return None
 
     @classmethod
     def list_tasks(cls, limit: int = 50, offset: int = 0, user_id: int = None, query: str = None) -> List[Dict[str, Any]]:
-        all_tasks = cls._tasks.values()
+        clauses = []
+        params: List[Any] = []
         if user_id is not None:
-            all_tasks = [t for t in all_tasks if t.get("user_id") == user_id]
-        else:
-            all_tasks = list(all_tasks)
+            clauses.append("user_id = %s")
+            params.append(user_id)
         if query:
-            q = query.lower()
-            all_tasks = [t for t in all_tasks if q in (t.get("params") or {}).get("prompt", "").lower()]
-        all_tasks.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
-        return all_tasks[offset:offset + limit]
+            clauses.append("COALESCE(params->>'prompt','') ILIKE %s")
+            params.append(f"%{query}%")
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        sql = f"SELECT * FROM tasks {where_sql} ORDER BY updated_at DESC NULLS LAST LIMIT %s OFFSET %s"
+        params.extend([limit, offset])
+        with get_db() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        tasks = [cls._normalize_task(r) for r in rows]
+        for t in tasks:
+            cls._tasks[t["task_id"]] = t
+        return tasks
 
     @classmethod
     def update_task(cls, task_id: str, **kwargs) -> Optional[Dict[str, Any]]:
         if task_id not in cls._tasks:
-            return None
+            task = cls._load_task_from_db(task_id)
+            if task is None:
+                return None
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         task = cls._tasks[task_id]
+        prev = dict(task)
         prev_status = task.get("status")
         prev_progress = task.get("progress")
         prev_error = task.get("error")
@@ -155,18 +187,26 @@ class TaskManager:
         if new_status in ("completed", "failed"):
             cls._save_to_db(task_id, task)
         else:
-            if ("status" in kwargs and kwargs.get("status") != prev_status) or ("progress" in kwargs and kwargs.get("progress") != prev_progress) or ("error" in kwargs and kwargs.get("error") != prev_error):
-                cls._save_to_db(task_id, task, fields=["status", "progress", "updated_at", "started_at", "completed_at", "error"])
+            changed_fields = []
+            for f in ("status", "progress", "error", "started_at", "completed_at", "params", "external_result", "result_urls"):
+                if f in kwargs and task.get(f) != prev.get(f):
+                    changed_fields.append(f)
+            if changed_fields:
+                if "updated_at" not in changed_fields:
+                    changed_fields.append("updated_at")
+                cls._save_to_db(task_id, task, fields=changed_fields)
 
         return task
 
     @classmethod
     def delete_task(cls, task_id: str) -> bool:
-        if task_id in cls._tasks:
-            del cls._tasks[task_id]
-            cls._delete_from_db(task_id)
-            return True
-        return False
+        if task_id not in cls._tasks:
+            task = cls.get_task(task_id)
+            if not task:
+                return False
+        cls._tasks.pop(task_id, None)
+        cls._delete_from_db(task_id)
+        return True
 
     @classmethod
     async def start_polling(cls, task_id: str, external_task_id: str):
@@ -229,9 +269,9 @@ class TaskManager:
 
     @classmethod
     def retry_task(cls, task_id: str) -> Optional[Dict[str, Any]]:
-        if task_id not in cls._tasks:
+        task = cls.get_task(task_id)
+        if not task:
             return None
-        task = cls._tasks[task_id]
         if task["status"] != "failed":
             return None
         task["status"] = "pending"

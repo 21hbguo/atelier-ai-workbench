@@ -38,18 +38,20 @@ async def list_tasks(
 ):
     started = time.perf_counter()
     try:
-        if user.get("is_admin"):
+        is_admin = bool(user.get("is_admin"))
+        requester_uid = user.get("user_id")
+        if is_admin:
             uid = user_id
         else:
-            uid = user["user_id"]
+            uid = requester_uid
         tasks = TaskManager.list_tasks(limit=limit, offset=offset, user_id=uid, query=query)
-        if user.get("is_admin"):
+        if is_admin:
             tasks = _enrich_tasks_with_username(tasks)
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         if elapsed_ms > 800:
-            logger.warning(f"tasks.list slow elapsed_ms={elapsed_ms} limit={limit} offset={offset} count={len(tasks)} uid={uid} query={'1' if query else '0'}")
+            logger.warning(f"tasks.list slow elapsed_ms={elapsed_ms} limit={limit} offset={offset} count={len(tasks)} requester_uid={requester_uid} is_admin={is_admin} filter_uid={uid} query={'1' if query else '0'}")
         else:
-            logger.info(f"tasks.list elapsed_ms={elapsed_ms} limit={limit} offset={offset} count={len(tasks)} uid={uid} query={'1' if query else '0'}")
+            logger.info(f"tasks.list elapsed_ms={elapsed_ms} limit={limit} offset={offset} count={len(tasks)} requester_uid={requester_uid} is_admin={is_admin} filter_uid={uid} query={'1' if query else '0'}")
         return tasks
     except Exception as e:
         logger.exception("获取任务列表失败")
