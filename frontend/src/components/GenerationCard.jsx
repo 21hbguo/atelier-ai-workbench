@@ -24,6 +24,7 @@ export default function GenerationCard({ task, onAddImage, onAddPrompt, onRetry,
   const [progress, setProgress] = useState(() => getProgress(task.started_at, task.status))
   const [shared, setShared] = useState(false)
   const [sharing, setSharing] = useState(false)
+  const [currentImageIndex, setCurrentImageIndex] = useState(0)
 
   useEffect(() => {
     if (task.status !== 'processing' && task.status !== 'queued') return
@@ -191,7 +192,23 @@ export default function GenerationCard({ task, onAddImage, onAddPrompt, onRetry,
       {showDetail && imageData && (
         <ImageDetailModal
           image={imageData}
-          onClose={() => setShowDetail(false)}
+          images={images.map(img => ({
+            url: img.full,
+            filename: img.full.split('/').pop(),
+            metadata: {
+              prompt,
+              task_id: task.task_id,
+              created_at: task.created_at,
+              started_at: task.started_at,
+              completed_at: task.completed_at,
+              type: task.params?.image_urls?.length ? 'image' : 'text',
+              size: task.params?.size,
+              input_urls: task.params?.image_urls,
+            },
+          }))}
+          currentIndex={currentImageIndex}
+          onNavigate={setCurrentImageIndex}
+          onClose={() => { setShowDetail(false); setCurrentImageIndex(0) }}
           onAddImage={onAddImage}
           onAddPrompt={onAddPrompt}
           title="生成详情"

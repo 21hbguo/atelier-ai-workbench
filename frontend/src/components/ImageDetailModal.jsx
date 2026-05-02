@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { X, Copy, Download, Trash2, Plus, Image, Maximize2, Edit2, Check } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { X, Copy, Download, Trash2, Plus, Image, Maximize2, Edit2, Check, ChevronLeft, ChevronRight } from 'lucide-react'
 import { imageAPI } from '../api'
 
 function InfoItem({ label, value }) {
@@ -13,6 +13,9 @@ function InfoItem({ label, value }) {
 
 export default function ImageDetailModal({
   image,
+  images = [],
+  currentIndex = 0,
+  onNavigate,
   onClose,
   onDelete,
   onAddImage,
@@ -29,6 +32,44 @@ export default function ImageDetailModal({
   const [editing, setEditing] = useState(false)
   const [editForm, setEditForm] = useState(null)
   const [saving, setSaving] = useState(false)
+  const touchStartX = useRef(0)
+  const touchStartY = useRef(0)
+
+  const hasNavigation = images.length > 1
+  const canPrev = hasNavigation && currentIndex > 0
+  const canNext = hasNavigation && currentIndex < images.length - 1
+
+  const handlePrev = useCallback(() => {
+    if (canPrev && onNavigate) onNavigate(currentIndex - 1)
+  }, [canPrev, currentIndex, onNavigate])
+
+  const handleNext = useCallback(() => {
+    if (canNext && onNavigate) onNavigate(currentIndex + 1)
+  }, [canNext, currentIndex, onNavigate])
+
+  useEffect(() => {
+    if (!hasNavigation) return
+    const handleKeyDown = (e) => {
+      if (e.key === 'ArrowLeft') handlePrev()
+      else if (e.key === 'ArrowRight') handleNext()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [hasNavigation, handlePrev, handleNext])
+
+  const handleTouchStart = (e) => {
+    touchStartX.current = e.touches[0].clientX
+    touchStartY.current = e.touches[0].clientY
+  }
+
+  const handleTouchEnd = (e) => {
+    const deltaX = e.changedTouches[0].clientX - touchStartX.current
+    const deltaY = e.changedTouches[0].clientY - touchStartY.current
+    if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
+      if (deltaX > 0) handlePrev()
+      else handleNext()
+    }
+  }
 
   if (!image) return null
 
@@ -76,14 +117,40 @@ export default function ImageDetailModal({
     <>
       <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
         <div
-          className="bg-white dark:bg-gray-900 rounded-2xl overflow-hidden max-w-4xl w-full max-h-[90vh] flex flex-col md:flex-row shadow-2xl"
+          className="bg-white dark:bg-gray-900 rounded-2xl overflow-hidden max-w-4xl w-full max-h-[90vh] flex flex-col md:flex-row shadow-2xl relative"
           onClick={(e) => e.stopPropagation()}
+          onTouchStart={hasNavigation ? handleTouchStart : undefined}
+          onTouchEnd={hasNavigation ? handleTouchEnd : undefined}
         >
+          {hasNavigation && canPrev && (
+            <button
+              onClick={handlePrev}
+              className="absolute left-2 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-all hidden md:flex items-center justify-center"
+            >
+              <ChevronLeft size={20} />
+            </button>
+          )}
+
+          {hasNavigation && canNext && (
+            <button
+              onClick={handleNext}
+              className="absolute right-2 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-all hidden md:flex items-center justify-center"
+              style={{ right: '40%' }}
+            >
+              <ChevronRight size={20} />
+            </button>
+          )}
+
           <div className="md:w-3/5 bg-black flex items-center justify-center min-h-[200px] md:min-h-0 relative group cursor-pointer" onClick={() => setLightbox(true)}>
             <img src={image.url} alt="" className="max-w-full max-h-[60vh] md:max-h-[90vh] object-contain" />
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
               <Maximize2 size={24} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
+            {hasNavigation && (
+              <div className="absolute bottom-2 left-1/2 -translate-x-1/2 px-2 py-1 rounded-full bg-black/50 text-white text-xs">
+                {currentIndex + 1} / {images.length}
+              </div>
+            )}
           </div>
 
           <div className="md:w-2/5 p-5 flex flex-col gap-4 overflow-y-auto" style={{ color: 'var(--text-primary)' }}>
@@ -137,7 +204,7 @@ export default function ImageDetailModal({
                       <div>
                         <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>提示词</label>
                         <div className="relative">
-                          <p className="text-sm p-3 rounded-lg pr-9" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>{meta.prompt}</p>
+                          <p className="text-sm p-3 rounded-lg pr-9 max-h-48 md:max-h-72 overflow-y-auto whitespace-pre-wrap break-words" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>{meta.prompt}</p>
                           <button onClick={() => handleCopy(meta.prompt)} className="absolute right-2 top-2 p-1 rounded hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>
                             <Copy size={14} />
                           </button>
