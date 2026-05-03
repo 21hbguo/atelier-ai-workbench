@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
-import { Paperclip, X, Settings, Send, Maximize2 } from 'lucide-react'
+import { Paperclip, X, Settings, Send, Maximize2, Share2 } from 'lucide-react'
 import ParamPanel from './ParamPanel'
 
 const ChatInput = forwardRef(function ChatInput({ onSubmit, loading }, ref) {
@@ -91,37 +91,35 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading }, ref) {
               ))}
             </div>
           )}
-          <div className="flex items-end gap-2 p-2">
-            <button onClick={() => fileRef.current?.click()} className="p-2 rounded-lg hover:bg-black/5 transition-colors flex-shrink-0 self-end"
-              style={{ color: 'var(--text-secondary)' }}>
-              <Paperclip size={18} />
-            </button>
-            <button onClick={() => setShowParams(!showParams)} className="p-2 rounded-lg hover:bg-black/5 transition-colors flex-shrink-0 self-end"
-              style={{ color: showParams ? 'var(--accent)' : 'var(--text-secondary)' }}>
-              <Settings size={16} />
-            </button>
-            <label className="flex items-center gap-1.5 cursor-pointer flex-shrink-0 self-end p-2" title="分享到广场">
-              <input
-                type="checkbox"
-                checked={shareToSquare}
-                onChange={(e) => setShareToSquare(e.target.checked)}
-                className="w-3.5 h-3.5 rounded"
-                style={{ accentColor: 'var(--accent)' }}
-              />
-              <span className="text-xs whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>分享</span>
-            </label>
-            <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleSend() } }}
-              placeholder="输入提示词..."
-              className="flex-1 resize-none bg-transparent outline-none text-sm py-2"
-              rows={1} style={{ color: 'var(--text-primary)', minHeight: '32px', maxHeight: '120px' }} />
-            <div className="flex items-center gap-1.5 flex-shrink-0 self-end pb-0.5">
-              {prompt.length > 0 && <span className="text-xs tabular-nums" style={{ color: 'var(--text-secondary)' }}>{prompt.length}</span>}
-              <button onClick={handleSend} disabled={!prompt.trim() || loading}
-                className="p-2 rounded-lg transition-all duration-150 disabled:opacity-40"
-                style={{ background: prompt.trim() && !loading ? 'var(--accent)' : 'var(--border-color)', color: '#fff' }}>
-                <Send size={16} />
+          <div className="flex gap-2 p-2">
+            <div className="flex flex-col gap-1 flex-shrink-0">
+              <button onClick={() => fileRef.current?.click()} className="p-2 rounded-lg hover:bg-black/5 transition-colors"
+                style={{ color: 'var(--text-secondary)' }}>
+                <Paperclip size={18} />
               </button>
+              <button onClick={() => setShowParams(!showParams)} className="p-2 rounded-lg hover:bg-black/5 transition-colors"
+                style={{ color: showParams ? 'var(--accent)' : 'var(--text-secondary)' }}>
+                <Settings size={16} />
+              </button>
+              <button onClick={() => setShareToSquare(!shareToSquare)} className="p-2 rounded-lg hover:bg-black/5 transition-colors"
+                style={{ color: shareToSquare ? '#22c55e' : 'var(--text-secondary)' }}>
+                <Share2 size={16} />
+              </button>
+            </div>
+            <div className="flex-1 flex flex-col">
+              <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleSend() } }}
+                placeholder="输入提示词..."
+                className="flex-1 resize-none bg-transparent outline-none text-sm py-2"
+                rows={3} style={{ color: 'var(--text-primary)', minHeight: '72px', maxHeight: '120px' }} />
+              <div className="flex items-center justify-end gap-1.5">
+                {prompt.length > 0 && <span className="text-xs tabular-nums" style={{ color: 'var(--text-secondary)' }}>{prompt.length}</span>}
+                <button onClick={handleSend} disabled={!prompt.trim() || loading}
+                  className="p-2 rounded-lg transition-all duration-150 disabled:opacity-40"
+                  style={{ background: prompt.trim() && !loading ? 'var(--accent)' : 'var(--border-color)', color: '#fff' }}>
+                  <Send size={16} />
+                </button>
+              </div>
             </div>
           </div>
         </div>

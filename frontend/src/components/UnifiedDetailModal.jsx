@@ -250,14 +250,14 @@ export default function UnifiedDetailModal({
     }
     if (onUsePrompt) {
       actions.push(
-        <button key="use-prompt" onClick={() => onUsePrompt(card.prompt)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
+        <button key="use-prompt" onClick={() => { onUsePrompt(card.prompt); onClose?.() }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
           <Plus size={14} /> 使用提示词
         </button>
       )
     }
     if (fullUrl && onUseImage) {
       actions.push(
-        <button key="use-image" onClick={() => onUseImage(card)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
+        <button key="use-image" onClick={() => { onUseImage(card); onClose?.() }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
           <ImageIcon size={14} /> 参考图
         </button>
       )
