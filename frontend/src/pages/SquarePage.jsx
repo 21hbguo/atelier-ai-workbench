@@ -115,7 +115,7 @@ export default function SquarePage() {
             </div>
           )}
         </div>
-        <div className="flex-1 overflow-y-auto px-4 sm:px-6 pb-6">
+        <div id="square-scroll-container" className="flex-1 overflow-y-auto px-4 sm:px-6 pb-6">
           {tab === 'works' ? (
             <WorksTab query={query} sort={sort} isAdmin={isAdmin} dialog={dialog} refreshTrigger={refreshTrigger} />
           ) : tab === 'prompts' ? (
@@ -138,12 +138,15 @@ function WorksTab({ query, sort, isAdmin, dialog, refreshTrigger }) {
 
   const deps = useMemo(() => isAdmin ? [query, sort, status, refreshTrigger] : [query, sort, refreshTrigger], [query, sort, status, isAdmin, refreshTrigger])
 
-  const { cards, total, page, setPage, loading, refreshing, refresh, handleLike } = useCardData({
+  const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike } = useCardData({
     type: 'image',
     apiFn: (p, s) => isAdmin
       ? adminAPI.square(p, s, query || undefined, status)
       : squareAPI.list(p, s, query || undefined, sort),
     deps,
+    atomicPaging: true,
+    preloadCount: 12,
+    preloadTimeoutMs: 900,
   })
 
   const totalPages = Math.ceil(total / 20)
@@ -230,6 +233,7 @@ function WorksTab({ query, sort, isAdmin, dialog, refreshTrigger }) {
         cards={cards}
         showTotal={!isAdmin}
         loading={loading}
+        paging={paging}
         refreshing={refreshing}
         onRefresh={refresh}
         hideRefresh
@@ -241,6 +245,8 @@ function WorksTab({ query, sort, isAdmin, dialog, refreshTrigger }) {
         onLike={handleLike}
         onUsePrompt={handleUsePrompt}
         onUseImage={handleUseImage}
+        paginationScrollTargetId="square-scroll-container"
+        scrollAfterPaging
         showAuthor
         selectable={isAdmin && selectMode}
         selected={checked}
@@ -293,10 +299,13 @@ function MySharesTab({ refreshTrigger }) {
   const [detailIdx, setDetailIdx] = useState(null)
   const { handleUsePrompt, handleUseImage } = useImageActions()
 
-  const { cards, total, page, setPage, loading, refreshing, refresh, handleLike } = useCardData({
+  const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike } = useCardData({
     type: 'image',
     apiFn: (p, s) => squareAPI.my(p, s),
     deps: [refreshTrigger],
+    atomicPaging: true,
+    preloadCount: 12,
+    preloadTimeoutMs: 900,
   })
 
   const totalPages = Math.ceil(total / 20)
@@ -306,6 +315,7 @@ function MySharesTab({ refreshTrigger }) {
       <CardGrid
         cards={cards}
         loading={loading}
+        paging={paging}
         refreshing={refreshing}
         onRefresh={refresh}
         hideRefresh
@@ -317,6 +327,8 @@ function MySharesTab({ refreshTrigger }) {
         onLike={handleLike}
         onUsePrompt={handleUsePrompt}
         onUseImage={handleUseImage}
+        paginationScrollTargetId="square-scroll-container"
+        scrollAfterPaging
         emptyText="暂无分享"
       />
 
@@ -347,7 +359,7 @@ function PromptsTab({ query, sort, activeCategory, isAdmin, dialog, refreshTrigg
   const [checked, setChecked] = useState(new Set())
   const deps = useMemo(() => isAdmin ? [query, sort, activeCategory, status, refreshTrigger] : [query, sort, activeCategory, refreshTrigger], [query, sort, activeCategory, status, isAdmin, refreshTrigger])
 
-  const { cards, total, page, setPage, loading, refreshing, refresh, handleLike } = useCardData({
+  const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike } = useCardData({
     type: 'prompt',
     pageSize: 50,
     apiFn: async (p, s) => {
@@ -360,6 +372,9 @@ function PromptsTab({ query, sort, activeCategory, isAdmin, dialog, refreshTrigg
       return promptAPI.list(query, null, 'community', sort, activeCategory, p)
     },
     deps,
+    atomicPaging: true,
+    preloadCount: 12,
+    preloadTimeoutMs: 900,
   })
 
   const totalPages = Math.ceil(total / 50)
@@ -443,6 +458,7 @@ function PromptsTab({ query, sort, activeCategory, isAdmin, dialog, refreshTrigg
         cards={cards}
         showTotal={!isAdmin}
         loading={loading}
+        paging={paging}
         refreshing={refreshing}
         onRefresh={refresh}
         hideRefresh
@@ -454,6 +470,8 @@ function PromptsTab({ query, sort, activeCategory, isAdmin, dialog, refreshTrigg
         onLike={handleLike}
         onUsePrompt={handleUsePrompt}
         onUseImage={handleUseImage}
+        paginationScrollTargetId="square-scroll-container"
+        scrollAfterPaging
         showAuthor
         emptyText="暂无提示词"
         selectable={isAdmin && selectMode}

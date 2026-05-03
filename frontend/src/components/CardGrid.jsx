@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Heart, User, Plus, Image as ImageIcon, RefreshCw, Loader2, Check } from 'lucide-react'
 import Pagination from './Pagination'
 import UnifiedCard from './UnifiedCard'
@@ -6,13 +6,33 @@ import UnifiedCard from './UnifiedCard'
 export default function CardGrid({
   cards, onCardClick, onLike, onUsePrompt, onUseImage,
   showAuthor = false, selectable = false, selected = new Set(), onToggleSelect,
-  loading = false, refreshing = false, onRefresh, hideRefresh = false,
+  loading = false, paging = false, refreshing = false, onRefresh, hideRefresh = false,
   total = 0, page = 1, totalPages = 1, onPageChange,
   showTotal = true, totalUnit = '张',
   emptyText = '暂无作品',
   renderOverlay,
+  paginationScrollTargetId,
+  scrollAfterPaging = false,
 }) {
   const [failedUrls, setFailedUrls] = useState(new Set())
+  const [gridMinHeight, setGridMinHeight] = useState(0)
+  const gridRef = useRef(null)
+  const prevPagingRef = useRef(false)
+  const scrollParentToTop = () => {
+    if (paginationScrollTargetId) {
+      const t = document.getElementById(paginationScrollTargetId)
+      if (t) { t.scrollTop = 0; return }
+    }
+    let p = gridRef.current?.parentElement
+    while (p) {
+      const st = window.getComputedStyle(p)
+      const oy = st.overflowY
+      const scrollable = (oy === 'auto' || oy === 'scroll') && p.scrollHeight > p.clientHeight
+      if (scrollable) { p.scrollTop = 0; return }
+      p = p.parentElement
+    }
+    window.scrollTo(0, 0)
+  }
 
   useEffect(() => {
     setFailedUrls(prev => {
@@ -21,6 +41,16 @@ export default function CardGrid({
       return next.size === prev.size ? prev : next
     })
   }, [cards])
+  useEffect(() => {
+    if (!loading && !paging && gridRef.current) {
+      const h = gridRef.current.offsetHeight || 0
+      if (h > 0) setGridMinHeight(h)
+    }
+  }, [loading, paging, cards.length, page])
+  useEffect(() => {
+    if (scrollAfterPaging && prevPagingRef.current && !paging) requestAnimationFrame(scrollParentToTop)
+    prevPagingRef.current = paging
+  }, [paging, scrollAfterPaging, page])
   if (loading && cards.length === 0) {
     return (
       <div className="flex justify-center py-20">
@@ -48,13 +78,13 @@ export default function CardGrid({
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+      <div ref={gridRef} className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3" style={(loading || paging) && gridMinHeight > 0 ? { minHeight: `${gridMinHeight}px` } : undefined}>
         {cards.map((card, idx) => (
           <UnifiedCard
             key={card.id}
             checked={selectable && selected.has(card.id)}
             onClick={(e) => { if (e.target.type === 'checkbox' || e.target.closest('button')) return; if (selectable) { onToggleSelect?.(card.id); return } onCardClick?.(card, idx) }}
-            mediaNode={card.thumbUrl && !failedUrls.has(card.thumbUrl) ? <img src={card.thumbUrl} alt="" className="w-full aspect-square object-cover" loading="lazy" onError={(e) => { e.target.onerror = null; setFailedUrls(prev => new Set(prev).add(card.thumbUrl)) }} /> : <div className="w-full aspect-square flex items-center justify-center p-3" style={{ background: 'linear-gradient(135deg, var(--accent)12, var(--accent)20)' }}>{(() => { const text = card.title || card.subtitle || '无提示词'; const len = text.length; const fontSize = len <= 4 ? '2rem' : len <= 8 ? '1.5rem' : len <= 16 ? '1.125rem' : '0.875rem'; return <p className="text-center font-bold leading-tight line-clamp-4" style={{ color: 'var(--accent)', fontSize }}>{text}</p> })()}</div>}
+            mediaNode={card.thumbUrl && !failedUrls.has(card.thumbUrl) ? <img src={card.thumbUrl} alt="" className="w-full aspect-square object-cover" loading={idx < 8 ? 'eager' : 'lazy'} onError={(e) => { e.target.onerror = null; setFailedUrls(prev => new Set(prev).add(card.thumbUrl)) }} /> : <div className="w-full aspect-square flex items-center justify-center p-3" style={{ background: 'linear-gradient(135deg, var(--accent)12, var(--accent)20)' }}>{(() => { const text = card.title || card.subtitle || '无提示词'; const len = text.length; const fontSize = len <= 4 ? '2rem' : len <= 8 ? '1.5rem' : len <= 16 ? '1.125rem' : '0.875rem'; return <p className="text-center font-bold leading-tight line-clamp-4" style={{ color: 'var(--accent)', fontSize }}>{text}</p> })()}</div>}
             hoverNode={<div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors hidden md:flex items-center justify-center gap-1.5">{Boolean(card.prompt) && <button onClick={(e) => { e.stopPropagation(); onUsePrompt?.(card.prompt) }} className="opacity-0 group-hover:opacity-100 transition-opacity px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"><Plus size={12} /> 提示词</button>}{Boolean(card.fullUrl) && <button onClick={(e) => { e.stopPropagation(); onUseImage?.(card) }} className="opacity-0 group-hover:opacity-100 transition-opacity px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/90 text-gray-800 hover:bg-white flex items-center gap-1"><ImageIcon size={12} /> 参考图</button>}</div>}
             bottomNode={<div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 bg-gradient-to-t from-black/70 to-transparent"><p className="text-white text-xs truncate">{card.subtitle || '无提示词'}</p></div>}
             topRightNode={<div onClick={(e) => { e.stopPropagation(); onLike?.(card.id) }} className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded-full bg-black/50 backdrop-blur-sm cursor-pointer hover:bg-black/70 transition-colors"><Heart size={12} className={card.isLiked ? 'fill-red-500 text-red-500' : 'text-white'} />{(card.likesCount > 0 || card.isLiked) && <span className="text-white text-xs">{card.likesCount}</span>}</div>}
@@ -65,7 +95,7 @@ export default function CardGrid({
         ))}
       </div>
 
-      <Pagination page={page} totalPages={totalPages} onPageChange={onPageChange} />
+      <Pagination page={page} totalPages={totalPages} onPageChange={onPageChange} scrollTargetId={paginationScrollTargetId} scrollBeforeChange={!scrollAfterPaging} />
     </>
   )
 }
