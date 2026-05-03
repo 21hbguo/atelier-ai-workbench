@@ -6,7 +6,7 @@ import UnifiedCard from './UnifiedCard'
 export default function CardGrid({
   cards, onCardClick, onLike, onUsePrompt, onUseImage,
   showAuthor = false, selectable = false, selected = new Set(), onToggleSelect,
-  loading = false, refreshing = false, onRefresh,
+  loading = false, refreshing = false, onRefresh, hideRefresh = false,
   total = 0, page = 1, totalPages = 1, onPageChange,
   showTotal = true, totalUnit = '张',
   emptyText = '暂无作品',
@@ -35,16 +35,18 @@ export default function CardGrid({
 
   return (
     <>
-      <div className="flex items-center justify-between mb-3">
-        {showTotal && total > 0 && <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{total} {totalUnit}</span>}
-        {onRefresh && (
-          <button onClick={onRefresh} disabled={refreshing}
-            className="p-1.5 rounded-lg hover:bg-black/5 transition-colors disabled:opacity-50"
-            style={{ color: 'var(--text-secondary)' }}>
-            <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-          </button>
-        )}
-      </div>
+      {(!hideRefresh || (showTotal && total > 0)) && (
+        <div className="flex items-center justify-between mb-3">
+          {showTotal && total > 0 && <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{total} {totalUnit}</span>}
+          {!hideRefresh && onRefresh && (
+            <button onClick={onRefresh} disabled={refreshing}
+              className="p-1.5 rounded-lg hover:bg-black/5 transition-colors disabled:opacity-50"
+              style={{ color: 'var(--text-secondary)' }}>
+              <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
         {cards.map((card, idx) => (

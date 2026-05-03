@@ -43,6 +43,9 @@ body {
   line-height: 1.5;
   transition: background-color 200ms, color 200ms;
 }
+html,body,#root{width:100%;height:100%;margin:0;padding:0}
+.safe-area-top{padding-top:env(safe-area-inset-top)}
+.safe-area-bottom{padding-bottom:env(safe-area-inset-bottom)}
 
 * { box-sizing: border-box; }
 

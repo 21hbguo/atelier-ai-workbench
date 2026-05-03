@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Image, BookOpen, Share2, Trash2, Snowflake, Sun } from 'lucide-react'
+import { Image, BookOpen, Share2, Trash2, Snowflake, Sun, RefreshCw } from 'lucide-react'
 import { squareAPI, promptAPI, adminAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 import SearchInput from '../components/SearchInput'
@@ -66,6 +66,7 @@ export default function SquarePage() {
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState('likes')
   const [activeCategory, setActiveCategory] = useState(null)
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
   const isAdmin = Boolean(readUser()?.is_admin)
 
   const handleTabChange = (newTab) => {
@@ -74,6 +75,8 @@ export default function SquarePage() {
     setSort('likes')
     setActiveCategory(null)
   }
+
+  const handleRefresh = () => setRefreshTrigger(n => n + 1)
 
   return (
     <MainLayout>
@@ -88,31 +91,37 @@ export default function SquarePage() {
           ))}
           </div>
         </div>
-        {tab !== 'my' && (
-          <div className="px-4 sm:px-6 pt-3 pb-2">
-            <div className="flex items-center gap-3">
-              <div className="flex gap-1 ml-auto">
+        <div className="px-4 sm:px-6 pt-3 pb-2">
+          <div className="flex items-center gap-3">
+            {tab !== 'my' && (
+              <div className="flex gap-1">
                 <button onClick={() => setSort('likes')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${sort === 'likes' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
                   style={{ color: sort === 'likes' ? 'var(--accent)' : 'var(--text-secondary)' }}>最热</button>
                 <button onClick={() => setSort('time')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${sort === 'time' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
                   style={{ color: sort === 'time' ? 'var(--accent)' : 'var(--text-secondary)' }}>最新</button>
               </div>
-              <SearchInput value={query} onChange={setQuery} placeholder={tab === 'works' ? '搜索提示词/作者...' : '搜索提示词...'} />
-            </div>
-            {tab === 'prompts' && (
-              <div className="mt-2">
-                <PromptsCategoryFilter active={activeCategory} onChange={setActiveCategory} />
-              </div>
             )}
+            <div className="flex-1" />
+            {tab !== 'my' && (
+              <SearchInput value={query} onChange={setQuery} placeholder={tab === 'works' ? '搜索提示词/作者...' : '搜索提示词...'} />
+            )}
+            <button onClick={handleRefresh} className="p-1.5 rounded-lg hover:bg-black/5 transition-colors" style={{ color: 'var(--text-secondary)' }}>
+              <RefreshCw size={16} />
+            </button>
           </div>
-        )}
+          {tab === 'prompts' && (
+            <div className="mt-2">
+              <PromptsCategoryFilter active={activeCategory} onChange={setActiveCategory} />
+            </div>
+          )}
+        </div>
         <div className="flex-1 overflow-y-auto px-4 sm:px-6 pb-6">
           {tab === 'works' ? (
-            <WorksTab query={query} sort={sort} isAdmin={isAdmin} dialog={dialog} />
+            <WorksTab query={query} sort={sort} isAdmin={isAdmin} dialog={dialog} refreshTrigger={refreshTrigger} />
           ) : tab === 'prompts' ? (
-            <PromptsTab query={query} sort={sort} activeCategory={activeCategory} isAdmin={isAdmin} dialog={dialog} />
+            <PromptsTab query={query} sort={sort} activeCategory={activeCategory} isAdmin={isAdmin} dialog={dialog} refreshTrigger={refreshTrigger} />
           ) : (
-            <MySharesTab />
+            <MySharesTab refreshTrigger={refreshTrigger} />
           )}
         </div>
       </div>
@@ -120,14 +129,14 @@ export default function SquarePage() {
   )
 }
 
-function WorksTab({ query, sort, isAdmin, dialog }) {
+function WorksTab({ query, sort, isAdmin, dialog, refreshTrigger }) {
   const [detailIdx, setDetailIdx] = useState(null)
   const { handleUsePrompt, handleUseImage } = useImageActions()
   const [status, setStatus] = useState('all')
   const [selectMode, setSelectMode] = useState(false)
   const [checked, setChecked] = useState(new Set())
 
-  const deps = useMemo(() => isAdmin ? [query, sort, status] : [query, sort], [query, sort, status, isAdmin])
+  const deps = useMemo(() => isAdmin ? [query, sort, status, refreshTrigger] : [query, sort, refreshTrigger], [query, sort, status, isAdmin, refreshTrigger])
 
   const { cards, total, page, setPage, loading, refreshing, refresh, handleLike } = useCardData({
     type: 'image',
@@ -223,6 +232,7 @@ function WorksTab({ query, sort, isAdmin, dialog }) {
         loading={loading}
         refreshing={refreshing}
         onRefresh={refresh}
+        hideRefresh
         total={total}
         page={page}
         totalPages={totalPages}
@@ -279,14 +289,14 @@ function WorksTab({ query, sort, isAdmin, dialog }) {
   )
 }
 
-function MySharesTab() {
+function MySharesTab({ refreshTrigger }) {
   const [detailIdx, setDetailIdx] = useState(null)
   const { handleUsePrompt, handleUseImage } = useImageActions()
 
   const { cards, total, page, setPage, loading, refreshing, refresh, handleLike } = useCardData({
     type: 'image',
     apiFn: (p, s) => squareAPI.my(p, s),
-    deps: [],
+    deps: [refreshTrigger],
   })
 
   const totalPages = Math.ceil(total / 20)
@@ -298,6 +308,7 @@ function MySharesTab() {
         loading={loading}
         refreshing={refreshing}
         onRefresh={refresh}
+        hideRefresh
         total={total}
         page={page}
         totalPages={totalPages}
@@ -327,14 +338,14 @@ function MySharesTab() {
   )
 }
 
-function PromptsTab({ query, sort, activeCategory, isAdmin, dialog }) {
+function PromptsTab({ query, sort, activeCategory, isAdmin, dialog, refreshTrigger }) {
   const user = readUser()
   const [detailIdx, setDetailIdx] = useState(null)
   const { handleUsePrompt, handleUseImage } = usePromptActions()
   const [status, setStatus] = useState('all')
   const [selectMode, setSelectMode] = useState(false)
   const [checked, setChecked] = useState(new Set())
-  const deps = useMemo(() => isAdmin ? [query, sort, activeCategory, status] : [query, sort, activeCategory], [query, sort, activeCategory, status, isAdmin])
+  const deps = useMemo(() => isAdmin ? [query, sort, activeCategory, status, refreshTrigger] : [query, sort, activeCategory, refreshTrigger], [query, sort, activeCategory, status, isAdmin, refreshTrigger])
 
   const { cards, total, page, setPage, loading, refreshing, refresh, handleLike } = useCardData({
     type: 'prompt',
@@ -434,6 +445,7 @@ function PromptsTab({ query, sort, activeCategory, isAdmin, dialog }) {
         loading={loading}
         refreshing={refreshing}
         onRefresh={refresh}
+        hideRefresh
         total={total}
         page={page}
         totalPages={totalPages}

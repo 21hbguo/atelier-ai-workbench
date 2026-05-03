@@ -38,6 +38,9 @@ export default function UnifiedDetailModal({
   const [saving, setSaving] = useState(false)
   const touchStartX = useRef(0)
   const touchStartY = useRef(0)
+  const touchLastX = useRef(0)
+  const touchLastY = useRef(0)
+  const touchSwiped = useRef(false)
 
   const hasNavigation = cards.length > 1
   const canPrev = hasNavigation && currentIndex > 0
@@ -66,17 +69,36 @@ export default function UnifiedDetailModal({
   }, [card?.id, currentIndex])
 
   const handleTouchStart = (e) => {
+    if (!e.touches?.length) return
     touchStartX.current = e.touches[0].clientX
     touchStartY.current = e.touches[0].clientY
+    touchLastX.current = e.touches[0].clientX
+    touchLastY.current = e.touches[0].clientY
+    touchSwiped.current = false
+  }
+
+  const handleTouchMove = (e) => {
+    if (!e.touches?.length) return
+    touchLastX.current = e.touches[0].clientX
+    touchLastY.current = e.touches[0].clientY
   }
 
   const handleTouchEnd = (e) => {
-    const deltaX = e.changedTouches[0].clientX - touchStartX.current
-    const deltaY = e.changedTouches[0].clientY - touchStartY.current
-    if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
+    if (!e.changedTouches?.length) return
+    const endX = touchLastX.current || e.changedTouches[0].clientX
+    const endY = touchLastY.current || e.changedTouches[0].clientY
+    const deltaX = endX - touchStartX.current
+    const deltaY = endY - touchStartY.current
+    if (Math.abs(deltaX) >= 36 && Math.abs(deltaY) <= 24 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2) {
+      touchSwiped.current = true
       if (deltaX > 0) handlePrev()
       else handleNext()
     }
+  }
+
+  const handleMediaClick = () => {
+    if (touchSwiped.current) { touchSwiped.current = false; return }
+    setLightbox(true)
   }
 
   if (!card) return null
@@ -130,7 +152,7 @@ export default function UnifiedDetailModal({
       )
     }
     return (
-      <div className="md:w-3/5 bg-black flex items-center justify-center min-h-[200px] md:min-h-0 relative group cursor-pointer overflow-hidden" onClick={() => setLightbox(true)}>
+      <div className="md:w-3/5 bg-black flex items-center justify-center min-h-[200px] md:min-h-0 relative group cursor-pointer overflow-hidden" onClick={handleMediaClick}>
         <img src={fullUrl} alt="" className="max-w-full max-h-[60vh] md:max-h-full object-contain" />
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
           <Maximize2 size={24} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -300,6 +322,7 @@ export default function UnifiedDetailModal({
           className="bg-white dark:bg-gray-900 rounded-2xl overflow-hidden max-w-4xl w-full max-h-[90vh] flex flex-col md:flex-row shadow-2xl relative"
           onClick={(e) => e.stopPropagation()}
           onTouchStart={hasNavigation ? handleTouchStart : undefined}
+          onTouchMove={hasNavigation ? handleTouchMove : undefined}
           onTouchEnd={hasNavigation ? handleTouchEnd : undefined}
         >
           {hasNavigation && canPrev && (
