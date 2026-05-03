@@ -185,8 +185,8 @@ class PromptService:
             return {"prompts": results, "total": total}
 
     @classmethod
-    def get_categories(cls) -> List[Dict[str, Any]]:
-        return CategoryService.get_all()
+    def get_categories(cls, include_frozen: bool = False) -> List[Dict[str, Any]]:
+        return CategoryService.get_all(include_frozen=include_frozen)
 
     @classmethod
     def import_prompts(cls, prompts_data: List[Dict[str, Any]], user_id: int = None) -> Dict[str, int]:

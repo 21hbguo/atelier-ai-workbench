@@ -88,7 +88,7 @@ async def get_public_prompts(
 @router.get("/categories")
 async def get_categories(user=Depends(get_optional_user)):
     try:
-        return {"categories": PromptService.get_categories()}
+        return {"categories": PromptService.get_categories(include_frozen=bool(user and user.get("is_admin")))}
     except Exception as e:
         logger.exception("获取分类列表失败")
         raise HTTPException(status_code=500, detail="获取分类列表失败")

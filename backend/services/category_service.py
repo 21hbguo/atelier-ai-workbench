@@ -5,13 +5,14 @@ from backend.database import get_db
 class CategoryService:
 
     @classmethod
-    def get_all(cls) -> List[Dict[str, Any]]:
+    def get_all(cls, include_frozen: bool = False) -> List[Dict[str, Any]]:
         with get_db() as conn:
+            join_cond = "p.category = c.slug" if include_frozen else "p.category = c.slug AND COALESCE(p.is_frozen, FALSE) = FALSE"
             rows = conn.execute(
                 """SELECT c.id, c.slug, c.label, c.sort_order,
                    COUNT(p.id) as count
                    FROM categories c
-                   LEFT JOIN prompts p ON p.category = c.slug
+                   LEFT JOIN prompts p ON """ + join_cond + """
                    GROUP BY c.id
                    ORDER BY c.sort_order, c.label"""
             ).fetchall()
