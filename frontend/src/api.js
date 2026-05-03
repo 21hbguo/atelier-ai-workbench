@@ -113,6 +113,7 @@ export const adminAPI = {
   approveRecharge: (id, data) => api.post(`/admin/recharge-requests/${id}/approve`, data || {}),
   rejectRecharge: (id, data) => api.post(`/admin/recharge-requests/${id}/reject`, data || {}),
 }
+export const configAPI = { admin: () => api.get('/config/admin'), update: data => api.post('/config', data) }
 
 export const pointsAPI = {
   balance: () => api.get('/points/balance'),

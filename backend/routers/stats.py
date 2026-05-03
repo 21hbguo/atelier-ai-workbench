@@ -25,7 +25,7 @@ async def get_daily_stats(user=Depends(get_current_user)):
 @router.get("/stats/system")
 async def get_system_stats(user=Depends(get_current_user)):
     from backend.routers.auth import get_rate_limit_stats
-    from backend.config import DATA_DIR
+    from backend.config import DATA_DIR, get_limit_config
 
     images_dir = DATA_DIR / "images"
     image_count = len(list(images_dir.iterdir())) if images_dir.exists() else 0
@@ -44,6 +44,7 @@ async def get_system_stats(user=Depends(get_current_user)):
     from backend.config import get_config
     cfg = get_config()
     api_configured = bool(cfg.get("api_key"))
+    limits_cfg = get_limit_config()
 
     # 设备信息
     mem = psutil.virtual_memory()
@@ -64,12 +65,16 @@ async def get_system_stats(user=Depends(get_current_user)):
         "processing_tasks": processing,
         "api_configured": api_configured,
         "limits": {
-            "login_rate": "5次/分钟/IP",
-            "register_rate": "3次/分钟/IP",
-            "generate_concurrent": "10个/用户",
+            "login_rate": f"{limits_cfg['login_rate_limit_per_minute_per_ip']}次/分钟/IP",
+            "register_rate": f"{limits_cfg['register_rate_limit_per_minute_per_ip']}次/分钟/IP",
+            "generate_concurrent": f"{limits_cfg['generate_concurrent_limit_per_user']}个/用户",
             "file_size": "10MB",
             "prompt_length": "2500字符",
             "image_upload_ext": "png,jpg,jpeg,webp",
+            "points_cost_per_generation": limits_cfg["points_cost_per_generation"],
+            "points_checkin_reward": limits_cfg["points_checkin_reward"],
+            "points_register_bonus": limits_cfg["points_register_bonus"],
+            "points_migration_amount": limits_cfg["points_migration_amount"],
         },
     }
 

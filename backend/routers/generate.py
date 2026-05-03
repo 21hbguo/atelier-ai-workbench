@@ -13,7 +13,7 @@ from backend.services.task_manager import TaskManager
 from backend.services.stats_service import StatsService
 from backend.services.banned_words import BannedWordsService
 from backend.services.points_service import PointsService
-from backend.config import GENERATED_IMAGES_DIR
+from backend.config import GENERATED_IMAGES_DIR, get_limit_config
 from backend.models.schemas import (
     GenerateTextRequest,
     GenerateTextImageRequest,
@@ -26,12 +26,13 @@ router = APIRouter(prefix="/api/generate", tags=["generate"])
 
 
 def _check_generate_rate(user_id: int):
+    limit = get_limit_config()["generate_concurrent_limit_per_user"]
     with get_db() as conn:
         count = conn.execute(
             "SELECT COUNT(*) AS cnt FROM user_requests WHERE user_id = %s AND status = 'processing' AND created_at > NOW() - interval '1 minute'",
             (user_id,)
         ).fetchone()["cnt"]
-        if count >= 10:
+        if count >= limit:
             raise HTTPException(status_code=429, detail="生成请求过于频繁，请稍后再试")
 
 def _share_to_square(user_id: int, file_path: str, prompt: str, size: str, task_type: str):
@@ -77,7 +78,7 @@ async def _run_generation(task_id: str, task_type: str, submit_payload: dict, me
         record_request(user_id, "failed")
         if not is_admin:
             try:
-                PointsService.refund(user_id, PointsService.COST_PER_GENERATION, "生成失败退还")
+                PointsService.refund(user_id, PointsService.cost_per_generation(), "生成失败退还")
             except Exception:
                 logger.exception(f"[submit.refund.fail] type={task_type} task={task_id} user={user_id}")
 
@@ -91,10 +92,11 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
 
     is_admin = user.get("is_admin")
     if not is_admin:
+        cost = PointsService.cost_per_generation()
         try:
-            PointsService.consume(user_id, PointsService.COST_PER_GENERATION, "生成消耗")
+            PointsService.consume(user_id, cost, "生成消耗")
         except ValueError:
-            raise HTTPException(status_code=402, detail=f"积分不足，需要 {PointsService.COST_PER_GENERATION} 积分")
+            raise HTTPException(status_code=402, detail=f"积分不足，需要 {cost} 积分")
 
     update_user_ip(user_id, get_client_ip(req))
     record_request(user_id, "processing")
@@ -108,7 +110,7 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
             StatsService.record_failed()
             record_request(user_id, "failed")
             if not is_admin:
-                PointsService.refund(user_id, PointsService.COST_PER_GENERATION, "违禁词退还")
+                PointsService.refund(user_id, PointsService.cost_per_generation(), "违禁词退还")
             raise HTTPException(status_code=400, detail="提示词包含违禁词，请修改后重试")
 
         TaskManager.create_task(task_id, "text", {"prompt": request.prompt, "size": request.size, "share_to_square": bool(request.share_to_square)}, user_id=user_id)
@@ -125,7 +127,7 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
         TaskManager.update_task(task_id, status="failed", error=str(e))
         record_request(user_id, "failed")
         if not is_admin:
-            PointsService.refund(user_id, PointsService.COST_PER_GENERATION, "异常退还")
+            PointsService.refund(user_id, PointsService.cost_per_generation(), "异常退还")
         logger.exception("生成失败")
         raise HTTPException(status_code=500, detail="生成失败")
 
@@ -139,10 +141,11 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
 
     is_admin = user.get("is_admin")
     if not is_admin:
+        cost = PointsService.cost_per_generation()
         try:
-            PointsService.consume(user_id, PointsService.COST_PER_GENERATION, "生成消耗")
+            PointsService.consume(user_id, cost, "生成消耗")
         except ValueError:
-            raise HTTPException(status_code=402, detail=f"积分不足，需要 {PointsService.COST_PER_GENERATION} 积分")
+            raise HTTPException(status_code=402, detail=f"积分不足，需要 {cost} 积分")
 
     update_user_ip(user_id, get_client_ip(req))
     record_request(user_id, "processing")
@@ -156,7 +159,7 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
             StatsService.record_failed()
             record_request(user_id, "failed")
             if not is_admin:
-                PointsService.refund(user_id, PointsService.COST_PER_GENERATION, "违禁词退还")
+                PointsService.refund(user_id, PointsService.cost_per_generation(), "违禁词退还")
             raise HTTPException(status_code=400, detail="提示词包含违禁词，请修改后重试")
 
         TaskManager.create_task(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square)}, user_id=user_id)
@@ -173,7 +176,7 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
         TaskManager.update_task(task_id, status="failed", error=str(e))
         record_request(user_id, "failed")
         if not is_admin:
-            PointsService.refund(user_id, PointsService.COST_PER_GENERATION, "异常退还")
+            PointsService.refund(user_id, PointsService.cost_per_generation(), "异常退还")
         logger.exception("生成失败")
         raise HTTPException(status_code=500, detail="生成失败")
 

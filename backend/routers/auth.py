@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from backend.database import get_db
 from backend.auth import hash_password, verify_password, create_token, create_refresh_token, rotate_refresh_token, revoke_refresh_token, get_current_user, update_user_ip, get_client_ip, set_auth_cookies, clear_auth_cookies, REFRESH_COOKIE_NAME
 from backend.services.points_service import PointsService
+from backend.config import get_limit_config
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 _login_attempts = defaultdict(list)
@@ -17,8 +18,10 @@ _register_rate_hits = 0
 def _check_login_rate(ip: str):
     global _login_rate_hits
     now = time.time()
+    limit_cfg = get_limit_config()
+    limit = limit_cfg["login_rate_limit_per_minute_per_ip"]
     _login_attempts[ip] = [t for t in _login_attempts[ip] if now - t < 60]
-    if len(_login_attempts[ip]) >= 5:
+    if len(_login_attempts[ip]) >= limit:
         _login_rate_hits += 1
         raise HTTPException(status_code=429, detail="登录尝试过于频繁，请稍后再试")
     _login_attempts[ip].append(now)
@@ -27,8 +30,10 @@ def _check_login_rate(ip: str):
 def _check_register_rate(ip: str):
     global _register_rate_hits
     now = time.time()
+    limit_cfg = get_limit_config()
+    limit = limit_cfg["register_rate_limit_per_minute_per_ip"]
     _register_attempts[ip] = [t for t in _register_attempts[ip] if now - t < 60]
-    if len(_register_attempts[ip]) >= 3:
+    if len(_register_attempts[ip]) >= limit:
         _register_rate_hits += 1
         raise HTTPException(status_code=429, detail="注册过于频繁，请稍后再试")
     _register_attempts[ip].append(now)
@@ -68,9 +73,10 @@ async def register(req: RegisterRequest, request: Request, response: Response):
         cursor = conn.execute("INSERT INTO users (username, password_hash, nickname) VALUES (%s, %s, %s) RETURNING id", (req.username, password_hash, req.nickname or req.username))
         user_id = cursor.fetchone()["id"]
         update_user_ip(user_id, ip, conn=conn)
-        PointsService.add_points(user_id, PointsService.REGISTER_BONUS, "register_bonus", "注册赠送", conn=conn)
+        register_bonus = PointsService.register_bonus()
+        PointsService.add_points(user_id, register_bonus, "register_bonus", "注册赠送", conn=conn)
     access_token = _issue_session(response, user_id, req.username, False, ip, request.headers.get("user-agent", ""))
-    return {"token": access_token, "user": {"id": user_id, "username": req.username, "nickname": req.nickname or req.username, "is_admin": False, "points": PointsService.REGISTER_BONUS}}
+    return {"token": access_token, "user": {"id": user_id, "username": req.username, "nickname": req.nickname or req.username, "is_admin": False, "points": register_bonus}}
 
 
 @router.post("/login")

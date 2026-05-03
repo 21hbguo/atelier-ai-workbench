@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from backend.config import get_config, update_config
 from backend.auth import get_current_user, require_admin
@@ -16,6 +16,13 @@ class ConfigUpdate(BaseModel):
     wechat_pay_qr_url: Optional[str] = None
     alipay_pay_qr_url: Optional[str] = None
     manual_recharge_notice: Optional[str] = None
+    generate_concurrent_limit_per_user: Optional[int] = Field(None, ge=1)
+    points_cost_per_generation: Optional[int] = Field(None, ge=1)
+    points_checkin_reward: Optional[int] = Field(None, ge=0)
+    points_register_bonus: Optional[int] = Field(None, ge=0)
+    points_migration_amount: Optional[int] = Field(None, ge=0)
+    login_rate_limit_per_minute_per_ip: Optional[int] = Field(None, ge=1)
+    register_rate_limit_per_minute_per_ip: Optional[int] = Field(None, ge=1)
 
 
 @router.get("")

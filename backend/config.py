@@ -47,7 +47,15 @@ _runtime_config = {
     "wechat_pay_qr_url": os.getenv("WECHAT_PAY_QR_URL", ""),
     "alipay_pay_qr_url": os.getenv("ALIPAY_PAY_QR_URL", ""),
     "manual_recharge_notice": os.getenv("MANUAL_RECHARGE_NOTICE", "请备注用户名并在下方提交支付凭证，审核通过后自动发放兑换码"),
+    "generate_concurrent_limit_per_user": int(os.getenv("GENERATE_CONCURRENT_LIMIT_PER_USER", "10")),
+    "points_cost_per_generation": int(os.getenv("POINTS_COST_PER_GENERATION", "10")),
+    "points_checkin_reward": int(os.getenv("POINTS_CHECKIN_REWARD", "10")),
+    "points_register_bonus": int(os.getenv("POINTS_REGISTER_BONUS", "50")),
+    "points_migration_amount": int(os.getenv("POINTS_MIGRATION_AMOUNT", "50")),
+    "login_rate_limit_per_minute_per_ip": int(os.getenv("LOGIN_RATE_LIMIT_PER_MINUTE_PER_IP", "5")),
+    "register_rate_limit_per_minute_per_ip": int(os.getenv("REGISTER_RATE_LIMIT_PER_MINUTE_PER_IP", "3")),
 }
+_runtime_config_defaults = dict(_runtime_config)
 
 
 def _load_runtime_config():
@@ -73,6 +81,23 @@ def get_config():
 def update_config(new_values: dict):
     _runtime_config.update(new_values)
     _save_runtime_config()
+def get_limit_config():
+    cfg = get_config()
+    out = {}
+    for k in ["generate_concurrent_limit_per_user", "points_cost_per_generation", "points_checkin_reward", "points_register_bonus", "points_migration_amount", "login_rate_limit_per_minute_per_ip", "register_rate_limit_per_minute_per_ip"]:
+        try:
+            v = int(cfg.get(k, _runtime_config_defaults[k]))
+        except Exception:
+            v = int(_runtime_config_defaults[k])
+        out[k] = v if v >= 0 else int(_runtime_config_defaults[k])
+    if out["generate_concurrent_limit_per_user"] < 1: out["generate_concurrent_limit_per_user"] = 1
+    if out["points_cost_per_generation"] < 1: out["points_cost_per_generation"] = 1
+    if out["points_checkin_reward"] < 0: out["points_checkin_reward"] = 0
+    if out["points_register_bonus"] < 0: out["points_register_bonus"] = 0
+    if out["points_migration_amount"] < 0: out["points_migration_amount"] = 0
+    if out["login_rate_limit_per_minute_per_ip"] < 1: out["login_rate_limit_per_minute_per_ip"] = 1
+    if out["register_rate_limit_per_minute_per_ip"] < 1: out["register_rate_limit_per_minute_per_ip"] = 1
+    return out
 
 
 def IMAGE_GEN_API_URL():
