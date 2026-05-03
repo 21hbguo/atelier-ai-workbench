@@ -154,8 +154,6 @@ def init_db():
             "CREATE INDEX IF NOT EXISTS idx_image_metadata_created_at ON image_metadata(created_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_image_metadata_user_id ON image_metadata(user_id)",
             "CREATE INDEX IF NOT EXISTS idx_image_metadata_user_created ON image_metadata(user_id, created_at DESC)",
-            "CREATE INDEX IF NOT EXISTS idx_image_metadata_expires_at ON image_metadata(expires_at)",
-            "CREATE INDEX IF NOT EXISTS idx_image_metadata_is_permanent ON image_metadata(is_permanent)",
             """CREATE TABLE IF NOT EXISTS recharge_requests (
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL REFERENCES users(id),
@@ -275,6 +273,8 @@ def init_db():
                 conn.execute("ALTER TABLE image_metadata ADD COLUMN expires_at TIMESTAMP")
             if not _column_exists(conn, "image_metadata", "is_permanent"):
                 conn.execute("ALTER TABLE image_metadata ADD COLUMN is_permanent BOOLEAN DEFAULT FALSE")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_image_metadata_expires_at ON image_metadata(expires_at)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_image_metadata_is_permanent ON image_metadata(is_permanent)")
             conn.execute("UPDATE image_metadata m SET is_permanent = TRUE, expires_at = NULL WHERE EXISTS (SELECT 1 FROM square_images s WHERE s.filename = m.filename)")
             conn.execute("UPDATE image_metadata SET expires_at = COALESCE(created_at, NOW()) + interval '3 day' WHERE is_permanent = FALSE AND expires_at IS NULL")
 
@@ -308,7 +308,14 @@ def init_db():
                 conn.execute("ROLLBACK TO SAVEPOINT init_cleanup_sp")
             conn.execute("RELEASE SAVEPOINT init_cleanup_sp")
         finally:
-            conn.execute("SELECT pg_advisory_unlock(%s,%s)", (58231, 19001))
+            try:
+                conn.execute("SELECT pg_advisory_unlock(%s,%s)", (58231, 19001))
+            except Exception:
+                try:
+                    conn.rollback()
+                    conn.execute("SELECT pg_advisory_unlock(%s,%s)", (58231, 19001))
+                except Exception:
+                    pass
 
 
 def create_admin_if_not_exists():
