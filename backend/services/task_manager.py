@@ -82,15 +82,15 @@ class TaskManager:
                 conn.execute(
                     """INSERT INTO tasks
                        (task_id, type, status, params, created_at, updated_at,
-                        started_at, completed_at, progress, result_urls, error, external_result, user_id, points_cost, points_balance_after)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        started_at, completed_at, progress, result_urls, error, external_result, user_id, points_cost, points_balance_after, is_deleted, deleted_at, deleted_by_role)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                        ON CONFLICT(task_id) DO UPDATE SET
                         type=EXCLUDED.type, status=EXCLUDED.status, params=EXCLUDED.params,
                         created_at=EXCLUDED.created_at, updated_at=EXCLUDED.updated_at,
                         started_at=EXCLUDED.started_at, completed_at=EXCLUDED.completed_at,
                         progress=EXCLUDED.progress, result_urls=EXCLUDED.result_urls,
                         error=EXCLUDED.error, external_result=EXCLUDED.external_result,
-                        user_id=EXCLUDED.user_id, points_cost=EXCLUDED.points_cost, points_balance_after=EXCLUDED.points_balance_after""",
+                        user_id=EXCLUDED.user_id, points_cost=EXCLUDED.points_cost, points_balance_after=EXCLUDED.points_balance_after, is_deleted=EXCLUDED.is_deleted, deleted_at=EXCLUDED.deleted_at, deleted_by_role=EXCLUDED.deleted_by_role""",
                     (
                         task_id,
                         task.get("type", "text"),
@@ -107,6 +107,9 @@ class TaskManager:
                         task.get("user_id"),
                         task.get("points_cost", 0),
                         task.get("points_balance_after"),
+                        bool(task.get("is_deleted", False)),
+                        task.get("deleted_at"),
+                        task.get("deleted_by_role"),
                     ),
                 )
 
@@ -132,6 +135,9 @@ class TaskManager:
             "user_id": user_id,
             "points_cost": points_cost,
             "points_balance_after": points_balance_after,
+            "is_deleted": False,
+            "deleted_at": None,
+            "deleted_by_role": None,
         }
         cls._tasks[task_id] = task
         cls._save_to_db(task_id, task)
@@ -148,9 +154,11 @@ class TaskManager:
             return None
 
     @classmethod
-    def list_tasks(cls, limit: int = 50, offset: int = 0, user_id: int = None, query: str = None) -> List[Dict[str, Any]]:
+    def list_tasks(cls, limit: int = 50, offset: int = 0, user_id: int = None, query: str = None, include_deleted: bool = False) -> List[Dict[str, Any]]:
         clauses = []
         params: List[Any] = []
+        if not include_deleted:
+            clauses.append("COALESCE(is_deleted,FALSE)=FALSE")
         if user_id is not None:
             clauses.append("user_id = %s")
             params.append(user_id)
@@ -204,12 +212,21 @@ class TaskManager:
 
     @classmethod
     def delete_task(cls, task_id: str) -> bool:
+        return cls.soft_delete_task(task_id)
+
+    @classmethod
+    def soft_delete_task(cls, task_id: str, deleted_by_role: str = "user") -> bool:
         if task_id not in cls._tasks:
             task = cls.get_task(task_id)
             if not task:
                 return False
-        cls._tasks.pop(task_id, None)
-        cls._delete_from_db(task_id)
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        task = cls._tasks[task_id]
+        task["is_deleted"] = True
+        task["deleted_at"] = now
+        task["deleted_by_role"] = deleted_by_role
+        task["updated_at"] = now
+        cls._save_to_db(task_id, task, fields=["is_deleted", "deleted_at", "deleted_by_role", "updated_at"])
         return True
 
     @classmethod
