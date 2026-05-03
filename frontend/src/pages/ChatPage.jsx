@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Download, Trash2, RefreshCw, Coins } from 'lucide-react'
 import ChatInput from '../components/ChatInput'
@@ -26,6 +26,10 @@ function makeTaskId() {
   return `task-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`
 }
 function getExpiryByFilename(map, filename) { return (filename && map && map[filename]) ? map[filename] : {} }
+function parseTaskTime(value) {
+  const ts = Date.parse(String(value || '').replace(' ', 'T'))
+  return Number.isNaN(ts) ? 0 : ts
+}
 
 export default function ChatPage() {
   const dialog = useAppDialog()
@@ -40,6 +44,7 @@ export default function ChatPage() {
   const [selectMode, setSelectMode] = useState(false)
   const [checked, setChecked] = useState(new Set())
   const [searchQuery, setSearchQuery] = useState('')
+  const [timeRange, setTimeRange] = useState('3d')
   const [refreshing, setRefreshing] = useState(false)
   const [userList, setUserList] = useState([])
   const [selectedUserId, setSelectedUserId] = useState(null)
@@ -52,6 +57,16 @@ export default function ChatPage() {
   const dragCounter = useRef(0)
   const recoveringRef = useRef(new Set())
   const navigate = useNavigate()
+  const timeRangeOptions = useMemo(() => ([{ k: '1d', l: '近1天' }, { k: '3d', l: '近3天' }, { k: '7d', l: '近7天' }, { k: 'all', l: '全部' }]), [])
+  const visibleTasks = useMemo(() => {
+    const now = Date.now()
+    const limit = timeRange === 'all' ? 0 : timeRange === '1d' ? 24 * 60 * 60 * 1000 : timeRange === '3d' ? 3 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000
+    return tasks.filter(t => {
+      if (!limit) return true
+      const ts = parseTaskTime(t.created_at)
+      return ts > 0 ? now - ts <= limit : true
+    })
+  }, [tasks, timeRange])
   const loadCachedActiveTasks = useCallback(() => {
     try {
       const raw = localStorage.getItem(activeCacheKey)
@@ -264,7 +279,7 @@ export default function ChatPage() {
       prompt,
       params: { prompt, size: params?.size || 'auto', share_to_square: !!shareToSquare },
       previewImages,
-      created_at: new Date().toLocaleString('zh-CN'),
+      created_at: formatLocalTime(new Date()),
       started_at: formatLocalTime(new Date()),
       _active: true,
     }
@@ -390,9 +405,7 @@ export default function ChatPage() {
     }
   }, [tasks, pollTask, updateTask])
 
-  const filtered = tasks
-
-  const completedTasks = filtered.filter(t => t.status === 'completed' && t.result_urls?.length)
+  const completedTasks = visibleTasks.filter(t => t.status === 'completed' && t.result_urls?.length)
 
   const handleCardViewDetail = useCallback((taskIndex) => {
     const completedIndex = completedTasks.findIndex(t => t.task_id === taskIndex)
@@ -442,21 +455,21 @@ export default function ChatPage() {
   }, [])
 
   const toggleSelectAll = useCallback(() => {
-    if (checked.size === filtered.length) setChecked(new Set())
-    else setChecked(new Set(filtered.map(t => t.task_id)))
-  }, [checked.size, filtered])
+    if (checked.size === visibleTasks.length) setChecked(new Set())
+    else setChecked(new Set(visibleTasks.map(t => t.task_id)))
+  }, [checked.size, visibleTasks])
 
   const handleBatchDownload = useCallback(() => {
-    for (const task of filtered) {
+    for (const task of visibleTasks) {
       if (!checked.has(task.task_id)) continue
       for (const url of (task.result_urls || [])) {
         const a = document.createElement('a'); a.href = url; a.download = url.split('/').pop(); a.click()
       }
     }
-  }, [checked, filtered])
+  }, [checked, visibleTasks])
 
   const handleBatchDelete = useCallback(async () => {
-    if (!await dialog.confirm(`确定删除选中的 ${checked.size} 项？`)) return
+      if (!await dialog.confirm(`确定删除选中的 ${checked.size} 项？`)) return
     let failed = 0
     for (const taskId of checked) {
       try {
@@ -475,12 +488,12 @@ export default function ChatPage() {
   }, [checked, refreshTasks, dialog])
   const handleBatchExtend = useCallback(async () => {
     const filenames = []
-    for (const task of filtered) {
+    for (const task of visibleTasks) {
       if (!checked.has(task.task_id)) continue
       for (const url of (task.result_urls || [])) filenames.push(url.split('/').pop())
     }
     await handleExtendImages(filenames)
-  }, [checked, filtered, handleExtendImages])
+  }, [checked, visibleTasks, handleExtendImages])
 
   const exitSelectMode = useCallback(() => { setSelectMode(false); setChecked(new Set()) }, [])
 
@@ -557,6 +570,11 @@ export default function ChatPage() {
           style={{ color: 'var(--text-secondary)' }}>
           <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
         </button>
+        <div className="flex items-center gap-1 rounded-lg p-0.5" style={{ background: 'var(--border-color)' }}>
+          {timeRangeOptions.map(({ k, l }) => (
+            <button key={k} onClick={() => setTimeRange(k)} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${timeRange === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`} style={{ color: timeRange === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{l}</button>
+          ))}
+        </div>
         {selectMode ? (
           <button onClick={exitSelectMode} className="ml-auto px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button>
         ) : (
@@ -567,14 +585,14 @@ export default function ChatPage() {
       <div ref={feedRef} className="flex-1 overflow-y-auto px-4 pb-6">
         {!loaded ? (
           <div className="flex justify-center items-center h-full"><div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} /></div>
-        ) : tasks.length === 0 ? (
+        ) : visibleTasks.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center py-20">
             <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>开始生成你的图像</h2>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>输入提示词或上传参考图，AI 为你创作</p>
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{tasks.length === 0 ? '输入提示词或上传参考图，AI 为你创作' : '当前时间筛选下没有记录'}</p>
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 pt-4">
-            {filtered.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onAddPrompt={handleAddPrompt} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id)} onToggleCheck={() => toggleCheck(task.task_id)} showUsername={isAdmin} username={task.username} onViewDetail={() => handleCardViewDetail(task.task_id)} />)}
+            {visibleTasks.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onAddPrompt={handleAddPrompt} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id)} onToggleCheck={() => toggleCheck(task.task_id)} showUsername={isAdmin} username={task.username} onViewDetail={() => handleCardViewDetail(task.task_id)} />)}
           </div>
         )}
       </div>
@@ -582,7 +600,7 @@ export default function ChatPage() {
         <div className="border-t px-4 py-3 flex items-center gap-3" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
           <span className="text-sm" style={{ color: 'var(--text-primary)' }}>已选 {checked.size} 项</span>
           <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>
-            {checked.size === filtered.length ? '取消全选' : '全选'}
+            {checked.size === visibleTasks.length ? '取消全选' : '全选'}
           </button>
           <div className="ml-auto flex gap-2">
             <button onClick={handleBatchExtend} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: '#2563eb' }}>延长3天</button>
