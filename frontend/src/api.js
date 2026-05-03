@@ -136,4 +136,11 @@ export const announcementAPI = {
   markRead: id => api.post(`/announcements/${id}/read`),
 }
 
+export const notificationAPI = {
+  list: (page = 1, size = 20) => api.get('/notifications', { params: { page, size } }),
+  unreadCount: () => api.get('/notifications/unread-count'),
+  markRead: id => api.post(`/notifications/${id}/read`),
+  markAllRead: () => api.post('/notifications/read-all'),
+}
+
 export default api

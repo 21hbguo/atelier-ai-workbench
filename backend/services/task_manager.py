@@ -194,6 +194,7 @@ class TaskManager:
             kwargs.setdefault("completed_at", now)
         task.update(kwargs)
         task["updated_at"] = now
+        terminal_transition = prev_status not in ("completed", "failed") and new_status in ("completed", "failed")
 
         # 终态（completed/failed）才写库，高频进度更新只写内存
         if new_status in ("completed", "failed"):
@@ -207,6 +208,15 @@ class TaskManager:
                 if "updated_at" not in changed_fields:
                     changed_fields.append("updated_at")
                 cls._save_to_db(task_id, task, fields=changed_fields)
+        if terminal_transition and task.get("user_id"):
+            try:
+                from backend.services.notification_service import NotificationService
+                if new_status == "completed":
+                    NotificationService.create(task["user_id"], "task_completed", "生成完成", f"任务 {task_id} 已完成", task_id)
+                elif new_status == "failed":
+                    NotificationService.create(task["user_id"], "task_failed", "生成失败", task.get("error") or f"任务 {task_id} 已失败", task_id)
+            except Exception:
+                pass
 
         return task
 

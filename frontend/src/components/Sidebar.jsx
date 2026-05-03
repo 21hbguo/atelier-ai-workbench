@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useLocation, Link, useNavigate } from 'react-router-dom'
-import { Sun, Moon, BookOpen, MessageSquare, X, Globe, LogOut, User, Shield, Coins, Wallet, Megaphone } from 'lucide-react'
+import { Sun, Moon, BookOpen, MessageSquare, X, Globe, LogOut, User, Shield, Coins, Wallet, Megaphone, Bell } from 'lucide-react'
 import { useTheme } from '../ThemeContext'
-import { authAPI, pointsAPI } from '../api'
+import { authAPI, pointsAPI, notificationAPI } from '../api'
 import { clearUser, readUser } from '../auth'
 import { useAppDialog } from './AppDialogProvider'
 
@@ -11,6 +11,7 @@ const navItems = [
   { path: '/square', icon: Globe, label: '广场' },
   { path: '/prompts', icon: BookOpen, label: '我的提示词' },
   { path: '/wallet', icon: Wallet, label: '小金库' },
+  { path: '/notifications', icon: Bell, label: '通知' },
   { path: '/announcements', icon: Megaphone, label: '公告' },
 ]
 
@@ -23,6 +24,7 @@ export default function Sidebar({ open, onClose }) {
   const isAdmin = Boolean(user?.is_admin)
   const [points, setPoints] = useState(user?.points ?? 0)
   const [checkedInToday, setCheckedInToday] = useState(false)
+  const [unreadNoticeCount, setUnreadNoticeCount] = useState(0)
 
   useEffect(() => {
     pointsAPI.balance().then(res => {
@@ -34,13 +36,16 @@ export default function Sidebar({ open, onClose }) {
     pointsAPI.checkinStatus().then(res => {
       setCheckedInToday(res.data.checked_in_today)
     }).catch(() => {})
+    notificationAPI.unreadCount().then(res => setUnreadNoticeCount(res.data.count || 0)).catch(() => {})
 
     const handleUpdate = () => {
       const u = readUser()
       if (u) setPoints(u.points ?? 0)
     }
+    const handleNoticeUpdate = () => notificationAPI.unreadCount().then(res => setUnreadNoticeCount(res.data.count || 0)).catch(() => {})
     window.addEventListener('points-updated', handleUpdate)
-    return () => window.removeEventListener('points-updated', handleUpdate)
+    window.addEventListener('notifications-updated', handleNoticeUpdate)
+    return () => { window.removeEventListener('points-updated', handleUpdate); window.removeEventListener('notifications-updated', handleNoticeUpdate) }
   }, [])
 
   const handleCheckIn = async () => {
@@ -78,7 +83,7 @@ export default function Sidebar({ open, onClose }) {
                 className={`sidebar-nav-link ${active ? 'bg-accent/10' : 'hover:bg-black/5'}`}
                 style={{ color: active ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: active ? 'var(--accent)15' : undefined }}
                 onClick={() => onClose?.()}>
-                <Icon size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">{label}</span>
+                <Icon size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">{label}</span>{path==='/notifications'&&unreadNoticeCount>0&&<span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{background:'var(--accent)'}}>{unreadNoticeCount>99?'99+':unreadNoticeCount}</span>}
               </Link>
             )
           })}

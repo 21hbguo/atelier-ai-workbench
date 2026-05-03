@@ -19,6 +19,7 @@ import RefundPage from './pages/RefundPage'
 import RedeemPage from './pages/RedeemPage'
 import WalletPage from './pages/WalletPage'
 import AnnouncementsPage from './pages/AnnouncementsPage'
+import NotificationsPage from './pages/NotificationsPage'
 
 function ProtectedRoute({ children, authReady, user }) {
   if (!authReady) return null
@@ -107,6 +108,7 @@ function AppContent() {
           <Route path="/refund" element={<RefundPage />} />
           <Route path="/redeem" element={<ProtectedRoute authReady={authReady} user={user}><RedeemPage /></ProtectedRoute>} />
           <Route path="/wallet" element={<ProtectedRoute authReady={authReady} user={user}><WalletPage /></ProtectedRoute>} />
+          <Route path="/notifications" element={<ProtectedRoute authReady={authReady} user={user}><NotificationsPage /></ProtectedRoute>} />
           <Route path="/announcements" element={<ProtectedRoute authReady={authReady} user={user}><AnnouncementsPage /></ProtectedRoute>} />
           <Route path="/" element={<ProtectedRoute authReady={authReady} user={user}><ChatPage /></ProtectedRoute>} />
           <Route path="/square" element={<ProtectedRoute authReady={authReady} user={user}><SquarePage /></ProtectedRoute>} />
