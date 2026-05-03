@@ -15,8 +15,12 @@ function useImageActions() {
   const navigate = useNavigate()
 
   const handleUsePrompt = (prompt) => {
-    localStorage.setItem('pending_prompt', prompt)
+    const text = String(prompt || '').trim()
+    if (!text) return
+    localStorage.setItem('pending_prompt', text)
+    window.dispatchEvent(new Event('pending-prompt-updated'))
     navigate('/')
+    setTimeout(() => { if (window.location.pathname === '/square') window.location.href = '/' }, 120)
   }
 
   const handleUseImage = async (card) => {
@@ -39,8 +43,12 @@ function usePromptActions() {
   const navigate = useNavigate()
 
   const handleUsePrompt = (prompt) => {
-    localStorage.setItem('pending_prompt', prompt)
+    const text = String(prompt || '').trim()
+    if (!text) return
+    localStorage.setItem('pending_prompt', text)
+    window.dispatchEvent(new Event('pending-prompt-updated'))
     navigate('/')
+    setTimeout(() => { if (window.location.pathname === '/square') window.location.href = '/' }, 120)
   }
 
   const handleUseImage = async (card) => {

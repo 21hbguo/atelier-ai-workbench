@@ -104,7 +104,8 @@ def _parse_dt(s:str):
     except Exception:return None
 def _upsert_prompts(conn,merged:dict,mode:str,dry_run:bool)->dict:
     existing=_load_existing(conn)
-    st={"inserted":0,"updated":0,"skipped":0,"missing_prompt":0,"fixed_tag_mismatch":0}
+    existing_prompts={r["prompt"] for r in conn.execute("SELECT prompt FROM prompts WHERE source LIKE 'evo:%'").fetchall()}
+    st={"inserted":0,"updated":0,"skipped":0,"missing_prompt":0,"fixed_tag_mismatch":0,"duplicate_content":0}
     for key,item in merged.items():
         if not item["prompt"]:
             st["missing_prompt"]+=1
@@ -122,9 +123,13 @@ def _upsert_prompts(conn,merged:dict,mode:str,dry_run:bool)->dict:
             if not dry_run:
                 conn.execute("UPDATE prompts SET name=%s,prompt=%s,author=%s,category=%s,tags=%s,image_path=%s WHERE id=%s",(item["name"],item["prompt"],item["author"],item["category"],tags_json,item["image_path"],row["id"]))
             st["updated"]+=1
+        elif item["prompt"] in existing_prompts:
+            st["duplicate_content"]+=1
+            continue
         else:
             if not dry_run:
                 conn.execute("""INSERT INTO prompts (id,name,prompt,negative_prompt,tags,created_at,user_id,image_path,author,source,category) VALUES (%s,%s,%s,'',%s,%s,NULL,%s,%s,%s,%s)""",(str(uuid4()),item["name"],item["prompt"],tags_json,datetime.now().strftime("%Y-%m-%d %H:%M:%S"),item["image_path"],item["author"],item["source"],item["category"]))
+                existing_prompts.add(item["prompt"])
             st["inserted"]+=1
     return st
 def _can_incremental(conn,gen_cases:str,gen_evo:str)->bool:

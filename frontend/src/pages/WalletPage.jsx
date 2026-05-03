@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Coins, ArrowUpCircle, ArrowDownCircle, RefreshCw, User, Mail, Gift, Wallet, Upload } from 'lucide-react'
+import { Coins, ArrowUpCircle, ArrowDownCircle, RefreshCw, User, Mail, Gift, Wallet, Upload, KeyRound } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
 import Pagination from '../components/Pagination'
 import { useAppDialog } from '../components/AppDialogProvider'
-import api, { pointsAPI, uploadAPI } from '../api'
+import api, { pointsAPI, uploadAPI, accountAPI } from '../api'
 import { readUser } from '../auth'
 const typeMap={register_bonus:{label:'注册赠送',color:'var(--accent)'},daily_checkin:{label:'每日签到',color:'var(--accent)'},generate_consume:{label:'生成消耗',color:'#ef4444'},image_expire_extend:{label:'延长有效期',color:'#ef4444'},generate_refund:{label:'生成退款',color:'#22c55e'},redeem_code:{label:'兑换码兑换',color:'var(--accent)'},admin_grant:{label:'管理员调整',color:'#8b5cf6'},migration:{label:'历史补偿',color:'var(--accent)'},migration_bonus:{label:'历史补偿',color:'var(--accent)'},recharge_pending:{label:'充值待审核',color:'#f59e0b'}}
 const rechargePackages=[{amount:9.9,points:120,label:'体验包'},{amount:29.9,points:400,label:'进阶包'},{amount:59.9,points:900,label:'超值包'}]
@@ -36,6 +36,9 @@ const [proofLightbox,setProofLightbox]=useState(false)
 const [checkedInToday,setCheckedInToday]=useState(null)
 const [checkinLoading,setCheckinLoading]=useState(false)
 const [rechargeMsg,setRechargeMsg]=useState(null)
+const [oldPassword,setOldPassword]=useState('')
+const [newPassword,setNewPassword]=useState('')
+const [passwordSubmitting,setPasswordSubmitting]=useState(false)
 const fetchData=async(p=1)=>{
 setLoading(true)
 try{
@@ -129,6 +132,19 @@ setRechargeMsg({type:'error',text:err.message||'提交失败'})
 setSubmittingRecharge(false)
 }
 }
+const handleChangePassword=async()=>{
+if(!oldPassword||!newPassword)return
+setPasswordSubmitting(true)
+try{
+await accountAPI.changePassword({old_password:oldPassword,new_password:newPassword})
+setOldPassword('')
+setNewPassword('')
+dialog.alert('密码修改成功')
+}catch(e){
+dialog.alert(e.message||'修改失败')
+}
+setPasswordSubmitting(false)
+}
 const totalPages=Math.ceil(total/size)
 const activeQr=rechargeChannel==='wechat'?payConfig.wechat_pay_qr_url:payConfig.alipay_pay_qr_url
 return(
@@ -167,6 +183,14 @@ return(
 {redeemMsg&&(<div className={`mt-2 px-3 py-2 rounded-lg text-xs ${redeemMsg.type==='success'?'text-green-600':'text-red-500'}`} style={{background:redeemMsg.type==='success'?'rgba(34,197,94,0.1)':'rgba(239,68,68,0.1)'}}>{redeemMsg.text}</div>)}
 </div>
 )}
+<div className="p-4 rounded-xl border" style={{background:'var(--bg-ai-bubble)',borderColor:'var(--border-color)'}}>
+<div className="flex items-center gap-2 mb-3"><KeyRound size={16} style={{color:'var(--accent)'}} /><span className="text-sm font-medium" style={{color:'var(--text-primary)'}}>修改密码</span></div>
+<div className="grid sm:grid-cols-2 gap-2">
+<input type="password" value={oldPassword} onChange={e=>setOldPassword(e.target.value)} placeholder="当前密码" className="px-3 py-2 rounded-lg text-sm border outline-none" style={{background:'var(--bg-primary)',borderColor:'var(--border-color)',color:'var(--text-primary)'}} />
+<input type="password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} placeholder="新密码（至少6位）" className="px-3 py-2 rounded-lg text-sm border outline-none" style={{background:'var(--bg-primary)',borderColor:'var(--border-color)',color:'var(--text-primary)'}} />
+</div>
+<button onClick={handleChangePassword} disabled={passwordSubmitting||!oldPassword||newPassword.length<6} className="mt-3 px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50" style={{background:'var(--accent)'}}>{passwordSubmitting?'提交中...':'确认修改'}</button>
+</div>
 </div>
 {!isAdmin&&(
 <div className="grid grid-cols-1 mb-6">

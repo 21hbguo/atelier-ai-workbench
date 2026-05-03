@@ -12,7 +12,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading }, ref) {
   const fileRef = useRef(null)
   const textareaRef = useRef(null)
 
-  useEffect(() => {
+  const consumePending = useCallback(() => {
     const pending = localStorage.getItem('pending_prompt')
     if (pending) {
       setPrompt(pending)
@@ -30,6 +30,12 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading }, ref) {
       localStorage.removeItem('pending_image')
     }
   }, [])
+
+  useEffect(() => {
+    consumePending()
+    window.addEventListener('pending-prompt-updated', consumePending)
+    return () => window.removeEventListener('pending-prompt-updated', consumePending)
+  }, [consumePending])
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -101,14 +107,14 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading }, ref) {
                 style={{ color: showParams ? 'var(--accent)' : 'var(--text-secondary)' }}>
                 <Settings size={16} />
               </button>
-              <button onClick={() => setShareToSquare(!shareToSquare)} className="p-2 rounded-lg hover:bg-black/5 transition-colors"
+              {/* <button onClick={() => setShareToSquare(!shareToSquare)} className="p-2 rounded-lg hover:bg-black/5 transition-colors"
                 style={{ color: shareToSquare ? '#22c55e' : 'var(--text-secondary)' }}>
                 <Share2 size={16} />
-              </button>
+              </button> */}
             </div>
             <div className="flex-1 flex flex-col">
               <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleSend() } }}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
                 placeholder="输入提示词..."
                 className="flex-1 resize-none bg-transparent outline-none text-sm py-2"
                 rows={3} style={{ color: 'var(--text-primary)', minHeight: '72px', maxHeight: '120px' }} />

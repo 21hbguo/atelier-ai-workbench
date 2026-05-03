@@ -602,7 +602,6 @@ export default function ChatPage() {
           onClose={() => setSelectedCardIndex(null)}
           onUseImage={card => inputRef.current?.addImage(card.fullUrl)}
           onUsePrompt={handleAddPrompt}
-          onShare={handleDetailShare}
           onExtend={handleDetailExtend}
           title="生成详情"
           allowMetadataEdit

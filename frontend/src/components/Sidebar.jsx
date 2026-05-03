@@ -13,8 +13,8 @@ const navItems = [
   { path: '/wallet', icon: Wallet, label: '小金库' },
   { path: '/notifications', icon: Bell, label: '通知' },
   { path: '/announcements', icon: Megaphone, label: '公告' },
-  { path: '/shares', icon: Share2, label: '分享管理' },
-  { path: '/settings', icon: Settings, label: '账号安全' },
+  // { path: '/shares', icon: Share2, label: '分享管理' },
+  // { path: '/settings', icon: Settings, label: '账号安全' },
 ]
 
 export default function Sidebar({ open, onClose }) {

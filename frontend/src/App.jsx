@@ -115,8 +115,8 @@ function AppContent() {
           <Route path="/" element={<ProtectedRoute authReady={authReady} user={user}><ChatPage /></ProtectedRoute>} />
           <Route path="/square" element={<ProtectedRoute authReady={authReady} user={user}><SquarePage /></ProtectedRoute>} />
           <Route path="/prompts" element={<ProtectedRoute authReady={authReady} user={user}><PromptsPage /></ProtectedRoute>} />
-          <Route path="/shares" element={<ProtectedRoute authReady={authReady} user={user}><SharesPage /></ProtectedRoute>} />
-          <Route path="/settings" element={<ProtectedRoute authReady={authReady} user={user}><SettingsPage /></ProtectedRoute>} />
+          {/* <Route path="/shares" element={<ProtectedRoute authReady={authReady} user={user}><SharesPage /></ProtectedRoute>} /> */}
+          {/* <Route path="/settings" element={<ProtectedRoute authReady={authReady} user={user}><SettingsPage /></ProtectedRoute>} /> */}
           <Route path="/admin" element={<AdminRoute authReady={authReady} user={user}><AdminPage /></AdminRoute>} />
         </Routes></Suspense>
       </BrowserRouter>
