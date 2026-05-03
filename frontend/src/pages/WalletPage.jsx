@@ -134,7 +134,7 @@ const activeQr=rechargeChannel==='wechat'?payConfig.wechat_pay_qr_url:payConfig.
 return(
 <>
 <MainLayout>
-<div className="flex-1 overflow-y-auto p-4 sm:p-6 max-w-3xl mx-auto w-full">
+<div className="flex-1 overflow-y-auto p-4 sm:p-6">
 <div className="mb-6 p-5 rounded-xl border" style={{background:'var(--bg-ai-bubble)',borderColor:'var(--border-color)'}}>
 <div className="flex items-center gap-3 mb-4">
 <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{background:'var(--accent)',color:'#fff'}}><User size={24} /></div>
@@ -157,7 +157,8 @@ return(
 </div>
 </div>
 {!isAdmin&&(
-<div className="mb-6 p-4 rounded-xl border" style={{background:'var(--bg-ai-bubble)',borderColor:'var(--border-color)'}}>
+<div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
+<div className="p-4 rounded-xl border" style={{background:'var(--bg-ai-bubble)',borderColor:'var(--border-color)'}}>
 <div className="flex items-center gap-2 mb-3"><Gift size={16} style={{color:'var(--accent)'}} /><span className="text-sm font-medium" style={{color:'var(--text-primary)'}}>兑换码</span></div>
 <div className="flex gap-2">
 <input type="text" value={redeemCode} onChange={e=>setRedeemCode(e.target.value.toUpperCase())} onKeyDown={e=>e.key==='Enter'&&handleRedeem()} placeholder="输入兑换码" className="flex-1 px-3 py-2 rounded-lg text-sm font-mono outline-none transition-colors" style={{background:'var(--bg-primary)',color:'var(--text-primary)',border:'1px solid var(--border-color)'}} />
@@ -165,9 +166,7 @@ return(
 </div>
 {redeemMsg&&(<div className={`mt-2 px-3 py-2 rounded-lg text-xs ${redeemMsg.type==='success'?'text-green-600':'text-red-500'}`} style={{background:redeemMsg.type==='success'?'rgba(34,197,94,0.1)':'rgba(239,68,68,0.1)'}}>{redeemMsg.text}</div>)}
 </div>
-)}
-{!isAdmin&&(
-<div className="mb-6 p-4 rounded-xl border" style={{background:'var(--bg-ai-bubble)',borderColor:'var(--border-color)'}}>
+<div className="p-4 rounded-xl border" style={{background:'var(--bg-ai-bubble)',borderColor:'var(--border-color)'}}>
 <div className="flex items-center gap-2 mb-3"><Wallet size={16} style={{color:'var(--accent)'}} /><span className="text-sm font-medium" style={{color:'var(--text-primary)'}}>人工充值</span></div>
 <p className="text-xs mb-3" style={{color:'var(--text-secondary)'}}>{payConfig.manual_recharge_notice||'请备注用户名并在下方提交支付凭证，审核通过后自动发放兑换码'}</p>
 <div className="flex gap-2 mb-3">{['wechat','alipay'].map(c=><button key={c} onClick={()=>setRechargeChannel(c)} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${rechargeChannel===c?'text-white':'hover:bg-black/5'}`} style={{background:rechargeChannel===c?'var(--accent)':'var(--bg-primary)',color:rechargeChannel===c?'#fff':'var(--text-primary)',border:'1px solid var(--border-color)'}}>{channelLabel[c]}</button>)}</div>
@@ -178,6 +177,7 @@ return(
 <div className="flex flex-wrap items-center gap-2 mb-2"><label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium cursor-pointer hover:bg-black/5" style={{color:'var(--text-primary)',border:'1px solid var(--border-color)'}}><Upload size={14} />{uploadingProof?'上传中...':'上传支付凭证'}<input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleUploadProof} /></label>{proofUrl&&<button type="button" onClick={()=>setProofLightbox(true)} className="text-xs underline" style={{color:'var(--accent)'}}>查看已上传凭证</button>}</div>
 <button onClick={handleSubmitRecharge} disabled={submittingRecharge||!proofUrl.trim()} className="w-full px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors disabled:opacity-50" style={{background:'var(--accent)'}}>{submittingRecharge?'提交中...':`提交充值申请（¥${rechargeAmount} / ${rechargePoints}积分）`}</button>
 {rechargeMsg&&<div className={`mt-2 px-3 py-2 rounded-lg text-xs ${rechargeMsg.type==='success'?'text-green-600':'text-red-500'}`} style={{background:rechargeMsg.type==='success'?'rgba(34,197,94,0.1)':'rgba(239,68,68,0.1)'}}>{rechargeMsg.text}</div>}
+</div>
 </div>
 )}
 <div>
