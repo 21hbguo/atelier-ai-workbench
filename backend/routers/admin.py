@@ -12,6 +12,7 @@ from backend.services.image_mapping import ImageUrlMapping
 from backend.services.points_service import PointsService
 from backend.services.notification_service import NotificationService
 from backend.services.image_expiry import refresh_permanent_flags_by_filenames
+from backend.config import get_generation_providers, get_generation_models
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 logger = logging.getLogger(__name__)
@@ -823,6 +824,56 @@ async def admin_stats_overview(time_range: str = Query("7d", alias="range"), adm
         user_rows = conn.execute("SELECT to_char(created_at,'YYYY-MM-DD') d, COUNT(*) cnt FROM users WHERE created_at >= %s AND created_at <= %s GROUP BY d", (t30_start, end_s)).fetchall()
         rev_rows = conn.execute("SELECT to_char(created_at,'YYYY-MM-DD') d, COALESCE(SUM(amount),0) amt FROM recharge_requests WHERE status='approved' AND created_at >= %s AND created_at <= %s GROUP BY d", (t30_start, end_s)).fetchall()
         points_rows = conn.execute("SELECT to_char(created_at,'YYYY-MM-DD') d, COALESCE(SUM(ABS(amount)),0) amt FROM point_transactions WHERE type='generate_consume' AND created_at >= %s AND created_at <= %s GROUP BY d", (t30_start, end_s)).fetchall()
+        model_rows = conn.execute(
+            """
+            SELECT COALESCE(NULLIF(params->>'model_id',''),'image-default') model_id, COUNT(*) total_cnt,
+                   COUNT(*) FILTER (WHERE status='completed') success_cnt,
+                   COUNT(*) FILTER (WHERE status='failed') failed_cnt,
+                   AVG(EXTRACT(EPOCH FROM (completed_at-started_at))) FILTER (WHERE status='completed' AND started_at IS NOT NULL AND completed_at IS NOT NULL) avg_sec
+            FROM tasks
+            WHERE created_at >= %s AND created_at <= %s
+            GROUP BY COALESCE(NULLIF(params->>'model_id',''),'image-default')
+            ORDER BY total_cnt DESC, model_id ASC
+            """,
+            (start_s, end_s),
+        ).fetchall()
+        provider_rows = conn.execute(
+            """
+            SELECT COALESCE(NULLIF(params->>'provider_id',''),NULLIF(params->'provider_trace'->0->>'provider_id',''),'unknown') provider_id, COUNT(*) total_cnt,
+                   COUNT(*) FILTER (WHERE status='completed') success_cnt,
+                   COUNT(*) FILTER (WHERE status='failed') failed_cnt,
+                   AVG(EXTRACT(EPOCH FROM (completed_at-started_at))) FILTER (WHERE status='completed' AND started_at IS NOT NULL AND completed_at IS NOT NULL) avg_sec
+            FROM tasks
+            WHERE created_at >= %s AND created_at <= %s
+            GROUP BY COALESCE(NULLIF(params->>'provider_id',''),NULLIF(params->'provider_trace'->0->>'provider_id',''),'unknown')
+            ORDER BY total_cnt DESC, provider_id ASC
+            """,
+            (start_s, end_s),
+        ).fetchall()
+        fallback_rows = conn.execute(
+            """
+            SELECT COALESCE(NULLIF(trace_elem->>'provider_id',''),'unknown') provider_id, COUNT(*) attempt_cnt,
+                   COUNT(*) FILTER (WHERE (trace_elem->>'ok')::boolean = TRUE) attempt_ok_cnt
+            FROM tasks t
+            JOIN LATERAL jsonb_array_elements(COALESCE(t.params->'provider_trace','[]'::jsonb)) trace_elem ON TRUE
+            WHERE t.created_at >= %s AND t.created_at <= %s
+            GROUP BY COALESCE(NULLIF(trace_elem->>'provider_id',''),'unknown')
+            ORDER BY attempt_cnt DESC, provider_id ASC
+            """,
+            (start_s, end_s),
+        ).fetchall()
+        matrix_rows = conn.execute(
+            """
+            SELECT COALESCE(NULLIF(params->>'model_id',''),'image-default') model_id, COALESCE(NULLIF(params->>'provider_id',''),NULLIF(params->'provider_trace'->0->>'provider_id',''),'unknown') provider_id, COUNT(*) total_cnt,
+                   COUNT(*) FILTER (WHERE status='completed') success_cnt,
+                   COUNT(*) FILTER (WHERE status='failed') failed_cnt
+            FROM tasks
+            WHERE created_at >= %s AND created_at <= %s
+            GROUP BY COALESCE(NULLIF(params->>'model_id',''),'image-default'), COALESCE(NULLIF(params->>'provider_id',''),NULLIF(params->'provider_trace'->0->>'provider_id',''),'unknown')
+            ORDER BY total_cnt DESC, model_id ASC, provider_id ASC
+            """,
+            (start_s, end_s),
+        ).fetchall()
         req_map = {r["d"]: int(r["cnt"] or 0) for r in req_rows}
         suc_map = {r["d"]: int(r["cnt"] or 0) for r in suc_rows}
         user_map = {r["d"]: int(r["cnt"] or 0) for r in user_rows}
@@ -835,6 +886,31 @@ async def admin_stats_overview(time_range: str = Query("7d", alias="range"), adm
         top_recharge = [{"user_id": r["user_id"], "username": r["username"], "nickname": r["nickname"], "amount": round(float(r["amount"] or 0), 2), "orders": int(r["orders"] or 0)} for r in top_recharge_rows if float(r["amount"] or 0) > 0]
         cat_all_rows = conn.execute("SELECT COALESCE(NULLIF(TRIM(category),''),'未分类') category, COUNT(*) cnt FROM prompts GROUP BY category ORDER BY cnt DESC").fetchall()
         cat_visible_rows = conn.execute("SELECT COALESCE(NULLIF(TRIM(category),''),'未分类') category, COUNT(*) cnt FROM prompts WHERE COALESCE(is_frozen,FALSE)=FALSE GROUP BY category ORDER BY cnt DESC").fetchall()
+    provider_cfg = get_generation_providers() or {}
+    model_cfg = get_generation_models() or {}
+    model_stats = [{"model_id": r["model_id"], "model_label": ((model_cfg.get(r["model_id"]) or {}).get("label") or r["model_id"]), "total": int(r["total_cnt"] or 0), "success": int(r["success_cnt"] or 0), "failed": int(r["failed_cnt"] or 0), "success_rate": round((int(r["success_cnt"] or 0) / int(r["total_cnt"] or 1)) * 100, 1), "avg_duration_seconds": round(float(r["avg_sec"] or 0), 1)} for r in model_rows]
+    provider_stats = [{"provider_id": r["provider_id"], "provider_type": ((provider_cfg.get(r["provider_id"]) or {}).get("type") or "unknown"), "total": int(r["total_cnt"] or 0), "success": int(r["success_cnt"] or 0), "failed": int(r["failed_cnt"] or 0), "success_rate": round((int(r["success_cnt"] or 0) / int(r["total_cnt"] or 1)) * 100, 1), "avg_duration_seconds": round(float(r["avg_sec"] or 0), 1)} for r in provider_rows]
+    provider_type_map = {}
+    for p in provider_stats:
+        t = p["provider_type"]
+        if t not in provider_type_map: provider_type_map[t] = {"provider_type": t, "total": 0, "success": 0, "failed": 0}
+        provider_type_map[t]["total"] += p["total"]
+        provider_type_map[t]["success"] += p["success"]
+        provider_type_map[t]["failed"] += p["failed"]
+    provider_type_stats = []
+    for t, v in provider_type_map.items():
+        provider_type_stats.append({"provider_type": t, "total": int(v["total"]), "success": int(v["success"]), "failed": int(v["failed"]), "success_rate": round((int(v["success"]) / int(v["total"] or 1)) * 100, 1)})
+    provider_type_stats.sort(key=lambda x: (-x["total"], x["provider_type"]))
+    fallback_stats = [{"provider_id": r["provider_id"], "provider_type": ((provider_cfg.get(r["provider_id"]) or {}).get("type") or "unknown"), "attempts": int(r["attempt_cnt"] or 0), "attempt_ok": int(r["attempt_ok_cnt"] or 0), "attempt_ok_rate": round((int(r["attempt_ok_cnt"] or 0) / int(r["attempt_cnt"] or 1)) * 100, 1)} for r in fallback_rows]
+    matrix_map = {}
+    for r in matrix_rows:
+        mid = r["model_id"]
+        pid = r["provider_id"]
+        if mid not in matrix_map: matrix_map[mid] = {}
+        matrix_map[mid][pid] = {"total": int(r["total_cnt"] or 0), "success": int(r["success_cnt"] or 0), "failed": int(r["failed_cnt"] or 0), "success_rate": round((int(r["success_cnt"] or 0) / int(r["total_cnt"] or 1)) * 100, 1)}
+    matrix_models = sorted(matrix_map.keys(), key=lambda x: (-sum(v["total"] for v in matrix_map[x].values()), x))
+    matrix_providers = sorted({pid for row in matrix_map.values() for pid in row.keys()})
+    matrix = {"models": matrix_models, "model_labels": {mid: ((model_cfg.get(mid) or {}).get("label") or mid) for mid in matrix_models}, "providers": matrix_providers, "cells": matrix_map}
     success_rate = round((suc / req) * 100, 1) if req > 0 else 0
     avg_duration_seconds = round(float(avg_latency_row["avg_sec"] or 0), 1) if avg_latency_row else 0
     return {
@@ -847,4 +923,5 @@ async def admin_stats_overview(time_range: str = Query("7d", alias="range"), adm
         "trends_30d": trends,
         "leaderboards": {"success_top": top_success, "recharge_top": top_recharge},
         "categories": {"admin_all": [{"category": r["category"], "count": int(r["cnt"] or 0)} for r in cat_all_rows], "user_visible": [{"category": r["category"], "count": int(r["cnt"] or 0)} for r in cat_visible_rows]},
+        "generation": {"models": model_stats, "providers": provider_stats, "provider_types": provider_type_stats, "fallback_attempts": fallback_stats, "matrix": matrix},
     }

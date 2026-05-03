@@ -107,6 +107,6 @@ class GenGateway:
         out=[]
         for model_id,model in models.items():
             if model.get("enabled") is False: continue
-            out.append({"model_id":model_id,"label":model.get("label") or model_id,"capability":model.get("capability") or "image"})
+            out.append({"model_id":model_id,"label":model.get("label") or model_id,"capability":model.get("capability") or "image","params":model.get("params") or {}})
         out.sort(key=lambda x:x["label"])
         return out

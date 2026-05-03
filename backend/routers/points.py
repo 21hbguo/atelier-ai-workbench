@@ -83,11 +83,12 @@ async def get_transactions(page: int = 1, size: int = 20, user=Depends(get_curre
             (user["user_id"],)
         ).fetchone()["cnt"]
         rows = conn.execute(
-            """SELECT t.*, rr.channel, rr.amount as recharge_amount, rr.points as recharge_points,
+            """SELECT t.*, CASE WHEN t.type IN ('generate_consume','generate_refund') THEN COALESCE(NULLIF(tk.params->>'model_id',''),'GPT-Image-2') ELSE NULL END as model_name, rr.channel, rr.amount as recharge_amount, rr.points as recharge_points,
                       rr.payer_name, rr.tx_no, rr.proof_url, rr.remark, rr.status as recharge_status,
                       rr.redeem_code, rr.review_note, rr.created_at as recharge_created_at,
                       rr.reviewed_at, rr.reviewed_by
                FROM point_transactions t
+               LEFT JOIN tasks tk ON tk.task_id = split_part(COALESCE(t.request_key,''), ':', 2)
                LEFT JOIN recharge_requests rr ON t.recharge_request_id = rr.id
                WHERE t.user_id = %s ORDER BY t.created_at DESC LIMIT %s OFFSET %s""",
             (user["user_id"], size, offset)

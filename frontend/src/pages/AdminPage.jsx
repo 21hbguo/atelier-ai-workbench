@@ -652,6 +652,58 @@ export default function AdminPage() {
                     </div>
                   </div>
                 </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>模型调用分布</div>
+                    <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
+                      {(overviewStats?.generation?.models || []).slice(0, 12).map(i => <div key={`m-${i.model_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.model_label || i.model_id}`} style={{ color: 'var(--text-primary)' }}>{`${i.model_label || i.model_id} (${i.model_id})`}</span><span className="shrink-0" style={{ color: 'var(--text-secondary)' }}>{i.total} / {i.success_rate}%</span></div>)}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>渠道调用分布</div>
+                    <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
+                      {(overviewStats?.generation?.providers || []).slice(0, 12).map(i => <div key={`p-${i.provider_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.provider_id}`} style={{ color: 'var(--text-primary)' }}>{`${i.provider_id === 'unknown' ? 'unknown(历史缺失)' : i.provider_id} (${i.provider_type})`}</span><span className="shrink-0" style={{ color: 'var(--text-secondary)' }}>{i.total} / {i.success_rate}%</span></div>)}
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>渠道类型汇总</div>
+                    <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
+                      {(overviewStats?.generation?.provider_types || []).slice(0, 12).map(i => <div key={`t-${i.provider_type}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.provider_type}`} style={{ color: 'var(--text-primary)' }}>{i.provider_type}</span><span className="shrink-0" style={{ color: 'var(--text-secondary)' }}>{i.total} / {i.success_rate}%</span></div>)}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>Fallback 尝试</div>
+                    <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
+                      {(overviewStats?.generation?.fallback_attempts || []).slice(0, 12).map(i => <div key={`f-${i.provider_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.provider_id}`} style={{ color: 'var(--text-primary)' }}>{`${i.provider_id === 'unknown' ? 'unknown(历史缺失)' : i.provider_id} (${i.provider_type})`}</span><span className="shrink-0" style={{ color: 'var(--text-secondary)' }}>{i.attempts} / {i.attempt_ok_rate}%</span></div>)}
+                    </div>
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                  <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>模型 × 渠道交叉矩阵（总量/成功率）</div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr>
+                          <th className="px-2 py-1.5 text-left font-medium sticky left-0 z-10" style={{ color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}>模型\\渠道</th>
+                          {(overviewStats?.generation?.matrix?.providers || []).map(pid => <th key={`mxh-${pid}`} className="px-2 py-1.5 text-right font-medium whitespace-nowrap" style={{ color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}>{pid}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(overviewStats?.generation?.matrix?.models || []).slice(0, 12).map(mid => (
+                          <tr key={`mxr-${mid}`} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
+                            <td className="px-2 py-1.5 sticky left-0 z-10 whitespace-nowrap" style={{ color: 'var(--text-primary)', background: 'var(--bg-primary)' }}>{`${overviewStats?.generation?.matrix?.model_labels?.[mid] || mid} (${mid})`}</td>
+                            {(overviewStats?.generation?.matrix?.providers || []).map(pid => {
+                              const cell = overviewStats?.generation?.matrix?.cells?.[mid]?.[pid]
+                              return <td key={`mxc-${mid}-${pid}`} className="px-2 py-1.5 text-right whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{cell ? `${cell.total} / ${cell.success_rate}%` : '-'}</td>
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
                 {systemStats?.limits && (
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>当前限制</div>
