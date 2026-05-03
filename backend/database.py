@@ -167,6 +167,8 @@ def init_db():
                 status VARCHAR(32) NOT NULL DEFAULT 'pending',
                 redeem_code VARCHAR(64) DEFAULT '',
                 review_note TEXT DEFAULT '',
+                risk_level VARCHAR(16) DEFAULT 'low',
+                risk_flags JSONB DEFAULT '[]'::jsonb,
                 created_at TIMESTAMP DEFAULT NOW(),
                 reviewed_at TIMESTAMP,
                 reviewed_by INTEGER REFERENCES users(id)
@@ -203,11 +205,14 @@ def init_db():
                 balance_after INTEGER NOT NULL,
                 type VARCHAR(32) NOT NULL,
                 description TEXT,
+                request_key VARCHAR(128),
                 recharge_request_id INTEGER,
                 created_at TIMESTAMP DEFAULT NOW()
             )""",
             "CREATE INDEX IF NOT EXISTS idx_point_tx_user_id ON point_transactions(user_id)",
             "CREATE INDEX IF NOT EXISTS idx_point_tx_created_at ON point_transactions(created_at DESC)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_point_tx_request_key ON point_transactions(request_key) WHERE request_key IS NOT NULL",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_user_client_req ON tasks(user_id, ((params->>'client_request_id'))) WHERE params ? 'client_request_id'",
             """CREATE TABLE IF NOT EXISTS daily_checkins (
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL,
@@ -283,9 +288,17 @@ def init_db():
                 conn.execute("ALTER TABLE tasks ADD COLUMN deleted_at TIMESTAMP")
             if not _column_exists(conn, "tasks", "deleted_by_role"):
                 conn.execute("ALTER TABLE tasks ADD COLUMN deleted_by_role VARCHAR(16)")
+            if not _column_exists(conn, "point_transactions", "request_key"):
+                conn.execute("ALTER TABLE point_transactions ADD COLUMN request_key VARCHAR(128)")
+            if not _column_exists(conn, "recharge_requests", "risk_level"):
+                conn.execute("ALTER TABLE recharge_requests ADD COLUMN risk_level VARCHAR(16) DEFAULT 'low'")
+            if not _column_exists(conn, "recharge_requests", "risk_flags"):
+                conn.execute("ALTER TABLE recharge_requests ADD COLUMN risk_flags JSONB DEFAULT '[]'::jsonb")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_image_metadata_expires_at ON image_metadata(expires_at)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_image_metadata_is_permanent ON image_metadata(is_permanent)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_is_deleted ON tasks(is_deleted)")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_point_tx_request_key ON point_transactions(request_key) WHERE request_key IS NOT NULL")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_user_client_req ON tasks(user_id, ((params->>'client_request_id'))) WHERE params ? 'client_request_id'")
             conn.execute("UPDATE image_metadata m SET is_permanent = TRUE, expires_at = NULL WHERE EXISTS (SELECT 1 FROM square_images s WHERE s.filename = m.filename)")
             conn.execute("UPDATE image_metadata SET expires_at = COALESCE(created_at, NOW()) + interval '3 day' WHERE is_permanent = FALSE AND expires_at IS NULL")
 

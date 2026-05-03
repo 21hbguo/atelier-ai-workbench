@@ -1,6 +1,7 @@
 import json
 import os
 import secrets
+import logging
 from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Depends, Query
 from backend.database import get_db
@@ -12,6 +13,7 @@ from backend.services.points_service import PointsService
 from backend.services.image_expiry import refresh_permanent_flags_by_filenames
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+logger = logging.getLogger(__name__)
 ACTIVE_TASK_TIMEOUT_MINUTES = 20
 
 def _normalize_banned_word(word: str) -> str:
@@ -701,6 +703,8 @@ async def approve_recharge_request(request_id: int, body: dict, admin=Depends(re
         if not row:
             raise HTTPException(status_code=404, detail="充值申请不存在")
         item = dict(row)
+        if item["status"] == "approved":
+            return {"message": "该申请已审核通过", "code": item.get("redeem_code"), "points": item.get("points")}
         if item["status"] != "pending":
             raise HTTPException(status_code=400, detail="仅待审核申请可通过")
         points = int(body.get("points") or item["points"])
@@ -721,13 +725,14 @@ async def approve_recharge_request(request_id: int, body: dict, admin=Depends(re
         conn.execute("UPDATE users SET points = points + %s WHERE id = %s", (points, user_id))
         new_balance = conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()["points"]
         conn.execute(
-            "INSERT INTO point_transactions (user_id, amount, balance_after, type, description, recharge_request_id) VALUES (%s, %s, %s, %s, %s, %s)",
-            (user_id, points, new_balance, "redeem_code", f"充值审核通过 (¥{item['amount']})", request_id),
+            "INSERT INTO point_transactions (user_id, amount, balance_after, type, description, recharge_request_id, request_key) VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
+            (user_id, points, new_balance, "redeem_code", f"充值审核通过 (¥{item['amount']})", request_id, f"recharge-approve:{request_id}"),
         )
         conn.execute(
             "UPDATE recharge_requests SET status = 'approved', points = %s, redeem_code = %s, review_note = %s, reviewed_at = %s, reviewed_by = %s WHERE id = %s",
             (points, code, review_note, now, admin["user_id"], request_id),
         )
+        logger.info(f"[audit.recharge.approve] request={request_id} admin={admin['user_id']} user={user_id} points={points} amount={item['amount']}")
         return {"message": "审核通过，积分已发放", "code": code, "points": points}
 
 
@@ -747,6 +752,7 @@ async def reject_recharge_request(request_id: int, body: dict, admin=Depends(req
             "UPDATE recharge_requests SET status = 'rejected', review_note = %s, reviewed_at = %s, reviewed_by = %s WHERE id = %s",
             (review_note, now, admin["user_id"], request_id),
         )
+        logger.info(f"[audit.recharge.reject] request={request_id} admin={admin['user_id']} reason={review_note[:120]}")
         return {"message": "已拒绝该充值申请"}
 
 

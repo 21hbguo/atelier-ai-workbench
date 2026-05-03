@@ -36,6 +36,13 @@ def _check_generate_rate(user_id: int):
         if count >= limit:
             raise HTTPException(status_code=429, detail="生成请求过于频繁，请稍后再试")
 
+
+def _find_idempotent_task(user_id: int, client_request_id: str):
+    if not client_request_id:
+        return None
+    with get_db() as conn:
+        return conn.execute("SELECT task_id,status FROM tasks WHERE user_id = %s AND params->>'client_request_id' = %s ORDER BY created_at DESC LIMIT 1", (user_id, client_request_id)).fetchone()
+
 def _share_to_square(user_id: int, file_path: str, prompt: str, size: str, task_type: str):
     filename = os.path.basename(str(file_path or ""))
     if not filename:
@@ -80,7 +87,7 @@ async def _run_generation(task_id: str, task_type: str, submit_payload: dict, me
         record_request(user_id, "failed")
         if not is_admin:
             try:
-                PointsService.refund(user_id, PointsService.cost_per_generation(), "生成失败退还")
+                PointsService.refund(user_id, PointsService.cost_per_generation(), "生成失败退还", request_key=f"refund:{task_id}")
             except Exception:
                 logger.exception(f"[submit.refund.fail] type={task_type} task={task_id} user={user_id}")
 
@@ -88,6 +95,10 @@ async def _run_generation(task_id: str, task_type: str, submit_payload: dict, me
 @router.post("/text", response_model=GenerateResponse)
 async def generate_text(request: GenerateTextRequest, req: Request, user=Depends(get_current_user)):
     user_id = user["user_id"]
+    if request.client_request_id:
+        existing = _find_idempotent_task(user_id, request.client_request_id)
+        if existing:
+            return GenerateResponse(task_id=existing["task_id"], status=existing["status"], message="请求已存在，返回历史任务")
     task_id = request.task_id or str(uuid.uuid4())
     logger.info(f"[submit.start] type=text task={task_id} user={user_id} prompt_len={len(request.prompt or '')}")
     _check_generate_rate(user_id)
@@ -98,7 +109,7 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
     if not is_admin:
         cost = PointsService.cost_per_generation()
         try:
-            points_balance_after = PointsService.consume(user_id, cost, "生成消耗")
+            points_balance_after = PointsService.consume(user_id, cost, "生成消耗", request_key=f"consume:{task_id}")
         except ValueError:
             raise HTTPException(status_code=402, detail=f"积分不足，需要 {cost} 积分")
 
@@ -114,14 +125,14 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
             StatsService.record_failed()
             record_request(user_id, "failed")
             if not is_admin:
-                PointsService.refund(user_id, PointsService.cost_per_generation(), "违禁词退还")
+                PointsService.refund(user_id, PointsService.cost_per_generation(), "违禁词退还", request_key=f"refund:{task_id}")
             raise HTTPException(status_code=400, detail="提示词包含违禁词，请修改后重试")
 
-        TaskManager.create_task(task_id, "text", {"prompt": request.prompt, "size": request.size, "share_to_square": bool(request.share_to_square)}, user_id=user_id, points_cost=cost, points_balance_after=points_balance_after)
+        TaskManager.create_task(task_id, "text", {"prompt": request.prompt, "size": request.size, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}, user_id=user_id, points_cost=cost, points_balance_after=points_balance_after)
         TaskManager.update_task(task_id, status="processing", progress=10)
         logger.info(f"[submit.task_created] type=text task={task_id} user={user_id}")
-        meta = {"prompt": request.prompt, "size": request.size, "type": "text", "task_id": task_id, "share_to_square": bool(request.share_to_square)}
-        asyncio.create_task(_run_generation(task_id, "text", {"prompt": request.prompt, "size": request.size, "share_to_square": bool(request.share_to_square)}, meta, user_id, bool(is_admin)))
+        meta = {"prompt": request.prompt, "size": request.size, "type": "text", "task_id": task_id, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}
+        asyncio.create_task(_run_generation(task_id, "text", {"prompt": request.prompt, "size": request.size, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}, meta, user_id, bool(is_admin)))
         return GenerateResponse(task_id=task_id, status="processing", message="任务已提交")
 
     except HTTPException:
@@ -131,7 +142,7 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
         TaskManager.update_task(task_id, status="failed", error=str(e))
         record_request(user_id, "failed")
         if not is_admin:
-            PointsService.refund(user_id, PointsService.cost_per_generation(), "异常退还")
+            PointsService.refund(user_id, PointsService.cost_per_generation(), "异常退还", request_key=f"refund:{task_id}")
         logger.exception("生成失败")
         raise HTTPException(status_code=500, detail="生成失败")
 
@@ -139,6 +150,10 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
 @router.post("/text-image", response_model=GenerateResponse)
 async def generate_text_image(request: GenerateTextImageRequest, req: Request, user=Depends(get_current_user)):
     user_id = user["user_id"]
+    if request.client_request_id:
+        existing = _find_idempotent_task(user_id, request.client_request_id)
+        if existing:
+            return GenerateResponse(task_id=existing["task_id"], status=existing["status"], message="请求已存在，返回历史任务")
     task_id = request.task_id or str(uuid.uuid4())
     logger.info(f"[submit.start] type=text_image task={task_id} user={user_id} prompt_len={len(request.prompt or '')} images={len(request.image_urls or [])}")
     _check_generate_rate(user_id)
@@ -149,7 +164,7 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
     if not is_admin:
         cost = PointsService.cost_per_generation()
         try:
-            points_balance_after = PointsService.consume(user_id, cost, "生成消耗")
+            points_balance_after = PointsService.consume(user_id, cost, "生成消耗", request_key=f"consume:{task_id}")
         except ValueError:
             raise HTTPException(status_code=402, detail=f"积分不足，需要 {cost} 积分")
 
@@ -165,14 +180,14 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
             StatsService.record_failed()
             record_request(user_id, "failed")
             if not is_admin:
-                PointsService.refund(user_id, PointsService.cost_per_generation(), "违禁词退还")
+                PointsService.refund(user_id, PointsService.cost_per_generation(), "违禁词退还", request_key=f"refund:{task_id}")
             raise HTTPException(status_code=400, detail="提示词包含违禁词，请修改后重试")
 
-        TaskManager.create_task(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square)}, user_id=user_id, points_cost=cost, points_balance_after=points_balance_after)
+        TaskManager.create_task(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}, user_id=user_id, points_cost=cost, points_balance_after=points_balance_after)
         TaskManager.update_task(task_id, status="processing", progress=10)
         logger.info(f"[submit.task_created] type=text_image task={task_id} user={user_id}")
-        meta = {"prompt": request.prompt, "size": request.size, "type": "text_image", "task_id": task_id, "input_urls": request.image_urls, "share_to_square": bool(request.share_to_square)}
-        asyncio.create_task(_run_generation(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square)}, meta, user_id, bool(is_admin)))
+        meta = {"prompt": request.prompt, "size": request.size, "type": "text_image", "task_id": task_id, "input_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}
+        asyncio.create_task(_run_generation(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}, meta, user_id, bool(is_admin)))
         return GenerateResponse(task_id=task_id, status="processing", message="任务已提交")
 
     except HTTPException:
@@ -182,7 +197,7 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
         TaskManager.update_task(task_id, status="failed", error=str(e))
         record_request(user_id, "failed")
         if not is_admin:
-            PointsService.refund(user_id, PointsService.cost_per_generation(), "异常退还")
+            PointsService.refund(user_id, PointsService.cost_per_generation(), "异常退还", request_key=f"refund:{task_id}")
         logger.exception("生成失败")
         raise HTTPException(status_code=500, detail="生成失败")
 

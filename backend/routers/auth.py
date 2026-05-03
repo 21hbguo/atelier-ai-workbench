@@ -1,4 +1,5 @@
 import time
+import logging
 from collections import defaultdict
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Request, Response, Depends
@@ -9,6 +10,7 @@ from backend.services.points_service import PointsService
 from backend.config import get_limit_config
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
 _login_attempts = defaultdict(list)
 _register_attempts = defaultdict(list)
 _login_rate_hits = 0
@@ -76,6 +78,7 @@ async def register(req: RegisterRequest, request: Request, response: Response):
         register_bonus = PointsService.register_bonus()
         PointsService.add_points(user_id, register_bonus, "register_bonus", "注册赠送", conn=conn)
     access_token = _issue_session(response, user_id, req.username, False, ip, request.headers.get("user-agent", ""))
+    logger.info(f"[audit.register] user={user_id} username={req.username} ip={ip}")
     return {"token": access_token, "user": {"id": user_id, "username": req.username, "nickname": req.nickname or req.username, "is_admin": False, "points": register_bonus}}
 
 
@@ -91,6 +94,7 @@ async def login(req: LoginRequest, request: Request, response: Response):
         conn.execute("UPDATE users SET last_active = %s WHERE id = %s", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user["id"]))
         payload = {"id": user["id"], "username": user["username"], "nickname": user["nickname"], "is_admin": bool(user["is_admin"]), "points": user["points"]}
     access_token = _issue_session(response, payload["id"], payload["username"], payload["is_admin"], ip, request.headers.get("user-agent", ""))
+    logger.info(f"[audit.login] user={payload['id']} username={payload['username']} ip={ip}")
     return {"token": access_token, "user": payload}
 
 
@@ -102,6 +106,7 @@ async def refresh(request: Request, response: Response):
         clear_auth_cookies(response)
         raise HTTPException(status_code=401, detail="登录已失效")
     set_auth_cookies(response, session["access_token"], session["refresh_token"])
+    logger.info(f"[audit.refresh] user={session['user']['id']} ip={get_client_ip(request)}")
     return {"token": session["access_token"], "user": session["user"]}
 
 
@@ -109,6 +114,7 @@ async def refresh(request: Request, response: Response):
 async def logout(request: Request, response: Response):
     revoke_refresh_token(request.cookies.get(REFRESH_COOKIE_NAME))
     clear_auth_cookies(response)
+    logger.info(f"[audit.logout] ip={get_client_ip(request)}")
     return {"status": "ok"}
 
 
