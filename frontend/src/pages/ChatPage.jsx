@@ -288,116 +288,83 @@ export default function ChatPage() {
     refreshPointsOnFailed()
   }, [updateTask, shareImageToSquare, refreshPointsOnFailed])
 
-  const handleSubmit = useCallback(async ({ prompt, images, params, shareToSquare }) => {
+  const handleSubmit = useCallback(async ({ prompt, images, params, shareToSquare, rollCount = 1 }) => {
+    const batchCount = Math.min(5, Math.max(1, Number(rollCount) || 1))
+    if (batchCount > 1) {
+      const cost = isAdmin ? 0 : 10
+      if (!await dialog.confirm(`本次将提交 ${batchCount} 次生成，预计消耗 ${batchCount * cost} 积分，是否继续？`)) return false
+    }
     setLoading(true)
-    const tempId = 'pending-' + Date.now()
-    const previewImages = images?.map(i => i.preview) || []
-    const tempTask = {
-      task_id: tempId,
-      status: 'processing',
-      prompt,
-      params: { prompt, size: params?.size || 'auto', share_to_square: !!shareToSquare },
-      previewImages,
-      created_at: formatLocalTime(new Date()),
-      started_at: formatLocalTime(new Date()),
-      _active: true,
-    }
-    setTasks(prev => {
-      const next = [...prev, tempTask]
-      saveCachedActiveTasks(next)
-      return next
-    })
-    scroll()
-
-    let imageUrls = []
-    if (images?.length > 0) {
-      try {
-        const results = await Promise.all(images.map(img =>
-          img.url ? Promise.resolve({ data: { url: img.url } }) : uploadAPI.upload(img.file)
-        ))
-        imageUrls = results.map(r => r.data.url)
-      } catch (e) {
-        updateTask(tempId, { status: 'failed', error: '上传失败: ' + e.message, _active: false })
-        setLoading(false)
-        return
-      }
-    }
-
-    const hasImages = imageUrls.length > 0
-    const taskId = makeTaskId()
-
     try {
-      const data = hasImages
-        ? (await generateAPI.submitTextImage({ prompt, image_urls: imageUrls, size: params?.size || 'auto', model_id: params?.model_id, task_id: taskId, share_to_square: !!shareToSquare })).data
-        : (await generateAPI.submitText({ prompt, size: params?.size || 'auto', model_id: params?.model_id, task_id: taskId, share_to_square: !!shareToSquare })).data
-
-      if (!isAdmin) {
-        setPoints(p => Math.max(0, p - 10))
-        const u = readUser()
-        if (u) { u.points = Math.max(0, (u.points ?? 0) - 10); localStorage.setItem('user', JSON.stringify(u)) }
-        window.dispatchEvent(new Event('points-updated'))
-      }
-
-      const realId = data.task_id
-      setTasks(prev => {
-        const next = prev.map(t => t.task_id === tempId ? { ...t, task_id: realId } : t)
-        saveCachedActiveTasks(next)
-        return next
-      })
-      setLoading(false)
-
-      if (data.status === 'completed') {
-        updateTask(realId, { status: 'completed', result_urls: data.result_urls, _active: false })
-        if (shareToSquare && data.result_urls?.length) {
-          shareImageToSquare(data.result_urls[0].split('/').pop(), prompt, params, hasImages)
-        }
-        return
-      }
-
-      pollTask(realId, Date.now(), shareToSquare, prompt, params, hasImages)
-    } catch (e) {
-      if (e.message?.includes('积分不足') || e.message?.includes('402')) {
-        updateTask(tempId, { status: 'failed', error: '积分不足，请充值后重试', _active: false })
-        setLoading(false)
-        return
-      }
-      const isTimeout = e.message?.includes('timeout') || e.message?.includes('超时')
-      if (isTimeout) {
-        setTasks(prev => {
-          const next = prev.map(t => t.task_id === tempId ? { ...t, task_id: taskId } : t)
-          saveCachedActiveTasks(next)
-          return next
-        })
+      const previewImages = images?.map(i => i.preview) || []
+      const uploaded = images?.length > 0 ? await Promise.all(images.map(img => img.url ? Promise.resolve({ data: { url: img.url } }) : uploadAPI.upload(img.file))) : []
+      const imageUrls = uploaded.map(r => r.data.url)
+      const hasImages = imageUrls.length > 0
+      const submitOne = async (index) => {
+        const tempId = `pending-${Date.now()}-${index}`
+        const tempTask = { task_id: tempId, status: 'processing', prompt, params: { prompt, size: params?.size || 'auto', share_to_square: !!shareToSquare }, previewImages, created_at: formatLocalTime(new Date()), started_at: formatLocalTime(new Date()), _active: true }
+        setTasks(prev => { const next = [...prev, tempTask]; saveCachedActiveTasks(next); return next })
+        scroll()
+        const taskId = makeTaskId()
         try {
-          const { data: st } = await taskAPI.get(taskId)
-          if (st.status === 'completed') {
-            updateTask(taskId, { ...st, _active: false })
-            if (shareToSquare && st.result_urls?.length) shareImageToSquare(st.result_urls[0].split('/').pop(), prompt, params, imageUrls.length > 0)
-            setLoading(false)
-            return
+          const data = hasImages ? (await generateAPI.submitTextImage({ prompt, image_urls: imageUrls, size: params?.size || 'auto', model_id: params?.model_id, task_id: taskId, share_to_square: !!shareToSquare })).data : (await generateAPI.submitText({ prompt, size: params?.size || 'auto', model_id: params?.model_id, task_id: taskId, share_to_square: !!shareToSquare })).data
+          if (!isAdmin) {
+            setPoints(p => Math.max(0, p - 10))
+            const u = readUser()
+            if (u) { u.points = Math.max(0, (u.points ?? 0) - 10); localStorage.setItem('user', JSON.stringify(u)) }
+            window.dispatchEvent(new Event('points-updated'))
           }
-          if (st.status === 'failed') {
-            updateTask(taskId, { ...st, _active: false })
-            refreshPointsOnFailed()
-            setLoading(false)
-            return
+          const realId = data.task_id
+          setTasks(prev => { const next = prev.map(t => t.task_id === tempId ? { ...t, task_id: realId } : t); saveCachedActiveTasks(next); return next })
+          if (data.status === 'completed') {
+            updateTask(realId, { status: 'completed', result_urls: data.result_urls, _active: false })
+            if (shareToSquare && data.result_urls?.length) shareImageToSquare(data.result_urls[0].split('/').pop(), prompt, params, hasImages)
+            return { ok: true }
           }
-          updateTask(taskId, { ...st, _active: true })
-        } catch (se) {
-          const sm = (se?.message || '').toLowerCase()
-          if (sm.includes('404') || sm.includes('任务不存在') || sm.includes('not found')) {
-            updateTask(taskId, { status: 'failed', error: '提交失败：后端未创建任务', _active: false })
-            setLoading(false)
-            return
+          pollTask(realId, Date.now(), shareToSquare, prompt, params, hasImages)
+          return { ok: true }
+        } catch (e) {
+          const msg = e.message || ''
+          if (msg.includes('积分不足') || msg.includes('402')) {
+            updateTask(tempId, { status: 'failed', error: '积分不足，请充值后重试', _active: false })
+            return { ok: false, stop: true, message: '积分不足，请充值后重试' }
           }
+          const isTimeout = msg.includes('timeout') || msg.includes('超时')
+          if (isTimeout) {
+            setTasks(prev => { const next = prev.map(t => t.task_id === tempId ? { ...t, task_id: taskId } : t); saveCachedActiveTasks(next); return next })
+            try {
+              const { data: st } = await taskAPI.get(taskId)
+              if (st.status === 'completed') { updateTask(taskId, { ...st, _active: false }); if (shareToSquare && st.result_urls?.length) shareImageToSquare(st.result_urls[0].split('/').pop(), prompt, params, hasImages); return { ok: true } }
+              if (st.status === 'failed') { updateTask(taskId, { ...st, _active: false }); refreshPointsOnFailed(); return { ok: false, message: st.error || '生成失败' } }
+              updateTask(taskId, { ...st, _active: true }); pollTask(taskId, Date.now(), shareToSquare, prompt, params, hasImages); return { ok: true }
+            } catch (se) {
+              const sm = (se?.message || '').toLowerCase()
+              if (sm.includes('404') || sm.includes('任务不存在') || sm.includes('not found')) { updateTask(taskId, { status: 'failed', error: '提交失败：后端未创建任务', _active: false }); return { ok: false, stop: true, message: '提交失败：后端未创建任务' } }
+            }
+            pollTask(taskId, Date.now(), shareToSquare, prompt, params, hasImages)
+            return { ok: true }
+          }
+          updateTask(tempId, { status: 'failed', error: '提交失败: ' + msg, _active: false })
+          return { ok: false, stop: false, message: msg }
         }
-        pollTask(taskId, Date.now(), shareToSquare, prompt, params, imageUrls.length > 0)
-      } else {
-        updateTask(tempId, { status: 'failed', error: '提交失败: ' + e.message, _active: false })
       }
+      let success = 0
+      let failed = 0
+      for (let i = 0; i < batchCount; i++) {
+        const r = await submitOne(i)
+        if (r?.ok) success += 1
+        else failed += 1
+        if (r?.stop) break
+      }
+      if (batchCount > 1) dialog.alert(`已提交 ${success} 次${failed > 0 ? `，失败 ${failed} 次` : ''}`)
+      return true
+    } catch (e) {
+      dialog.alert('上传失败: ' + (e?.message || '未知错误'))
+      return false
+    } finally {
       setLoading(false)
     }
-  }, [scroll, updateTask, pollTask, shareImageToSquare, refreshPointsOnFailed, saveCachedActiveTasks])
+  }, [dialog, isAdmin, pollTask, refreshPointsOnFailed, scroll, shareImageToSquare, updateTask, saveCachedActiveTasks])
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true)

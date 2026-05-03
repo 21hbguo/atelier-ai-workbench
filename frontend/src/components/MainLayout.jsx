@@ -23,11 +23,11 @@ export default function MainLayout({ children, dragProps }) {
         <div className="mobile-topbar-shell safe-area-top lg:hidden" style={{ borderColor: 'var(--border-color)' }}>
           <div className="mobile-topbar-inner">
             <button onClick={() => setSidebarOpen(true)} className="mobile-topbar-menu" style={{ color: 'var(--text-primary)' }}><Menu size={20} className="block" /></button>
-            <div className="mobile-topbar-links">
+            <div className="mobile-topbar-links scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
             {quickNavItems.map(item => {
               const isActive = item.path === '/' ? location.pathname === '/' : location.pathname.startsWith(item.path)
               return (
-                <Link key={item.path} to={item.path} className="mobile-topbar-link" style={{ background: isActive ? 'var(--accent)' : 'var(--border-color)', color: isActive ? '#fff' : 'var(--text-secondary)' }}>
+                <Link key={item.path} to={item.path} className="mobile-topbar-link" style={{ color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', borderBottomColor: isActive ? 'var(--accent)' : 'transparent' }}>
                   <span className="mobile-topbar-link-text">{item.label}</span>
                 </Link>
               )

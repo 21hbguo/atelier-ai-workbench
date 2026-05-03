@@ -49,6 +49,7 @@ export default function UnifiedDetailModal({
   const lightboxRef = useRef(false)
   const onCloseRef = useRef(onClose)
   const modalToken = useRef(`${Date.now()}_${Math.random().toString(36).slice(2)}`)
+  const isTokenState = useCallback((kind) => { const s = window.history.state; return s?.__udm === kind && s?.token === modalToken.current }, [])
 
   const hasNavigation = cards.length > 1
   const canPrev = hasNavigation && currentIndex > 0
@@ -140,12 +141,15 @@ export default function UnifiedDetailModal({
     setLightbox(true)
   }
   const requestCloseModal = () => {
-    if (modalStatePushed.current) window.history.back()
-    else onClose?.()
+    if (lightbox) { lightboxStatePushed.current = false; setLightbox(false) }
+    if (!modalStatePushed.current) { onClose?.(); return }
+    if (isTokenState('modal') || isTokenState('lightbox')) window.history.back()
+    else { modalStatePushed.current = false; onClose?.() }
   }
   const requestCloseLightbox = () => {
-    if (lightboxStatePushed.current) window.history.back()
-    else setLightbox(false)
+    if (!lightboxStatePushed.current) { setLightbox(false); return }
+    if (isTokenState('lightbox')) window.history.back()
+    else { lightboxStatePushed.current = false; setLightbox(false) }
   }
 
   if (!card) return null

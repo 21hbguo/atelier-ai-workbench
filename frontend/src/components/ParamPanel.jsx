@@ -75,6 +75,17 @@ export default function ParamPanel({ params, onChange }) {
 
   return (
     <div className="grid gap-3">
+      <label className="flex flex-col gap-1">
+        <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Roll次数</span>
+        <select value={params.roll_count ?? 5} onChange={e => onChange(p => ({ ...p, roll_count: Math.min(5, Math.max(2, Number(e.target.value) || 5)) }))}
+          className="px-2 py-1.5 rounded-lg text-sm border outline-none focus:ring-1 focus:ring-accent/50"
+          style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
+          <option value={2}>2次</option>
+          <option value={3}>3次</option>
+          <option value={4}>4次</option>
+          <option value={5}>5次</option>
+        </select>
+      </label>
       {models.length > 0 && (
         <label className="flex flex-col gap-1">
           <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>模型</span>
