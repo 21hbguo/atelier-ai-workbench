@@ -79,8 +79,9 @@ def main():
 
     if args.source == "cases":
         if not PARSED_CASES_FILE.exists():
-            print(f"Error: {PARSED_CASES_FILE} not found. Run parse_cases.py first.")
-            sys.exit(1)
+            print("parsed_cases.json not found, running parse_cases.py ...")
+            from backend.scripts.parse_cases import main as parse_cases_main
+            parse_cases_main()
         data = json.loads(PARSED_CASES_FILE.read_text(encoding="utf-8"))
     else:
         if not DATA_FILE.exists():
