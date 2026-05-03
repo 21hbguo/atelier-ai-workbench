@@ -100,7 +100,7 @@ export default function AdminPage() {
 
   useEffect(() => { if (tab === 'users') fetchUsers() }, [tab, userPage, userQuery])
   useEffect(() => { if (tab === 'history') fetchHistory() }, [tab, historyPage, historyQuery])
-  useEffect(() => { if (tab === 'stats') fetchSystemStats() }, [tab, statsRange])
+  useEffect(() => { if (tab === 'stats') fetchSystemStats(statsRange) }, [tab, statsRange])
   useEffect(() => { if (tab === 'hosting') { fetchHostingImages(); fetchHostingStats() } }, [tab, hostingPage])
   useEffect(() => { if (tab === 'banned') fetchBannedWords() }, [tab, bannedWordsPage, bannedWordsQuery])
   useEffect(() => { if (tab === 'recharge') fetchRechargeRequests() }, [tab, codesPage, codesSort, codesOrder, rechargeStatusFilter])
@@ -125,14 +125,14 @@ export default function AdminPage() {
       setHistorySummary(data.summary || { total: data.total || 0, pending: 0, queued: 0, processing: 0, running: 0, generating: 0, completed: 0, failed: 0 })
     } catch {} finally { setLoading(false) }
   }
-  const fetchSystemStats = async () => {
+  const fetchSystemStats = async (rangeValue = statsRange) => {
     setLoading(true)
     try {
-      const [a, b, c] = await Promise.all([statsAPI.get(), statsAPI.system(), adminAPI.statsOverview(statsRange)])
+      const [a, b, c] = await Promise.all([statsAPI.get(), statsAPI.system(), adminAPI.statsOverview(rangeValue)])
       setBizStats(a.data || null)
       setSystemStats(b.data || null)
       setOverviewStats(c.data || null)
-    } catch {} finally { setLoading(false) }
+    } catch (e) { dialog.alert(e?.message || '系统统计加载失败') } finally { setLoading(false) }
   }
 
   const fetchHostingStats = async () => {
@@ -563,21 +563,24 @@ export default function AdminPage() {
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   {[
+                    { v: 'all', l: '总计' },
                     { v: 'today', l: '今日' },
                     { v: '7d', l: '7天' },
                     { v: '30d', l: '30天' },
                   ].map(i => (
-                    <button key={i.v} onClick={() => setStatsRange(i.v)} className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${statsRange === i.v ? 'text-white border-transparent' : ''}`} style={statsRange === i.v ? { background: 'var(--accent)' } : { borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>{i.l}</button>
+                    <button key={i.v} onClick={() => { if (statsRange === i.v) return; setStatsRange(i.v); fetchSystemStats(i.v) }} className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${statsRange === i.v ? 'text-white border-transparent' : ''}`} style={statsRange === i.v ? { background: 'var(--accent)' } : { borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>{i.l}</button>
                   ))}
                   <div className="ml-auto text-xs" style={{ color: 'var(--text-secondary)' }}>{overviewStats?.start_date || '-'} ~ {overviewStats?.end_date || '-'}</div>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>请求数</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{overviewStats?.kpi?.requests ?? 0}</div></div>
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>成功数</div><div className="text-lg font-semibold" style={{ color: '#22c55e' }}>{overviewStats?.kpi?.success ?? 0}</div></div>
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>成功率</div><div className="text-lg font-semibold" style={{ color: '#22c55e' }}>{overviewStats?.kpi?.success_rate ?? 0}%</div></div>
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>平均耗时</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{overviewStats?.kpi?.avg_duration_seconds ?? 0}s</div></div>
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>新增用户</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{overviewStats?.kpi?.new_users ?? 0}</div></div>
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>活跃用户</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{overviewStats?.kpi?.active_users ?? 0}</div></div>
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>处理中</div><div className="text-lg font-semibold" style={{ color: '#f59e0b' }}>{overviewStats?.kpi?.processing_tasks ?? 0}</div></div>
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>积分消耗</div><div className="text-lg font-semibold" style={{ color: '#ef4444' }}>{(overviewStats?.trends_30d || []).reduce((s, i) => s + Number(i.points_spent || 0), 0)}</div></div>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
                   <div className="p-3 rounded-xl border lg:col-span-2" style={{ borderColor: 'var(--border-color)' }}>
@@ -588,6 +591,7 @@ export default function AdminPage() {
                         { v: 'success', l: '成功' },
                         { v: 'new_users', l: '新增用户' },
                         { v: 'revenue', l: '营收' },
+                        { v: 'points_spent', l: '积分消耗' },
                       ].map(i => (
                         <button key={i.v} onClick={() => setTrendMetric(i.v)} className={`px-2 py-1 rounded text-[11px] border ${trendMetric === i.v ? 'text-white border-transparent' : ''}`} style={trendMetric === i.v ? { background: 'var(--accent)' } : { borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>{i.l}</button>
                       ))}
@@ -622,28 +626,28 @@ export default function AdminPage() {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>近30天生成Top用户</div>
-                    <div className="space-y-1">
-                      {(overviewStats?.leaderboards?.success_top || []).slice(0, 8).map((i, idx) => <div key={`s-${i.user_id}`} className="flex items-center justify-between text-sm"><span style={{ color: 'var(--text-primary)' }}>{idx + 1}. {i.nickname || i.username}</span><span style={{ color: '#22c55e' }}>{i.success_count}</span></div>)}
+                    <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
+                      {(overviewStats?.leaderboards?.success_top || []).slice(0, 8).map((i, idx) => <div key={`s-${i.user_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.nickname || i.username}`} style={{ color: 'var(--text-primary)' }}>{idx + 1}. {i.nickname || i.username}</span><span className="shrink-0" style={{ color: '#22c55e' }}>{i.success_count}</span></div>)}
                     </div>
                   </div>
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>近30天充值Top用户</div>
-                    <div className="space-y-1">
-                      {(overviewStats?.leaderboards?.recharge_top || []).slice(0, 8).map((i, idx) => <div key={`r-${i.user_id}`} className="flex items-center justify-between text-sm"><span style={{ color: 'var(--text-primary)' }}>{idx + 1}. {i.nickname || i.username}</span><span style={{ color: '#f59e0b' }}>¥{i.amount}</span></div>)}
+                    <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
+                      {(overviewStats?.leaderboards?.recharge_top || []).slice(0, 8).map((i, idx) => <div key={`r-${i.user_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.nickname || i.username}`} style={{ color: 'var(--text-primary)' }}>{idx + 1}. {i.nickname || i.username}</span><span className="shrink-0" style={{ color: '#f59e0b' }}>¥{i.amount}</span></div>)}
                     </div>
                   </div>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>提示词分类（管理员全量）</div>
-                    <div className="space-y-1">
-                      {(overviewStats?.categories?.admin_all || []).slice(0, 10).map(i => <div key={`a-${i.category}`} className="flex items-center justify-between text-sm"><span style={{ color: 'var(--text-primary)' }}>{i.category}</span><span style={{ color: 'var(--text-secondary)' }}>{i.count}</span></div>)}
+                    <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
+                      {(overviewStats?.categories?.admin_all || []).slice(0, 10).map(i => <div key={`a-${i.category}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.category}`} style={{ color: 'var(--text-primary)' }}>{i.category}</span><span className="shrink-0" style={{ color: 'var(--text-secondary)' }}>{i.count}</span></div>)}
                     </div>
                   </div>
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>提示词分类（用户可见，已排除冻结）</div>
-                    <div className="space-y-1">
-                      {(overviewStats?.categories?.user_visible || []).slice(0, 10).map(i => <div key={`u-${i.category}`} className="flex items-center justify-between text-sm"><span style={{ color: 'var(--text-primary)' }}>{i.category}</span><span style={{ color: 'var(--text-secondary)' }}>{i.count}</span></div>)}
+                    <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
+                      {(overviewStats?.categories?.user_visible || []).slice(0, 10).map(i => <div key={`u-${i.category}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.category}`} style={{ color: 'var(--text-primary)' }}>{i.category}</span><span className="shrink-0" style={{ color: 'var(--text-secondary)' }}>{i.count}</span></div>)}
                     </div>
                   </div>
                 </div>
@@ -767,10 +771,12 @@ export default function AdminPage() {
                 placeholder="公告标题" maxLength={200}
                 className="w-full px-3 py-2 rounded-lg text-sm border mb-3 outline-none"
                 style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              <div className="text-[11px] mb-2 text-right" style={{ color: 'var(--text-secondary)' }}>{newTitle.length}/200</div>
               <textarea value={newContent} onChange={e => setNewContent(e.target.value)}
                 placeholder="公告内容" rows={4} maxLength={5000}
                 className="w-full px-3 py-2 rounded-lg text-sm border resize-none outline-none"
                 style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              <div className="text-[11px] mt-1 text-right" style={{ color: 'var(--text-secondary)' }}>{newContent.length}/5000</div>
               <div className="flex justify-end mt-3">
                 <button onClick={handleCreateAnnouncement} disabled={!newTitle.trim() || !newContent.trim() || creatingAnnouncement}
                   className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed">
@@ -801,7 +807,7 @@ export default function AdminPage() {
                 <tbody>
                   {announcements.map(item => (
                     <tr key={item.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
-                      <td className="px-3 py-2 truncate max-w-[300px] font-medium" style={{ color: 'var(--text-primary)' }}>{item.title}</td>
+                      <td className="px-3 py-2 truncate max-w-[300px] font-medium" title={item.title} style={{ color: 'var(--text-primary)' }}>{item.title}</td>
                       <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{item.author_name || '管理员'}</td>
                       <td className="px-3 py-2 text-right whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{item.created_at}</td>
                       <td className="px-3 py-2 text-right">
@@ -915,6 +921,7 @@ export default function AdminPage() {
                 style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
                 maxLength={50}
               />
+              <span className="text-[11px] tabular-nums" style={{ color: 'var(--text-secondary)' }}>{newBannedWord.length}/50</span>
               <button
                 onClick={handleAddBannedWord}
                 disabled={!newBannedWord.trim()}
@@ -938,7 +945,7 @@ export default function AdminPage() {
                       <Ban size={12} className="inline mr-1" />
                       违禁
                     </span>
-                    <span className="text-sm" style={{ color: 'var(--text-primary)' }}>{item.word}</span>
+                    <span className="text-sm truncate max-w-[18rem]" title={item.word} style={{ color: 'var(--text-primary)' }}>{item.word}</span>
                     <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{item.created_at}</span>
                   </div>
                   <button
@@ -1167,7 +1174,7 @@ export default function AdminPage() {
                     <button onClick={handleAddProvider} className="px-2 py-1 rounded text-xs font-medium bg-accent text-white">新增供应商</button>
                   </div>
                 </div>
-                <div className="overflow-x-auto rounded border" style={{ borderColor: 'var(--border-color)' }}>
+                <div className="overflow-x-auto overflow-y-auto max-h-[28rem] rounded border" style={{ borderColor: 'var(--border-color)' }}>
                   <table className="w-full text-xs">
                     <thead>
                       <tr style={{ background: 'var(--bg-secondary)' }}>
@@ -1225,10 +1232,12 @@ export default function AdminPage() {
                     <div>
                       <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>generation_models(JSON对象)</label>
                       <textarea value={generationModelsText} onChange={e => setGenerationModelsText(e.target.value)} rows={14} className="w-full px-3 py-2 rounded-lg text-xs border resize-none outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                      <div className="text-[11px] mt-1 text-right tabular-nums" style={{ color: 'var(--text-secondary)' }}>{generationModelsText.length} chars</div>
                     </div>
                     <div>
                       <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>generation_providers(JSON对象)</label>
                       <textarea value={generationProvidersText} onChange={e => setGenerationProvidersText(e.target.value)} rows={14} className="w-full px-3 py-2 rounded-lg text-xs border resize-none outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                      <div className="text-[11px] mt-1 text-right tabular-nums" style={{ color: 'var(--text-secondary)' }}>{generationProvidersText.length} chars</div>
                     </div>
                     <div className="md:col-span-2 flex justify-end">
                       <button onClick={handleApplyAdvanced} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-accent text-white hover:opacity-90">应用到表单</button>

@@ -761,10 +761,29 @@ async def admin_stats_overview(time_range: str = Query("7d", alias="range"), adm
     from datetime import timedelta as _td
     now = datetime.now()
     today_start = datetime(now.year, now.month, now.day)
-    if time_range == "today":
+    start_dt = today_start - _td(days=6)
+    if time_range == "all":
+        with get_db() as conn:
+            first_row = conn.execute(
+                """
+                SELECT MIN(ts) AS first_ts FROM (
+                    SELECT MIN(created_at) AS ts FROM user_requests
+                    UNION ALL SELECT MIN(created_at) AS ts FROM image_metadata
+                    UNION ALL SELECT MIN(created_at) AS ts FROM users
+                    UNION ALL SELECT MIN(created_at) AS ts FROM tasks
+                    UNION ALL SELECT MIN(created_at) AS ts FROM recharge_requests
+                ) t
+                """
+            ).fetchone()
+            first_ts = first_row["first_ts"] if first_row else None
+        if first_ts:
+            start_dt = datetime(first_ts.year, first_ts.month, first_ts.day)
+    elif time_range == "today":
         start_dt = today_start
     elif time_range == "30d":
         start_dt = today_start - _td(days=29)
+    elif time_range == "7d":
+        start_dt = today_start - _td(days=6)
     else:
         time_range = "7d"
         start_dt = today_start - _td(days=6)
@@ -778,6 +797,7 @@ async def admin_stats_overview(time_range: str = Query("7d", alias="range"), adm
         req = conn.execute("SELECT COUNT(*) cnt FROM user_requests WHERE created_at >= %s AND created_at <= %s", (start_s, end_s)).fetchone()["cnt"]
         suc = conn.execute("SELECT COUNT(*) cnt FROM image_metadata WHERE created_at >= %s AND created_at <= %s", (start_s, end_s)).fetchone()["cnt"]
         fail = conn.execute("SELECT COUNT(*) cnt FROM user_requests WHERE status='failed' AND created_at >= %s AND created_at <= %s", (start_s, end_s)).fetchone()["cnt"]
+        avg_latency_row = conn.execute("SELECT AVG(EXTRACT(EPOCH FROM (completed_at-started_at))) avg_sec FROM tasks WHERE status='completed' AND started_at IS NOT NULL AND completed_at IS NOT NULL AND completed_at >= %s AND completed_at <= %s", (start_s, end_s)).fetchone()
         processing = conn.execute("SELECT COUNT(*) cnt FROM tasks WHERE LOWER(status) IN ('pending','queued','processing','running','generating')").fetchone()["cnt"]
         new_users = conn.execute("SELECT COUNT(*) cnt FROM users WHERE created_at >= %s AND created_at <= %s", (start_s, end_s)).fetchone()["cnt"]
         active_users = conn.execute("SELECT COUNT(DISTINCT user_id) cnt FROM tasks WHERE user_id IS NOT NULL AND created_at >= %s AND created_at <= %s", (start_s, end_s)).fetchone()["cnt"]
@@ -791,11 +811,13 @@ async def admin_stats_overview(time_range: str = Query("7d", alias="range"), adm
         suc_rows = conn.execute("SELECT to_char(created_at,'YYYY-MM-DD') d, COUNT(*) cnt FROM image_metadata WHERE created_at >= %s AND created_at <= %s GROUP BY d", (t30_start, end_s)).fetchall()
         user_rows = conn.execute("SELECT to_char(created_at,'YYYY-MM-DD') d, COUNT(*) cnt FROM users WHERE created_at >= %s AND created_at <= %s GROUP BY d", (t30_start, end_s)).fetchall()
         rev_rows = conn.execute("SELECT to_char(created_at,'YYYY-MM-DD') d, COALESCE(SUM(amount),0) amt FROM recharge_requests WHERE status='approved' AND created_at >= %s AND created_at <= %s GROUP BY d", (t30_start, end_s)).fetchall()
+        points_rows = conn.execute("SELECT to_char(created_at,'YYYY-MM-DD') d, COALESCE(SUM(ABS(amount)),0) amt FROM point_transactions WHERE type='generate_consume' AND created_at >= %s AND created_at <= %s GROUP BY d", (t30_start, end_s)).fetchall()
         req_map = {r["d"]: int(r["cnt"] or 0) for r in req_rows}
         suc_map = {r["d"]: int(r["cnt"] or 0) for r in suc_rows}
         user_map = {r["d"]: int(r["cnt"] or 0) for r in user_rows}
         rev_map = {r["d"]: float(r["amt"] or 0) for r in rev_rows}
-        trends = [{"date": d, "requests": req_map.get(d, 0), "success": suc_map.get(d, 0), "new_users": user_map.get(d, 0), "revenue": round(rev_map.get(d, 0), 2)} for d in d30]
+        points_map = {r["d"]: int(r["amt"] or 0) for r in points_rows}
+        trends = [{"date": d, "requests": req_map.get(d, 0), "success": suc_map.get(d, 0), "new_users": user_map.get(d, 0), "revenue": round(rev_map.get(d, 0), 2), "points_spent": points_map.get(d, 0)} for d in d30]
         top_success_rows = conn.execute("SELECT u.id user_id, u.username, u.nickname, COUNT(im.id) success_count FROM users u LEFT JOIN image_metadata im ON im.user_id=u.id AND im.created_at >= %s AND im.created_at <= %s GROUP BY u.id ORDER BY success_count DESC, u.id ASC LIMIT 10", (t30_start, end_s)).fetchall()
         top_recharge_rows = conn.execute("SELECT u.id user_id, u.username, u.nickname, COALESCE(SUM(rr.amount),0) amount, COUNT(rr.id) orders FROM users u LEFT JOIN recharge_requests rr ON rr.user_id=u.id AND rr.status='approved' AND rr.created_at >= %s AND rr.created_at <= %s GROUP BY u.id ORDER BY amount DESC, u.id ASC LIMIT 10", (t30_start, end_s)).fetchall()
         top_success = [{"user_id": r["user_id"], "username": r["username"], "nickname": r["nickname"], "success_count": int(r["success_count"] or 0)} for r in top_success_rows if int(r["success_count"] or 0) > 0]
@@ -803,11 +825,12 @@ async def admin_stats_overview(time_range: str = Query("7d", alias="range"), adm
         cat_all_rows = conn.execute("SELECT COALESCE(NULLIF(TRIM(category),''),'未分类') category, COUNT(*) cnt FROM prompts GROUP BY category ORDER BY cnt DESC").fetchall()
         cat_visible_rows = conn.execute("SELECT COALESCE(NULLIF(TRIM(category),''),'未分类') category, COUNT(*) cnt FROM prompts WHERE COALESCE(is_frozen,FALSE)=FALSE GROUP BY category ORDER BY cnt DESC").fetchall()
     success_rate = round((suc / req) * 100, 1) if req > 0 else 0
+    avg_duration_seconds = round(float(avg_latency_row["avg_sec"] or 0), 1) if avg_latency_row else 0
     return {
         "range": time_range,
         "start_date": start_dt.strftime("%Y-%m-%d"),
         "end_date": now.strftime("%Y-%m-%d"),
-        "kpi": {"requests": int(req), "success": int(suc), "failed": int(fail), "success_rate": success_rate, "processing_tasks": int(processing), "new_users": int(new_users), "active_users": int(active_users)},
+        "kpi": {"requests": int(req), "success": int(suc), "failed": int(fail), "success_rate": success_rate, "processing_tasks": int(processing), "new_users": int(new_users), "active_users": int(active_users), "avg_duration_seconds": avg_duration_seconds},
         "users": {"total": int(total_users), "frozen": int(frozen_users), "admins": int(admin_users), "frozen_rate": round((frozen_users / total_users) * 100, 1) if total_users > 0 else 0},
         "revenue": {"today_amount": round(float(rev_t["amt"] or 0), 2), "today_orders": int(rev_t["cnt"] or 0), "days7_amount": round(float(rev_7["amt"] or 0), 2), "days7_orders": int(rev_7["cnt"] or 0), "days30_amount": round(float(rev_30["amt"] or 0), 2), "days30_orders": int(rev_30["cnt"] or 0)},
         "trends_30d": trends,
