@@ -10,6 +10,7 @@ from backend.services.task_manager import TaskManager
 from backend.services.banned_words import BannedWordsService
 from backend.services.image_mapping import ImageUrlMapping
 from backend.services.points_service import PointsService
+from backend.services.notification_service import NotificationService
 from backend.services.image_expiry import refresh_permanent_flags_by_filenames
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -732,6 +733,10 @@ async def approve_recharge_request(request_id: int, body: dict, admin=Depends(re
             "UPDATE recharge_requests SET status = 'approved', points = %s, redeem_code = %s, review_note = %s, reviewed_at = %s, reviewed_by = %s WHERE id = %s",
             (points, code, review_note, now, admin["user_id"], request_id),
         )
+        try:
+            NotificationService.create(user_id, "recharge_approved", "充值审核通过", f"你的充值申请已通过，到账 {points} 积分", str(request_id))
+        except Exception:
+            pass
         logger.info(f"[audit.recharge.approve] request={request_id} admin={admin['user_id']} user={user_id} points={points} amount={item['amount']}")
         return {"message": "审核通过，积分已发放", "code": code, "points": points}
 
@@ -752,6 +757,12 @@ async def reject_recharge_request(request_id: int, body: dict, admin=Depends(req
             "UPDATE recharge_requests SET status = 'rejected', review_note = %s, reviewed_at = %s, reviewed_by = %s WHERE id = %s",
             (review_note, now, admin["user_id"], request_id),
         )
+        user_row = conn.execute("SELECT user_id FROM recharge_requests WHERE id = %s", (request_id,)).fetchone()
+        if user_row:
+            try:
+                NotificationService.create(user_row["user_id"], "recharge_rejected", "充值审核未通过", f"你的充值申请未通过：{review_note}", str(request_id))
+            except Exception:
+                pass
         logger.info(f"[audit.recharge.reject] request={request_id} admin={admin['user_id']} reason={review_note[:120]}")
         return {"message": "已拒绝该充值申请"}
 

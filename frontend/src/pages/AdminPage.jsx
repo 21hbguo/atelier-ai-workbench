@@ -56,6 +56,7 @@ export default function AdminPage() {
   const [codesPage, setCodesPage] = useState(1)
   const [codesSort, setCodesSort] = useState('created_at')
   const [codesOrder, setCodesOrder] = useState('desc')
+  const [rechargePendingCount, setRechargePendingCount] = useState(0)
   const [codePoints, setCodePoints] = useState(10)
   const [codeCount, setCodeCount] = useState(1)
   const [customCode, setCustomCode] = useState('')
@@ -387,9 +388,9 @@ export default function AdminPage() {
   const fetchRechargeRequests = async () => {
     setLoading(true)
     try {
-      const { data } = await adminAPI.rechargeRequests(codesPage, 20, rechargeStatusFilter === 'all' ? undefined : rechargeStatusFilter, undefined, codesSort, codesOrder)
-      setCodes(data.items)
-      setCodesTotal(data.total)
+      const [listRes, pendingRes] = await Promise.allSettled([adminAPI.rechargeRequests(codesPage, 20, rechargeStatusFilter === 'all' ? undefined : rechargeStatusFilter, undefined, codesSort, codesOrder), adminAPI.rechargeRequests(1, 1, 'pending')])
+      if (listRes.status === 'fulfilled') { setCodes(listRes.value.data.items); setCodesTotal(listRes.value.data.total) }
+      if (pendingRes.status === 'fulfilled') setRechargePendingCount(pendingRes.value.data.total || 0)
     } catch {} finally { setLoading(false) }
   }
 
@@ -548,7 +549,7 @@ export default function AdminPage() {
           {[{ k: 'stats', l: '系统统计', i: BarChart3 }, { k: 'users', l: '用户管理', i: Users }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'recharge', l: '充值审核', i: Wallet }, { k: 'announcements', l: '公告管理', i: Megaphone }, { k: 'config', l: '配置中心', i: SlidersHorizontal }].map(({ k, l, i: Icon }) => (
             <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
-              <Icon size={14} />{l}
+              <Icon size={14} />{l}{k === 'recharge' && rechargePendingCount > 0 && <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] text-white" style={{ background: '#ef4444' }}>{rechargePendingCount}</span>}
             </button>
           ))}
         </div>
@@ -1013,8 +1014,12 @@ export default function AdminPage() {
             {/* 充值记录 */}
             <div>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>充值记录</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>充值记录</h3>
+                  {rechargePendingCount > 0 && <span className="px-2 py-0.5 rounded-full text-[11px] text-white" style={{ background: '#ef4444' }}>待审 {rechargePendingCount}</span>}
+                </div>
                 <div className="flex items-center gap-1.5">
+                  {rechargePendingCount > 0 && rechargeStatusFilter !== 'pending' && <button onClick={() => { setRechargeStatusFilter('pending'); setCodesPage(1) }} className="px-2 py-1 rounded-lg text-xs font-medium text-white" style={{ background: '#ef4444' }}>只看待审</button>}
                   <select value={rechargeStatusFilter} onChange={e => { setRechargeStatusFilter(e.target.value); setCodesPage(1) }}
                     className="px-2 py-1 rounded-lg text-xs font-medium border outline-none cursor-pointer"
                     style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
@@ -1037,6 +1042,12 @@ export default function AdminPage() {
                   </button>
                 </div>
               </div>
+              {rechargePendingCount > 0 && (
+                <div className="mb-3 px-3 py-2 rounded-xl border text-sm flex items-center justify-between gap-3" style={{ borderColor: '#f59e0b', background: 'rgba(245,158,11,0.12)', color: '#b45309' }}>
+                  <span>当前有 {rechargePendingCount} 条充值申请待审核。</span>
+                  <button onClick={() => { setRechargeStatusFilter('pending'); setCodesPage(1) }} className="px-2 py-1 rounded-lg text-xs font-medium text-white" style={{ background: '#f59e0b' }}>直达待审</button>
+                </div>
+              )}
               {loading ? (
                 <div className="flex justify-center py-10">
                   <div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} />
@@ -1098,6 +1109,10 @@ export default function AdminPage() {
                             <td className="px-4 py-3 text-center">
                               {c.status === 'pending' && (
                                 <div className="flex items-center justify-center gap-1">
+                                  <button onClick={async () => { try { await adminAPI.approveRecharge(c.id, { points: Number(c.points) || 0, review_note: '快速审核通过' }); fetchRechargeRequests() } catch (e) { dialog.alert(e.message || '操作失败') } }}
+                                    className="px-2 py-1 rounded-lg text-[11px] font-medium bg-emerald-500 text-white hover:bg-emerald-600">
+                                    快速通过
+                                  </button>
                                   <button onClick={() => { setReviewModal({ ...c, action: 'approve' }); setReviewPoints(String(c.points || 10)); setReviewNote('') }}
                                     className="px-2 py-1 rounded-lg text-[11px] font-medium bg-green-500 text-white hover:bg-green-600">
                                     通过

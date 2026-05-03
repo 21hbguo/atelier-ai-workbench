@@ -6,6 +6,7 @@ import secrets
 from backend.auth import get_current_user, get_client_ip
 from backend.services.points_service import PointsService
 from backend.services.upload_file_service import UploadFileService
+from backend.services.notification_service import NotificationService
 from backend.database import get_db
 
 router = APIRouter(prefix="/api/points", tags=["points"])
@@ -126,6 +127,12 @@ async def create_recharge_request(body: RechargeCreateRequest, request: Request,
             "INSERT INTO point_transactions (user_id, amount, balance_after, type, description, recharge_request_id) VALUES (%s, %s, %s, %s, %s, %s)",
             (user["user_id"], 0, balance, "recharge_pending", f"充值申请待审核 (¥{body.amount})", request_id),
         )
+        admins = conn.execute("SELECT id FROM users WHERE is_admin = TRUE").fetchall()
+    for a in admins or []:
+        try:
+            NotificationService.create(a["id"], "recharge_pending", "待审核充值申请", f"用户 {user['username']} 提交了充值申请 ¥{body.amount}", str(request_id))
+        except Exception:
+            pass
     logger.info(f"[audit.recharge.request] id={request_id} user={user['user_id']} amount={body.amount} points={body.points} risk={risk_level} flags={','.join(risk_flags) if risk_flags else 'none'} ip={ip}")
     return {"id": request_id, "tx_no": tx_no, "message": "充值申请已提交，等待审核"}
 
