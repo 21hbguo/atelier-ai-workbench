@@ -113,6 +113,7 @@ export const adminAPI = {
   rechargeRequests: (page = 1, size = 20, status = 'all', query, sort = 'created_at', order = 'desc') => { const params = { page, size, status, sort, order }; if (query) params.query = query; return api.get('/admin/recharge-requests', { params }) },
   approveRecharge: (id, data) => api.post(`/admin/recharge-requests/${id}/approve`, data || {}),
   rejectRecharge: (id, data) => api.post(`/admin/recharge-requests/${id}/reject`, data || {}),
+  statsOverview: (range = '7d') => api.get('/admin/stats/overview', { params: { range } }),
 }
 export const configAPI = { admin: () => api.get('/config/admin'), update: data => api.post('/config', data) }
 

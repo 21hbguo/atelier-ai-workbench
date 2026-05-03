@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Trash2, Users, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket, Megaphone, Wallet, Key, SlidersHorizontal, BarChart3 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { adminAPI, announcementAPI, configAPI, statsAPI } from '../api'
+import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts'
 import MainLayout from '../components/MainLayout'
 import PageLayout from '../components/PageLayout'
 import SearchInput from '../components/SearchInput'
@@ -20,6 +21,9 @@ export default function AdminPage() {
   const [historyTotal, setHistoryTotal] = useState(0)
   const [systemStats, setSystemStats] = useState(null)
   const [bizStats, setBizStats] = useState(null)
+  const [overviewStats, setOverviewStats] = useState(null)
+  const [statsRange, setStatsRange] = useState('7d')
+  const [trendMetric, setTrendMetric] = useState('requests')
   const [loading, setLoading] = useState(false)
   const [userQuery, setUserQuery] = useState('')
   const [historyQuery, setHistoryQuery] = useState('')
@@ -82,7 +86,7 @@ export default function AdminPage() {
 
   useEffect(() => { if (tab === 'users') fetchUsers() }, [tab, userPage, userQuery])
   useEffect(() => { if (tab === 'history') fetchHistory() }, [tab, historyPage, historyQuery])
-  useEffect(() => { if (tab === 'stats') fetchSystemStats() }, [tab])
+  useEffect(() => { if (tab === 'stats') fetchSystemStats() }, [tab, statsRange])
   useEffect(() => { if (tab === 'hosting') { fetchHostingImages(); fetchHostingStats() } }, [tab, hostingPage])
   useEffect(() => { if (tab === 'banned') fetchBannedWords() }, [tab, bannedWordsPage, bannedWordsQuery])
   useEffect(() => { if (tab === 'recharge') fetchRechargeRequests() }, [tab, codesPage, codesSort, codesOrder, rechargeStatusFilter])
@@ -109,9 +113,10 @@ export default function AdminPage() {
   const fetchSystemStats = async () => {
     setLoading(true)
     try {
-      const [a, b] = await Promise.all([statsAPI.get(), statsAPI.system()])
+      const [a, b, c] = await Promise.all([statsAPI.get(), statsAPI.system(), adminAPI.statsOverview(statsRange)])
       setBizStats(a.data || null)
       setSystemStats(b.data || null)
+      setOverviewStats(c.data || null)
     } catch {} finally { setLoading(false) }
   }
 
@@ -402,17 +407,91 @@ export default function AdminPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>累计请求</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{bizStats?.total_requests ?? '-'}</div></div>
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>累计成功</div><div className="text-lg font-semibold" style={{ color: '#22c55e' }}>{bizStats?.total_success ?? '-'}</div></div>
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>今日请求</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{bizStats?.today_requests ?? '-'}</div></div>
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>处理中任务</div><div className="text-lg font-semibold" style={{ color: '#f59e0b' }}>{systemStats?.processing_tasks ?? '-'}</div></div>
+                <div className="flex items-center gap-2">
+                  {[
+                    { v: 'today', l: '今日' },
+                    { v: '7d', l: '7天' },
+                    { v: '30d', l: '30天' },
+                  ].map(i => (
+                    <button key={i.v} onClick={() => setStatsRange(i.v)} className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${statsRange === i.v ? 'text-white border-transparent' : ''}`} style={statsRange === i.v ? { background: 'var(--accent)' } : { borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>{i.l}</button>
+                  ))}
+                  <div className="ml-auto text-xs" style={{ color: 'var(--text-secondary)' }}>{overviewStats?.start_date || '-'} ~ {overviewStats?.end_date || '-'}</div>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>CPU</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{systemStats?.cpu_percent ?? '-'}%</div></div>
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>内存</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{systemStats?.memory_percent ?? '-'}%</div></div>
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>图片文件数</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{systemStats?.image_count_files ?? '-'}</div></div>
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>上传文件数</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{systemStats?.upload_count_files ?? '-'}</div></div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>请求数</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{overviewStats?.kpi?.requests ?? 0}</div></div>
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>成功数</div><div className="text-lg font-semibold" style={{ color: '#22c55e' }}>{overviewStats?.kpi?.success ?? 0}</div></div>
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>成功率</div><div className="text-lg font-semibold" style={{ color: '#22c55e' }}>{overviewStats?.kpi?.success_rate ?? 0}%</div></div>
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>新增用户</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{overviewStats?.kpi?.new_users ?? 0}</div></div>
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>活跃用户</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{overviewStats?.kpi?.active_users ?? 0}</div></div>
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>处理中</div><div className="text-lg font-semibold" style={{ color: '#f59e0b' }}>{overviewStats?.kpi?.processing_tasks ?? 0}</div></div>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                  <div className="p-3 rounded-xl border lg:col-span-2" style={{ borderColor: 'var(--border-color)' }}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>30天趋势</div>
+                      {[
+                        { v: 'requests', l: '请求' },
+                        { v: 'success', l: '成功' },
+                        { v: 'new_users', l: '新增用户' },
+                        { v: 'revenue', l: '营收' },
+                      ].map(i => (
+                        <button key={i.v} onClick={() => setTrendMetric(i.v)} className={`px-2 py-1 rounded text-[11px] border ${trendMetric === i.v ? 'text-white border-transparent' : ''}`} style={trendMetric === i.v ? { background: 'var(--accent)' } : { borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>{i.l}</button>
+                      ))}
+                    </div>
+                    <div className="h-56">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={overviewStats?.trends_30d || []} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
+                          <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--text-secondary)' }} />
+                          <YAxis tick={{ fontSize: 10, fill: 'var(--text-secondary)' }} />
+                          <Tooltip />
+                          <Line type="monotone" dataKey={trendMetric} stroke="var(--accent)" strokeWidth={2} dot={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>充值实收</div>
+                    <div className="space-y-2 text-sm">
+                      <div style={{ color: 'var(--text-primary)' }}>今日：¥{overviewStats?.revenue?.today_amount ?? 0} / {overviewStats?.revenue?.today_orders ?? 0}单</div>
+                      <div style={{ color: 'var(--text-primary)' }}>7天：¥{overviewStats?.revenue?.days7_amount ?? 0} / {overviewStats?.revenue?.days7_orders ?? 0}单</div>
+                      <div style={{ color: 'var(--text-primary)' }}>30天：¥{overviewStats?.revenue?.days30_amount ?? 0} / {overviewStats?.revenue?.days30_orders ?? 0}单</div>
+                    </div>
+                    <div className="text-xs mt-4 mb-2" style={{ color: 'var(--text-secondary)' }}>用户盘子</div>
+                    <div className="space-y-1 text-sm">
+                      <div style={{ color: 'var(--text-primary)' }}>总用户：{overviewStats?.users?.total ?? 0}</div>
+                      <div style={{ color: 'var(--text-primary)' }}>冻结：{overviewStats?.users?.frozen ?? 0} ({overviewStats?.users?.frozen_rate ?? 0}%)</div>
+                      <div style={{ color: 'var(--text-primary)' }}>管理员：{overviewStats?.users?.admins ?? 0}</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>近30天生成Top用户</div>
+                    <div className="space-y-1">
+                      {(overviewStats?.leaderboards?.success_top || []).slice(0, 8).map((i, idx) => <div key={`s-${i.user_id}`} className="flex items-center justify-between text-sm"><span style={{ color: 'var(--text-primary)' }}>{idx + 1}. {i.nickname || i.username}</span><span style={{ color: '#22c55e' }}>{i.success_count}</span></div>)}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>近30天充值Top用户</div>
+                    <div className="space-y-1">
+                      {(overviewStats?.leaderboards?.recharge_top || []).slice(0, 8).map((i, idx) => <div key={`r-${i.user_id}`} className="flex items-center justify-between text-sm"><span style={{ color: 'var(--text-primary)' }}>{idx + 1}. {i.nickname || i.username}</span><span style={{ color: '#f59e0b' }}>¥{i.amount}</span></div>)}
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>提示词分类（管理员全量）</div>
+                    <div className="space-y-1">
+                      {(overviewStats?.categories?.admin_all || []).slice(0, 10).map(i => <div key={`a-${i.category}`} className="flex items-center justify-between text-sm"><span style={{ color: 'var(--text-primary)' }}>{i.category}</span><span style={{ color: 'var(--text-secondary)' }}>{i.count}</span></div>)}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>提示词分类（用户可见，已排除冻结）</div>
+                    <div className="space-y-1">
+                      {(overviewStats?.categories?.user_visible || []).slice(0, 10).map(i => <div key={`u-${i.category}`} className="flex items-center justify-between text-sm"><span style={{ color: 'var(--text-primary)' }}>{i.category}</span><span style={{ color: 'var(--text-secondary)' }}>{i.count}</span></div>)}
+                    </div>
+                  </div>
                 </div>
                 {systemStats?.limits && (
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>

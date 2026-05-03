@@ -1,7 +1,7 @@
 import json
 import os
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Depends, Query
 from backend.database import get_db
 from backend.auth import require_admin, hash_password
@@ -688,3 +688,62 @@ async def reject_recharge_request(request_id: int, body: dict, admin=Depends(req
             (review_note, now, admin["user_id"], request_id),
         )
         return {"message": "已拒绝该充值申请"}
+
+
+@router.get("/stats/overview")
+async def admin_stats_overview(range: str = Query("7d"), admin=Depends(require_admin)):
+    now = datetime.now()
+    today_start = datetime(now.year, now.month, now.day)
+    if range == "today":
+        start_dt = today_start
+    elif range == "30d":
+        start_dt = today_start - timedelta(days=29)
+    else:
+        range = "7d"
+        start_dt = today_start - timedelta(days=6)
+    end_dt = now
+    start_s = start_dt.strftime("%Y-%m-%d %H:%M:%S")
+    end_s = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+    t7_start = (today_start - timedelta(days=6)).strftime("%Y-%m-%d %H:%M:%S")
+    t30_start = (today_start - timedelta(days=29)).strftime("%Y-%m-%d %H:%M:%S")
+    d30 = [(today_start - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(29, -1, -1)]
+    with get_db() as conn:
+        req = conn.execute("SELECT COUNT(*) cnt FROM user_requests WHERE created_at >= %s AND created_at <= %s", (start_s, end_s)).fetchone()["cnt"]
+        suc = conn.execute("SELECT COUNT(*) cnt FROM image_metadata WHERE created_at >= %s AND created_at <= %s", (start_s, end_s)).fetchone()["cnt"]
+        fail = conn.execute("SELECT COUNT(*) cnt FROM user_requests WHERE status='failed' AND created_at >= %s AND created_at <= %s", (start_s, end_s)).fetchone()["cnt"]
+        processing = conn.execute("SELECT COUNT(*) cnt FROM tasks WHERE LOWER(status) IN ('pending','queued','processing','running','generating')").fetchone()["cnt"]
+        new_users = conn.execute("SELECT COUNT(*) cnt FROM users WHERE created_at >= %s AND created_at <= %s", (start_s, end_s)).fetchone()["cnt"]
+        active_users = conn.execute("SELECT COUNT(DISTINCT user_id) cnt FROM tasks WHERE user_id IS NOT NULL AND created_at >= %s AND created_at <= %s", (start_s, end_s)).fetchone()["cnt"]
+        total_users = conn.execute("SELECT COUNT(*) cnt FROM users").fetchone()["cnt"]
+        frozen_users = conn.execute("SELECT COUNT(*) cnt FROM users WHERE is_frozen = TRUE").fetchone()["cnt"]
+        admin_users = conn.execute("SELECT COUNT(*) cnt FROM users WHERE is_admin = TRUE").fetchone()["cnt"]
+        rev_t = conn.execute("SELECT COALESCE(SUM(amount),0) amt, COUNT(*) cnt FROM recharge_requests WHERE status='approved' AND created_at >= %s AND created_at <= %s", (today_start.strftime("%Y-%m-%d %H:%M:%S"), end_s)).fetchone()
+        rev_7 = conn.execute("SELECT COALESCE(SUM(amount),0) amt, COUNT(*) cnt FROM recharge_requests WHERE status='approved' AND created_at >= %s AND created_at <= %s", (t7_start, end_s)).fetchone()
+        rev_30 = conn.execute("SELECT COALESCE(SUM(amount),0) amt, COUNT(*) cnt FROM recharge_requests WHERE status='approved' AND created_at >= %s AND created_at <= %s", (t30_start, end_s)).fetchone()
+        req_rows = conn.execute("SELECT to_char(created_at,'YYYY-MM-DD') d, COUNT(*) cnt FROM user_requests WHERE created_at >= %s AND created_at <= %s GROUP BY d", (t30_start, end_s)).fetchall()
+        suc_rows = conn.execute("SELECT to_char(created_at,'YYYY-MM-DD') d, COUNT(*) cnt FROM image_metadata WHERE created_at >= %s AND created_at <= %s GROUP BY d", (t30_start, end_s)).fetchall()
+        user_rows = conn.execute("SELECT to_char(created_at,'YYYY-MM-DD') d, COUNT(*) cnt FROM users WHERE created_at >= %s AND created_at <= %s GROUP BY d", (t30_start, end_s)).fetchall()
+        rev_rows = conn.execute("SELECT to_char(created_at,'YYYY-MM-DD') d, COALESCE(SUM(amount),0) amt FROM recharge_requests WHERE status='approved' AND created_at >= %s AND created_at <= %s GROUP BY d", (t30_start, end_s)).fetchall()
+        req_map = {r["d"]: int(r["cnt"] or 0) for r in req_rows}
+        suc_map = {r["d"]: int(r["cnt"] or 0) for r in suc_rows}
+        user_map = {r["d"]: int(r["cnt"] or 0) for r in user_rows}
+        rev_map = {r["d"]: float(r["amt"] or 0) for r in rev_rows}
+        trends = [{"date": d, "requests": req_map.get(d, 0), "success": suc_map.get(d, 0), "new_users": user_map.get(d, 0), "revenue": round(rev_map.get(d, 0), 2)} for d in d30]
+        top_success_rows = conn.execute("SELECT u.id user_id, u.username, u.nickname, COUNT(im.id) success_count FROM users u LEFT JOIN image_metadata im ON im.user_id=u.id AND im.created_at >= %s AND im.created_at <= %s GROUP BY u.id ORDER BY success_count DESC, u.id ASC LIMIT 10", (t30_start, end_s)).fetchall()
+        top_recharge_rows = conn.execute("SELECT u.id user_id, u.username, u.nickname, COALESCE(SUM(rr.amount),0) amount, COUNT(rr.id) orders FROM users u LEFT JOIN recharge_requests rr ON rr.user_id=u.id AND rr.status='approved' AND rr.created_at >= %s AND rr.created_at <= %s GROUP BY u.id ORDER BY amount DESC, u.id ASC LIMIT 10", (t30_start, end_s)).fetchall()
+        top_success = [{"user_id": r["user_id"], "username": r["username"], "nickname": r["nickname"], "success_count": int(r["success_count"] or 0)} for r in top_success_rows if int(r["success_count"] or 0) > 0]
+        top_recharge = [{"user_id": r["user_id"], "username": r["username"], "nickname": r["nickname"], "amount": round(float(r["amount"] or 0), 2), "orders": int(r["orders"] or 0)} for r in top_recharge_rows if float(r["amount"] or 0) > 0]
+        cat_all_rows = conn.execute("SELECT COALESCE(NULLIF(TRIM(category),''),'未分类') category, COUNT(*) cnt FROM prompts GROUP BY category ORDER BY cnt DESC").fetchall()
+        cat_visible_rows = conn.execute("SELECT COALESCE(NULLIF(TRIM(category),''),'未分类') category, COUNT(*) cnt FROM prompts WHERE COALESCE(is_frozen,FALSE)=FALSE GROUP BY category ORDER BY cnt DESC").fetchall()
+    success_rate = round((suc / req) * 100, 1) if req > 0 else 0
+    return {
+        "range": range,
+        "start_date": start_dt.strftime("%Y-%m-%d"),
+        "end_date": now.strftime("%Y-%m-%d"),
+        "kpi": {"requests": int(req), "success": int(suc), "failed": int(fail), "success_rate": success_rate, "processing_tasks": int(processing), "new_users": int(new_users), "active_users": int(active_users)},
+        "users": {"total": int(total_users), "frozen": int(frozen_users), "admins": int(admin_users), "frozen_rate": round((frozen_users / total_users) * 100, 1) if total_users > 0 else 0},
+        "revenue": {"today_amount": round(float(rev_t["amt"] or 0), 2), "today_orders": int(rev_t["cnt"] or 0), "days7_amount": round(float(rev_7["amt"] or 0), 2), "days7_orders": int(rev_7["cnt"] or 0), "days30_amount": round(float(rev_30["amt"] or 0), 2), "days30_orders": int(rev_30["cnt"] or 0)},
+        "trends_30d": trends,
+        "leaderboards": {"success_top": top_success, "recharge_top": top_recharge},
+        "categories": {"admin_all": [{"category": r["category"], "count": int(r["cnt"] or 0)} for r in cat_all_rows], "user_visible": [{"category": r["category"], "count": int(r["cnt"] or 0)} for r in cat_visible_rows]},
+    }
