@@ -82,6 +82,17 @@ export default function AdminPage() {
   const [creatingAnnouncement, setCreatingAnnouncement] = useState(false)
   const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3 })
   const [configSaving, setConfigSaving] = useState(false)
+  const [defaultModelId, setDefaultModelId] = useState('image-default')
+  const [generationModelsText, setGenerationModelsText] = useState('{}')
+  const [generationProvidersText, setGenerationProvidersText] = useState('{}')
+  const [showAdvancedGenConfig, setShowAdvancedGenConfig] = useState(false)
+  const [genModelsObj, setGenModelsObj] = useState({})
+  const [genProvidersObj, setGenProvidersObj] = useState({})
+  const [selectedGenRow, setSelectedGenRow] = useState('')
+  const [editingProviderId, setEditingProviderId] = useState('')
+  const [editingProviderDraft, setEditingProviderDraft] = useState({ type: 'wuyin', enabled: true, priority: 100, api_url: '', api_key: '', circuit_fail_threshold: 3, circuit_cooldown_seconds: 60 })
+  const [editingModelId, setEditingModelId] = useState('')
+  const [editingModelDraft, setEditingModelDraft] = useState({ label: '', capability: 'image', enabled: true, providers: [] })
 
   useEffect(() => { setUserPage(1) }, [userQuery])
   useEffect(() => { setHistoryPage(1) }, [historyQuery])
@@ -133,7 +144,9 @@ export default function AdminPage() {
   const fetchRuntimeConfig = async () => {
     setLoading(true)
     try {
-      const { data } = await configAPI.admin()
+      const [baseRes, genRes] = await Promise.all([configAPI.admin(), configAPI.generationAdmin()])
+      const data = baseRes.data || {}
+      const gen = genRes.data || {}
       setRuntimeConfig({
         api_url: data.api_url || '',
         image_hosting_upload_url: data.image_hosting_upload_url || '',
@@ -150,6 +163,13 @@ export default function AdminPage() {
         login_rate_limit_per_minute_per_ip: Number(data.login_rate_limit_per_minute_per_ip || 5),
         register_rate_limit_per_minute_per_ip: Number(data.register_rate_limit_per_minute_per_ip || 3),
       })
+      setDefaultModelId(gen.default_model_id || 'image-default')
+      const modelsObj = gen.generation_models || {}
+      const providersObj = gen.generation_providers || {}
+      setGenModelsObj(modelsObj)
+      setGenProvidersObj(providersObj)
+      setGenerationModelsText(JSON.stringify(modelsObj, null, 2))
+      setGenerationProvidersText(JSON.stringify(providersObj, null, 2))
     } catch (e) { dialog.alert(e.message || '加载配置失败') } finally { setLoading(false) }
   }
   const onConfigInput = (k, v) => setRuntimeConfig(prev => ({ ...prev, [k]: v }))
@@ -158,12 +178,142 @@ export default function AdminPage() {
     const payload = { ...runtimeConfig }
     for (const k of n) payload[k] = Number(payload[k])
     if (payload.generate_concurrent_limit_per_user < 1 || payload.points_cost_per_generation < 1 || payload.login_rate_limit_per_minute_per_ip < 1 || payload.register_rate_limit_per_minute_per_ip < 1 || payload.points_checkin_reward < 0 || payload.points_register_bonus < 0 || payload.points_migration_amount < 0) { dialog.alert('限制配置不合法'); return }
+    let generation_models = {}
+    let generation_providers = {}
+    try {
+      generation_models = JSON.parse(generationModelsText || '{}')
+      generation_providers = JSON.parse(generationProvidersText || '{}')
+      if (!generation_models || typeof generation_models !== 'object' || Array.isArray(generation_models)) throw new Error('generation_models 需要 JSON 对象')
+      if (!generation_providers || typeof generation_providers !== 'object' || Array.isArray(generation_providers)) throw new Error('generation_providers 需要 JSON 对象')
+    } catch (e) { dialog.alert(e.message || '模型/供应商配置JSON格式错误'); return }
+    if (!generation_models[payload.default_model_id]) { dialog.alert('默认模型ID不存在于 generation_models'); return }
+    for (const [modelId, modelCfg] of Object.entries(generation_models)) {
+      const pids = Array.isArray(modelCfg?.providers) ? modelCfg.providers : []
+      for (const pid of pids) {
+        if (!generation_providers[pid]) { dialog.alert(`模型 ${modelId} 引用了不存在的供应商 ${pid}`); return }
+      }
+    }
+    payload.default_model_id = (defaultModelId || '').trim() || 'image-default'
+    payload.generation_models = generation_models
+    payload.generation_providers = generation_providers
     setConfigSaving(true)
     try {
       await configAPI.update(payload)
       dialog.alert('保存成功')
       fetchRuntimeConfig()
     } catch (e) { dialog.alert(e.message || '保存失败') } finally { setConfigSaving(false) }
+  }
+  const syncGenJsonFromForm = (modelsObj, providersObj) => {
+    setGenerationModelsText(JSON.stringify(modelsObj, null, 2))
+    setGenerationProvidersText(JSON.stringify(providersObj, null, 2))
+  }
+  const handleAddModel = () => {
+    const id = `image-model-${Date.now()}`
+    const next = { ...genModelsObj, [id]: { label: '新模型', capability: 'image', enabled: true, providers: [] } }
+    setGenModelsObj(next); syncGenJsonFromForm(next, genProvidersObj)
+  }
+  const handleDeleteModel = (id) => {
+    const next = { ...genModelsObj }
+    delete next[id]
+    setGenModelsObj(next)
+    if (defaultModelId === id) setDefaultModelId(Object.keys(next)[0] || 'image-default')
+    if (selectedGenRow === `m:${id}`) setSelectedGenRow('')
+    syncGenJsonFromForm(next, genProvidersObj)
+  }
+  const handleRenameModel = (oldId, newId) => {
+    const nid = (newId || '').trim()
+    if (!nid || nid === oldId) return
+    if (genModelsObj[nid]) { dialog.alert('模型ID已存在'); return }
+    const next = {}
+    for (const [k, v] of Object.entries(genModelsObj)) next[k === oldId ? nid : k] = v
+    setGenModelsObj(next)
+    if (defaultModelId === oldId) setDefaultModelId(nid)
+    syncGenJsonFromForm(next, genProvidersObj)
+  }
+  const handleModelField = (id, key, value) => {
+    const next = { ...genModelsObj, [id]: { ...(genModelsObj[id] || {}), [key]: value } }
+    setGenModelsObj(next); syncGenJsonFromForm(next, genProvidersObj)
+  }
+  const handleModelProviders = (id, providersCsv) => {
+    const providers = (providersCsv || '').split(',').map(s => s.trim()).filter(Boolean)
+    const next = { ...genModelsObj, [id]: { ...(genModelsObj[id] || {}), providers } }
+    setGenModelsObj(next); syncGenJsonFromForm(next, genProvidersObj)
+  }
+  const handleAddProvider = () => {
+    const id = `provider-${Date.now()}`
+    const next = { ...genProvidersObj, [id]: { type: 'wuyin', enabled: true, priority: 100, api_url: '', api_key: '', circuit_fail_threshold: 3, circuit_cooldown_seconds: 60 } }
+    setGenProvidersObj(next); syncGenJsonFromForm(genModelsObj, next)
+  }
+  const handleDeleteProvider = (id) => {
+    const next = { ...genProvidersObj }
+    delete next[id]
+    const nextModels = {}
+    for (const [mid, m] of Object.entries(genModelsObj)) nextModels[mid] = { ...m, providers: (Array.isArray(m?.providers) ? m.providers : []).filter(pid => pid !== id) }
+    if (selectedGenRow === `p:${id}`) setSelectedGenRow('')
+    setGenProvidersObj(next); setGenModelsObj(nextModels); syncGenJsonFromForm(nextModels, next)
+  }
+  const handleRenameProvider = (oldId, newId) => {
+    const nid = (newId || '').trim()
+    if (!nid || nid === oldId) return
+    if (genProvidersObj[nid]) { dialog.alert('供应商ID已存在'); return }
+    const next = {}
+    for (const [k, v] of Object.entries(genProvidersObj)) next[k === oldId ? nid : k] = v
+    const nextModels = {}
+    for (const [mid, m] of Object.entries(genModelsObj)) nextModels[mid] = { ...m, providers: (Array.isArray(m?.providers) ? m.providers : []).map(pid => pid === oldId ? nid : pid) }
+    setGenProvidersObj(next); setGenModelsObj(nextModels); syncGenJsonFromForm(nextModels, next)
+  }
+  const handleProviderField = (id, key, value) => {
+    const next = { ...genProvidersObj, [id]: { ...(genProvidersObj[id] || {}), [key]: value } }
+    setGenProvidersObj(next); syncGenJsonFromForm(genModelsObj, next)
+  }
+  const openProviderEditor = (id) => {
+    const p = genProvidersObj[id] || {}
+    setEditingProviderId(id)
+    setEditingProviderDraft({ type: p.type || 'wuyin', enabled: p.enabled !== false, priority: Number(p.priority ?? 100), api_url: p.api_url || '', api_key: p.api_key || '', circuit_fail_threshold: Number(p.circuit_fail_threshold ?? 3), circuit_cooldown_seconds: Number(p.circuit_cooldown_seconds ?? 60) })
+  }
+  const openModelEditor = (id) => {
+    const m = genModelsObj[id] || {}
+    setEditingModelId(id)
+    setEditingModelDraft({ label: m.label || '', capability: m.capability || 'image', enabled: m.enabled !== false, providers: Array.isArray(m.providers) ? m.providers : [] })
+  }
+  const applyProviderEditor = () => {
+    if (!editingProviderId) return
+    const next = { ...genProvidersObj, [editingProviderId]: { ...(genProvidersObj[editingProviderId] || {}), ...editingProviderDraft } }
+    setGenProvidersObj(next); syncGenJsonFromForm(genModelsObj, next); setEditingProviderId('')
+  }
+  const applyModelEditor = () => {
+    if (!editingModelId) return
+    const next = { ...genModelsObj, [editingModelId]: { ...(genModelsObj[editingModelId] || {}), ...editingModelDraft, providers: Array.isArray(editingModelDraft.providers) ? editingModelDraft.providers : [] } }
+    setGenModelsObj(next); syncGenJsonFromForm(next, genProvidersObj); setEditingModelId('')
+  }
+  const handleCopySelectedGenRow = () => {
+    if (!selectedGenRow) { dialog.alert('请先选择一行'); return }
+    if (selectedGenRow.startsWith('m:')) {
+      const id = selectedGenRow.slice(2)
+      const src = genModelsObj[id]
+      if (!src) return
+      const nid = `${id}-copy-${Date.now()}`
+      const next = { ...genModelsObj, [nid]: { ...src, label: `${src.label || id} 副本` } }
+      setGenModelsObj(next); syncGenJsonFromForm(next, genProvidersObj); setSelectedGenRow(`m:${nid}`)
+      return
+    }
+    if (selectedGenRow.startsWith('p:')) {
+      const id = selectedGenRow.slice(2)
+      const src = genProvidersObj[id]
+      if (!src) return
+      const nid = `${id}-copy-${Date.now()}`
+      const next = { ...genProvidersObj, [nid]: { ...src } }
+      setGenProvidersObj(next); syncGenJsonFromForm(genModelsObj, next); setSelectedGenRow(`p:${nid}`)
+    }
+  }
+  const handleApplyAdvanced = () => {
+    try {
+      const m = JSON.parse(generationModelsText || '{}')
+      const p = JSON.parse(generationProvidersText || '{}')
+      if (!m || typeof m !== 'object' || Array.isArray(m)) throw new Error('generation_models 不是对象')
+      if (!p || typeof p !== 'object' || Array.isArray(p)) throw new Error('generation_providers 不是对象')
+      setGenModelsObj(m); setGenProvidersObj(p); dialog.alert('已应用高级JSON到表单')
+    } catch (e) { dialog.alert(e.message || 'JSON格式错误') }
   }
 
 
@@ -1002,6 +1152,91 @@ export default function AdminPage() {
                 <textarea value={runtimeConfig.manual_recharge_notice} onChange={e => onConfigInput('manual_recharge_notice', e.target.value)} rows={3} className="w-full px-3 py-2 rounded-lg text-sm border resize-none outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
             </div>
+            <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+              <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>模型与供应商路由配置</h3>
+              <div className="mb-3">
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>默认模型ID</label>
+                <input type="text" value={defaultModelId} onChange={e => setDefaultModelId(e.target.value)} placeholder="例如：image-default（必须存在于模型列表）" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              <div className="rounded-lg border p-3 mb-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>融合路由配置表</div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={handleCopySelectedGenRow} className="px-2 py-1 rounded text-xs font-medium border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>复制</button>
+                    <button onClick={handleAddModel} className="px-2 py-1 rounded text-xs font-medium bg-accent text-white">新增模型</button>
+                    <button onClick={handleAddProvider} className="px-2 py-1 rounded text-xs font-medium bg-accent text-white">新增供应商</button>
+                  </div>
+                </div>
+                <div className="overflow-x-auto rounded border" style={{ borderColor: 'var(--border-color)' }}>
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr style={{ background: 'var(--bg-secondary)' }}>
+                        <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>选择</th>
+                        <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>类别</th>
+                        <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>ID</th>
+                        <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>主要信息</th>
+                        <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>状态</th>
+                        <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(genModelsObj).map(([mid, m]) => (
+                        <tr key={`m:${mid}`} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
+                          <td className="px-3 py-2 text-center"><input type="radio" name="gen-row" checked={selectedGenRow === `m:${mid}`} onChange={() => setSelectedGenRow(`m:${mid}`)} /></td>
+                          <td className="px-3 py-2" style={{ color: '#2563eb' }}>模型</td>
+                          <td className="px-3 py-2 font-mono" style={{ color: 'var(--text-primary)' }}>{mid}</td>
+                          <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{`${m?.label || '-'} | ${m?.capability || 'image'} | providers: ${(Array.isArray(m?.providers) ? m.providers : []).join(',') || '-'}`}</td>
+                          <td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 rounded-full text-[11px] ${m?.enabled !== false ? 'bg-green-500/15 text-green-600' : 'bg-gray-500/15 text-gray-500'}`}>{m?.enabled !== false ? '启用' : '禁用'}</span></td>
+                          <td className="px-3 py-2 text-right">
+                            <div className="inline-flex items-center gap-2">
+                              <button onClick={() => openModelEditor(mid)} className="px-2 py-1 rounded text-xs border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>编辑</button>
+                              <button onClick={() => handleDeleteModel(mid)} className="px-2 py-1 rounded text-xs border text-red-500" style={{ borderColor: 'var(--border-color)' }}>删除</button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {Object.entries(genProvidersObj).map(([pid, p]) => (
+                        <tr key={`p:${pid}`} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
+                          <td className="px-3 py-2 text-center"><input type="radio" name="gen-row" checked={selectedGenRow === `p:${pid}`} onChange={() => setSelectedGenRow(`p:${pid}`)} /></td>
+                          <td className="px-3 py-2" style={{ color: '#7c3aed' }}>供应商</td>
+                          <td className="px-3 py-2 font-mono" style={{ color: 'var(--text-primary)' }}>{pid}</td>
+                          <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{`${p?.type || 'wuyin'} | priority:${Number(p?.priority ?? 100)} | ${p?.api_url || '全局api_url'}`}</td>
+                          <td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 rounded-full text-[11px] ${p?.enabled !== false ? 'bg-green-500/15 text-green-600' : 'bg-gray-500/15 text-gray-500'}`}>{p?.enabled !== false ? '启用' : '禁用'}</span></td>
+                          <td className="px-3 py-2 text-right">
+                            <div className="inline-flex items-center gap-2">
+                              <button onClick={() => openProviderEditor(pid)} className="px-2 py-1 rounded text-xs border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>编辑</button>
+                              <button onClick={() => handleDeleteProvider(pid)} className="px-2 py-1 rounded text-xs border text-red-500" style={{ borderColor: 'var(--border-color)' }}>删除</button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-2 text-[11px]" style={{ color: 'var(--text-secondary)' }}>提示：先“选择”某一行，再点“复制”可快速克隆该配置并二次编辑；模型行绑定供应商ID，供应商行定义真实API参数。</div>
+              </div>
+              <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>高级模式(JSON)</div>
+                  <button onClick={() => setShowAdvancedGenConfig(v => !v)} className="px-2 py-1 rounded text-xs border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>{showAdvancedGenConfig ? '收起' : '展开'}</button>
+                </div>
+                {showAdvancedGenConfig && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                    <div>
+                      <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>generation_models(JSON对象)</label>
+                      <textarea value={generationModelsText} onChange={e => setGenerationModelsText(e.target.value)} rows={14} className="w-full px-3 py-2 rounded-lg text-xs border resize-none outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                    </div>
+                    <div>
+                      <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>generation_providers(JSON对象)</label>
+                      <textarea value={generationProvidersText} onChange={e => setGenerationProvidersText(e.target.value)} rows={14} className="w-full px-3 py-2 rounded-lg text-xs border resize-none outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                    </div>
+                    <div className="md:col-span-2 flex justify-end">
+                      <button onClick={handleApplyAdvanced} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-accent text-white hover:opacity-90">应用到表单</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         ) : (
           <div>
@@ -1081,6 +1316,93 @@ export default function AdminPage() {
           </div>
         )}
       </div>
+
+      {editingModelId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setEditingModelId('')}>
+          <div className="absolute inset-0 bg-black/50" />
+          <div className="relative w-full max-w-lg rounded-2xl overflow-hidden" style={{ background: 'var(--bg-primary)' }} onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>编辑模型</h3>
+              <div className="text-xs mt-1 font-mono" style={{ color: 'var(--text-secondary)' }}>{editingModelId}</div>
+            </div>
+            <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>模型ID</label>
+                <input type="text" value={editingModelId} readOnly className="w-full px-3 py-2 rounded-lg text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }} />
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>显示名</label>
+                <input type="text" value={editingModelDraft.label || ''} onChange={e => setEditingModelDraft(prev => ({ ...prev, label: e.target.value }))} placeholder="如 默认模型" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>能力</label>
+                <select value={editingModelDraft.capability || 'image'} onChange={e => setEditingModelDraft(prev => ({ ...prev, capability: e.target.value }))} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}><option value="image">image</option><option value="video">video</option></select>
+              </div>
+              <div className="flex items-end">
+                <label className="inline-flex items-center gap-2 text-sm" style={{ color: 'var(--text-primary)' }}><input type="checkbox" checked={editingModelDraft.enabled !== false} onChange={e => setEditingModelDraft(prev => ({ ...prev, enabled: e.target.checked }))} />启用该模型</label>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>绑定供应商ID</label>
+                <input type="text" value={(Array.isArray(editingModelDraft.providers) ? editingModelDraft.providers : []).join(',')} onChange={e => setEditingModelDraft(prev => ({ ...prev, providers: (e.target.value || '').split(',').map(s => s.trim()).filter(Boolean) }))} placeholder="逗号分隔，如 wuyin-main,wuyin-backup" className="w-full px-3 py-2 rounded-lg text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
+              <button onClick={() => setEditingModelId('')} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button>
+              <button onClick={applyModelEditor} className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:opacity-90">保存</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 供应商编辑弹窗 */}
+      {editingProviderId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setEditingProviderId('')}>
+          <div className="absolute inset-0 bg-black/50" />
+          <div className="relative w-full max-w-lg rounded-2xl overflow-hidden" style={{ background: 'var(--bg-primary)' }} onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>编辑供应商</h3>
+              <div className="text-xs mt-1 font-mono" style={{ color: 'var(--text-secondary)' }}>{editingProviderId}</div>
+            </div>
+            <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>供应商ID</label>
+                <input type="text" value={editingProviderId} readOnly className="w-full px-3 py-2 rounded-lg text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }} />
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>类型</label>
+                <input type="text" value={editingProviderDraft.type || ''} onChange={e => setEditingProviderDraft(prev => ({ ...prev, type: e.target.value }))} placeholder="如 wuyin" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>优先级</label>
+                <input type="number" value={Number(editingProviderDraft.priority ?? 100)} onChange={e => setEditingProviderDraft(prev => ({ ...prev, priority: Number(e.target.value || 0) }))} placeholder="越大越优先" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>连续失败阈值</label>
+                <input type="number" value={Number(editingProviderDraft.circuit_fail_threshold ?? 3)} onChange={e => setEditingProviderDraft(prev => ({ ...prev, circuit_fail_threshold: Number(e.target.value || 0) }))} placeholder="达到阈值触发熔断" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>熔断冷却秒数</label>
+                <input type="number" value={Number(editingProviderDraft.circuit_cooldown_seconds ?? 60)} onChange={e => setEditingProviderDraft(prev => ({ ...prev, circuit_cooldown_seconds: Number(e.target.value || 0) }))} placeholder="如 60" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              <div className="flex items-end">
+                <label className="inline-flex items-center gap-2 text-sm" style={{ color: 'var(--text-primary)' }}><input type="checkbox" checked={editingProviderDraft.enabled !== false} onChange={e => setEditingProviderDraft(prev => ({ ...prev, enabled: e.target.checked }))} />启用该供应商</label>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>API URL</label>
+                <input type="text" value={editingProviderDraft.api_url || ''} onChange={e => setEditingProviderDraft(prev => ({ ...prev, api_url: e.target.value }))} placeholder="例如 https://xxx/api/async，留空则使用全局api_url" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>API Key</label>
+                <input type="text" value={editingProviderDraft.api_key || ''} onChange={e => setEditingProviderDraft(prev => ({ ...prev, api_key: e.target.value }))} placeholder="留空则使用全局api_key" className="w-full px-3 py-2 rounded-lg text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
+              <button onClick={() => setEditingProviderId('')} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button>
+              <button onClick={applyProviderEditor} className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:opacity-90">保存</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 图片详情弹窗 */}
       {hostingDetail && (

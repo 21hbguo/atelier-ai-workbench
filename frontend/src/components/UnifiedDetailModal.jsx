@@ -45,6 +45,8 @@ export default function UnifiedDetailModal({
   const touchSwiped = useRef(false)
   const modalStatePushed = useRef(false)
   const lightboxStatePushed = useRef(false)
+  const lightboxRef = useRef(false)
+  const modalToken = useRef(`${Date.now()}_${Math.random().toString(36).slice(2)}`)
 
   const hasNavigation = cards.length > 1
   const canPrev = hasNavigation && currentIndex > 0
@@ -73,11 +75,13 @@ export default function UnifiedDetailModal({
   }, [card?.id, currentIndex])
   useEffect(() => {
     if (!modalStatePushed.current) {
-      window.history.pushState({ __udm: 'modal' }, '')
+      window.history.pushState({ __udm: 'modal', token: modalToken.current }, '')
       modalStatePushed.current = true
     }
-    const handlePopState = () => {
-      if (lightbox) {
+    const handlePopState = (e) => {
+      const state = e.state || {}
+      const inLightbox = lightboxRef.current
+      if (inLightbox && state.__udm === 'modal' && state.token === modalToken.current) {
         lightboxStatePushed.current = false
         setLightbox(false)
         return
@@ -86,10 +90,11 @@ export default function UnifiedDetailModal({
     }
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
-  }, [lightbox, onClose])
+  }, [onClose])
   useEffect(() => {
+    lightboxRef.current = lightbox
     if (lightbox && !lightboxStatePushed.current) {
-      window.history.pushState({ __udm: 'lightbox' }, '')
+      window.history.pushState({ __udm: 'lightbox', token: modalToken.current }, '')
       lightboxStatePushed.current = true
     }
     if (!lightbox) lightboxStatePushed.current = false

@@ -1,18 +1,23 @@
 from __future__ import annotations
 from pydantic import BaseModel, Field
 from typing import Optional, List
+from pydantic import ConfigDict
 
 class GenerateTextRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
     prompt: str = Field(..., max_length=2500)
     size: str = Field("auto", max_length=20)
+    model_id: str = Field("image-default", max_length=64)
     task_id: Optional[str] = Field(None, max_length=50)
     client_request_id: Optional[str] = Field(None, max_length=64)
     share_to_square: bool = False
 
 class GenerateTextImageRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
     prompt: str = Field(..., max_length=2500)
     image_urls: List[str] = Field(..., max_length=5)
     size: str = Field("auto", max_length=20)
+    model_id: str = Field("image-default", max_length=64)
     task_id: Optional[str] = Field(None, max_length=50)
     client_request_id: Optional[str] = Field(None, max_length=64)
     share_to_square: bool = False

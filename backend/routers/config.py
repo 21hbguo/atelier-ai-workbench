@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
-from typing import Optional
-from backend.config import get_config, update_config
+from typing import Optional, Dict, Any
+from backend.config import get_config, update_config, get_generation_models, get_generation_providers, get_default_model_id
 from backend.auth import get_current_user, require_admin
+from backend.services.gen_gateway import GenGateway
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
@@ -23,6 +24,9 @@ class ConfigUpdate(BaseModel):
     points_migration_amount: Optional[int] = Field(None, ge=0)
     login_rate_limit_per_minute_per_ip: Optional[int] = Field(None, ge=1)
     register_rate_limit_per_minute_per_ip: Optional[int] = Field(None, ge=1)
+    default_model_id: Optional[str] = None
+    generation_models: Optional[Dict[str, Any]] = None
+    generation_providers: Optional[Dict[str, Any]] = None
 
 
 @router.get("")
@@ -50,3 +54,13 @@ async def update_runtime_config(body: ConfigUpdate, admin=Depends(require_admin)
     updates = {k: v for k, v in body.dict().items() if v is not None}
     update_config(updates)
     return {"status": "ok"}
+
+
+@router.get("/models")
+async def list_generation_models(user=Depends(get_current_user)):
+    return {"default_model_id": get_default_model_id(), "models": GenGateway.public_models()}
+
+
+@router.get("/generation/admin")
+async def get_generation_config_admin(admin=Depends(require_admin)):
+    return {"default_model_id": get_default_model_id(), "generation_models": get_generation_models(), "generation_providers": get_generation_providers()}

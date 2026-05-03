@@ -5,6 +5,12 @@ from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
+def _safe_json_obj(s: str, default: dict):
+    try:
+        v = json.loads((s or "").strip() or "{}")
+        return v if isinstance(v, dict) else dict(default)
+    except Exception:
+        return dict(default)
 
 # 服务器配置
 HOST = os.getenv("HOST", "127.0.0.1")
@@ -54,8 +60,15 @@ _runtime_config = {
     "points_migration_amount": int(os.getenv("POINTS_MIGRATION_AMOUNT", "50")),
     "login_rate_limit_per_minute_per_ip": int(os.getenv("LOGIN_RATE_LIMIT_PER_MINUTE_PER_IP", "5")),
     "register_rate_limit_per_minute_per_ip": int(os.getenv("REGISTER_RATE_LIMIT_PER_MINUTE_PER_IP", "3")),
+    "default_model_id": os.getenv("GEN_DEFAULT_MODEL_ID", "image-default"),
+    "generation_models": _safe_json_obj(os.getenv("GENERATION_MODELS_JSON", ""), {}),
+    "generation_providers": _safe_json_obj(os.getenv("GENERATION_PROVIDERS_JSON", ""), {}),
 }
 _runtime_config_defaults = dict(_runtime_config)
+if not _runtime_config["generation_models"]:
+    _runtime_config["generation_models"]={"image-default":{"label":"默认模型","capability":"image","enabled":True,"providers":["wuyin-main"]}}
+if not _runtime_config["generation_providers"]:
+    _runtime_config["generation_providers"]={"wuyin-main":{"type":"wuyin","enabled":True,"priority":100,"api_url":"","api_key":"","circuit_fail_threshold":3,"circuit_cooldown_seconds":60}}
 
 
 def _load_runtime_config():
@@ -118,6 +131,20 @@ def IMAGE_HOSTING_BASE_URL():
 
 def IMAGE_HOSTING_REFERER():
     return _runtime_config["image_hosting_referer"]
+
+
+def get_default_model_id():
+    return (_runtime_config.get("default_model_id") or "image-default").strip() or "image-default"
+
+
+def get_generation_models():
+    models = _runtime_config.get("generation_models") or {}
+    return models if isinstance(models, dict) else {}
+
+
+def get_generation_providers():
+    providers = _runtime_config.get("generation_providers") or {}
+    return providers if isinstance(providers, dict) else {}
 
 
 _load_runtime_config()

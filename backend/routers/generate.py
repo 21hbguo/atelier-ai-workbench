@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 
 logger = logging.getLogger(__name__)
 
-from backend.services.image_gen import ImageGenService
+from backend.services.gen_gateway import GenGateway
 from backend.services.task_manager import TaskManager
 from backend.services.stats_service import StatsService
 from backend.services.banned_words import BannedWordsService
@@ -58,16 +58,18 @@ def _share_to_square(user_id: int, file_path: str, prompt: str, size: str, task_
 
 async def _run_generation(task_id: str, task_type: str, submit_payload: dict, meta: dict, user_id: int, is_admin: bool):
     try:
-        if task_type == "text_image":
-            result = await ImageGenService.submit_task(prompt=submit_payload["prompt"], size=submit_payload["size"], urls=submit_payload.get("image_urls") or [])
-        else:
-            result = await ImageGenService.submit_task(prompt=submit_payload["prompt"], size=submit_payload["size"])
-        external_task_id = result["task_id"]
-        logger.info(f"[submit.accepted] type={task_type} task={task_id} user={user_id} external={external_task_id}")
+        result = await GenGateway.submit(model_id=submit_payload.get("model_id"), prompt=submit_payload["prompt"], size=submit_payload["size"], image_urls=submit_payload.get("image_urls") or [])
+        external_task_id = result["external_task_id"]
+        provider_id = result["provider_id"]
+        model_id = result["model_id"]
+        logger.info(f"[submit.accepted] type={task_type} task={task_id} user={user_id} model={model_id} provider={provider_id} external={external_task_id}")
         task_params = dict(submit_payload)
+        task_params["model_id"] = model_id
+        task_params["provider_id"] = provider_id
         task_params["external_task_id"] = external_task_id
+        task_params["provider_trace"] = result.get("provider_trace") or []
         TaskManager.update_task(task_id, params=task_params)
-        urls = await _poll_and_download(external_task_id, task_id, meta, user_id=user_id)
+        urls = await _poll_and_download(provider_id, external_task_id, task_id, meta, user_id=user_id)
         if urls:
             if submit_payload.get("share_to_square") and len(urls) > 0:
                 try:
@@ -128,11 +130,11 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
                 PointsService.refund(user_id, PointsService.cost_per_generation(), "违禁词退还", request_key=f"refund:{task_id}")
             raise HTTPException(status_code=400, detail="提示词包含违禁词，请修改后重试")
 
-        TaskManager.create_task(task_id, "text", {"prompt": request.prompt, "size": request.size, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}, user_id=user_id, points_cost=cost, points_balance_after=points_balance_after)
+        TaskManager.create_task(task_id, "text", {"prompt": request.prompt, "size": request.size, "model_id": request.model_id, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}, user_id=user_id, points_cost=cost, points_balance_after=points_balance_after)
         TaskManager.update_task(task_id, status="processing", progress=10)
         logger.info(f"[submit.task_created] type=text task={task_id} user={user_id}")
-        meta = {"prompt": request.prompt, "size": request.size, "type": "text", "task_id": task_id, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}
-        asyncio.create_task(_run_generation(task_id, "text", {"prompt": request.prompt, "size": request.size, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}, meta, user_id, bool(is_admin)))
+        meta = {"prompt": request.prompt, "size": request.size, "type": "text", "task_id": task_id, "model_id": request.model_id, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}
+        asyncio.create_task(_run_generation(task_id, "text", {"prompt": request.prompt, "size": request.size, "model_id": request.model_id, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}, meta, user_id, bool(is_admin)))
         return GenerateResponse(task_id=task_id, status="processing", message="任务已提交")
 
     except HTTPException:
@@ -183,11 +185,11 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
                 PointsService.refund(user_id, PointsService.cost_per_generation(), "违禁词退还", request_key=f"refund:{task_id}")
             raise HTTPException(status_code=400, detail="提示词包含违禁词，请修改后重试")
 
-        TaskManager.create_task(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}, user_id=user_id, points_cost=cost, points_balance_after=points_balance_after)
+        TaskManager.create_task(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "model_id": request.model_id, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}, user_id=user_id, points_cost=cost, points_balance_after=points_balance_after)
         TaskManager.update_task(task_id, status="processing", progress=10)
         logger.info(f"[submit.task_created] type=text_image task={task_id} user={user_id}")
-        meta = {"prompt": request.prompt, "size": request.size, "type": "text_image", "task_id": task_id, "input_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}
-        asyncio.create_task(_run_generation(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}, meta, user_id, bool(is_admin)))
+        meta = {"prompt": request.prompt, "size": request.size, "type": "text_image", "task_id": task_id, "model_id": request.model_id, "input_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}
+        asyncio.create_task(_run_generation(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "model_id": request.model_id, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}, meta, user_id, bool(is_admin)))
         return GenerateResponse(task_id=task_id, status="processing", message="任务已提交")
 
     except HTTPException:
@@ -202,7 +204,7 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
         raise HTTPException(status_code=500, detail="生成失败")
 
 
-async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = None, user_id: int = None) -> list:
+async def _poll_and_download(provider_id: str, external_task_id: str, task_id: str, meta: dict = None, user_id: int = None) -> list:
     max_wait_seconds = 900
     consecutive_errors = 0
     start_time = datetime.now()
@@ -222,9 +224,9 @@ async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = N
                 await asyncio.sleep(3)
 
         try:
-            result = await ImageGenService.get_task_result(external_task_id)
+            result = await GenGateway.poll(provider_id, external_task_id)
             consecutive_errors = 0
-            logger.info(f"[poll] task={task_id} attempt={attempt} status={result.get('status') if isinstance(result, dict) else 'ok'}")
+            logger.info(f"[poll] task={task_id} attempt={attempt} provider={provider_id} state={result.get('state') if isinstance(result, dict) else 'ok'}")
         except Exception as e:
             consecutive_errors += 1
             logger.warning(f"[poll] task={task_id} error={e} consecutive={consecutive_errors}")
@@ -235,46 +237,22 @@ async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = N
                 raise Exception(f"轮询连续失败: {msg}")
             continue
 
-        if result is None:
+        state = (result or {}).get("state")
+        if state == "running":
             attempt += 1
             continue
-
-        if isinstance(result, dict) and str(result.get("status")) in {"0", "1"}:
-            attempt += 1
-            continue
-        if isinstance(result, dict) and str(result.get("status")) in {"3", "4", "5", "failed", "error"}:
-            msg = (result.get("message") or result.get("msg") or "生成失败").strip()
+        if state == "failed":
+            msg = ((result or {}).get("message") or "生成失败").strip()
             raise Exception(msg)
-
-        if isinstance(result, dict):
-            raw_urls = result.get("result") or result.get("urls") or result.get("images")
-            logger.info(f"[poll] task={task_id} got {len(raw_urls) if isinstance(raw_urls, list) else 1} results")
-            if raw_urls is None:
-                raw_urls = [result]
-        else:
-            raw_urls = [result]
-
-        if not isinstance(raw_urls, list):
-            raw_urls = [raw_urls]
-
+        raw_urls = (result or {}).get("urls") or []
+        logger.info(f"[poll] task={task_id} got {len(raw_urls)} results")
         local_paths = []
-        for i, item in enumerate(raw_urls):
-            if isinstance(item, dict):
-                url = item.get("url") or item.get("image") or item.get("img")
-            else:
-                url = str(item).strip().strip('`').strip()
-
-            if not url:
-                continue
-
-            if not url.startswith(("http://", "https://")):
-                url = "https://" + url
-
+        for i, url in enumerate(raw_urls):
+            if not url: continue
             filename = f"{task_id}_{i}.png"
             save_path = str(GENERATED_IMAGES_DIR / filename)
             logger.info(f"[poll] task={task_id} downloading image {i}")
-
-            if await ImageGenService.download_image(url, save_path):
+            if await GenGateway.download(provider_id, url, save_path):
                 local_paths.append(save_path)
                 image_meta = meta or {}
                 image_meta["created_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -283,10 +261,8 @@ async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = N
                         "INSERT INTO image_metadata (filename, metadata, created_at, user_id, expires_at, is_permanent) VALUES (%s, %s, %s, %s, %s, FALSE) ON CONFLICT(filename) DO UPDATE SET metadata=EXCLUDED.metadata, created_at=EXCLUDED.created_at, user_id=EXCLUDED.user_id, expires_at=COALESCE(image_metadata.expires_at, EXCLUDED.expires_at), is_permanent=COALESCE(image_metadata.is_permanent, FALSE)",
                         (filename, json.dumps(image_meta, ensure_ascii=False), image_meta["created_at"], user_id, (datetime.now() + timedelta(days=RETENTION_DAYS)).strftime("%Y-%m-%d %H:%M:%S")),
                     )
-        if not local_paths and isinstance(result, dict):
-            msg = (result.get("message") or result.get("msg") or "").strip()
-            if msg:
-                raise Exception(msg)
+        if not local_paths and (result or {}).get("message"):
+            raise Exception(((result or {}).get("message") or "").strip())
         return local_paths
         attempt += 1
 

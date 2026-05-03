@@ -344,17 +344,18 @@ class TaskManager:
                         "type": task.get("type", "text"),
                         "task_id": task_id,
                     }
-                    asyncio.create_task(cls._recover_task(task_id, external_task_id, meta, task.get("user_id")))
+                    provider_id = task["params"].get("provider_id") or "wuyin-main"
+                    asyncio.create_task(cls._recover_task(task_id, provider_id, external_task_id, meta, task.get("user_id")))
                     recovered += 1
         if recovered:
             logger = __import__("logging").getLogger(__name__)
             logger.info(f"[recover] 恢复了 {recovered} 个中断的任务")
 
     @classmethod
-    async def _recover_task(cls, task_id, external_task_id, meta, user_id):
+    async def _recover_task(cls, task_id, provider_id, external_task_id, meta, user_id):
         from backend.routers.generate import _poll_and_download
         try:
-            urls = await _poll_and_download(external_task_id, task_id, meta, user_id=user_id)
+            urls = await _poll_and_download(provider_id, external_task_id, task_id, meta, user_id=user_id)
             if urls:
                 cls.update_task(task_id, status="completed", progress=100, result_urls=urls)
             else:
