@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHand
 import { Paperclip, X, Settings, Send, Maximize2, Share2 } from 'lucide-react'
 import ParamPanel from './ParamPanel'
 
-const ChatInput = forwardRef(function ChatInput({ onSubmit, loading }, ref) {
+const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost = 10 }, ref) {
   const [prompt, setPrompt] = useState('')
   const [images, setImages] = useState([])
   const [showParams, setShowParams] = useState(false)
@@ -133,6 +133,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading }, ref) {
                 rows={1} style={{ color: 'var(--text-primary)', minHeight: '40px', maxHeight: '120px' }} />
               <div className="absolute right-2 bottom-2 flex items-center gap-1.5">
                 {prompt.length > 0 && <span className="text-xs tabular-nums" style={{ color: 'var(--text-secondary)' }}>{prompt.length}</span>}
+                {requestCost > 0 && <span className="text-xs font-medium tabular-nums" style={{ color: 'var(--text-secondary)' }}>-{requestCost}积分</span>}
                 <button onClick={handleSend} disabled={!prompt.trim() || loading}
                   className="p-1.5 rounded-lg transition-all duration-150 disabled:opacity-40"
                   style={{ background: prompt.trim() && !loading ? 'var(--accent)' : 'var(--border-color)', color: '#fff' }}>
@@ -142,6 +143,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading }, ref) {
             </div>
           </div>
         </div>
+        <div className="px-1 pt-1 text-[11px]" style={{ color: 'var(--text-secondary)' }}>{requestCost > 0 ? `AI生成结果仅供参考，请勿用于违法用途；失败将退还积分。当前请求消耗${requestCost}积分。` : 'AI生成结果仅供参考，请勿用于违法用途。'}</div>
         <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden"
           onChange={e => handleFiles(e.target.files)} />
       </div>

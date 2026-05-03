@@ -44,7 +44,7 @@ export default function ChatPage() {
   const [selectMode, setSelectMode] = useState(false)
   const [checked, setChecked] = useState(new Set())
   const [searchQuery, setSearchQuery] = useState('')
-  const [timeRange, setTimeRange] = useState('3d')
+  const [timeRange, setTimeRange] = useState('1d')
   const [refreshing, setRefreshing] = useState(false)
   const [userList, setUserList] = useState([])
   const [selectedUserId, setSelectedUserId] = useState(null)
@@ -609,7 +609,7 @@ export default function ChatPage() {
           </div>
         </div>
       )}
-      <ChatInput ref={inputRef} onSubmit={handleSubmit} loading={loading} />
+      <ChatInput ref={inputRef} onSubmit={handleSubmit} loading={loading} requestCost={isAdmin ? 0 : 10} />
 
       {selectedCardIndex !== null && detailCards.length > 0 && detailCards[selectedCardIndex] && (
         <UnifiedDetailModal
