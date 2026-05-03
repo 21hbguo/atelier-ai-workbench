@@ -44,6 +44,9 @@ body {
   transition: background-color 200ms, color 200ms;
 }
 html,body,#root{width:100%;height:100%;margin:0;padding:0}
+html[translate="no"],.notranslate{-webkit-translate:none;translate:none}
+button,a,[role="button"],[type="button"],[type="submit"],[type="reset"],.cursor-pointer,[onclick]{-webkit-user-select:none;user-select:none;caret-color:transparent;-webkit-touch-callout:none}
+input,textarea,[contenteditable="true"]{-webkit-user-select:text;user-select:text;caret-color:auto;-webkit-touch-callout:default}
 .safe-area-top{padding-top:env(safe-area-inset-top)}
 .safe-area-bottom{padding-bottom:env(safe-area-inset-bottom)}
 .mobile-topbar-shell{border-bottom:1px solid var(--border-color)}

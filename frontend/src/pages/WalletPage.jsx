@@ -5,7 +5,7 @@ import Pagination from '../components/Pagination'
 import { useAppDialog } from '../components/AppDialogProvider'
 import api, { pointsAPI, uploadAPI } from '../api'
 import { readUser } from '../auth'
-const typeMap={register_bonus:{label:'注册赠送',color:'var(--accent)'},daily_checkin:{label:'每日签到',color:'var(--accent)'},generate_consume:{label:'生成消耗',color:'#ef4444'},generate_refund:{label:'生成退款',color:'#22c55e'},redeem_code:{label:'兑换码兑换',color:'var(--accent)'},admin_grant:{label:'管理员调整',color:'#8b5cf6'},migration:{label:'历史补偿',color:'var(--accent)'},migration_bonus:{label:'历史补偿',color:'var(--accent)'},recharge_pending:{label:'充值待审核',color:'#f59e0b'}}
+const typeMap={register_bonus:{label:'注册赠送',color:'var(--accent)'},daily_checkin:{label:'每日签到',color:'var(--accent)'},generate_consume:{label:'生成消耗',color:'#ef4444'},image_expire_extend:{label:'延长有效期',color:'#ef4444'},generate_refund:{label:'生成退款',color:'#22c55e'},redeem_code:{label:'兑换码兑换',color:'var(--accent)'},admin_grant:{label:'管理员调整',color:'#8b5cf6'},migration:{label:'历史补偿',color:'var(--accent)'},migration_bonus:{label:'历史补偿',color:'var(--accent)'},recharge_pending:{label:'充值待审核',color:'#f59e0b'}}
 const rechargePackages=[{amount:9.9,points:120,label:'体验包'},{amount:29.9,points:400,label:'进阶包'},{amount:59.9,points:900,label:'超值包'}]
 const channelLabel={wechat:'微信',alipay:'支付宝'}
 const statusMap={pending:{label:'待审核',color:'#f59e0b'},approved:{label:'已通过',color:'#22c55e'},rejected:{label:'已拒绝',color:'#ef4444'}}
@@ -135,7 +135,8 @@ return(
 <>
 <MainLayout>
 <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-<div className="mb-6 p-5 rounded-xl border" style={{background:'var(--bg-ai-bubble)',borderColor:'var(--border-color)'}}>
+<div className={`grid gap-4 mb-6 ${!isAdmin?'xl:grid-cols-2':'grid-cols-1'}`}>
+<div className="p-5 rounded-xl border" style={{background:'var(--bg-ai-bubble)',borderColor:'var(--border-color)'}}>
 <div className="flex items-center gap-3 mb-4">
 <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{background:'var(--accent)',color:'#fff'}}><User size={24} /></div>
 <div>
@@ -157,7 +158,6 @@ return(
 </div>
 </div>
 {!isAdmin&&(
-<div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
 <div className="p-4 rounded-xl border" style={{background:'var(--bg-ai-bubble)',borderColor:'var(--border-color)'}}>
 <div className="flex items-center gap-2 mb-3"><Gift size={16} style={{color:'var(--accent)'}} /><span className="text-sm font-medium" style={{color:'var(--text-primary)'}}>兑换码</span></div>
 <div className="flex gap-2">
@@ -166,6 +166,10 @@ return(
 </div>
 {redeemMsg&&(<div className={`mt-2 px-3 py-2 rounded-lg text-xs ${redeemMsg.type==='success'?'text-green-600':'text-red-500'}`} style={{background:redeemMsg.type==='success'?'rgba(34,197,94,0.1)':'rgba(239,68,68,0.1)'}}>{redeemMsg.text}</div>)}
 </div>
+)}
+</div>
+{!isAdmin&&(
+<div className="grid grid-cols-1 mb-6">
 <div className="p-4 rounded-xl border" style={{background:'var(--bg-ai-bubble)',borderColor:'var(--border-color)'}}>
 <div className="flex items-center gap-2 mb-3"><Wallet size={16} style={{color:'var(--accent)'}} /><span className="text-sm font-medium" style={{color:'var(--text-primary)'}}>人工充值</span></div>
 <p className="text-xs mb-3" style={{color:'var(--text-secondary)'}}>{payConfig.manual_recharge_notice||'请备注用户名并在下方提交支付凭证，审核通过后自动发放兑换码'}</p>

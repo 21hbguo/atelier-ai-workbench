@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react'
 import { X, Copy, Download, Trash2, Plus, Image as ImageIcon, Maximize2, Heart, ChevronLeft, ChevronRight, Edit2, Check } from 'lucide-react'
 import { imageAPI } from '../api'
 import { useAppDialog } from './AppDialogProvider'
@@ -46,11 +46,13 @@ export default function UnifiedDetailModal({
   const modalStatePushed = useRef(false)
   const lightboxStatePushed = useRef(false)
   const lightboxRef = useRef(false)
+  const onCloseRef = useRef(onClose)
   const modalToken = useRef(`${Date.now()}_${Math.random().toString(36).slice(2)}`)
 
   const hasNavigation = cards.length > 1
   const canPrev = hasNavigation && currentIndex > 0
   const canNext = hasNavigation && currentIndex < cards.length - 1
+  useEffect(() => { onCloseRef.current = onClose }, [onClose])
 
   const handlePrev = useCallback(() => {
     if (canPrev && onNavigate) onNavigate(currentIndex - 1)
@@ -73,25 +75,24 @@ export default function UnifiedDetailModal({
     setEditing(false)
     setEditForm(null)
   }, [card?.id, currentIndex])
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!modalStatePushed.current) {
       window.history.pushState({ __udm: 'modal', token: modalToken.current }, '')
       modalStatePushed.current = true
     }
     const handlePopState = (e) => {
-      const state = e.state || {}
       const inLightbox = lightboxRef.current
-      if (inLightbox && state.__udm === 'modal' && state.token === modalToken.current) {
+      if (inLightbox) {
         lightboxStatePushed.current = false
         setLightbox(false)
         return
       }
-      onClose?.()
+      onCloseRef.current?.()
     }
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
-  }, [onClose])
-  useEffect(() => {
+  }, [])
+  useLayoutEffect(() => {
     lightboxRef.current = lightbox
     if (lightbox && !lightboxStatePushed.current) {
       window.history.pushState({ __udm: 'lightbox', token: modalToken.current }, '')

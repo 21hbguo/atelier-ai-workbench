@@ -757,22 +757,23 @@ async def reject_recharge_request(request_id: int, body: dict, admin=Depends(req
 
 
 @router.get("/stats/overview")
-async def admin_stats_overview(range: str = Query("7d"), admin=Depends(require_admin)):
+async def admin_stats_overview(time_range: str = Query("7d", alias="range"), admin=Depends(require_admin)):
+    from datetime import timedelta as _td
     now = datetime.now()
     today_start = datetime(now.year, now.month, now.day)
-    if range == "today":
+    if time_range == "today":
         start_dt = today_start
-    elif range == "30d":
-        start_dt = today_start - timedelta(days=29)
+    elif time_range == "30d":
+        start_dt = today_start - _td(days=29)
     else:
-        range = "7d"
-        start_dt = today_start - timedelta(days=6)
+        time_range = "7d"
+        start_dt = today_start - _td(days=6)
     end_dt = now
     start_s = start_dt.strftime("%Y-%m-%d %H:%M:%S")
     end_s = end_dt.strftime("%Y-%m-%d %H:%M:%S")
-    t7_start = (today_start - timedelta(days=6)).strftime("%Y-%m-%d %H:%M:%S")
-    t30_start = (today_start - timedelta(days=29)).strftime("%Y-%m-%d %H:%M:%S")
-    d30 = [(today_start - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(29, -1, -1)]
+    t7_start = (today_start - _td(days=6)).strftime("%Y-%m-%d %H:%M:%S")
+    t30_start = (today_start - _td(days=29)).strftime("%Y-%m-%d %H:%M:%S")
+    d30 = [(today_start - _td(days=i)).strftime("%Y-%m-%d") for i in range(29, -1, -1)]
     with get_db() as conn:
         req = conn.execute("SELECT COUNT(*) cnt FROM user_requests WHERE created_at >= %s AND created_at <= %s", (start_s, end_s)).fetchone()["cnt"]
         suc = conn.execute("SELECT COUNT(*) cnt FROM image_metadata WHERE created_at >= %s AND created_at <= %s", (start_s, end_s)).fetchone()["cnt"]
@@ -803,7 +804,7 @@ async def admin_stats_overview(range: str = Query("7d"), admin=Depends(require_a
         cat_visible_rows = conn.execute("SELECT COALESCE(NULLIF(TRIM(category),''),'未分类') category, COUNT(*) cnt FROM prompts WHERE COALESCE(is_frozen,FALSE)=FALSE GROUP BY category ORDER BY cnt DESC").fetchall()
     success_rate = round((suc / req) * 100, 1) if req > 0 else 0
     return {
-        "range": range,
+        "range": time_range,
         "start_date": start_dt.strftime("%Y-%m-%d"),
         "end_date": now.strftime("%Y-%m-%d"),
         "kpi": {"requests": int(req), "success": int(suc), "failed": int(fail), "success_rate": success_rate, "processing_tasks": int(processing), "new_users": int(new_users), "active_users": int(active_users)},
