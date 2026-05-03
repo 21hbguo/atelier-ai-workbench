@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Trash2, Users, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket, Megaphone, Wallet, Key, SlidersHorizontal } from 'lucide-react'
+import { Trash2, Users, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket, Megaphone, Wallet, Key, SlidersHorizontal, BarChart3 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { adminAPI, announcementAPI, configAPI } from '../api'
+import { adminAPI, announcementAPI, configAPI, statsAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 import PageLayout from '../components/PageLayout'
 import SearchInput from '../components/SearchInput'
@@ -18,6 +18,8 @@ export default function AdminPage() {
   const [historyPage, setHistoryPage] = useState(1)
   const [userTotal, setUserTotal] = useState(0)
   const [historyTotal, setHistoryTotal] = useState(0)
+  const [systemStats, setSystemStats] = useState(null)
+  const [bizStats, setBizStats] = useState(null)
   const [loading, setLoading] = useState(false)
   const [userQuery, setUserQuery] = useState('')
   const [historyQuery, setHistoryQuery] = useState('')
@@ -80,6 +82,7 @@ export default function AdminPage() {
 
   useEffect(() => { if (tab === 'users') fetchUsers() }, [tab, userPage, userQuery])
   useEffect(() => { if (tab === 'history') fetchHistory() }, [tab, historyPage, historyQuery])
+  useEffect(() => { if (tab === 'stats') fetchSystemStats() }, [tab])
   useEffect(() => { if (tab === 'hosting') { fetchHostingImages(); fetchHostingStats() } }, [tab, hostingPage])
   useEffect(() => { if (tab === 'banned') fetchBannedWords() }, [tab, bannedWordsPage, bannedWordsQuery])
   useEffect(() => { if (tab === 'recharge') fetchRechargeRequests() }, [tab, codesPage, codesSort, codesOrder, rechargeStatusFilter])
@@ -101,6 +104,14 @@ export default function AdminPage() {
       const { data } = await adminAPI.history(historyPage, 20, historyQuery || undefined)
       setHistory(data.items)
       setHistoryTotal(data.total)
+    } catch {} finally { setLoading(false) }
+  }
+  const fetchSystemStats = async () => {
+    setLoading(true)
+    try {
+      const [a, b] = await Promise.all([statsAPI.get(), statsAPI.system()])
+      setBizStats(a.data || null)
+      setSystemStats(b.data || null)
     } catch {} finally { setLoading(false) }
   }
 
@@ -375,7 +386,7 @@ export default function AdminPage() {
     <MainLayout>
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="flex gap-1 p-0.5 rounded-lg mb-4 overflow-x-auto scrollbar-hide" style={{ background: 'var(--border-color)', scrollbarWidth: 'none' }}>
-          {[{ k: 'users', l: '用户管理', i: Users }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'recharge', l: '充值审核', i: Wallet }, { k: 'announcements', l: '公告管理', i: Megaphone }, { k: 'config', l: '配置中心', i: SlidersHorizontal }].map(({ k, l, i: Icon }) => (
+          {[{ k: 'stats', l: '系统统计', i: BarChart3 }, { k: 'users', l: '用户管理', i: Users }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'recharge', l: '充值审核', i: Wallet }, { k: 'announcements', l: '公告管理', i: Megaphone }, { k: 'config', l: '配置中心', i: SlidersHorizontal }].map(({ k, l, i: Icon }) => (
             <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
               <Icon size={14} />{l}
@@ -383,7 +394,43 @@ export default function AdminPage() {
           ))}
         </div>
 
-        {tab === 'users' ? (
+        {tab === 'stats' ? (
+          <div>
+            {loading ? (
+              <div className="flex justify-center py-20">
+                <div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} />
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>累计请求</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{bizStats?.total_requests ?? '-'}</div></div>
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>累计成功</div><div className="text-lg font-semibold" style={{ color: '#22c55e' }}>{bizStats?.total_success ?? '-'}</div></div>
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>今日请求</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{bizStats?.today_requests ?? '-'}</div></div>
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>处理中任务</div><div className="text-lg font-semibold" style={{ color: '#f59e0b' }}>{systemStats?.processing_tasks ?? '-'}</div></div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>CPU</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{systemStats?.cpu_percent ?? '-'}%</div></div>
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>内存</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{systemStats?.memory_percent ?? '-'}%</div></div>
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>图片文件数</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{systemStats?.image_count_files ?? '-'}</div></div>
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>上传文件数</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{systemStats?.upload_count_files ?? '-'}</div></div>
+                </div>
+                {systemStats?.limits && (
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>当前限制</div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                      <div style={{ color: 'var(--text-primary)' }}>登录限流：{systemStats.limits.login_rate}</div>
+                      <div style={{ color: 'var(--text-primary)' }}>注册限流：{systemStats.limits.register_rate}</div>
+                      <div style={{ color: 'var(--text-primary)' }}>生成并发：{systemStats.limits.generate_concurrent}</div>
+                      <div style={{ color: 'var(--text-primary)' }}>单次扣分：{systemStats.limits.points_cost_per_generation}</div>
+                      <div style={{ color: 'var(--text-primary)' }}>签到奖励：{systemStats.limits.points_checkin_reward}</div>
+                      <div style={{ color: 'var(--text-primary)' }}>注册送分：{systemStats.limits.points_register_bonus}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ) : tab === 'users' ? (
           <div>
             <div className="flex items-center gap-3 mb-4">
               <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>共 {userTotal} 个用户</span>
