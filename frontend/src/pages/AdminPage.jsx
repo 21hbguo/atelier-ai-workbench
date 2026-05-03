@@ -1343,6 +1343,8 @@ export default function AdminPage() {
                   <tr style={{ background: 'var(--bg-secondary)' }}>
                     <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>用户</th>
                     <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>提示词</th>
+                    <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>请求模型</th>
+                    <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>渠道商</th>
                     <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>状态</th>
                     <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>积分消耗</th>
                     <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>积分剩余</th>
@@ -1359,10 +1361,14 @@ export default function AdminPage() {
                     const duration = item.started_at && item.completed_at
                       ? Math.round((new Date(item.completed_at) - new Date(item.started_at)) / 1000)
                       : null
+                    const modelId = item?.params?.model_id || '-'
+                    const providerId = item?.params?.provider_id || item?.params?.provider_trace?.[0]?.provider_id || '-'
                     return (
                       <tr key={item.task_id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
                         <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{item.nickname || item.username || '-'}</td>
                         <td className="px-3 py-2 truncate max-w-[200px]" style={{ color: 'var(--text-secondary)' }}>{item.prompt || '无提示词'}</td>
+                        <td className="px-3 py-2 text-center whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{modelId}</td>
+                        <td className="px-3 py-2 text-center whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{providerId}</td>
                         <td className="px-3 py-2 text-center"><span className="px-2 py-0.5 rounded-full" style={{ color: s.c, background: s.c + '20' }}>{s.l}</span></td>
                         <td className="px-3 py-2 text-center tabular-nums" style={{ color: 'var(--text-secondary)' }}>{item.points_cost ?? '-'}</td>
                         <td className="px-3 py-2 text-center tabular-nums" style={{ color: 'var(--text-secondary)' }}>{item.points_balance_after ?? '-'}</td>
