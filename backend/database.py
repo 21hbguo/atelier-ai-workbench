@@ -111,6 +111,16 @@ def init_db():
             )""",
             "CREATE INDEX IF NOT EXISTS idx_square_likes_image_id ON square_likes(image_id)",
             "CREATE INDEX IF NOT EXISTS idx_square_likes_user_id ON square_likes(user_id)",
+            """CREATE TABLE IF NOT EXISTS favorites (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                target_type VARCHAR(16) NOT NULL,
+                target_id VARCHAR(64) NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(user_id,target_type,target_id)
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_favorites_user_created ON favorites(user_id,created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_favorites_target ON favorites(target_type,target_id)",
             """CREATE TABLE IF NOT EXISTS stats (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 today_requests INTEGER DEFAULT 0,
@@ -321,6 +331,7 @@ def init_db():
             conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_is_deleted ON tasks(is_deleted)")
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_point_tx_request_key ON point_transactions(request_key) WHERE request_key IS NOT NULL")
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_user_client_req ON tasks(user_id, ((params->>'client_request_id'))) WHERE params ? 'client_request_id'")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_favorites_user_target ON favorites(user_id,target_type,target_id)")
             conn.execute("UPDATE image_metadata m SET is_permanent = TRUE, expires_at = NULL WHERE EXISTS (SELECT 1 FROM square_images s WHERE s.filename = m.filename)")
             conn.execute("UPDATE image_metadata SET expires_at = COALESCE(created_at, NOW()) + interval '3 day' WHERE is_permanent = FALSE AND expires_at IS NULL")
 

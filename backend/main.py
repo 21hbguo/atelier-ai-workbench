@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from backend.routers import generate, upload, tasks, images, prompts, stats, config, auth, square, admin, points, announcements, notifications, account, shares
+from backend.routers import generate, upload, tasks, images, prompts, stats, config, auth, square, admin, points, announcements, notifications, account, shares, favorites
 from backend.services.image_gen import close_http_client
 from backend.services.task_manager import TaskManager
 from backend.services.image_expiry import expiry_cleanup_loop
@@ -69,6 +69,7 @@ app.include_router(notifications.router)
 app.include_router(account.router)
 app.include_router(shares.api_router)
 app.include_router(shares.router)
+app.include_router(favorites.router)
 
 
 @app.get("/api/health")

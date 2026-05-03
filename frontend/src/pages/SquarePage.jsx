@@ -148,7 +148,7 @@ function WorksTab({ query, sort, isAdmin, dialog, refreshTrigger }) {
 
   useEffect(() => { setDetailIdx(null) }, [query, sort, status])
 
-  const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike } = useCardData({
+  const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike, handleFavorite } = useCardData({
     type: 'image',
     apiFn: (p, s) => isAdmin
       ? adminAPI.square(p, s, query || undefined, status, sort)
@@ -253,6 +253,7 @@ function WorksTab({ query, sort, isAdmin, dialog, refreshTrigger }) {
         onPageChange={setPage}
         onCardClick={(_, idx) => setDetailIdx(idx)}
         onLike={handleLike}
+        onFavorite={handleFavorite}
         onUsePrompt={handleUsePrompt}
         onUseImage={handleUseImage}
         paginationScrollTargetId="square-scroll-container"
@@ -295,6 +296,7 @@ function WorksTab({ query, sort, isAdmin, dialog, refreshTrigger }) {
           onNavigate={setDetailIdx}
           onClose={() => setDetailIdx(null)}
           onLike={handleLike}
+          onFavorite={handleFavorite}
           onUsePrompt={handleUsePrompt}
           onUseImage={handleUseImage}
           title={`${cards[detailIdx].author} 的作品`}
@@ -310,7 +312,7 @@ function MySharesTab({ refreshTrigger }) {
   const { handleUsePrompt, handleUseImage } = useImageActions()
   const dialog = useAppDialog()
 
-  const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike } = useCardData({
+  const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike, handleFavorite } = useCardData({
     type: 'image',
     apiFn: (p, s) => squareAPI.my(p, s),
     deps: [refreshTrigger],
@@ -347,6 +349,7 @@ function MySharesTab({ refreshTrigger }) {
         onPageChange={setPage}
         onCardClick={(_, idx) => setDetailIdx(idx)}
         onLike={handleLike}
+        onFavorite={handleFavorite}
         onUsePrompt={handleUsePrompt}
         onUseImage={handleUseImage}
         paginationScrollTargetId="square-scroll-container"
@@ -362,6 +365,7 @@ function MySharesTab({ refreshTrigger }) {
           onNavigate={setDetailIdx}
           onClose={() => setDetailIdx(null)}
           onLike={handleLike}
+          onFavorite={handleFavorite}
           onUsePrompt={handleUsePrompt}
           onUseImage={handleUseImage}
           onUnshare={handleUnshare}
@@ -384,7 +388,7 @@ function PromptsTab({ query, sort, activeCategory, isAdmin, dialog, refreshTrigg
 
   useEffect(() => { setDetailIdx(null) }, [activeCategory, query, sort])
 
-  const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike } = useCardData({
+  const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike, handleFavorite } = useCardData({
     type: 'prompt',
     pageSize: 50,
     apiFn: async (p, s) => {
@@ -493,6 +497,7 @@ function PromptsTab({ query, sort, activeCategory, isAdmin, dialog, refreshTrigg
         onPageChange={setPage}
         onCardClick={(_, idx) => setDetailIdx(idx)}
         onLike={handleLike}
+        onFavorite={handleFavorite}
         onUsePrompt={handleUsePrompt}
         onUseImage={handleUseImage}
         paginationScrollTargetId="square-scroll-container"
@@ -533,6 +538,7 @@ function PromptsTab({ query, sort, activeCategory, isAdmin, dialog, refreshTrigg
           onNavigate={setDetailIdx}
           onClose={() => setDetailIdx(null)}
           onLike={handleLike}
+          onFavorite={handleFavorite}
           onUsePrompt={handleUsePrompt}
           onUseImage={handleUseImage}
           title="提示词详情"

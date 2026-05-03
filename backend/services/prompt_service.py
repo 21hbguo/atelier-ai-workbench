@@ -6,6 +6,7 @@ from datetime import datetime
 from uuid import uuid4
 from backend.database import get_db
 from backend.services.category_service import CategoryService
+from backend.services.favorite_service import FavoriteService
 
 
 class PromptService:
@@ -57,10 +58,14 @@ class PromptService:
             rows = conn.execute(query_sql, params + [size, offset]).fetchall()
 
             results = [cls._row_to_dict(r) for r in rows]
-            if user_id:
+            if user_id and results:
+                prompt_ids = [p["id"] for p in results]
+                like_rows = conn.execute(f"SELECT prompt_id FROM prompt_likes WHERE user_id = %s AND prompt_id IN ({','.join('%s' for _ in prompt_ids)})", [user_id, *prompt_ids]).fetchall()
+                liked_ids = {str(r["prompt_id"]) for r in like_rows}
+                favorited_ids = FavoriteService.get_flags(user_id, "prompt", prompt_ids)
                 for p in results:
-                    like = conn.execute("SELECT id FROM prompt_likes WHERE prompt_id = %s AND user_id = %s", (p["id"], user_id)).fetchone()
-                    p["is_liked"] = like is not None
+                    p["is_liked"] = str(p["id"]) in liked_ids
+                    p["is_favorited"] = str(p["id"]) in favorited_ids
             return {"prompts": results, "total": total}
 
     @classmethod
@@ -185,9 +190,14 @@ class PromptService:
                 results = [cls._row_to_dict(r) for r in rows]
 
             if user_id:
-                for p in results:
-                    like = conn.execute("SELECT id FROM prompt_likes WHERE prompt_id = %s AND user_id = %s", (p["id"], user_id)).fetchone()
-                    p["is_liked"] = like is not None
+                prompt_ids = [p["id"] for p in results]
+                if prompt_ids:
+                    like_rows = conn.execute(f"SELECT prompt_id FROM prompt_likes WHERE user_id = %s AND prompt_id IN ({','.join('%s' for _ in prompt_ids)})", [user_id, *prompt_ids]).fetchall()
+                    liked_ids = {str(r["prompt_id"]) for r in like_rows}
+                    favorited_ids = FavoriteService.get_flags(user_id, "prompt", prompt_ids)
+                    for p in results:
+                        p["is_liked"] = str(p["id"]) in liked_ids
+                        p["is_favorited"] = str(p["id"]) in favorited_ids
             return {"prompts": results, "total": total}
 
     @classmethod

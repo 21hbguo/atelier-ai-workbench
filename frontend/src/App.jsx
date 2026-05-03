@@ -21,6 +21,7 @@ const WalletPage = lazy(() => import('./pages/WalletPage'))
 const AnnouncementsPage = lazy(() => import('./pages/AnnouncementsPage'))
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
 const SharesPage = lazy(() => import('./pages/SharesPage'))
+const FavoritesPage = lazy(() => import('./pages/FavoritesPage'))
 
 function ProtectedRoute({ children, authReady, user }) {
   if (!authReady) return null
@@ -115,6 +116,7 @@ function AppContent() {
           <Route path="/" element={<ProtectedRoute authReady={authReady} user={user}><ChatPage /></ProtectedRoute>} />
           <Route path="/square" element={<ProtectedRoute authReady={authReady} user={user}><SquarePage /></ProtectedRoute>} />
           <Route path="/prompts" element={<ProtectedRoute authReady={authReady} user={user}><PromptsPage /></ProtectedRoute>} />
+          <Route path="/favorites" element={<ProtectedRoute authReady={authReady} user={user}><FavoritesPage /></ProtectedRoute>} />
           {/* <Route path="/shares" element={<ProtectedRoute authReady={authReady} user={user}><SharesPage /></ProtectedRoute>} /> */}
           {/* <Route path="/settings" element={<ProtectedRoute authReady={authReady} user={user}><SettingsPage /></ProtectedRoute>} /> */}
           <Route path="/admin" element={<AdminRoute authReady={authReady} user={user}><AdminPage /></AdminRoute>} />

@@ -91,6 +91,7 @@ export default function ChatPage() {
     const q = searchQuery || undefined
     let allTasks
     let allImages
+    let myShares = []
     try {
       const taskRes = await withTimeout(taskAPI.list(50, 0, uid, q), 10000, '任务列表加载超时，请重试')
       allTasks = taskRes.data || []
@@ -117,6 +118,17 @@ export default function ChatPage() {
       allImages = []
       setLoadError(e.message || '图片列表加载失败，已仅显示任务列表')
     }
+    if (!isAdmin || !uid) {
+      try {
+        const shareRes = await withTimeout(squareAPI.my(1, 200), 10000, '我的分享加载超时')
+        myShares = shareRes.data?.images || []
+      } catch {}
+    }
+    const latestMap = {}
+    for (const s of myShares) {
+      if (s?.filename && s?.id) latestMap[s.filename] = s.id
+    }
+    squareIdMapRef.current = { ...squareIdMapRef.current, ...latestMap }
     const taskImageFiles = new Set()
     for (const t of allTasks) {
       for (const u of (t.result_urls || [])) taskImageFiles.add(u.split('/').pop())
@@ -629,22 +641,27 @@ export default function ChatPage() {
       )}
       <ChatInput ref={inputRef} onSubmit={handleSubmit} loading={loading} requestCost={isAdmin ? 0 : 10} />
 
-      {selectedCardIndex !== null && visibleDetailCards.length > 0 && visibleDetailCards[selectedCardIndex] && (
+      {selectedCardIndex !== null && visibleDetailCards.length > 0 && visibleDetailCards[selectedCardIndex] && (() => {
+        const currentCard = visibleDetailCards[selectedCardIndex]
+        const currentShareId = currentCard?.square_image_id || squareIdMapRef.current[currentCard?.filename] || null
+        const isShared = Boolean(currentShareId || currentCard?.is_permanent)
+        return (
         <UnifiedDetailModal
-          card={visibleDetailCards[selectedCardIndex]}
+          card={currentCard}
           cards={visibleDetailCards}
           currentIndex={selectedCardIndex}
           onNavigate={handleModalNavigate}
           onClose={() => setSelectedCardIndex(null)}
           onUseImage={card => inputRef.current?.addImage(card.fullUrl)}
           onUsePrompt={handleAddPrompt}
-          onShare={visibleDetailCards[selectedCardIndex]?.square_image_id ? undefined : handleDetailShare}
-          onUnshare={visibleDetailCards[selectedCardIndex]?.square_image_id ? handleDetailUnshare : undefined}
+          onShare={isShared ? undefined : handleDetailShare}
+          onUnshare={isShared ? handleDetailUnshare : undefined}
           onExtend={handleDetailExtend}
           title="生成详情"
           allowMetadataEdit
         />
-      )}
+        )
+      })()}
     </MainLayout>
   )
 }

@@ -83,6 +83,10 @@ export const squareAPI = {
   unshare: imageId => api.post(`/square/unshare?image_id=${imageId}`),
   like: imageId => api.post(`/square/like?image_id=${imageId}`),
 }
+export const favoriteAPI = {
+  toggle: (targetType, targetId) => api.post('/favorites/toggle', { target_type: targetType, target_id: String(targetId) }),
+  list: (type = 'all', page = 1, size = 20) => api.get('/favorites', { params: { type, page, size } }),
+}
 
 export const adminAPI = {
   users: (page = 1, size = 20, query) => { const params = { page, size }; if (query) params.query = query; return api.get('/admin/users', { params }) },

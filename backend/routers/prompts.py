@@ -9,6 +9,7 @@ from fastapi.responses import Response
 
 from backend.services.prompt_service import PromptService
 from backend.services.category_service import CategoryService
+from backend.services.favorite_service import FavoriteService
 from backend.database import get_db
 from backend.auth import get_current_user, require_admin, get_optional_user
 from backend.models.schemas import (
@@ -266,6 +267,17 @@ async def toggle_prompt_like(prompt_id: str, user=Depends(get_current_user)):
                 (prompt_id,),
             )
             return {"liked": True, "message": "点赞成功"}
+
+
+@router.post("/favorite")
+async def toggle_prompt_favorite(prompt_id: str, user=Depends(get_current_user)):
+    try:
+        favorited = FavoriteService.toggle(user["user_id"], "prompt", prompt_id)
+        return {"favorited": favorited}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="收藏操作失败")
 
 
 @router.post("/import")

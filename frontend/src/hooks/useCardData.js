@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { squareAPI, promptAPI } from '../api'
+import { squareAPI, promptAPI, favoriteAPI } from '../api'
 import { normalizeList } from '../utils/cardAdapter'
 async function preloadThumbs(cards, maxCount, timeoutMs) {
   if (!maxCount || maxCount <= 0) return
@@ -16,7 +16,7 @@ async function preloadThumbs(cards, maxCount, timeoutMs) {
   ])
 }
 
-export function useCardData({ type, apiFn, pageSize = 20, deps = [], atomicPaging = false, preloadCount = 0, preloadTimeoutMs = 800 }) {
+export function useCardData({ type, apiFn, pageSize = 20, deps = [], atomicPaging = false, preloadCount = 0, preloadTimeoutMs = 800, mapCards }) {
   const [cards, setCards] = useState([])
   const [total, setTotal] = useState(0)
   const [page, setPageState] = useState(1)
@@ -44,7 +44,7 @@ export function useCardData({ type, apiFn, pageSize = 20, deps = [], atomicPagin
         const { data } = await apiFn(page, pageSize)
         if (cancelled || !mountedRef.current) return
         const rawItems = data.images || data.prompts || []
-        const nextCards = normalizeList(rawItems, type)
+        const nextCards = mapCards ? mapCards(rawItems, type) : normalizeList(rawItems, type)
         if (atomicPaging) await preloadThumbs(nextCards, preloadCount, preloadTimeoutMs)
         if (cancelled || !mountedRef.current) return
         setCards(nextCards)
@@ -64,13 +64,13 @@ export function useCardData({ type, apiFn, pageSize = 20, deps = [], atomicPagin
     try {
       const { data } = await apiFn(page, pageSize)
       const rawItems = data.images || data.prompts || []
-      const nextCards = normalizeList(rawItems, type)
+      const nextCards = mapCards ? mapCards(rawItems, type) : normalizeList(rawItems, type)
       if (atomicPaging) await preloadThumbs(nextCards, preloadCount, preloadTimeoutMs)
       setCards(nextCards)
       setTotal(data.total || 0)
     } catch {}
     setRefreshing(false)
-  }, [page, apiFn, pageSize, type, atomicPaging, preloadCount, preloadTimeoutMs])
+  }, [page, apiFn, pageSize, type, atomicPaging, preloadCount, preloadTimeoutMs, mapCards])
 
   const handleLike = useCallback(async (id) => {
     const card = cards.find(c => c.id === id)
@@ -79,7 +79,8 @@ export function useCardData({ type, apiFn, pageSize = 20, deps = [], atomicPagin
       c.id === id ? { ...c, isLiked: !c.isLiked, likesCount: c.isLiked ? c.likesCount - 1 : c.likesCount + 1 } : c
     ))
     try {
-      if (type === 'image') {
+      const currentType = card._type || type
+      if (currentType === 'image') {
         await squareAPI.like(id)
       } else {
         await promptAPI.like(id)
@@ -90,6 +91,17 @@ export function useCardData({ type, apiFn, pageSize = 20, deps = [], atomicPagin
       ))
     }
   }, [cards, type])
+
+  const handleFavorite = useCallback(async (id) => {
+    const card = cards.find(c => c.id === id)
+    if (!card) return
+    setCards(prev => prev.map(c => c.id === id ? { ...c, isFavorited: !c.isFavorited } : c))
+    try {
+      await favoriteAPI.toggle(card._type === 'image' ? 'image' : 'prompt', id)
+    } catch {
+      setCards(prev => prev.map(c => c.id === id ? { ...c, isFavorited: card.isFavorited } : c))
+    }
+  }, [cards])
 
   const updateCard = useCallback((id, updater) => {
     setCards(prev => prev.map(c => c.id === id ? updater(c) : c))
@@ -102,5 +114,5 @@ export function useCardData({ type, apiFn, pageSize = 20, deps = [], atomicPagin
     })
   }, [atomicPaging])
 
-  return { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike, updateCard }
+  return { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike, handleFavorite, updateCard }
 }

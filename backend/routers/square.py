@@ -4,6 +4,7 @@ from typing import Optional
 from backend.database import get_db
 from backend.auth import get_current_user, get_optional_user
 from backend.services.image_expiry import mark_image_permanent
+from backend.services.favorite_service import FavoriteService
 
 router = APIRouter(prefix="/api/square", tags=["square"])
 
@@ -95,19 +96,22 @@ async def list_square_images(
                 (size, offset),
             ).fetchall()
 
+        image_ids = [str(r["id"]) for r in rows]
+        liked_ids = set()
+        favorited_ids = set()
+        if user and image_ids:
+            placeholders = ",".join("%s" for _ in image_ids)
+            liked_rows = conn.execute(f"SELECT image_id FROM square_likes WHERE user_id = %s AND image_id IN ({placeholders})", [user["user_id"], *image_ids]).fetchall()
+            liked_ids = {str(r["image_id"]) for r in liked_rows}
+            favorited_ids = FavoriteService.get_flags(user["user_id"], "image", image_ids)
         images = []
         for row in rows:
             import json
             item = dict(row)
             if isinstance(item["metadata"], str):
                 item["metadata"] = json.loads(item["metadata"]) if item["metadata"] else None
-            item["is_liked"] = False
-            if user:
-                like = conn.execute(
-                    "SELECT id FROM square_likes WHERE image_id = %s AND user_id = %s",
-                    (item["id"], user["user_id"]),
-                ).fetchone()
-                item["is_liked"] = like is not None
+            item["is_liked"] = str(item["id"]) in liked_ids if user else False
+            item["is_favorited"] = str(item["id"]) in favorited_ids if user else False
             images.append(item)
 
         return {"images": images, "total": total, "page": page, "size": size}
@@ -162,17 +166,21 @@ async def my_shares(
             (user["user_id"], size, offset),
         ).fetchall()
 
+        image_ids = [str(r["id"]) for r in rows]
+        placeholders = ",".join("%s" for _ in image_ids) if image_ids else ""
+        liked_ids = set()
+        if image_ids:
+            liked_rows = conn.execute(f"SELECT image_id FROM square_likes WHERE user_id = %s AND image_id IN ({placeholders})", [user["user_id"], *image_ids]).fetchall()
+            liked_ids = {str(r["image_id"]) for r in liked_rows}
+        favorited_ids = FavoriteService.get_flags(user["user_id"], "image", image_ids)
         import json
         images = []
         for row in rows:
             item = dict(row)
             if isinstance(item["metadata"], str):
                 item["metadata"] = json.loads(item["metadata"]) if item["metadata"] else None
-            like = conn.execute(
-                "SELECT id FROM square_likes WHERE image_id = %s AND user_id = %s",
-                (item["id"], user["user_id"]),
-            ).fetchone()
-            item["is_liked"] = like is not None
+            item["is_liked"] = str(item["id"]) in liked_ids
+            item["is_favorited"] = str(item["id"]) in favorited_ids
             images.append(item)
 
         return {"images": images, "total": total, "page": page, "size": size}
