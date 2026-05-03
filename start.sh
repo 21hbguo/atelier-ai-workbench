@@ -6,6 +6,8 @@ PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOCK_FILE="/tmp/app_v1_start.lock"
 BACKEND_LOG="/tmp/app_v1_backend.log"
 FRONTEND_LOG="/tmp/app_v1_frontend.log"
+MAX_LOG_LINES=2000
+LOG_TRIM_INTERVAL=2
 
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
@@ -18,6 +20,8 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
+trim_log(){ local f="$1"; [ -f "$f" ] || return 0; local n; n=$(wc -l <"$f" 2>/dev/null || echo 0); [ "$n" -le "$MAX_LOG_LINES" ] && return 0; tail -n "$MAX_LOG_LINES" "$f" >"${f}.tmp" 2>/dev/null && mv "${f}.tmp" "$f"; }
+log_window_loop(){ while true; do trim_log "$BACKEND_LOG"; trim_log "$FRONTEND_LOG"; sleep "$LOG_TRIM_INTERVAL"; done; }
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}   AI 图像生成网站 - 一键启动${NC}"
@@ -106,8 +110,10 @@ done
 cd "$PROJECT_DIR/frontend"
 npm run preview -- --host 0.0.0.0 --port 5174 --strictPort >"$FRONTEND_LOG" 2>&1 &
 FRONTEND_PID=$!
+log_window_loop &
+LOG_WINDOW_PID=$!
 
 # 捕获 Ctrl+C 停止所有进程
-trap 'echo ""; echo -e "${YELLOW}正在停止服务...${NC}"; kill $BACKEND_PID 2>/dev/null; kill $FRONTEND_PID 2>/dev/null; wait 2>/dev/null; echo -e "${GREEN}已停止${NC}"; exit 0' INT TERM
+trap 'echo ""; echo -e "${YELLOW}正在停止服务...${NC}"; kill $BACKEND_PID 2>/dev/null; kill $FRONTEND_PID 2>/dev/null; kill $LOG_WINDOW_PID 2>/dev/null; wait 2>/dev/null; echo -e "${GREEN}已停止${NC}"; exit 0' INT TERM
 
 wait
