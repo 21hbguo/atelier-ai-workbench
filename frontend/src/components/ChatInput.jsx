@@ -60,9 +60,22 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading }, ref) {
     }
   }))
 
+  const MAX_IMAGES = 5
+
   const handleFiles = useCallback((files) => {
     const valid = Array.from(files).filter(f => /\.(png|jpe?g|webp)$/i.test(f.name) && f.size <= 10 * 1024 * 1024)
-    setImages(prev => [...prev, ...valid.map(f => ({ file: f, preview: URL.createObjectURL(f) }))])
+    setImages(prev => {
+      const remaining = MAX_IMAGES - prev.length
+      if (remaining <= 0) {
+        alert(`最多只能上传 ${MAX_IMAGES} 张参考图`)
+        return prev
+      }
+      if (valid.length > remaining) {
+        alert(`最多只能上传 ${MAX_IMAGES} 张参考图，已自动截取前 ${remaining} 张`)
+        return [...prev, ...valid.slice(0, remaining).map(f => ({ file: f, preview: URL.createObjectURL(f) }))]
+      }
+      return [...prev, ...valid.map(f => ({ file: f, preview: URL.createObjectURL(f) }))]
+    })
   }, [])
 
   const handleSend = () => {
@@ -112,18 +125,18 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading }, ref) {
                 <Share2 size={16} />
               </button> */}
             </div>
-            <div className="flex-1 flex flex-col">
+            <div className="flex-1 relative">
               <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
                 placeholder="输入提示词..."
-                className="flex-1 resize-none bg-transparent outline-none text-sm py-2"
-                rows={3} style={{ color: 'var(--text-primary)', minHeight: '72px', maxHeight: '120px' }} />
-              <div className="flex items-center justify-end gap-1.5">
+                className="w-full resize-none bg-transparent outline-none text-sm py-2 pr-12"
+                rows={1} style={{ color: 'var(--text-primary)', minHeight: '40px', maxHeight: '120px' }} />
+              <div className="absolute right-2 bottom-2 flex items-center gap-1.5">
                 {prompt.length > 0 && <span className="text-xs tabular-nums" style={{ color: 'var(--text-secondary)' }}>{prompt.length}</span>}
                 <button onClick={handleSend} disabled={!prompt.trim() || loading}
-                  className="p-2 rounded-lg transition-all duration-150 disabled:opacity-40"
+                  className="p-1.5 rounded-lg transition-all duration-150 disabled:opacity-40"
                   style={{ background: prompt.trim() && !loading ? 'var(--accent)' : 'var(--border-color)', color: '#fff' }}>
-                  <Send size={16} />
+                  <Send size={14} />
                 </button>
               </div>
             </div>
