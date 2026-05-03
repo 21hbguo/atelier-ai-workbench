@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useLocation, Link, useNavigate } from 'react-router-dom'
-import { Sun, Moon, BookOpen, MessageSquare, X, Globe, LogOut, User, Shield, Coins, Wallet, Megaphone, Bell, Settings } from 'lucide-react'
+import { Sun, Moon, BookOpen, MessageSquare, X, Globe, LogOut, User, Shield, Coins, Wallet, Megaphone, Bell, Settings, Share2 } from 'lucide-react'
 import { useTheme } from '../ThemeContext'
 import { authAPI, pointsAPI, notificationAPI } from '../api'
 import { clearUser, readUser } from '../auth'
@@ -13,6 +13,7 @@ const navItems = [
   { path: '/wallet', icon: Wallet, label: '小金库' },
   { path: '/notifications', icon: Bell, label: '通知' },
   { path: '/announcements', icon: Megaphone, label: '公告' },
+  { path: '/shares', icon: Share2, label: '分享管理' },
   { path: '/settings', icon: Settings, label: '账号安全' },
 ]
 

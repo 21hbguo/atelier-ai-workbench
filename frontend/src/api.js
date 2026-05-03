@@ -148,4 +148,10 @@ export const accountAPI = {
   sessions: (page = 1, size = 20) => api.get('/account/security-sessions', { params: { page, size } }),
 }
 
+export const shareAPI = {
+  create: data => api.post('/shares', data),
+  list: () => api.get('/shares'),
+  revoke: id => api.post(`/shares/${id}/revoke`),
+}
+
 export default api

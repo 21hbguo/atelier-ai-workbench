@@ -252,6 +252,17 @@ def init_db():
             )""",
             "CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_id, created_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read)",
+            """CREATE TABLE IF NOT EXISTS share_links (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                filename VARCHAR(255) NOT NULL,
+                token VARCHAR(128) NOT NULL UNIQUE,
+                expires_at TIMESTAMP NOT NULL,
+                is_revoked BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_share_links_user_created ON share_links(user_id, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_share_links_token ON share_links(token)",
             """CREATE TABLE IF NOT EXISTS import_sources (
                 id SERIAL PRIMARY KEY,
                 source_key VARCHAR(255) UNIQUE NOT NULL,
