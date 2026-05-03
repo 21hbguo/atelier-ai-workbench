@@ -146,12 +146,16 @@ def init_db():
                 filename VARCHAR(255) NOT NULL UNIQUE,
                 metadata JSONB,
                 created_at TIMESTAMP,
-                user_id INTEGER REFERENCES users(id)
+                user_id INTEGER REFERENCES users(id),
+                expires_at TIMESTAMP,
+                is_permanent BOOLEAN DEFAULT FALSE
             )""",
             "CREATE INDEX IF NOT EXISTS idx_image_metadata_filename ON image_metadata(filename)",
             "CREATE INDEX IF NOT EXISTS idx_image_metadata_created_at ON image_metadata(created_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_image_metadata_user_id ON image_metadata(user_id)",
             "CREATE INDEX IF NOT EXISTS idx_image_metadata_user_created ON image_metadata(user_id, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_image_metadata_expires_at ON image_metadata(expires_at)",
+            "CREATE INDEX IF NOT EXISTS idx_image_metadata_is_permanent ON image_metadata(is_permanent)",
             """CREATE TABLE IF NOT EXISTS recharge_requests (
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL REFERENCES users(id),
@@ -267,6 +271,12 @@ def init_db():
                 conn.execute("ALTER TABLE square_images ADD COLUMN is_frozen BOOLEAN DEFAULT FALSE")
             if not _column_exists(conn, "prompts", "is_frozen"):
                 conn.execute("ALTER TABLE prompts ADD COLUMN is_frozen BOOLEAN DEFAULT FALSE")
+            if not _column_exists(conn, "image_metadata", "expires_at"):
+                conn.execute("ALTER TABLE image_metadata ADD COLUMN expires_at TIMESTAMP")
+            if not _column_exists(conn, "image_metadata", "is_permanent"):
+                conn.execute("ALTER TABLE image_metadata ADD COLUMN is_permanent BOOLEAN DEFAULT FALSE")
+            conn.execute("UPDATE image_metadata m SET is_permanent = TRUE, expires_at = NULL WHERE EXISTS (SELECT 1 FROM square_images s WHERE s.filename = m.filename)")
+            conn.execute("UPDATE image_metadata SET expires_at = COALESCE(created_at, NOW()) + interval '3 day' WHERE is_permanent = FALSE AND expires_at IS NULL")
 
         # 初始化默认分类
             count = conn.execute("SELECT COUNT(*) AS cnt FROM categories").fetchone()["cnt"]

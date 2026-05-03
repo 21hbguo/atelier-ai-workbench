@@ -3,8 +3,9 @@ import json
 import hashlib
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
+from pydantic import BaseModel, Field
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Response, Depends
@@ -15,6 +16,8 @@ from backend.database import get_db
 from backend.services.task_manager import TaskManager
 from backend.services.image_mapping import ImageUrlMapping
 from backend.auth import get_current_user, require_admin
+from backend.services.image_expiry import get_expiry_data, extend_images, RETENTION_DAYS, EXTEND_DAYS, EXTEND_COST_PER_IMAGE
+from backend.services.points_service import PointsService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["images"])
@@ -106,6 +109,7 @@ async def list_images(page: int = Query(1, ge=1), page_size: int = Query(20, ge=
             rows = conn.execute(
                 f"""
                 SELECT m.filename,m.metadata,m.user_id,m.created_at,u.username,u.nickname
+                ,m.expires_at,m.is_permanent
                 FROM image_metadata m
                 LEFT JOIN users u ON m.user_id=u.id
                 {where_sql}
@@ -124,6 +128,7 @@ async def list_images(page: int = Query(1, ge=1), page_size: int = Query(20, ge=
             created_at = row["created_at"] or _format_timestamp(stat.st_mtime)
             metadata = _parse_metadata(row["metadata"])
             username = (row["nickname"] or row["username"] or "") if is_admin else ""
+            expiry = get_expiry_data({"created_at": row["created_at"], "expires_at": row["expires_at"], "is_permanent": row["is_permanent"]})
             images.append({
                 "filename": filename,
                 "path": str(f) if is_admin else "",
@@ -131,6 +136,10 @@ async def list_images(page: int = Query(1, ge=1), page_size: int = Query(20, ge=
                 "created_at": created_at,
                 "metadata": metadata,
                 "username": username,
+                "expires_at": expiry["expires_at"],
+                "is_permanent": expiry["is_permanent"],
+                "days_left": expiry["days_left"],
+                "expired": expiry["expired"],
             })
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         if elapsed_ms > 1200:
@@ -290,14 +299,20 @@ async def get_image_info(filename: str, user=Depends(get_current_user)):
     _assert_generated_image_access(filename, user)
 
     stat = image_path.stat()
-    metadata = get_image_metadata(filename)
-
+    with get_db() as conn:
+        row = conn.execute("SELECT metadata,created_at,expires_at,is_permanent FROM image_metadata WHERE filename = %s", (filename,)).fetchone()
+    metadata = _parse_metadata(row["metadata"] if row else {})
+    expiry = get_expiry_data({"created_at": (row["created_at"] if row else None) or datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"), "expires_at": row["expires_at"] if row else None, "is_permanent": row["is_permanent"] if row else False})
     return {
         "filename": filename,
         "path": str(image_path) if user.get("is_admin") else "",
         "url": f"/api/images/file/{filename}",
         "created_at": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
         "metadata": metadata,
+        "expires_at": expiry["expires_at"],
+        "is_permanent": expiry["is_permanent"],
+        "days_left": expiry["days_left"],
+        "expired": expiry["expired"],
     }
 
 
@@ -337,9 +352,12 @@ async def save_image_metadata_route(filename: str, metadata: dict, user=Depends(
 
     try:
         with get_db() as conn:
+            row = conn.execute("SELECT expires_at,is_permanent FROM image_metadata WHERE filename = %s", (filename,)).fetchone()
+            expires_at = row["expires_at"] if row else None
+            is_permanent = row["is_permanent"] if row else False
             conn.execute(
-                "INSERT INTO image_metadata (filename, metadata, created_at, user_id) VALUES (%s, %s, %s, %s) ON CONFLICT(filename) DO UPDATE SET metadata=EXCLUDED.metadata, created_at=EXCLUDED.created_at, user_id=EXCLUDED.user_id",
-                (filename, json.dumps(metadata, ensure_ascii=False), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user["user_id"]),
+                "INSERT INTO image_metadata (filename, metadata, created_at, user_id, expires_at, is_permanent) VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT(filename) DO UPDATE SET metadata=EXCLUDED.metadata, created_at=EXCLUDED.created_at, user_id=EXCLUDED.user_id, expires_at=COALESCE(image_metadata.expires_at, EXCLUDED.expires_at), is_permanent=COALESCE(image_metadata.is_permanent, EXCLUDED.is_permanent)",
+                (filename, json.dumps(metadata, ensure_ascii=False), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user["user_id"], expires_at or ((datetime.now() + timedelta(days=RETENTION_DAYS)).strftime("%Y-%m-%d %H:%M:%S")), bool(is_permanent)),
             )
         return {"filename": filename, "message": "元数据已保存"}
     except Exception as e:
@@ -370,3 +388,19 @@ async def delete_hosting(body: dict, admin=Depends(require_admin)):
         raise HTTPException(status_code=400, detail="未提供要删除的 URL")
     count = ImageUrlMapping.delete_urls(urls)
     return {"deleted": count}
+
+class ExtendImagesRequest(BaseModel):
+    filenames: list[str] = Field(default_factory=list, max_length=300)
+
+@router.post("/images/extend")
+async def extend_image_expiry(req: ExtendImagesRequest, user=Depends(get_current_user)):
+    try:
+        result = extend_images(req.filenames, user["user_id"])
+    except ValueError as e:
+        if str(e) == "积分不足":
+            raise HTTPException(status_code=402, detail="积分不足")
+        raise HTTPException(status_code=400, detail=str(e))
+    points = result.get("points")
+    if points is None:
+        points = PointsService.get_balance(user["user_id"]) if not user.get("is_admin") else -1
+    return {"message": "操作完成", "success_count": len(result["success"]), "skipped_count": len(result["skipped"]), "failed_count": len(result["failed"]), "total_cost": result["total_cost"], "points": points, "retention_days": RETENTION_DAYS, "extend_days": EXTEND_DAYS, "extend_cost_per_image": EXTEND_COST_PER_IMAGE, **result}

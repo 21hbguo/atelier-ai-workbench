@@ -24,6 +24,7 @@ function makeTaskId() {
   if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') { const b = crypto.getRandomValues(new Uint8Array(16)); b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128; const h = Array.from(b, v => v.toString(16).padStart(2, '0')).join(''); return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}` }
   return `task-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`
 }
+function getExpiryByFilename(map, filename) { return (filename && map && map[filename]) ? map[filename] : {} }
 
 export default function ChatPage() {
   const user = readUser()
@@ -43,6 +44,7 @@ export default function ChatPage() {
   const [points, setPoints] = useState(user?.points ?? 0)
   const [loadError, setLoadError] = useState('')
   const [selectedCardIndex, setSelectedCardIndex] = useState(null)
+  const [detailCards, setDetailCards] = useState([])
   const feedRef = useRef(null)
   const inputRef = useRef(null)
   const dragCounter = useRef(0)
@@ -101,6 +103,7 @@ export default function ChatPage() {
     for (const t of allTasks) {
       for (const u of (t.result_urls || [])) taskImageFiles.add(u.split('/').pop())
     }
+    const expiryByFilename = Object.fromEntries(allImages.map(img => [img.filename, { expires_at: img.expires_at, is_permanent: !!img.is_permanent, days_left: img.days_left, expired: !!img.expired }]))
     let orphans = allImages.filter(img => !taskImageFiles.has(img.filename)).map(img => ({
       task_id: 'img-' + img.filename,
       status: 'completed',
@@ -110,13 +113,19 @@ export default function ChatPage() {
       started_at: img.created_at,
       completed_at: img.created_at,
       username: img.username || '',
+      expires_at: img.expires_at,
+      is_permanent: !!img.is_permanent,
+      days_left: img.days_left,
+      expired: !!img.expired,
     }))
     if (q) {
       const lower = q.toLowerCase()
       orphans = orphans.filter(o => ((o.params?.prompt || '').toLowerCase().includes(lower)))
     }
-    const merged = [...orphans, ...allTasks].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
+    const merged = [...orphans, ...allTasks.map(t => { const fn = t.result_urls?.[0]?.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, fn); return { ...t, expires_at: exp.expires_at || t.expires_at, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : t.is_permanent, days_left: typeof exp.days_left === 'number' ? exp.days_left : t.days_left, expired: typeof exp.expired === 'boolean' ? exp.expired : t.expired } })].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
     setTasks(merged)
+    const completedMerged = merged.filter(t => t.status === 'completed' && t.result_urls?.length)
+    setDetailCards(completedMerged.flatMap(task => { const prompt = task.params?.prompt || task.prompt || ''; return task.result_urls.map((url, idx) => { const filename = url.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, filename); return { _type: 'image', _raw: { filename, metadata: { prompt, task_id: task.task_id, created_at: task.created_at, started_at: task.started_at, completed_at: task.completed_at, type: task.params?.image_urls?.length ? 'image' : 'text', size: task.params?.size, input_urls: task.params?.image_urls } }, id: `${task.task_id}-${idx}`, prompt, fullUrl: `/api/images/file/${filename}`, filename, expiresAt: exp.expires_at || task.expires_at || null, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : !!task.is_permanent, daysLeft: typeof exp.days_left === 'number' ? exp.days_left : task.days_left, expired: typeof exp.expired === 'boolean' ? exp.expired : !!task.expired } }) }))
     saveCachedActiveTasks(merged)
     if (!loaded) setLoaded(true)
   }, [loaded, isAdmin, selectedUserId, searchQuery, loadCachedActiveTasks, saveCachedActiveTasks])
@@ -383,21 +392,6 @@ export default function ChatPage() {
 
   const completedTasks = filtered.filter(t => t.status === 'completed' && t.result_urls?.length)
 
-  const detailCards = completedTasks.flatMap(task => {
-    const prompt = task.params?.prompt || task.prompt || ''
-    return task.result_urls.map((url, idx) => {
-      const filename = url.split('/').pop()
-      return {
-        _type: 'image',
-        _raw: { filename, metadata: { prompt, task_id: task.task_id, created_at: task.created_at, started_at: task.started_at, completed_at: task.completed_at, type: task.params?.image_urls?.length ? 'image' : 'text', size: task.params?.size, input_urls: task.params?.image_urls } },
-        id: `${task.task_id}-${idx}`,
-        prompt,
-        fullUrl: `/api/images/file/${filename}`,
-        filename,
-      }
-    })
-  })
-
   const handleCardViewDetail = useCallback((taskIndex) => {
     const completedIndex = completedTasks.findIndex(t => t.task_id === taskIndex)
     if (completedIndex >= 0) {
@@ -412,6 +406,34 @@ export default function ChatPage() {
   const handleModalNavigate = useCallback((newIndex) => {
     setSelectedCardIndex(newIndex)
   }, [])
+  const handleDetailShare = useCallback(async (card) => {
+    try {
+      await squareAPI.share({ filename: card.filename, prompt: card.prompt || '', metadata: { size: card?._raw?.metadata?.size, type: card?._raw?.metadata?.type || 'text' } })
+      await refreshTasks()
+      window.dispatchEvent(new Event('gallery-updated'))
+    } catch (e) {
+      alert(e?.message || '分享失败')
+    }
+  }, [refreshTasks])
+  const handleExtendImages = useCallback(async (filenames) => {
+    const uniq = [...new Set((filenames || []).filter(Boolean))]
+    if (uniq.length === 0) { alert('没有可延长的图片'); return }
+    try {
+      const { data } = await imageAPI.extend(uniq)
+      if (!isAdmin && typeof data.points === 'number') {
+        setPoints(data.points)
+        const u = readUser()
+        if (u) { u.points = data.points; localStorage.setItem('user', JSON.stringify(u)) }
+        window.dispatchEvent(new Event('points-updated'))
+      }
+      await refreshTasks()
+      const msg = `成功${data.success_count||0}，跳过${data.skipped_count||0}，失败${data.failed_count||0}${data.total_cost ? `，扣除${data.total_cost}积分` : ''}`
+      alert(msg)
+    } catch (e) {
+      alert(e?.message || '延长失败')
+    }
+  }, [isAdmin, refreshTasks])
+  const handleDetailExtend = useCallback(async (card) => { await handleExtendImages([card.filename]) }, [handleExtendImages])
 
   const toggleCheck = useCallback((taskId) => {
     setChecked(prev => { const next = new Set(prev); next.has(taskId) ? next.delete(taskId) : next.add(taskId); return next })
@@ -447,6 +469,14 @@ export default function ChatPage() {
     refreshTasks()
     window.dispatchEvent(new Event('gallery-updated'))
   }, [checked, refreshTasks])
+  const handleBatchExtend = useCallback(async () => {
+    const filenames = []
+    for (const task of filtered) {
+      if (!checked.has(task.task_id)) continue
+      for (const url of (task.result_urls || [])) filenames.push(url.split('/').pop())
+    }
+    await handleExtendImages(filenames)
+  }, [checked, filtered, handleExtendImages])
 
   const exitSelectMode = useCallback(() => { setSelectMode(false); setChecked(new Set()) }, [])
 
@@ -551,6 +581,7 @@ export default function ChatPage() {
             {checked.size === filtered.length ? '取消全选' : '全选'}
           </button>
           <div className="ml-auto flex gap-2">
+            <button onClick={handleBatchExtend} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: '#2563eb' }}>延长3天</button>
             <button onClick={handleBatchDownload} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}><Download size={14} /> 下载</button>
             <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"><Trash2 size={14} /> 删除</button>
           </div>
@@ -570,6 +601,8 @@ export default function ChatPage() {
           onClose={() => setSelectedCardIndex(null)}
           onUseImage={card => inputRef.current?.addImage(card.fullUrl)}
           onUsePrompt={handleAddPrompt}
+          onShare={handleDetailShare}
+          onExtend={handleDetailExtend}
           title="生成详情"
           allowMetadataEdit
         />

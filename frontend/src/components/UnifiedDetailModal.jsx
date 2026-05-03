@@ -21,6 +21,8 @@ export default function UnifiedDetailModal({
   onUsePrompt,
   onUseImage,
   onDelete,
+  onShare,
+  onExtend,
   onMetadataSaved,
   detailExtra,
   title = '详情',
@@ -174,6 +176,7 @@ export default function UnifiedDetailModal({
         <div className="grid grid-cols-2 gap-3">
           {meta.type && <InfoItem label="类型" value={meta.type === 'text' ? '纯文本' : '文本+图像'} />}
           {meta.size && <InfoItem label="尺寸" value={meta.size} />}
+          {(card.is_permanent || card.expiresAt || card.expired || typeof card.daysLeft === 'number') && <InfoItem label="有效期" value={card.is_permanent ? '已分享到广场，永久保存' : (card.expired ? `已过期（到期时间 ${card.expiresAt || '-' }）` : `${typeof card.daysLeft === 'number' ? card.daysLeft : '-'}天后过期`)} />}
           {meta.task_id && <InfoItem label="任务ID" value={meta.task_id} />}
           {meta.created_at && <InfoItem label="创建时间" value={meta.created_at} />}
           {meta.started_at && meta.completed_at && (() => {
@@ -268,6 +271,20 @@ export default function UnifiedDetailModal({
       actions.push(
         <button key="delete" onClick={() => onDelete(raw.filename)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">
           <Trash2 size={14} /> 删除
+        </button>
+      )
+    }
+    if (onShare && isImage && raw.filename) {
+      actions.push(
+        <button key="share" onClick={() => onShare(card)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
+          分享广场
+        </button>
+      )
+    }
+    if (onExtend && isImage && raw.filename && !card.is_permanent) {
+      actions.push(
+        <button key="extend" onClick={() => onExtend(card)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
+          延长3天(-2积分)
         </button>
       )
     }

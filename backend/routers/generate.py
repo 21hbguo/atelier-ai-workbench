@@ -3,7 +3,7 @@ import json
 import asyncio
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Depends, Request
 
 logger = logging.getLogger(__name__)
@@ -21,6 +21,7 @@ from backend.models.schemas import (
 )
 from backend.auth import get_current_user, record_request, update_user_ip, get_client_ip
 from backend.database import get_db
+from backend.services.image_expiry import RETENTION_DAYS, mark_image_permanent
 
 router = APIRouter(prefix="/api/generate", tags=["generate"])
 
@@ -45,6 +46,7 @@ def _share_to_square(user_id: int, file_path: str, prompt: str, size: str, task_
             return
         metadata = json.dumps({"size": size, "type": "image" if task_type == "text_image" else "text"}, ensure_ascii=False)
         conn.execute("INSERT INTO square_images (user_id, filename, prompt, metadata) VALUES (%s, %s, %s, %s)", (user_id, filename, prompt, metadata))
+        mark_image_permanent(filename, conn=conn)
 
 
 async def _run_generation(task_id: str, task_type: str, submit_payload: dict, meta: dict, user_id: int, is_admin: bool):
@@ -259,8 +261,8 @@ async def _poll_and_download(external_task_id: str, task_id: str, meta: dict = N
                 image_meta["created_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 with get_db() as conn:
                     conn.execute(
-                        "INSERT INTO image_metadata (filename, metadata, created_at, user_id) VALUES (%s, %s, %s, %s) ON CONFLICT(filename) DO UPDATE SET metadata=EXCLUDED.metadata, created_at=EXCLUDED.created_at, user_id=EXCLUDED.user_id",
-                        (filename, json.dumps(image_meta, ensure_ascii=False), image_meta["created_at"], user_id),
+                        "INSERT INTO image_metadata (filename, metadata, created_at, user_id, expires_at, is_permanent) VALUES (%s, %s, %s, %s, %s, FALSE) ON CONFLICT(filename) DO UPDATE SET metadata=EXCLUDED.metadata, created_at=EXCLUDED.created_at, user_id=EXCLUDED.user_id, expires_at=COALESCE(image_metadata.expires_at, EXCLUDED.expires_at), is_permanent=COALESCE(image_metadata.is_permanent, FALSE)",
+                        (filename, json.dumps(image_meta, ensure_ascii=False), image_meta["created_at"], user_id, (datetime.now() + timedelta(days=RETENTION_DAYS)).strftime("%Y-%m-%d %H:%M:%S")),
                     )
         if not local_paths and isinstance(result, dict):
             msg = (result.get("message") or result.get("msg") or "").strip()

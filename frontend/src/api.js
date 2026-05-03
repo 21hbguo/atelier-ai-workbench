@@ -48,6 +48,7 @@ export const imageAPI = {
   get: filename => api.get(`/images/${filename}`),
   delete: filename => api.post(`/images/${filename}/delete`),
   saveMetadata: (filename, metadata) => api.post(`/images/${filename}/metadata`, metadata),
+  extend: filenames => api.post('/images/extend', { filenames }),
 }
 
 export const promptAPI = {

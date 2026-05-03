@@ -34,7 +34,7 @@ class PointsService:
             return user["points"] >= amount
 
     @classmethod
-    def consume(cls, user_id: int, amount: int, description: str = "") -> int:
+    def consume(cls, user_id: int, amount: int, description: str = "", tx_type: str = "generate_consume") -> int:
         with get_db() as conn:
             user = conn.execute("SELECT is_admin, points FROM users WHERE id = %s", (user_id,)).fetchone()
             if not user:
@@ -50,7 +50,7 @@ class PointsService:
             new_balance = conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()["points"]
             conn.execute(
                 "INSERT INTO point_transactions (user_id, amount, balance_after, type, description) VALUES (%s, %s, %s, %s, %s)",
-                (user_id, -amount, new_balance, "generate_consume", description),
+                (user_id, -amount, new_balance, tx_type, description),
             )
             return new_balance
 

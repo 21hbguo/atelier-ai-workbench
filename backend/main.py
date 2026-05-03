@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,14 +8,23 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from backend.routers import generate, upload, tasks, images, prompts, stats, config, auth, square, admin, points, announcements
 from backend.services.image_gen import close_http_client
 from backend.services.task_manager import TaskManager
+from backend.services.image_expiry import expiry_cleanup_loop
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    app.state.expiry_cleanup_task = asyncio.create_task(expiry_cleanup_loop(int(os.getenv("IMAGE_EXPIRY_CLEANUP_INTERVAL_SECONDS", "3600"))))
     await TaskManager.recover_orphaned_tasks()
     yield
+    t = getattr(app.state, "expiry_cleanup_task", None)
+    if t:
+        t.cancel()
+        try:
+            await t
+        except BaseException:
+            pass
     await close_http_client()
 
 

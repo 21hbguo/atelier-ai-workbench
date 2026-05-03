@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 from backend.database import get_db
 from backend.auth import get_current_user, get_optional_user
+from backend.services.image_expiry import mark_image_permanent
 
 router = APIRouter(prefix="/api/square", tags=["square"])
 
@@ -33,6 +34,7 @@ async def share_to_square(req: ShareRequest, user=Depends(get_current_user)):
             "INSERT INTO square_images (user_id, filename, prompt, metadata) VALUES (%s, %s, %s, %s) RETURNING id",
             (user["user_id"], req.filename, req.prompt, json.dumps(req.metadata) if req.metadata else None),
         )
+        mark_image_permanent(req.filename, conn=conn)
         return {"id": cursor.fetchone()["id"], "message": "分享成功"}
 
 
