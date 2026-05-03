@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
+protected_file="data/db_snapshot.sql"
+if [[ "$current_branch" != "master" ]]; then
+  if git diff --cached --name-only --diff-filter=ACMR | grep -Fxq "$protected_file"; then
+    echo "[pre-commit] 阻止提交：分支 '$current_branch' 不允许提交 $protected_file"
+    echo "[pre-commit] 仅 'master' 分支允许提交该文件。"
+    exit 1
+  fi
+fi
