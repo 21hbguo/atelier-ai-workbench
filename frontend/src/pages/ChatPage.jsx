@@ -246,7 +246,7 @@ export default function ChatPage() {
       task_id: tempId,
       status: 'processing',
       prompt,
-      params: { prompt, size: params?.size || 'auto' },
+      params: { prompt, size: params?.size || 'auto', share_to_square: !!shareToSquare },
       previewImages,
       created_at: new Date().toLocaleString('zh-CN'),
       started_at: formatLocalTime(new Date()),
@@ -278,8 +278,8 @@ export default function ChatPage() {
 
     try {
       const data = hasImages
-        ? (await generateAPI.submitTextImage({ prompt, image_urls: imageUrls, size: params?.size || 'auto', task_id: taskId })).data
-        : (await generateAPI.submitText({ prompt, size: params?.size || 'auto', task_id: taskId })).data
+        ? (await generateAPI.submitTextImage({ prompt, image_urls: imageUrls, size: params?.size || 'auto', task_id: taskId, share_to_square: !!shareToSquare })).data
+        : (await generateAPI.submitText({ prompt, size: params?.size || 'auto', task_id: taskId, share_to_square: !!shareToSquare })).data
 
       if (!isAdmin) {
         setPoints(p => Math.max(0, p - 10))
@@ -369,7 +369,7 @@ export default function ChatPage() {
         recoveringRef.current.add(t.task_id)
         updateTask(t.task_id, { _active: true })
         const p = t.params || {}
-        pollTask(t.task_id, Date.now(), false, p.prompt || '', p, t.type === 'text_image')
+        pollTask(t.task_id, Date.now(), !!p.share_to_square, p.prompt || '', p, t.type === 'text_image')
       }
     }
   }, [tasks, pollTask, updateTask])

@@ -2,6 +2,7 @@ import uuid
 import json
 import asyncio
 import logging
+import os
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends, Request
 
@@ -33,6 +34,17 @@ def _check_generate_rate(user_id: int):
         if count >= 10:
             raise HTTPException(status_code=429, detail="生成请求过于频繁，请稍后再试")
 
+def _share_to_square(user_id: int, file_path: str, prompt: str, size: str, task_type: str):
+    filename = os.path.basename(str(file_path or ""))
+    if not filename:
+        return
+    with get_db() as conn:
+        existing = conn.execute("SELECT id FROM square_images WHERE user_id = %s AND filename = %s", (user_id, filename)).fetchone()
+        if existing:
+            return
+        metadata = json.dumps({"size": size, "type": "image" if task_type == "text_image" else "text"}, ensure_ascii=False)
+        conn.execute("INSERT INTO square_images (user_id, filename, prompt, metadata) VALUES (%s, %s, %s, %s)", (user_id, filename, prompt, metadata))
+
 
 async def _run_generation(task_id: str, task_type: str, submit_payload: dict, meta: dict, user_id: int, is_admin: bool):
     try:
@@ -47,6 +59,11 @@ async def _run_generation(task_id: str, task_type: str, submit_payload: dict, me
         TaskManager.update_task(task_id, params=task_params)
         urls = await _poll_and_download(external_task_id, task_id, meta, user_id=user_id)
         if urls:
+            if submit_payload.get("share_to_square") and len(urls) > 0:
+                try:
+                    _share_to_square(user_id, urls[0], submit_payload.get("prompt") or "", submit_payload.get("size") or "auto", task_type)
+                except Exception:
+                    logger.exception(f"[submit.share.fail] type={task_type} task={task_id} user={user_id}")
             TaskManager.update_task(task_id, status="completed", progress=100, result_urls=urls)
             StatsService.record_success()
             record_request(user_id, "success")
@@ -84,7 +101,7 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
 
     try:
         StatsService.record_request()
-        banned_word = BannedWordsService.check(request.prompt)
+        banned_word = None if is_admin else BannedWordsService.check(request.prompt)
         if banned_word:
             logger.info(f"[submit.reject] type=text task={task_id} user={user_id} reason=banned_word word={banned_word}")
             TaskManager.update_task(task_id, status="failed", error="提示词包含违禁词")
@@ -94,11 +111,11 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
                 PointsService.refund(user_id, PointsService.COST_PER_GENERATION, "违禁词退还")
             raise HTTPException(status_code=400, detail="提示词包含违禁词，请修改后重试")
 
-        TaskManager.create_task(task_id, "text", {"prompt": request.prompt, "size": request.size}, user_id=user_id)
+        TaskManager.create_task(task_id, "text", {"prompt": request.prompt, "size": request.size, "share_to_square": bool(request.share_to_square)}, user_id=user_id)
         TaskManager.update_task(task_id, status="processing", progress=10)
         logger.info(f"[submit.task_created] type=text task={task_id} user={user_id}")
-        meta = {"prompt": request.prompt, "size": request.size, "type": "text", "task_id": task_id}
-        asyncio.create_task(_run_generation(task_id, "text", {"prompt": request.prompt, "size": request.size}, meta, user_id, bool(is_admin)))
+        meta = {"prompt": request.prompt, "size": request.size, "type": "text", "task_id": task_id, "share_to_square": bool(request.share_to_square)}
+        asyncio.create_task(_run_generation(task_id, "text", {"prompt": request.prompt, "size": request.size, "share_to_square": bool(request.share_to_square)}, meta, user_id, bool(is_admin)))
         return GenerateResponse(task_id=task_id, status="processing", message="任务已提交")
 
     except HTTPException:
@@ -132,7 +149,7 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
 
     try:
         StatsService.record_request()
-        banned_word = BannedWordsService.check(request.prompt)
+        banned_word = None if is_admin else BannedWordsService.check(request.prompt)
         if banned_word:
             logger.info(f"[submit.reject] type=text_image task={task_id} user={user_id} reason=banned_word word={banned_word}")
             TaskManager.update_task(task_id, status="failed", error="提示词包含违禁词")
@@ -142,11 +159,11 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
                 PointsService.refund(user_id, PointsService.COST_PER_GENERATION, "违禁词退还")
             raise HTTPException(status_code=400, detail="提示词包含违禁词，请修改后重试")
 
-        TaskManager.create_task(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "image_urls": request.image_urls}, user_id=user_id)
+        TaskManager.create_task(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square)}, user_id=user_id)
         TaskManager.update_task(task_id, status="processing", progress=10)
         logger.info(f"[submit.task_created] type=text_image task={task_id} user={user_id}")
-        meta = {"prompt": request.prompt, "size": request.size, "type": "text_image", "task_id": task_id, "input_urls": request.image_urls}
-        asyncio.create_task(_run_generation(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "image_urls": request.image_urls}, meta, user_id, bool(is_admin)))
+        meta = {"prompt": request.prompt, "size": request.size, "type": "text_image", "task_id": task_id, "input_urls": request.image_urls, "share_to_square": bool(request.share_to_square)}
+        asyncio.create_task(_run_generation(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square)}, meta, user_id, bool(is_admin)))
         return GenerateResponse(task_id=task_id, status="processing", message="任务已提交")
 
     except HTTPException:

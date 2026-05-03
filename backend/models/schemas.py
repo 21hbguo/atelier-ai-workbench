@@ -6,12 +6,14 @@ class GenerateTextRequest(BaseModel):
     prompt: str = Field(..., max_length=2500)
     size: str = Field("auto", max_length=20)
     task_id: Optional[str] = Field(None, max_length=50)
+    share_to_square: bool = False
 
 class GenerateTextImageRequest(BaseModel):
     prompt: str = Field(..., max_length=2500)
     image_urls: List[str] = Field(..., max_length=5)
     size: str = Field("auto", max_length=20)
     task_id: Optional[str] = Field(None, max_length=50)
+    share_to_square: bool = False
 
 class GenerateResponse(BaseModel):
     task_id: str
