@@ -193,12 +193,17 @@ export default function ChatPage() {
 
   const pollTask = useCallback(async (taskId, startTime, shareToSquare, prompt, params, hasImages) => {
     const maxWaitMs = 15 * 60 * 1000
-    const getDelay = (attempt) => Math.min(2000 + attempt * 500, 10000)
+    const getDelay = (elapsed) => {
+      if (elapsed >= 50_000 && elapsed < 120_000) return 6000
+      if (elapsed < 50_000) return 10000
+      return 90000
+    }
     let missingCount = 0
     let errorCount = 0
 
     for (let attempt = 0; Date.now() - startTime < maxWaitMs; attempt++) {
-      await new Promise(r => setTimeout(r, getDelay(attempt)))
+      const elapsed = Date.now() - startTime
+      await new Promise(r => setTimeout(r, getDelay(elapsed)))
       try {
         const { data: st } = await taskAPI.get(taskId)
         missingCount = 0
