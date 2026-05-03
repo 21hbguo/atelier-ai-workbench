@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
+protected_file="data/db_snapshot.sql"
+upstream_ref="${1:-origin}/${current_branch}"
+if ! git rev-parse --verify "$upstream_ref" >/dev/null 2>&1; then
+  range="HEAD"
+else
+  range="$upstream_ref..HEAD"
+fi
+if [[ "$current_branch" != "master" ]]; then
+  if git diff --name-only "$range" | grep -Fxq "$protected_file"; then
+    echo "[pre-push] 阻止推送：分支 '$current_branch' 包含 $protected_file 的变更"
+    echo "[pre-push] 仅 'master' 分支允许推送该文件变更。"
+    exit 1
+  fi
+fi
