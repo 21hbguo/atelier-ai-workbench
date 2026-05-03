@@ -37,11 +37,14 @@ export default function UnifiedDetailModal({
   const [editForm, setEditForm] = useState(null)
   const [saving, setSaving] = useState(false)
   const [contentVisible, setContentVisible] = useState(true)
+  const [mediaHovered, setMediaHovered] = useState(false)
   const touchStartX = useRef(0)
   const touchStartY = useRef(0)
   const touchLastX = useRef(0)
   const touchLastY = useRef(0)
   const touchSwiped = useRef(false)
+  const modalStatePushed = useRef(false)
+  const lightboxStatePushed = useRef(false)
 
   const hasNavigation = cards.length > 1
   const canPrev = hasNavigation && currentIndex > 0
@@ -68,6 +71,29 @@ export default function UnifiedDetailModal({
     setEditing(false)
     setEditForm(null)
   }, [card?.id, currentIndex])
+  useEffect(() => {
+    if (!modalStatePushed.current) {
+      window.history.pushState({ __udm: 'modal' }, '')
+      modalStatePushed.current = true
+    }
+    const handlePopState = () => {
+      if (lightbox) {
+        lightboxStatePushed.current = false
+        setLightbox(false)
+        return
+      }
+      onClose?.()
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [lightbox, onClose])
+  useEffect(() => {
+    if (lightbox && !lightboxStatePushed.current) {
+      window.history.pushState({ __udm: 'lightbox' }, '')
+      lightboxStatePushed.current = true
+    }
+    if (!lightbox) lightboxStatePushed.current = false
+  }, [lightbox])
   useEffect(() => {
     setContentVisible(false)
     const t = setTimeout(() => setContentVisible(true), 20)
@@ -105,6 +131,14 @@ export default function UnifiedDetailModal({
   const handleMediaClick = () => {
     if (touchSwiped.current) { touchSwiped.current = false; return }
     setLightbox(true)
+  }
+  const requestCloseModal = () => {
+    if (modalStatePushed.current) window.history.back()
+    else onClose?.()
+  }
+  const requestCloseLightbox = () => {
+    if (lightboxStatePushed.current) window.history.back()
+    else setLightbox(false)
   }
 
   if (!card) return null
@@ -158,7 +192,7 @@ export default function UnifiedDetailModal({
       )
     }
     return (
-      <div className={`md:w-3/5 bg-black flex items-center justify-center min-h-[260px] h-[44vh] md:h-full relative group cursor-pointer overflow-hidden transition-opacity duration-150 ${contentVisible ? 'opacity-100' : 'opacity-0'}`} onClick={handleMediaClick}>
+      <div className={`md:w-3/5 bg-black flex items-center justify-center min-h-[260px] h-[44vh] md:h-full relative group cursor-pointer overflow-hidden transition-opacity duration-150 ${contentVisible ? 'opacity-100' : 'opacity-0'}`} onClick={handleMediaClick} onMouseEnter={() => setMediaHovered(true)} onMouseLeave={() => setMediaHovered(false)}>
         <img src={fullUrl} alt="" className="max-w-full max-h-full object-contain" />
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
           <Maximize2 size={24} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -278,14 +312,14 @@ export default function UnifiedDetailModal({
     }
     if (onUsePrompt) {
       actions.push(
-        <button key="use-prompt" onClick={() => { onUsePrompt(card.prompt); onClose?.() }} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
+        <button key="use-prompt" onClick={() => { onUsePrompt(card.prompt); requestCloseModal() }} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
           <Plus size={14} /> 使用提示词
         </button>
       )
     }
     if (fullUrl && onUseImage) {
       actions.push(
-        <button key="use-image" onClick={() => { onUseImage(card); onClose?.() }} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
+        <button key="use-image" onClick={() => { onUseImage(card); requestCloseModal() }} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
           <ImageIcon size={14} /> 参考图
         </button>
       )
@@ -323,7 +357,7 @@ export default function UnifiedDetailModal({
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 md:p-4" onClick={onClose}>
+      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 md:p-4" onClick={requestCloseModal}>
         <div
           className="bg-white dark:bg-gray-900 rounded-2xl overflow-hidden max-w-5xl w-full h-[88vh] md:h-[84vh] flex flex-col md:flex-row shadow-2xl relative"
           onClick={(e) => e.stopPropagation()}
@@ -331,12 +365,12 @@ export default function UnifiedDetailModal({
           onTouchMove={hasNavigation ? handleTouchMove : undefined}
           onTouchEnd={hasNavigation ? handleTouchEnd : undefined}
         >
-          {hasNavigation && canPrev && (
+          {hasNavigation && canPrev && mediaHovered && (
             <button onClick={handlePrev} className="hidden md:flex absolute left-3 top-1/2 -translate-y-1/2 z-10 p-3 rounded-full bg-black/30 backdrop-blur-sm hover:bg-black/50 hover:scale-110 text-white transition-all items-center justify-center">
               <ChevronLeft size={24} />
             </button>
           )}
-          {hasNavigation && canNext && (
+          {hasNavigation && canNext && mediaHovered && (
             <button onClick={handleNext} className="hidden md:flex absolute right-3 top-1/2 -translate-y-1/2 z-10 p-3 rounded-full bg-black/30 backdrop-blur-sm hover:bg-black/50 hover:scale-110 text-white transition-all items-center justify-center" style={{ right: 'calc(40% + 12px)' }}>
               <ChevronRight size={24} />
             </button>
@@ -349,7 +383,7 @@ export default function UnifiedDetailModal({
               <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{title}</span>
               <div className="flex items-center gap-2">
                 {allowMetadataEdit && isImage && raw.filename && !detailExtra && (editing ? <button onClick={handleSaveMetadata} disabled={saving} className="p-1 rounded hover:bg-black/5" style={{ color: 'var(--accent)' }}><Check size={16} /></button> : <button onClick={startEditing} className="p-1 rounded hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}><Edit2 size={16} /></button>)}
-                <button onClick={onClose} className="p-1 rounded hover:bg-black/5"><X size={18} /></button>
+                <button onClick={requestCloseModal} className="p-1 rounded hover:bg-black/5"><X size={18} /></button>
               </div>
             </div>
 
@@ -363,7 +397,7 @@ export default function UnifiedDetailModal({
       </div>
 
       {lightbox && fullUrl && (
-        <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4" onClick={() => setLightbox(false)}>
+        <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4" onClick={requestCloseLightbox}>
           <img src={fullUrl} alt="" className="max-w-full max-h-full rounded-lg" onClick={(e) => e.stopPropagation()} />
         </div>
       )}
