@@ -36,6 +36,7 @@ export default function UnifiedDetailModal({
   const [editing, setEditing] = useState(false)
   const [editForm, setEditForm] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [contentVisible, setContentVisible] = useState(true)
   const touchStartX = useRef(0)
   const touchStartY = useRef(0)
   const touchLastX = useRef(0)
@@ -67,6 +68,11 @@ export default function UnifiedDetailModal({
     setEditing(false)
     setEditForm(null)
   }, [card?.id, currentIndex])
+  useEffect(() => {
+    setContentVisible(false)
+    const t = setTimeout(() => setContentVisible(true), 20)
+    return () => clearTimeout(t)
+  }, [currentIndex, card?.id])
 
   const handleTouchStart = (e) => {
     if (!e.touches?.length) return
@@ -146,14 +152,14 @@ export default function UnifiedDetailModal({
   const renderLeftPanel = () => {
     if (!fullUrl) {
       return (
-        <div className="md:w-3/5 bg-black flex items-center justify-center min-h-[200px] md:min-h-0" style={{ background: 'linear-gradient(135deg, var(--accent)08, var(--accent)15)' }}>
+        <div className={`md:w-3/5 bg-black flex items-center justify-center min-h-[260px] h-[44vh] md:h-full relative transition-opacity duration-150 ${contentVisible ? 'opacity-100' : 'opacity-0'}`} style={{ background: 'linear-gradient(135deg, var(--accent)08, var(--accent)15)' }}>
           <ImageIcon size={64} style={{ color: 'var(--accent)', opacity: 0.3 }} />
         </div>
       )
     }
     return (
-      <div className="md:w-3/5 bg-black flex items-center justify-center min-h-[200px] md:min-h-0 relative group cursor-pointer overflow-hidden" onClick={handleMediaClick}>
-        <img src={fullUrl} alt="" className="max-w-full max-h-[60vh] md:max-h-full object-contain" />
+      <div className={`md:w-3/5 bg-black flex items-center justify-center min-h-[260px] h-[44vh] md:h-full relative group cursor-pointer overflow-hidden transition-opacity duration-150 ${contentVisible ? 'opacity-100' : 'opacity-0'}`} onClick={handleMediaClick}>
+        <img src={fullUrl} alt="" className="max-w-full max-h-full object-contain" />
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
           <Maximize2 size={24} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
         </div>
@@ -169,14 +175,14 @@ export default function UnifiedDetailModal({
   const renderImageDetail = () => {
     if (editing && editForm) {
       return (
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           <div>
-            <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>提示词</label>
+            <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>提示词</label>
             <textarea value={editForm.prompt || ''} onChange={e => setEditForm(f => ({ ...f, prompt: e.target.value }))} className="w-full px-3 py-2 rounded-lg text-sm border outline-none resize-none" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} rows={3} />
           </div>
           {(meta.size || editForm.size !== undefined) && (
             <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>尺寸</label>
+              <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>尺寸</label>
               <input value={editForm.size || ''} onChange={e => setEditForm(f => ({ ...f, size: e.target.value }))} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
             </div>
           )}
@@ -187,9 +193,9 @@ export default function UnifiedDetailModal({
       <>
         {card.prompt && (
           <div>
-            <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>提示词</label>
+            <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>提示词</label>
             <div className="relative">
-              <p className="text-sm p-3 rounded-lg pr-9 max-h-48 md:max-h-72 overflow-y-auto whitespace-pre-wrap break-words" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>{card.prompt}</p>
+              <p className="text-sm p-2.5 rounded-lg pr-9 max-h-36 md:max-h-56 overflow-y-auto whitespace-pre-wrap break-words leading-5" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>{card.prompt}</p>
               <button onClick={() => handleCopy(card.prompt)} className="absolute right-2 top-2 p-1 rounded hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>
                 <Copy size={14} />
               </button>
@@ -197,7 +203,7 @@ export default function UnifiedDetailModal({
             {copied && <span className="text-xs mt-1" style={{ color: 'var(--accent)' }}>已复制</span>}
           </div>
         )}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-2">
           {meta.type && <InfoItem label="类型" value={meta.type === 'text' ? '纯文本' : '文本+图像'} />}
           {meta.size && <InfoItem label="尺寸" value={meta.size} />}
           {(card.is_permanent || card.expiresAt || card.expired || typeof card.daysLeft === 'number') && <InfoItem label="有效期" value={card.is_permanent ? '已分享到广场，永久保存' : (card.expired ? `已过期（到期时间 ${card.expiresAt || '-' }）` : `${typeof card.daysLeft === 'number' ? card.daysLeft : '-'}天后过期`)} />}
@@ -213,7 +219,7 @@ export default function UnifiedDetailModal({
         </div>
         {meta.input_urls?.length > 0 && (
           <div>
-            <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>输入图片</label>
+            <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>输入图片</label>
             <div className="flex gap-2 flex-wrap">
               {meta.input_urls.map((url, i) => <img key={i} src={url} className="w-16 h-16 rounded-lg object-cover" />)}
             </div>
@@ -227,15 +233,15 @@ export default function UnifiedDetailModal({
     <>
       {card.name && (
         <div>
-          <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>标题</label>
+          <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>标题</label>
           <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{card.name}</p>
         </div>
       )}
       {card.prompt && (
         <div>
-          <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>提示词</label>
+          <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>提示词</label>
           <div className="relative">
-            <p className="text-sm p-3 rounded-lg pr-9 max-h-48 md:max-h-72 overflow-y-auto whitespace-pre-wrap break-words" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>{card.prompt}</p>
+            <p className="text-sm p-2.5 rounded-lg pr-9 max-h-36 md:max-h-56 overflow-y-auto whitespace-pre-wrap break-words leading-5" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>{card.prompt}</p>
             <button onClick={() => handleCopy(card.prompt)} className="absolute right-2 top-2 p-1 rounded hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>
               <Copy size={14} />
             </button>
@@ -243,14 +249,14 @@ export default function UnifiedDetailModal({
           {copied && <span className="text-xs mt-1" style={{ color: 'var(--accent)' }}>已复制</span>}
         </div>
       )}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-2">
         {card.author && <InfoItem label="作者" value={card.author} />}
         {card.categoryLabel && <InfoItem label="分类" value={card.categoryLabel} />}
         {card.createdAt && <InfoItem label="创建时间" value={card.createdAt} />}
       </div>
       {card.tags?.length > 0 && (
         <div>
-          <label className="text-xs mb-1 block" style={{ color: 'var(--text-secondary)' }}>标签</label>
+          <label className="text-xs mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>标签</label>
           <div className="flex gap-1.5 flex-wrap">
             {card.tags.map((tag, i) => (
               <span key={i} className="text-sm" style={{ color: 'var(--text-primary)' }}>{tag}</span>
@@ -265,49 +271,49 @@ export default function UnifiedDetailModal({
     const actions = []
     if (isImage && fullUrl && !hideDownload) {
       actions.push(
-        <a key="dl" href={fullUrl} download className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}>
+        <a key="dl" href={fullUrl} download className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: 'var(--accent)' }}>
           <Download size={14} /> 下载
         </a>
       )
     }
     if (onUsePrompt) {
       actions.push(
-        <button key="use-prompt" onClick={() => { onUsePrompt(card.prompt); onClose?.() }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
+        <button key="use-prompt" onClick={() => { onUsePrompt(card.prompt); onClose?.() }} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
           <Plus size={14} /> 使用提示词
         </button>
       )
     }
     if (fullUrl && onUseImage) {
       actions.push(
-        <button key="use-image" onClick={() => { onUseImage(card); onClose?.() }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
+        <button key="use-image" onClick={() => { onUseImage(card); onClose?.() }} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
           <ImageIcon size={14} /> 参考图
         </button>
       )
     }
     if (onLike) {
       actions.push(
-        <button key="like" onClick={() => onLike(card.id)} className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium ${card.isLiked ? 'bg-red-50 dark:bg-red-900/20' : 'hover:bg-black/5'}`} style={{ color: card.isLiked ? '#ef4444' : 'var(--text-primary)' }}>
+        <button key="like" onClick={() => onLike(card.id)} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium ${card.isLiked ? 'bg-red-50 dark:bg-red-900/20' : 'hover:bg-black/5'}`} style={{ color: card.isLiked ? '#ef4444' : 'var(--text-primary)' }}>
           <Heart size={14} className={card.isLiked ? 'fill-current' : ''} /> {(card.likesCount > 0 || card.isLiked) ? card.likesCount : ''}
         </button>
       )
     }
     if (onDelete && isImage && raw.filename) {
       actions.push(
-        <button key="delete" onClick={() => onDelete(raw.filename)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">
+        <button key="delete" onClick={() => onDelete(raw.filename)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">
           <Trash2 size={14} /> 删除
         </button>
       )
     }
     if (onShare && isImage && raw.filename) {
       actions.push(
-        <button key="share" onClick={() => onShare(card)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
+        <button key="share" onClick={() => onShare(card)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
           分享广场
         </button>
       )
     }
     if (onExtend && isImage && raw.filename && !card.is_permanent) {
       actions.push(
-        <button key="extend" onClick={() => onExtend(card)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
+        <button key="extend" onClick={() => onExtend(card)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
           延长3天(-2积分)
         </button>
       )
@@ -317,9 +323,9 @@ export default function UnifiedDetailModal({
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 md:p-4" onClick={onClose}>
         <div
-          className="bg-white dark:bg-gray-900 rounded-2xl overflow-hidden max-w-4xl w-full max-h-[90vh] flex flex-col md:flex-row shadow-2xl relative"
+          className="bg-white dark:bg-gray-900 rounded-2xl overflow-hidden max-w-5xl w-full h-[88vh] md:h-[84vh] flex flex-col md:flex-row shadow-2xl relative"
           onClick={(e) => e.stopPropagation()}
           onTouchStart={hasNavigation ? handleTouchStart : undefined}
           onTouchMove={hasNavigation ? handleTouchMove : undefined}
@@ -338,8 +344,8 @@ export default function UnifiedDetailModal({
 
           {renderLeftPanel()}
 
-          <div className="md:w-2/5 p-5 flex flex-col gap-4 overflow-y-auto" style={{ color: 'var(--text-primary)' }}>
-            <div className="flex items-center justify-between">
+          <div className={`md:w-2/5 flex-1 md:flex-none p-3.5 md:p-4 flex flex-col gap-2.5 overflow-y-auto transition-opacity duration-150 ${contentVisible ? 'opacity-100' : 'opacity-0'}`} style={{ color: 'var(--text-primary)' }}>
+            <div className="flex items-center justify-between mb-0.5">
               <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{title}</span>
               <div className="flex items-center gap-2">
                 {allowMetadataEdit && isImage && raw.filename && !detailExtra && (editing ? <button onClick={handleSaveMetadata} disabled={saving} className="p-1 rounded hover:bg-black/5" style={{ color: 'var(--accent)' }}><Check size={16} /></button> : <button onClick={startEditing} className="p-1 rounded hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}><Edit2 size={16} /></button>)}
@@ -349,7 +355,7 @@ export default function UnifiedDetailModal({
 
             {detailExtra || (isImage ? renderImageDetail() : renderPromptDetail())}
 
-            <div className="flex flex-wrap gap-2 mt-auto pt-2">
+            <div className="flex flex-wrap gap-1.5 mt-auto pt-1.5">
               {renderActions()}
             </div>
           </div>
