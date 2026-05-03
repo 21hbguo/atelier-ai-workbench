@@ -43,6 +43,26 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
       textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px'
     }
   }, [prompt])
+  useEffect(() => {
+    const ta = textareaRef.current
+    if (!ta) return
+    const resetWindowScroll = () => {
+      window.scrollTo(0, 0)
+      document.documentElement.scrollTop = 0
+      document.body.scrollTop = 0
+    }
+    const onBlur = () => setTimeout(resetWindowScroll, 0)
+    const vv = window.visualViewport
+    const onViewportChange = () => {
+      if (document.activeElement !== ta) setTimeout(resetWindowScroll, 0)
+    }
+    ta.addEventListener('blur', onBlur)
+    vv?.addEventListener('resize', onViewportChange)
+    return () => {
+      ta.removeEventListener('blur', onBlur)
+      vv?.removeEventListener('resize', onViewportChange)
+    }
+  }, [])
 
   useImperativeHandle(ref, () => ({
     addFiles(files) { handleFiles(files) },

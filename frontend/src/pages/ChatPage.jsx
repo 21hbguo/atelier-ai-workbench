@@ -193,6 +193,13 @@ export default function ChatPage() {
     window.addEventListener('gallery-updated', handler)
     return () => window.removeEventListener('gallery-updated', handler)
   }, [refreshTasks])
+  useEffect(() => {
+    const vk = navigator.virtualKeyboard
+    if (!vk) return
+    const prev = vk.overlaysContent
+    vk.overlaysContent = true
+    return () => { vk.overlaysContent = prev }
+  }, [])
 
   const scroll = useCallback(() => {
     const el = feedRef.current
@@ -530,9 +537,28 @@ export default function ChatPage() {
     onDragOver: handleDragOver,
     onDrop: handleDrop,
   }
+  const bottomDock = (
+    <div className="lg:static fixed inset-x-0 z-20 flex-shrink-0" style={{ background: 'var(--bg-primary)', borderTop: `1px solid var(--border-color)`, bottom: 'env(keyboard-inset-height, 0px)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      {selectMode && checked.size > 0 && (
+        <div className="px-4 py-3 flex items-center gap-3" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
+          <span className="text-sm" style={{ color: 'var(--text-primary)' }}>已选 {checked.size} 项</span>
+          <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>
+            {checked.size === visibleTasks.length ? '取消全选' : '全选'}
+          </button>
+          <div className="ml-auto flex gap-2">
+            <button onClick={handleBatchExtend} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: '#2563eb' }}>延长3天</button>
+            <button onClick={handleBatchDownload} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}><Download size={14} /> 下载</button>
+            <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"><Trash2 size={14} /> 删除</button>
+          </div>
+        </div>
+      )}
+      <ChatInput ref={inputRef} onSubmit={handleSubmit} loading={loading} requestCost={isAdmin ? 0 : 10} />
+    </div>
+  )
 
   return (
     <MainLayout dragProps={dragProps}>
+      <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {dragging && (
         <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none" style={{ background: 'var(--bg-primary)', opacity: 0.92 }}>
           <div className="flex flex-col items-center gap-3">
@@ -579,7 +605,7 @@ export default function ChatPage() {
         )}
       </div>
       {loadError && <div className="mx-4 mt-2 px-3 py-2 rounded-lg text-xs" style={{ background: 'rgba(245,158,11,.12)', color: '#b45309' }}>{loadError}</div>}
-      <div ref={feedRef} className="flex-1 overflow-y-auto px-4 pb-6">
+      <div ref={feedRef} className="flex-1 min-h-0 overflow-y-auto px-4 pb-56 lg:pb-6">
         {!loaded ? (
           <div className="flex justify-center items-center h-full"><div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} /></div>
         ) : visibleTasks.length === 0 ? (
@@ -593,20 +619,7 @@ export default function ChatPage() {
           </div>
         )}
       </div>
-      {selectMode && checked.size > 0 && (
-        <div className="border-t px-4 py-3 flex items-center gap-3" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
-          <span className="text-sm" style={{ color: 'var(--text-primary)' }}>已选 {checked.size} 项</span>
-          <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>
-            {checked.size === visibleTasks.length ? '取消全选' : '全选'}
-          </button>
-          <div className="ml-auto flex gap-2">
-            <button onClick={handleBatchExtend} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: '#2563eb' }}>延长3天</button>
-            <button onClick={handleBatchDownload} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}><Download size={14} /> 下载</button>
-            <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"><Trash2 size={14} /> 删除</button>
-          </div>
-        </div>
-      )}
-      <ChatInput ref={inputRef} onSubmit={handleSubmit} loading={loading} requestCost={isAdmin ? 0 : 10} />
+      {bottomDock}
 
       {selectedCardIndex !== null && visibleDetailCards.length > 0 && visibleDetailCards[selectedCardIndex] && (() => {
         const currentCard = visibleDetailCards[selectedCardIndex]
@@ -629,6 +642,7 @@ export default function ChatPage() {
         />
         )
       })()}
+      </div>
     </MainLayout>
   )
 }

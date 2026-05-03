@@ -19,7 +19,7 @@ export default function MainLayout({ children, dragProps }) {
   return (
     <div className="flex h-[100dvh] overflow-hidden safe-area-bottom" {...dragProps}>
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
         <div className="mobile-topbar-shell safe-area-top lg:hidden" style={{ borderColor: 'var(--border-color)' }}>
           <div className="mobile-topbar-inner">
             <button onClick={() => setSidebarOpen(true)} className="mobile-topbar-menu" style={{ color: 'var(--text-primary)' }}><Menu size={20} className="block" /></button>
@@ -35,7 +35,7 @@ export default function MainLayout({ children, dragProps }) {
             </div>
           </div>
         </div>
-        {children}
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">{children}</div>
       </div>
     </div>
   )
