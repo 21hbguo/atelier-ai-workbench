@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { ThemeProvider } from './ThemeContext'
 import ErrorBoundary from './components/ErrorBoundary'
@@ -7,20 +7,20 @@ import { useUserSync } from './hooks/useUserSync'
 import AnnouncementModal from './components/AnnouncementModal'
 import { announcementAPI, authAPI } from './api'
 import { clearUser, readUser, writeUser } from './auth'
-import ChatPage from './pages/ChatPage'
-import PromptsPage from './pages/PromptsPage'
-import SettingsPage from './pages/SettingsPage'
-import LoginPage from './pages/LoginPage'
-import SquarePage from './pages/SquarePage'
-import AdminPage from './pages/AdminPage'
-import AgreementPage from './pages/AgreementPage'
-import PrivacyPage from './pages/PrivacyPage'
-import RefundPage from './pages/RefundPage'
-import RedeemPage from './pages/RedeemPage'
-import WalletPage from './pages/WalletPage'
-import AnnouncementsPage from './pages/AnnouncementsPage'
-import NotificationsPage from './pages/NotificationsPage'
-import SharesPage from './pages/SharesPage'
+const ChatPage = lazy(() => import('./pages/ChatPage'))
+const PromptsPage = lazy(() => import('./pages/PromptsPage'))
+const SettingsPage = lazy(() => import('./pages/SettingsPage'))
+const LoginPage = lazy(() => import('./pages/LoginPage'))
+const SquarePage = lazy(() => import('./pages/SquarePage'))
+const AdminPage = lazy(() => import('./pages/AdminPage'))
+const AgreementPage = lazy(() => import('./pages/AgreementPage'))
+const PrivacyPage = lazy(() => import('./pages/PrivacyPage'))
+const RefundPage = lazy(() => import('./pages/RefundPage'))
+const RedeemPage = lazy(() => import('./pages/RedeemPage'))
+const WalletPage = lazy(() => import('./pages/WalletPage'))
+const AnnouncementsPage = lazy(() => import('./pages/AnnouncementsPage'))
+const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
+const SharesPage = lazy(() => import('./pages/SharesPage'))
 
 function ProtectedRoute({ children, authReady, user }) {
   if (!authReady) return null
@@ -96,13 +96,14 @@ function AppContent() {
     window.addEventListener('auth-changed', sync)
     return () => { active = false; window.removeEventListener('auth-changed', sync) }
   }, [])
+  const routeFallback = <div className="min-h-screen flex items-center justify-center text-sm" style={{ color: 'var(--text-secondary)' }}>加载中...</div>
   return (
     <ErrorBoundary>
     <ThemeProvider>
       <AppDialogProvider>
       <BrowserRouter>
         <AnnouncementManager user={user} />
-        <Routes>
+        <Suspense fallback={routeFallback}><Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/agreement" element={<AgreementPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
@@ -117,7 +118,7 @@ function AppContent() {
           <Route path="/shares" element={<ProtectedRoute authReady={authReady} user={user}><SharesPage /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute authReady={authReady} user={user}><SettingsPage /></ProtectedRoute>} />
           <Route path="/admin" element={<AdminRoute authReady={authReady} user={user}><AdminPage /></AdminRoute>} />
-        </Routes>
+        </Routes></Suspense>
       </BrowserRouter>
       </AppDialogProvider>
     </ThemeProvider>
