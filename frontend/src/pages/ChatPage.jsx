@@ -309,8 +309,8 @@ export default function ChatPage() {
 
     try {
       const data = hasImages
-        ? (await generateAPI.submitTextImage({ prompt, image_urls: imageUrls, size: params?.size || 'auto', task_id: taskId, share_to_square: !!shareToSquare })).data
-        : (await generateAPI.submitText({ prompt, size: params?.size || 'auto', task_id: taskId, share_to_square: !!shareToSquare })).data
+        ? (await generateAPI.submitTextImage({ prompt, image_urls: imageUrls, size: params?.size || 'auto', model_id: params?.model_id, task_id: taskId, share_to_square: !!shareToSquare })).data
+        : (await generateAPI.submitText({ prompt, size: params?.size || 'auto', model_id: params?.model_id, task_id: taskId, share_to_square: !!shareToSquare })).data
 
       if (!isAdmin) {
         setPoints(p => Math.max(0, p - 10))

@@ -1,10 +1,10 @@
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from backend.config import get_generation_models, get_generation_providers, get_default_model_id
-from backend.services.providers import WuyinImageProvider
+from backend.services.providers import WuyinImageProvider, GrsAIProvider
 
 class GenGateway:
-    _providers={"wuyin":WuyinImageProvider}
+    _providers={"wuyin":WuyinImageProvider,"grsai":GrsAIProvider}
     _health: Dict[str, Dict[str, Any]]={}
     @classmethod
     def _now(cls):
