@@ -21,6 +21,7 @@ export default function AdminPage() {
   const [historyPage, setHistoryPage] = useState(1)
   const [userTotal, setUserTotal] = useState(0)
   const [historyTotal, setHistoryTotal] = useState(0)
+  const [historySummary, setHistorySummary] = useState({ total: 0, pending: 0, queued: 0, processing: 0, running: 0, generating: 0, completed: 0, failed: 0 })
   const [systemStats, setSystemStats] = useState(null)
   const [bizStats, setBizStats] = useState(null)
   const [overviewStats, setOverviewStats] = useState(null)
@@ -110,6 +111,7 @@ export default function AdminPage() {
       const { data } = await adminAPI.history(historyPage, 20, historyQuery || undefined)
       setHistory(data.items)
       setHistoryTotal(data.total)
+      setHistorySummary(data.summary || { total: data.total || 0, pending: 0, queued: 0, processing: 0, running: 0, generating: 0, completed: 0, failed: 0 })
     } catch {} finally { setLoading(false) }
   }
   const fetchSystemStats = async () => {
@@ -1007,6 +1009,16 @@ export default function AdminPage() {
               <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>共 {historyTotal} 条记录</span>
               <SearchInput value={historyQuery} onChange={setHistoryQuery} placeholder="搜索提示词/用户名..." />
             </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 mb-4">
+              <div className="px-3 py-2 rounded-lg border" style={{ borderColor: 'var(--border-color)' }}><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>总计</div><div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{historySummary.total || 0}</div></div>
+              <div className="px-3 py-2 rounded-lg border" style={{ borderColor: 'var(--border-color)' }}><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>等待中</div><div className="text-sm font-semibold" style={{ color: '#6b7280' }}>{historySummary.pending || 0}</div></div>
+              <div className="px-3 py-2 rounded-lg border" style={{ borderColor: 'var(--border-color)' }}><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>排队中</div><div className="text-sm font-semibold" style={{ color: '#f59e0b' }}>{historySummary.queued || 0}</div></div>
+              <div className="px-3 py-2 rounded-lg border" style={{ borderColor: 'var(--border-color)' }}><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>生成中</div><div className="text-sm font-semibold" style={{ color: '#f59e0b' }}>{(historySummary.processing || 0) + (historySummary.running || 0) + (historySummary.generating || 0)}</div></div>
+              <div className="px-3 py-2 rounded-lg border" style={{ borderColor: 'var(--border-color)' }}><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>processing</div><div className="text-sm font-semibold" style={{ color: '#f59e0b' }}>{historySummary.processing || 0}</div></div>
+              <div className="px-3 py-2 rounded-lg border" style={{ borderColor: 'var(--border-color)' }}><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>running</div><div className="text-sm font-semibold" style={{ color: '#f59e0b' }}>{historySummary.running || 0}</div></div>
+              <div className="px-3 py-2 rounded-lg border" style={{ borderColor: 'var(--border-color)' }}><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>已完成</div><div className="text-sm font-semibold" style={{ color: '#22c55e' }}>{historySummary.completed || 0}</div></div>
+              <div className="px-3 py-2 rounded-lg border" style={{ borderColor: 'var(--border-color)' }}><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>失败</div><div className="text-sm font-semibold" style={{ color: '#ef4444' }}>{historySummary.failed || 0}</div></div>
+            </div>
             {loading ? (
               <div className="flex justify-center py-20">
                 <div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} />
@@ -1021,6 +1033,8 @@ export default function AdminPage() {
                     <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>用户</th>
                     <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>提示词</th>
                     <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>状态</th>
+                    <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>积分消耗</th>
+                    <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>积分剩余</th>
                     <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>耗时</th>
                     <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>IP</th>
                     <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>时间</th>
@@ -1039,6 +1053,8 @@ export default function AdminPage() {
                         <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{item.nickname || item.username || '-'}</td>
                         <td className="px-3 py-2 truncate max-w-[200px]" style={{ color: 'var(--text-secondary)' }}>{item.prompt || '无提示词'}</td>
                         <td className="px-3 py-2 text-center"><span className="px-2 py-0.5 rounded-full" style={{ color: s.c, background: s.c + '20' }}>{s.l}</span></td>
+                        <td className="px-3 py-2 text-center tabular-nums" style={{ color: 'var(--text-secondary)' }}>{item.points_cost ?? '-'}</td>
+                        <td className="px-3 py-2 text-center tabular-nums" style={{ color: 'var(--text-secondary)' }}>{item.points_balance_after ?? '-'}</td>
                         <td className="px-3 py-2 text-center tabular-nums" style={{ color: 'var(--text-secondary)' }}>{duration !== null ? `${duration}s` : '-'}</td>
                         <td className="px-3 py-2 text-center" style={{ color: 'var(--text-secondary)' }}>{item.last_ip || '-'}</td>
                         <td className="px-3 py-2 text-center whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{item.created_at}</td>

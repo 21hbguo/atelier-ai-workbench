@@ -93,10 +93,12 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
     _check_generate_rate(user_id)
 
     is_admin = user.get("is_admin")
+    cost = 0
+    points_balance_after = None
     if not is_admin:
         cost = PointsService.cost_per_generation()
         try:
-            PointsService.consume(user_id, cost, "生成消耗")
+            points_balance_after = PointsService.consume(user_id, cost, "生成消耗")
         except ValueError:
             raise HTTPException(status_code=402, detail=f"积分不足，需要 {cost} 积分")
 
@@ -115,7 +117,7 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
                 PointsService.refund(user_id, PointsService.cost_per_generation(), "违禁词退还")
             raise HTTPException(status_code=400, detail="提示词包含违禁词，请修改后重试")
 
-        TaskManager.create_task(task_id, "text", {"prompt": request.prompt, "size": request.size, "share_to_square": bool(request.share_to_square)}, user_id=user_id)
+        TaskManager.create_task(task_id, "text", {"prompt": request.prompt, "size": request.size, "share_to_square": bool(request.share_to_square)}, user_id=user_id, points_cost=cost, points_balance_after=points_balance_after)
         TaskManager.update_task(task_id, status="processing", progress=10)
         logger.info(f"[submit.task_created] type=text task={task_id} user={user_id}")
         meta = {"prompt": request.prompt, "size": request.size, "type": "text", "task_id": task_id, "share_to_square": bool(request.share_to_square)}
@@ -142,10 +144,12 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
     _check_generate_rate(user_id)
 
     is_admin = user.get("is_admin")
+    cost = 0
+    points_balance_after = None
     if not is_admin:
         cost = PointsService.cost_per_generation()
         try:
-            PointsService.consume(user_id, cost, "生成消耗")
+            points_balance_after = PointsService.consume(user_id, cost, "生成消耗")
         except ValueError:
             raise HTTPException(status_code=402, detail=f"积分不足，需要 {cost} 积分")
 
@@ -164,7 +168,7 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
                 PointsService.refund(user_id, PointsService.cost_per_generation(), "违禁词退还")
             raise HTTPException(status_code=400, detail="提示词包含违禁词，请修改后重试")
 
-        TaskManager.create_task(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square)}, user_id=user_id)
+        TaskManager.create_task(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square)}, user_id=user_id, points_cost=cost, points_balance_after=points_balance_after)
         TaskManager.update_task(task_id, status="processing", progress=10)
         logger.info(f"[submit.task_created] type=text_image task={task_id} user={user_id}")
         meta = {"prompt": request.prompt, "size": request.size, "type": "text_image", "task_id": task_id, "input_urls": request.image_urls, "share_to_square": bool(request.share_to_square)}

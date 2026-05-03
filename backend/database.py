@@ -273,6 +273,10 @@ def init_db():
                 conn.execute("ALTER TABLE image_metadata ADD COLUMN expires_at TIMESTAMP")
             if not _column_exists(conn, "image_metadata", "is_permanent"):
                 conn.execute("ALTER TABLE image_metadata ADD COLUMN is_permanent BOOLEAN DEFAULT FALSE")
+            if not _column_exists(conn, "tasks", "points_cost"):
+                conn.execute("ALTER TABLE tasks ADD COLUMN points_cost INTEGER DEFAULT 0")
+            if not _column_exists(conn, "tasks", "points_balance_after"):
+                conn.execute("ALTER TABLE tasks ADD COLUMN points_balance_after INTEGER")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_image_metadata_expires_at ON image_metadata(expires_at)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_image_metadata_is_permanent ON image_metadata(is_permanent)")
             conn.execute("UPDATE image_metadata m SET is_permanent = TRUE, expires_at = NULL WHERE EXISTS (SELECT 1 FROM square_images s WHERE s.filename = m.filename)")

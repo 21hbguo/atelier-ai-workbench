@@ -82,15 +82,15 @@ class TaskManager:
                 conn.execute(
                     """INSERT INTO tasks
                        (task_id, type, status, params, created_at, updated_at,
-                        started_at, completed_at, progress, result_urls, error, external_result, user_id)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        started_at, completed_at, progress, result_urls, error, external_result, user_id, points_cost, points_balance_after)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                        ON CONFLICT(task_id) DO UPDATE SET
                         type=EXCLUDED.type, status=EXCLUDED.status, params=EXCLUDED.params,
                         created_at=EXCLUDED.created_at, updated_at=EXCLUDED.updated_at,
                         started_at=EXCLUDED.started_at, completed_at=EXCLUDED.completed_at,
                         progress=EXCLUDED.progress, result_urls=EXCLUDED.result_urls,
                         error=EXCLUDED.error, external_result=EXCLUDED.external_result,
-                        user_id=EXCLUDED.user_id""",
+                        user_id=EXCLUDED.user_id, points_cost=EXCLUDED.points_cost, points_balance_after=EXCLUDED.points_balance_after""",
                     (
                         task_id,
                         task.get("type", "text"),
@@ -105,6 +105,8 @@ class TaskManager:
                         task.get("error"),
                         json.dumps(task.get("external_result"), ensure_ascii=False) if task.get("external_result") else None,
                         task.get("user_id"),
+                        task.get("points_cost", 0),
+                        task.get("points_balance_after"),
                     ),
                 )
 
@@ -114,7 +116,7 @@ class TaskManager:
             conn.execute("DELETE FROM tasks WHERE task_id = %s", (task_id,))
 
     @classmethod
-    def create_task(cls, task_id: str, task_type: str, params: Dict[str, Any], user_id: int = None) -> Dict[str, Any]:
+    def create_task(cls, task_id: str, task_type: str, params: Dict[str, Any], user_id: int = None, points_cost: int = 0, points_balance_after: Optional[int] = None) -> Dict[str, Any]:
         task = {
             "task_id": task_id,
             "type": task_type,
@@ -128,6 +130,8 @@ class TaskManager:
             "result_urls": [],
             "error": None,
             "user_id": user_id,
+            "points_cost": points_cost,
+            "points_balance_after": points_balance_after,
         }
         cls._tasks[task_id] = task
         cls._save_to_db(task_id, task)

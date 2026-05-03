@@ -233,21 +233,18 @@ async def list_history(page: int = Query(1, ge=1), size: int = Query(20, ge=1, l
         if query:
             q = f"%{query}%"
             total = conn.execute(
-                "SELECT COUNT(*) as cnt FROM tasks t LEFT JOIN users u ON t.user_id = u.id WHERE t.params LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s",
+                "SELECT COUNT(*) as cnt FROM tasks t LEFT JOIN users u ON t.user_id = u.id WHERE t.params::text LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s",
                 (q, q, q),
             ).fetchone()["cnt"]
-            rows = conn.execute(
+            summary_rows = conn.execute(
                 """
-                SELECT t.task_id, t.type, t.status, t.params, t.created_at, t.updated_at,
-                       t.started_at, t.completed_at, t.result_urls, t.error, t.user_id,
-                       u.username, u.nickname, u.last_ip
+                SELECT LOWER(COALESCE(t.status, 'pending')) AS status, COUNT(*) AS cnt
                 FROM tasks t
                 LEFT JOIN users u ON t.user_id = u.id
-                WHERE t.params LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s
-                ORDER BY t.updated_at DESC
-                LIMIT %s OFFSET %s
+                WHERE t.params::text LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s
+                GROUP BY LOWER(COALESCE(t.status, 'pending'))
                 """,
-                (q, q, q, size, offset),
+                (q, q, q),
             ).fetchall()
         else:
             total = conn.execute("SELECT COUNT(*) as cnt FROM tasks").fetchone()["cnt"]
@@ -255,7 +252,7 @@ async def list_history(page: int = Query(1, ge=1), size: int = Query(20, ge=1, l
                 """
                 SELECT t.task_id, t.type, t.status, t.params, t.created_at, t.updated_at,
                        t.started_at, t.completed_at, t.result_urls, t.error, t.user_id,
-                       u.username, u.nickname, u.last_ip
+                       u.username, u.nickname, u.last_ip, t.points_cost, t.points_balance_after
                 FROM tasks t
                 LEFT JOIN users u ON t.user_id = u.id
                 ORDER BY t.updated_at DESC
@@ -263,13 +260,40 @@ async def list_history(page: int = Query(1, ge=1), size: int = Query(20, ge=1, l
                 """,
                 (size, offset),
             ).fetchall()
+            summary_rows = conn.execute(
+                """
+                SELECT LOWER(COALESCE(status, 'pending')) AS status, COUNT(*) AS cnt
+                FROM tasks
+                GROUP BY LOWER(COALESCE(status, 'pending'))
+                """
+            ).fetchall()
+        if query:
+            rows = conn.execute(
+                """
+                SELECT t.task_id, t.type, t.status, t.params, t.created_at, t.updated_at,
+                       t.started_at, t.completed_at, t.result_urls, t.error, t.user_id,
+                       u.username, u.nickname, u.last_ip, t.points_cost, t.points_balance_after
+                FROM tasks t
+                LEFT JOIN users u ON t.user_id = u.id
+                WHERE t.params::text LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s
+                ORDER BY t.updated_at DESC
+                LIMIT %s OFFSET %s
+                """,
+                (q, q, q, size, offset),
+            ).fetchall()
 
         items = []
         for row in rows:
             d = dict(row)
-            try:
-                params = json.loads(d.get("params") or "{}")
-            except (json.JSONDecodeError, TypeError):
+            raw_params = d.get("params")
+            if isinstance(raw_params, dict):
+                params = raw_params
+            elif isinstance(raw_params, str):
+                try:
+                    params = json.loads(raw_params or "{}")
+                except (json.JSONDecodeError, TypeError):
+                    params = {}
+            else:
                 params = {}
             d["prompt"] = params.get("prompt", "")
             d["size"] = params.get("size", "")
@@ -279,8 +303,12 @@ async def list_history(page: int = Query(1, ge=1), size: int = Query(20, ge=1, l
             except (json.JSONDecodeError, TypeError):
                 d["result_urls"] = []
             items.append(d)
-
-        return {"items": items, "total": total}
+        summary = {"total": int(total or 0), "pending": 0, "queued": 0, "processing": 0, "running": 0, "generating": 0, "completed": 0, "failed": 0}
+        for r in summary_rows:
+            s = str(r.get("status") or "pending").lower()
+            if s in summary:
+                summary[s] = int(r.get("cnt") or 0)
+        return {"items": items, "total": total, "summary": summary}
 
 
 @router.delete("/history/{task_id}")
