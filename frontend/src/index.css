@@ -82,3 +82,20 @@ input,textarea,[contenteditable="true"]{-webkit-user-select:text;user-select:tex
 .animate-fade-in-up { animation: fadeInUp 200ms ease-out; }
 .animate-pulse-slow { animation: pulse 2s ease-in-out infinite; }
 .animate-spin-slow { animation: spin 1s linear infinite; }
+.admin-dense .mb-6{margin-bottom:1rem!important}
+.admin-dense .mb-4{margin-bottom:.75rem!important}
+.admin-dense .mb-3{margin-bottom:.5rem!important}
+.admin-dense .mt-4{margin-top:.75rem!important}
+.admin-dense .mt-3{margin-top:.5rem!important}
+.admin-dense .p-4{padding:.75rem!important}
+.admin-dense .p-3{padding:.625rem!important}
+.admin-dense .px-4{padding-left:.75rem!important;padding-right:.75rem!important}
+.admin-dense .px-3{padding-left:.625rem!important;padding-right:.625rem!important}
+.admin-dense .py-3{padding-top:.5rem!important;padding-bottom:.5rem!important}
+.admin-dense .py-2\.5{padding-top:.425rem!important;padding-bottom:.425rem!important}
+.admin-dense .gap-4{gap:.75rem!important}
+.admin-dense .gap-3{gap:.5rem!important}
+.admin-dense .space-y-6>:not([hidden])~:not([hidden]){margin-top:1rem!important}
+.admin-dense .space-y-4>:not([hidden])~:not([hidden]){margin-top:.75rem!important}
+.admin-dense .space-y-3>:not([hidden])~:not([hidden]){margin-top:.5rem!important}
+.admin-dense th,.admin-dense td{line-height:1.25!important}
