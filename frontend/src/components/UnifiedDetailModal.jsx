@@ -23,6 +23,7 @@ export default function UnifiedDetailModal({
   onUseImage,
   onDelete,
   onShare,
+  onUnshare,
   onExtend,
   onMetadataSaved,
   detailExtra,
@@ -348,6 +349,13 @@ export default function UnifiedDetailModal({
       actions.push(
         <button key="share" onClick={() => onShare(card)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
           分享广场
+        </button>
+      )
+    }
+    if (onUnshare && raw.id) {
+      actions.push(
+        <button key="unshare" onClick={() => onUnshare(card)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/20">
+          撤回分享
         </button>
       )
     }

@@ -56,6 +56,7 @@ export default function ChatPage() {
   const inputRef = useRef(null)
   const dragCounter = useRef(0)
   const recoveringRef = useRef(new Set())
+  const squareIdMapRef = useRef({})
   const navigate = useNavigate()
   const timeRangeOptions = useMemo(() => ([{ k: '1d', l: '近1天' }, { k: '3d', l: '近3天' }, { k: '7d', l: '近7天' }, { k: 'all', l: '全部' }]), [])
   const visibleTasks = useMemo(() => {
@@ -142,7 +143,7 @@ export default function ChatPage() {
     const merged = [...orphans, ...allTasks.map(t => { const fn = t.result_urls?.[0]?.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, fn); return { ...t, expires_at: exp.expires_at || t.expires_at, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : t.is_permanent, days_left: typeof exp.days_left === 'number' ? exp.days_left : t.days_left, expired: typeof exp.expired === 'boolean' ? exp.expired : t.expired } })].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
     setTasks(merged)
     const completedMerged = merged.filter(t => t.status === 'completed' && t.result_urls?.length)
-    setDetailCards(completedMerged.flatMap(task => { const prompt = task.params?.prompt || task.prompt || ''; return task.result_urls.map((url, idx) => { const filename = url.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, filename); return { _type: 'image', _raw: { filename, metadata: { prompt, task_id: task.task_id, created_at: task.created_at, started_at: task.started_at, completed_at: task.completed_at, type: task.params?.image_urls?.length ? 'image' : 'text', size: task.params?.size, input_urls: task.params?.image_urls } }, id: `${task.task_id}-${idx}`, prompt, fullUrl: `/api/images/file/${filename}`, filename, expiresAt: exp.expires_at || task.expires_at || null, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : !!task.is_permanent, daysLeft: typeof exp.days_left === 'number' ? exp.days_left : task.days_left, expired: typeof exp.expired === 'boolean' ? exp.expired : !!task.expired } }) }))
+    setDetailCards(completedMerged.flatMap(task => { const prompt = task.params?.prompt || task.prompt || ''; return task.result_urls.map((url, idx) => { const filename = url.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, filename); return { _type: 'image', _raw: { filename, metadata: { prompt, task_id: task.task_id, created_at: task.created_at, started_at: task.started_at, completed_at: task.completed_at, type: task.params?.image_urls?.length ? 'image' : 'text', size: task.params?.size, input_urls: task.params?.image_urls } }, id: `${task.task_id}-${idx}`, prompt, fullUrl: `/api/images/file/${filename}`, filename, expiresAt: exp.expires_at || task.expires_at || null, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : !!task.is_permanent, daysLeft: typeof exp.days_left === 'number' ? exp.days_left : task.days_left, expired: typeof exp.expired === 'boolean' ? exp.expired : !!task.expired, square_image_id: squareIdMapRef.current[filename] || null } }) }))
     saveCachedActiveTasks(merged)
     if (!loaded) setLoaded(true)
   }, [loaded, isAdmin, selectedUserId, searchQuery, loadCachedActiveTasks, saveCachedActiveTasks])
@@ -423,13 +424,27 @@ export default function ChatPage() {
   }, [])
   const handleDetailShare = useCallback(async (card) => {
     try {
-      await squareAPI.share({ filename: card.filename, prompt: card.prompt || '', metadata: { size: card?._raw?.metadata?.size, type: card?._raw?.metadata?.type || 'text' } })
-      await refreshTasks()
+      const { data } = await squareAPI.share({ filename: card.filename, prompt: card.prompt || '', metadata: { size: card?._raw?.metadata?.size, type: card?._raw?.metadata?.type || 'text' } })
+      if (data?.id) squareIdMapRef.current[card.filename] = data.id
+      setDetailCards(prev => prev.map(c => c.filename === card.filename ? { ...c, square_image_id: data.id } : c))
       window.dispatchEvent(new Event('gallery-updated'))
     } catch (e) {
-      dialog.alert(e?.message || '分享失败')
+      dialog.alert(e?.response?.data?.detail || e.message || '分享失败')
     }
-  }, [refreshTasks])
+  }, [dialog])
+  const handleDetailUnshare = useCallback(async (card) => {
+    const sid = card.square_image_id || squareIdMapRef.current[card.filename]
+    if (!sid) { dialog.alert('无法找到分享记录'); return }
+    if (!await dialog.confirm('确定撤回该分享？')) return
+    try {
+      await squareAPI.unshare(sid)
+      delete squareIdMapRef.current[card.filename]
+      setDetailCards(prev => prev.map(c => c.filename === card.filename ? { ...c, square_image_id: null, is_permanent: false } : c))
+      window.dispatchEvent(new Event('gallery-updated'))
+    } catch (e) {
+      dialog.alert(e?.response?.data?.detail || e.message || '撤回失败')
+    }
+  }, [dialog])
   const handleExtendImages = useCallback(async (filenames) => {
     const uniq = [...new Set((filenames || []).filter(Boolean))]
     if (uniq.length === 0) { dialog.alert('没有可延长的图片'); return }
@@ -620,6 +635,8 @@ export default function ChatPage() {
           onClose={() => setSelectedCardIndex(null)}
           onUseImage={card => inputRef.current?.addImage(card.fullUrl)}
           onUsePrompt={handleAddPrompt}
+          onShare={detailCards[selectedCardIndex]?.square_image_id ? undefined : handleDetailShare}
+          onUnshare={detailCards[selectedCardIndex]?.square_image_id ? handleDetailUnshare : undefined}
           onExtend={handleDetailExtend}
           title="生成详情"
           allowMetadataEdit

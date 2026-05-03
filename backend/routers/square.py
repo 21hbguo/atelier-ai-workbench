@@ -38,6 +38,21 @@ async def share_to_square(req: ShareRequest, user=Depends(get_current_user)):
         return {"id": cursor.fetchone()["id"], "message": "分享成功"}
 
 
+@router.post("/unshare")
+async def unshare_from_square(image_id: int = Query(...), user=Depends(get_current_user)):
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id, filename FROM square_images WHERE id = %s AND user_id = %s",
+            (image_id, user["user_id"]),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="记录不存在或无权限")
+        conn.execute("DELETE FROM square_images WHERE id = %s", (image_id,))
+        from backend.services.image_expiry import refresh_permanent_flags_by_filenames
+        refresh_permanent_flags_by_filenames([row["filename"]], conn=conn)
+        return {"message": "已撤回分享"}
+
+
 @router.get("")
 async def list_square_images(
     page: int = Query(1, ge=1),

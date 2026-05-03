@@ -146,6 +146,8 @@ function WorksTab({ query, sort, isAdmin, dialog, refreshTrigger }) {
 
   const deps = useMemo(() => isAdmin ? [query, sort, status, refreshTrigger] : [query, sort, refreshTrigger], [query, sort, status, isAdmin, refreshTrigger])
 
+  useEffect(() => { setDetailIdx(null) }, [query, sort, status])
+
   const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike } = useCardData({
     type: 'image',
     apiFn: (p, s) => isAdmin
@@ -306,6 +308,18 @@ function WorksTab({ query, sort, isAdmin, dialog, refreshTrigger }) {
 function MySharesTab({ refreshTrigger }) {
   const [detailIdx, setDetailIdx] = useState(null)
   const { handleUsePrompt, handleUseImage } = useImageActions()
+  const dialog = useAppDialog()
+
+  const handleUnshare = useCallback(async (card) => {
+    if (!await dialog.confirm('确定撤回该分享？撤回后图片将恢复3天有效期。')) return
+    try {
+      await squareAPI.unshare(card._raw.id)
+      setDetailIdx(null)
+      refresh()
+    } catch (e) {
+      dialog.alert(e?.response?.data?.detail || e.message || '撤回失败')
+    }
+  }, [refresh])
 
   const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike } = useCardData({
     type: 'image',
@@ -350,6 +364,7 @@ function MySharesTab({ refreshTrigger }) {
           onLike={handleLike}
           onUsePrompt={handleUsePrompt}
           onUseImage={handleUseImage}
+          onUnshare={handleUnshare}
           title="我的作品"
           hideDownload
         />
@@ -366,6 +381,8 @@ function PromptsTab({ query, sort, activeCategory, isAdmin, dialog, refreshTrigg
   const [selectMode, setSelectMode] = useState(false)
   const [checked, setChecked] = useState(new Set())
   const deps = useMemo(() => isAdmin ? [query, sort, activeCategory, status, refreshTrigger] : [query, sort, activeCategory, refreshTrigger], [query, sort, activeCategory, status, isAdmin, refreshTrigger])
+
+  useEffect(() => { setDetailIdx(null) }, [activeCategory, query, sort])
 
   const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike } = useCardData({
     type: 'prompt',

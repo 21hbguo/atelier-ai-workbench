@@ -80,6 +80,7 @@ export const squareAPI = {
   list: (page = 1, size = 20, query, sort = 'likes') => { const params = { page, size, sort }; if (query) params.query = query; return api.get('/square', { params }) },
   my: (page = 1, size = 20) => api.get('/square/my', { params: { page, size } }),
   share: data => api.post('/square/share', data),
+  unshare: imageId => api.post(`/square/unshare?image_id=${imageId}`),
   like: imageId => api.post(`/square/like?image_id=${imageId}`),
 }
 
