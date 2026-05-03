@@ -94,6 +94,7 @@ export default function AdminPage() {
   const [editingProviderDraft, setEditingProviderDraft] = useState({ type: 'wuyin', enabled: true, priority: 100, api_url: '', api_key: '', circuit_fail_threshold: 3, circuit_cooldown_seconds: 60 })
   const [editingModelId, setEditingModelId] = useState('')
   const [editingModelDraft, setEditingModelDraft] = useState({ label: '', capability: 'image', enabled: true, providers: [] })
+  const [modelLabelMap, setModelLabelMap] = useState({})
 
   useEffect(() => { setUserPage(1) }, [userQuery])
   useEffect(() => { setHistoryPage(1) }, [historyQuery])
@@ -107,6 +108,7 @@ export default function AdminPage() {
   useEffect(() => { if (tab === 'recharge') fetchRechargeRequests() }, [tab, codesPage, codesSort, codesOrder, rechargeStatusFilter])
   useEffect(() => { if (tab === 'announcements') fetchAnnouncements() }, [tab, announcementPage])
   useEffect(() => { if (tab === 'config') fetchRuntimeConfig() }, [tab])
+  useEffect(() => { configAPI.models().then(({ data }) => { const rows = data?.models || []; const m = {}; for (const r of rows) m[r.model_id] = r.label || r.model_id; setModelLabelMap(m) }).catch(() => {}) }, [])
 
   const fetchUsers = async () => {
     setLoading(true)
@@ -656,7 +658,7 @@ export default function AdminPage() {
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>模型调用分布</div>
                     <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
-                      {(overviewStats?.generation?.models || []).slice(0, 12).map(i => <div key={`m-${i.model_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.model_label || i.model_id}`} style={{ color: 'var(--text-primary)' }}>{`${i.model_label || i.model_id} (${i.model_id})`}</span><span className="shrink-0" style={{ color: 'var(--text-secondary)' }}>{i.total} / {i.success_rate}%</span></div>)}
+                      {(overviewStats?.generation?.models || []).slice(0, 12).map(i => <div key={`m-${i.model_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.model_label || modelLabelMap[i.model_id] || i.model_id}`} style={{ color: 'var(--text-primary)' }}>{i.model_label || modelLabelMap[i.model_id] || i.model_id}</span><span className="shrink-0" style={{ color: 'var(--text-secondary)' }}>{i.total} / {i.success_rate}%</span></div>)}
                     </div>
                   </div>
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
@@ -693,7 +695,7 @@ export default function AdminPage() {
                       <tbody>
                         {(overviewStats?.generation?.matrix?.models || []).slice(0, 12).map(mid => (
                           <tr key={`mxr-${mid}`} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
-                            <td className="px-2 py-1.5 sticky left-0 z-10 whitespace-nowrap" style={{ color: 'var(--text-primary)', background: 'var(--bg-primary)' }}>{`${overviewStats?.generation?.matrix?.model_labels?.[mid] || mid} (${mid})`}</td>
+                            <td className="px-2 py-1.5 sticky left-0 z-10 whitespace-nowrap" style={{ color: 'var(--text-primary)', background: 'var(--bg-primary)' }}>{overviewStats?.generation?.matrix?.model_labels?.[mid] || modelLabelMap[mid] || mid}</td>
                             {(overviewStats?.generation?.matrix?.providers || []).map(pid => {
                               const cell = overviewStats?.generation?.matrix?.cells?.[mid]?.[pid]
                               return <td key={`mxc-${mid}-${pid}`} className="px-2 py-1.5 text-right whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{cell ? `${cell.total} / ${cell.success_rate}%` : '-'}</td>
@@ -1362,12 +1364,13 @@ export default function AdminPage() {
                       ? Math.round((new Date(item.completed_at) - new Date(item.started_at)) / 1000)
                       : null
                     const modelId = item?.params?.model_id || '-'
+                    const modelName = modelId === '-' ? '-' : (modelLabelMap[modelId] || modelId)
                     const providerId = item?.params?.provider_id || item?.params?.provider_trace?.[0]?.provider_id || '-'
                     return (
                       <tr key={item.task_id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
                         <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{item.nickname || item.username || '-'}</td>
                         <td className="px-3 py-2 truncate max-w-[200px]" style={{ color: 'var(--text-secondary)' }}>{item.prompt || '无提示词'}</td>
-                        <td className="px-3 py-2 text-center whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{modelId}</td>
+                        <td className="px-3 py-2 text-center whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{modelName}</td>
                         <td className="px-3 py-2 text-center whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{providerId}</td>
                         <td className="px-3 py-2 text-center"><span className="px-2 py-0.5 rounded-full" style={{ color: s.c, background: s.c + '20' }}>{s.l}</span></td>
                         <td className="px-3 py-2 text-center tabular-nums" style={{ color: 'var(--text-secondary)' }}>{item.points_cost ?? '-'}</td>
