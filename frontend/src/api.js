@@ -143,4 +143,9 @@ export const notificationAPI = {
   markAllRead: () => api.post('/notifications/read-all'),
 }
 
+export const accountAPI = {
+  changePassword: data => api.post('/account/change-password', data),
+  sessions: (page = 1, size = 20) => api.get('/account/security-sessions', { params: { page, size } }),
+}
+
 export default api

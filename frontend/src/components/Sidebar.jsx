@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useLocation, Link, useNavigate } from 'react-router-dom'
-import { Sun, Moon, BookOpen, MessageSquare, X, Globe, LogOut, User, Shield, Coins, Wallet, Megaphone, Bell } from 'lucide-react'
+import { Sun, Moon, BookOpen, MessageSquare, X, Globe, LogOut, User, Shield, Coins, Wallet, Megaphone, Bell, Settings } from 'lucide-react'
 import { useTheme } from '../ThemeContext'
 import { authAPI, pointsAPI, notificationAPI } from '../api'
 import { clearUser, readUser } from '../auth'
@@ -13,6 +13,7 @@ const navItems = [
   { path: '/wallet', icon: Wallet, label: '小金库' },
   { path: '/notifications', icon: Bell, label: '通知' },
   { path: '/announcements', icon: Megaphone, label: '公告' },
+  { path: '/settings', icon: Settings, label: '账号安全' },
 ]
 
 export default function Sidebar({ open, onClose }) {
@@ -89,8 +90,8 @@ export default function Sidebar({ open, onClose }) {
           })}
           {isAdmin && (
             <Link to="/admin"
-              className={`sidebar-nav-link ${location.pathname === '/admin' || location.pathname === '/settings' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
-              style={{ color: location.pathname === '/admin' || location.pathname === '/settings' ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: location.pathname === '/admin' || location.pathname === '/settings' ? 'var(--accent)15' : undefined }}
+              className={`sidebar-nav-link ${location.pathname === '/admin' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
+              style={{ color: location.pathname === '/admin' ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: location.pathname === '/admin' ? 'var(--accent)15' : undefined }}
               onClick={() => onClose?.()}>
               <Shield size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">管理后台</span>
             </Link>
