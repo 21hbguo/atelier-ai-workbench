@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useLocation, Link, useNavigate } from 'react-router-dom'
-import { Sun, Moon, BookOpen, MessageSquare, X, Settings, Globe, LogOut, User, Shield, Coins, Wallet, Megaphone } from 'lucide-react'
+import { Sun, Moon, BookOpen, MessageSquare, X, Globe, LogOut, User, Shield, Coins, Wallet, Megaphone } from 'lucide-react'
 import { useTheme } from '../ThemeContext'
 import { authAPI, pointsAPI } from '../api'
 import { clearUser, readUser } from '../auth'
@@ -81,20 +81,12 @@ export default function Sidebar({ open, onClose }) {
             )
           })}
           {isAdmin && (
-            <>
-              <Link to="/settings"
-                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-colors duration-150 ${location.pathname === '/settings' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
-                style={{ color: location.pathname === '/settings' ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: location.pathname === '/settings' ? 'var(--accent)15' : undefined }}
-                onClick={() => onClose?.()}>
-                <Settings size={16} />设置
-              </Link>
-              <Link to="/admin"
-                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-colors duration-150 ${location.pathname === '/admin' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
-                style={{ color: location.pathname === '/admin' ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: location.pathname === '/admin' ? 'var(--accent)15' : undefined }}
-                onClick={() => onClose?.()}>
-                <Shield size={16} />管理后台
-              </Link>
-            </>
+            <Link to="/admin"
+              className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-colors duration-150 ${location.pathname === '/admin' || location.pathname === '/settings' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
+              style={{ color: location.pathname === '/admin' || location.pathname === '/settings' ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: location.pathname === '/admin' || location.pathname === '/settings' ? 'var(--accent)15' : undefined }}
+              onClick={() => onClose?.()}>
+              <Shield size={16} />管理后台
+            </Link>
           )}
         </nav>
         <div className="px-2 py-2 border-t space-y-0.5" style={{ borderColor: 'var(--border-color)' }}>
