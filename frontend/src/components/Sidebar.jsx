@@ -74,37 +74,37 @@ export default function Sidebar({ open, onClose }) {
           {navItems.map(({ path, icon: Icon, label }) => {
             const active = location.pathname === path
             return (
-              <Link key={path} to={path}
-                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-colors duration-150 ${active ? 'bg-accent/10' : 'hover:bg-black/5'}`}
+            <Link key={path} to={path}
+                className={`sidebar-nav-link ${active ? 'bg-accent/10' : 'hover:bg-black/5'}`}
                 style={{ color: active ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: active ? 'var(--accent)15' : undefined }}
                 onClick={() => onClose?.()}>
-                <Icon size={16} />{label}
+                <Icon size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">{label}</span>
               </Link>
             )
           })}
           {isAdmin && (
             <Link to="/admin"
-              className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-colors duration-150 ${location.pathname === '/admin' || location.pathname === '/settings' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
+              className={`sidebar-nav-link ${location.pathname === '/admin' || location.pathname === '/settings' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
               style={{ color: location.pathname === '/admin' || location.pathname === '/settings' ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: location.pathname === '/admin' || location.pathname === '/settings' ? 'var(--accent)15' : undefined }}
               onClick={() => onClose?.()}>
-              <Shield size={16} />管理后台
+              <Shield size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">管理后台</span>
             </Link>
           )}
         </nav>
         <div className="px-2 py-2 border-t space-y-0.5" style={{ borderColor: 'var(--border-color)' }}>
           {user && (
-            <div className="flex items-center gap-2.5 px-2.5 py-2">
-              <User size={16} style={{ color: 'var(--text-secondary)' }} />
-              <span className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{user.nickname || user.username}</span>
+            <div className="sidebar-user-row">
+              <User size={16} className="sidebar-nav-icon" style={{ color: 'var(--text-secondary)' }} />
+              <span className="sidebar-nav-text text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{user.nickname || user.username}</span>
             </div>
           )}
-          <button onClick={toggle} className="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-sm font-medium hover:bg-black/5 transition-colors"
+          <button onClick={toggle} className="sidebar-control-btn hover:bg-black/5"
             style={{ color: 'var(--text-primary)' }}>
-            {dark ? <Sun size={16} /> : <Moon size={16} />}{dark ? '浅色' : '深色'}
+            {dark ? <Sun size={16} className="sidebar-nav-icon" /> : <Moon size={16} className="sidebar-nav-icon" />}<span className="sidebar-nav-text">{dark ? '浅色' : '深色'}</span>
           </button>
-          <button onClick={handleLogout} className="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-sm font-medium hover:bg-black/5 transition-colors"
+          <button onClick={handleLogout} className="sidebar-control-btn hover:bg-black/5"
             style={{ color: 'var(--text-primary)' }}>
-            <LogOut size={16} />退出登录
+            <LogOut size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">退出登录</span>
           </button>
         </div>
         <div className="px-3 py-2 border-t flex flex-wrap gap-x-1 gap-y-0.5 text-xs opacity-50" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>

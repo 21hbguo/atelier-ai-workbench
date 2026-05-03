@@ -81,31 +81,31 @@ export default function SquarePage() {
   return (
     <MainLayout>
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="p-4 sm:p-6 pb-0">
-          <div className="flex gap-1 p-0.5 rounded-lg overflow-x-auto scrollbar-hide" style={{ background: 'var(--border-color)', scrollbarWidth: 'none' }}>
+        <div className="square-top-block sm:pt-4">
+          <div className="square-tab-strip scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
           {[{ k: 'works', l: '用户作品库', i: Image }, { k: 'prompts', l: '提示词库', i: BookOpen }, { k: 'my', l: '我的分享', i: Share2 }].map(({ k, l, i: Icon }) => (
-            <button key={k} onClick={() => handleTabChange(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`}
+            <button key={k} onClick={() => handleTabChange(k)} className={`square-tab-btn ${tab === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
-              <Icon size={14} />{l}
+              <Icon size={14} className="block shrink-0" /><span className="leading-none translate-y-[0.5px]">{l}</span>
             </button>
           ))}
           </div>
         </div>
-        <div className="px-4 sm:px-6 pt-3 pb-2">
-          <div className="flex items-center gap-3">
+        <div className="square-subtop-block sm:pt-3">
+          <div className="square-section-row">
             {tab !== 'my' && (
               <div className="flex gap-1">
-                <button onClick={() => setSort('likes')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${sort === 'likes' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
+                <button onClick={() => setSort('likes')} className={`square-filter-btn ${sort === 'likes' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
                   style={{ color: sort === 'likes' ? 'var(--accent)' : 'var(--text-secondary)' }}>最热</button>
-                <button onClick={() => setSort('time')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${sort === 'time' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
+                <button onClick={() => setSort('time')} className={`square-filter-btn ${sort === 'time' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
                   style={{ color: sort === 'time' ? 'var(--accent)' : 'var(--text-secondary)' }}>最新</button>
               </div>
             )}
-            <div className="flex-1" />
+            <div className="flex-1 min-w-0" />
             {tab !== 'my' && (
-              <SearchInput value={query} onChange={setQuery} placeholder={tab === 'works' ? '搜索提示词/作者...' : '搜索提示词...'} />
+              <div className="square-search-wrap"><SearchInput value={query} onChange={setQuery} placeholder={tab === 'works' ? '搜索提示词/作者...' : '搜索提示词...'} /></div>
             )}
-            <button onClick={handleRefresh} className="p-1.5 rounded-lg hover:bg-black/5 transition-colors" style={{ color: 'var(--text-secondary)' }}>
+            <button onClick={handleRefresh} className="inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-black/5 transition-colors" style={{ color: 'var(--text-secondary)' }}>
               <RefreshCw size={16} />
             </button>
           </div>

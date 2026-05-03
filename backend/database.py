@@ -211,8 +211,6 @@ def init_db():
             )""",
             "CREATE INDEX IF NOT EXISTS idx_point_tx_user_id ON point_transactions(user_id)",
             "CREATE INDEX IF NOT EXISTS idx_point_tx_created_at ON point_transactions(created_at DESC)",
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_point_tx_request_key ON point_transactions(request_key) WHERE request_key IS NOT NULL",
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_user_client_req ON tasks(user_id, ((params->>'client_request_id'))) WHERE params ? 'client_request_id'",
             """CREATE TABLE IF NOT EXISTS daily_checkins (
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL,
