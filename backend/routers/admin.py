@@ -163,9 +163,9 @@ async def batch_freeze_square(body: dict, admin=Depends(require_admin)):
     frozen = body.get("frozen", True)
     if not ids:
         raise HTTPException(status_code=400, detail="未提供要操作的ID")
+    ids = [int(i) for i in ids]
     with get_db() as conn:
-        placeholders = ",".join("%s" * len(ids))
-        conn.execute(f"UPDATE square_images SET is_frozen = %s WHERE id IN ({placeholders})", [frozen] + ids)
+        conn.execute("UPDATE square_images SET is_frozen = %s WHERE id = ANY(%s)", [frozen, ids])
         return {"message": f"已{'冻结' if frozen else '解冻'} {len(ids)} 张图片", "updated": len(ids)}
 
 
@@ -174,10 +174,10 @@ async def batch_delete_square(body: dict, admin=Depends(require_admin)):
     ids = body.get("ids", [])
     if not ids:
         raise HTTPException(status_code=400, detail="未提供要删除的ID")
+    ids = [int(i) for i in ids]
     with get_db() as conn:
-        placeholders = ",".join("%s" * len(ids))
-        conn.execute(f"DELETE FROM square_likes WHERE image_id IN ({placeholders})", ids)
-        conn.execute(f"DELETE FROM square_images WHERE id IN ({placeholders})", ids)
+        conn.execute("DELETE FROM square_likes WHERE image_id = ANY(%s)", (ids,))
+        conn.execute("DELETE FROM square_images WHERE id = ANY(%s)", (ids,))
         return {"message": f"已删除 {len(ids)} 张图片", "deleted": len(ids)}
 
 
@@ -465,10 +465,10 @@ async def batch_delete_prompts(body: dict, admin=Depends(require_admin)):
     ids = body.get("ids", [])
     if not ids:
         raise HTTPException(status_code=400, detail="未提供要删除的ID")
+    ids = [int(i) for i in ids]
     with get_db() as conn:
-        placeholders = ",".join("%s" * len(ids))
-        conn.execute(f"DELETE FROM prompt_likes WHERE prompt_id IN ({placeholders})", ids)
-        conn.execute(f"DELETE FROM prompts WHERE id IN ({placeholders})", ids)
+        conn.execute("DELETE FROM prompt_likes WHERE prompt_id = ANY(%s)", (ids,))
+        conn.execute("DELETE FROM prompts WHERE id = ANY(%s)", (ids,))
         return {"message": f"已删除 {len(ids)} 条提示词"}
 
 
