@@ -8,8 +8,8 @@ from backend.services.image_expiry import mark_image_permanent
 router = APIRouter(prefix="/api/square", tags=["square"])
 
 _SQUARE_ORDER_MAP = {
-    "likes": "si.likes_count DESC",
-    "time": "si.created_at DESC",
+    "likes": "si.likes_count DESC, si.id DESC",
+    "time": "si.created_at DESC, si.id DESC",
 }
 
 

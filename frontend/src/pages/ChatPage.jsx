@@ -58,14 +58,14 @@ export default function ChatPage() {
       if (!raw) return []
       const arr = JSON.parse(raw)
       if (!Array.isArray(arr)) return []
-      return arr.filter(t => t?.task_id && activeStatuses.includes(t.status))
+      return arr.filter(t => t?.task_id && !String(t.task_id).startsWith('pending-') && activeStatuses.includes(t.status))
     } catch {
       return []
     }
   }, [activeCacheKey])
   const saveCachedActiveTasks = useCallback((taskList) => {
     try {
-      const arr = (Array.isArray(taskList) ? taskList : []).filter(t => t?.task_id && activeStatuses.includes(t.status)).map(t => ({ task_id: t.task_id, status: t.status, progress: t.progress ?? 0, error: t.error || null, type: t.type || 'text', params: t.params || {}, prompt: t.prompt || '', created_at: t.created_at || '', started_at: t.started_at || '', completed_at: t.completed_at || null, result_urls: t.result_urls || [], _active: true }))
+      const arr = (Array.isArray(taskList) ? taskList : []).filter(t => t?.task_id && !String(t.task_id).startsWith('pending-') && activeStatuses.includes(t.status)).map(t => ({ task_id: t.task_id, status: t.status, progress: t.progress ?? 0, error: t.error || null, type: t.type || 'text', params: t.params || {}, prompt: t.prompt || '', created_at: t.created_at || '', started_at: t.started_at || '', completed_at: t.completed_at || null, result_urls: t.result_urls || [], _active: true }))
       localStorage.setItem(activeCacheKey, JSON.stringify(arr.slice(0, 100)))
     } catch {}
   }, [activeCacheKey])
@@ -381,7 +381,7 @@ export default function ChatPage() {
   // 刷新后自动恢复 processing 任务的轮询
   useEffect(() => {
     for (const t of tasks) {
-      if (['pending', 'queued', 'processing', 'running', 'generating'].includes(t.status) && !t._active && !recoveringRef.current.has(t.task_id)) {
+      if (!String(t.task_id).startsWith('pending-') && ['pending', 'queued', 'processing', 'running', 'generating'].includes(t.status) && !t._active && !recoveringRef.current.has(t.task_id)) {
         recoveringRef.current.add(t.task_id)
         updateTask(t.task_id, { _active: true })
         const p = t.params || {}

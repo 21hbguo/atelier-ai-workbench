@@ -171,7 +171,7 @@ async def list_all_square(page: int = Query(1, ge=1), size: int = Query(20, ge=1
             FROM square_images si
             JOIN users u ON si.user_id = u.id
             {where_sql}
-            ORDER BY si.created_at DESC
+            ORDER BY si.created_at DESC, si.id DESC
             LIMIT %s OFFSET %s
             """,
             params + [size, offset],
@@ -496,7 +496,7 @@ async def list_all_prompts(page: int = Query(1, ge=1), size: int = Query(20, ge=
             FROM prompts p
             LEFT JOIN users u ON p.user_id = u.id
             {where_sql}
-            ORDER BY p.created_at DESC
+            ORDER BY p.created_at DESC, p.id DESC
             LIMIT %s OFFSET %s
             """,
             params + [size, offset],
