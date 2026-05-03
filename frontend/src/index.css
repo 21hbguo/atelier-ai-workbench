@@ -99,3 +99,9 @@ input,textarea,[contenteditable="true"]{-webkit-user-select:text;user-select:tex
 .admin-dense .space-y-4>:not([hidden])~:not([hidden]){margin-top:.75rem!important}
 .admin-dense .space-y-3>:not([hidden])~:not([hidden]){margin-top:.5rem!important}
 .admin-dense th,.admin-dense td{line-height:1.25!important}
+
+.login-page{overflow:hidden;position:relative}
+.login-glow{position:absolute;width:500px;height:500px;border-radius:50%;pointer-events:none;top:-180px;right:-120px;background:radial-gradient(circle,var(--accent) 0%,transparent 70%);opacity:.08}
+.login-glow-2{top:auto;bottom:-200px;right:auto;left:-100px;opacity:.06}
+.login-title{background:linear-gradient(135deg,var(--accent),var(--accent-hover));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.login-card{border:1px solid var(--border-color)}

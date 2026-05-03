@@ -533,10 +533,10 @@ export default function ChatPage() {
           </div>
         </div>
       )}
-      <div className="flex items-center gap-2 px-4 pt-3 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
-        <button onClick={() => navigate('/wallet')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all hover:scale-105" style={{ background: 'var(--accent)', color: 'white' }}>
-          <Coins size={16} />
-          <span>{points}</span>
+      <div className="flex-shrink-0 flex items-center gap-2 px-4 pt-3 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
+        <button onClick={() => navigate('/wallet')} className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all hover:scale-105" style={{ background: 'var(--accent)', color: '#fff' }}>
+          <Coins size={15} />
+          <span className="tabular-nums">{points}</span>
         </button>
         {isAdmin && userList.length > 0 && (
           <select
@@ -592,9 +592,6 @@ export default function ChatPage() {
         </div>
       )}
       <ChatInput ref={inputRef} onSubmit={handleSubmit} loading={loading} />
-      <div className="text-center text-[10px] -mt-1" style={{ color: 'var(--text-secondary)', opacity: 0.6 }}>
-        每次请求消耗10积分，失败将退还
-      </div>
 
       {selectedCardIndex !== null && detailCards.length > 0 && detailCards[selectedCardIndex] && (
         <UnifiedDetailModal
