@@ -99,6 +99,7 @@ async def freeze_user(user_id: int, admin=Depends(require_admin)):
 
 
 @router.delete("/users/{user_id}")
+@router.post("/users/{user_id}/delete")
 async def delete_user(user_id: int, admin=Depends(require_admin)):
     if user_id == admin["user_id"]:
         raise HTTPException(status_code=400, detail="不能删除自己")
@@ -182,6 +183,7 @@ async def batch_delete_square(body: dict, admin=Depends(require_admin)):
 
 
 @router.delete("/square/{image_id}")
+@router.post("/square/{image_id}/delete")
 async def delete_square_image(image_id: int, admin=Depends(require_admin)):
     with get_db() as conn:
         image = conn.execute("SELECT id FROM square_images WHERE id = %s", (image_id,)).fetchone()
@@ -250,6 +252,7 @@ async def list_history(page: int = Query(1, ge=1), size: int = Query(20, ge=1, l
 
 
 @router.delete("/history/{task_id}")
+@router.post("/history/{task_id}/delete")
 async def delete_history(task_id: str, admin=Depends(require_admin)):
     success = TaskManager.delete_task(task_id)
     if not success:
@@ -383,6 +386,7 @@ async def add_banned_word(body: dict, admin=Depends(require_admin)):
 
 
 @router.delete("/banned-words/{word_id}")
+@router.post("/banned-words/{word_id}/delete")
 async def delete_banned_word(word_id: int, admin=Depends(require_admin)):
     if not BannedWordsService.remove(word_id):
         raise HTTPException(status_code=404, detail="违禁词不存在")
@@ -459,6 +463,7 @@ async def batch_freeze_prompts(body: dict, admin=Depends(require_admin)):
 
 
 @router.delete("/prompts/{prompt_id}")
+@router.post("/prompts/{prompt_id}/delete")
 async def delete_prompt(prompt_id: str, admin=Depends(require_admin)):
     with get_db() as conn:
         prompt = conn.execute("SELECT id FROM prompts WHERE id = %s", (prompt_id,)).fetchone()
@@ -539,6 +544,7 @@ async def generate_codes(body: dict, admin=Depends(require_admin)):
 
 
 @router.delete("/codes/{code_id}")
+@router.post("/codes/{code_id}/delete")
 async def delete_code(code_id: int, admin=Depends(require_admin)):
     with get_db() as conn:
         row = conn.execute("SELECT id, is_used FROM redemption_codes WHERE id = %s", (code_id,)).fetchone()

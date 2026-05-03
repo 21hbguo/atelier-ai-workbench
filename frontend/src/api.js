@@ -40,13 +40,13 @@ export const taskAPI = {
   list: (limit = 50, offset = 0, userId, query) => { const params = { limit, offset }; if (userId) params.user_id = userId; if (query) params.query = query; return api.get('/tasks', { params }) },
   get: id => api.get(`/tasks/${id}`),
   retry: id => api.post(`/tasks/${id}/retry`),
-  delete: id => api.delete(`/tasks/${id}`),
+  delete: id => api.post(`/tasks/${id}/delete`),
 }
 
 export const imageAPI = {
   list: (page = 1, pageSize = 20, userId) => { const params = { page, page_size: pageSize }; if (userId) params.user_id = userId; return api.get('/images', { params }) },
   get: filename => api.get(`/images/${filename}`),
-  delete: filename => api.delete(`/images/${filename}`),
+  delete: filename => api.post(`/images/${filename}/delete`),
   saveMetadata: (filename, metadata) => api.post(`/images/${filename}/metadata`, metadata),
 }
 
@@ -58,7 +58,7 @@ export const promptAPI = {
   create: data => api.post('/prompts', data),
   createPublic: data => api.post('/prompts/public', data),
   update: (id, data) => api.put(`/prompts/${id}`, data),
-  delete: id => api.delete(`/prompts/${id}`),
+  delete: id => api.post(`/prompts/${id}/delete`),
   batchDelete: ids => api.post('/prompts/batch-delete', { ids }),
   import: file => { const fd = new FormData(); fd.append('file', file); return api.post('/prompts/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } }) },
   importPublic: file => { const fd = new FormData(); fd.append('file', file); return api.post('/prompts/import/public', fd, { headers: { 'Content-Type': 'multipart/form-data' } }) },
@@ -84,18 +84,18 @@ export const squareAPI = {
 
 export const adminAPI = {
   users: (page = 1, size = 20, query) => { const params = { page, size }; if (query) params.query = query; return api.get('/admin/users', { params }) },
-  deleteUser: userId => api.delete(`/admin/users/${userId}`),
+  deleteUser: userId => api.post(`/admin/users/${userId}/delete`),
   toggleFreeze: userId => api.post(`/admin/users/${userId}/freeze`),
   square: (page = 1, size = 20, query, status = 'all') => { const params = { page, size, status }; if (query) params.query = query; return api.get('/admin/square', { params }) },
-  deleteSquare: imageId => api.delete(`/admin/square/${imageId}`),
+  deleteSquare: imageId => api.post(`/admin/square/${imageId}/delete`),
   freezeSquare: (ids, frozen = true) => api.post('/admin/square/freeze', { ids, frozen }),
   batchDeleteSquare: ids => api.post('/admin/square/batch-delete', { ids }),
   prompts: (page = 1, size = 20, query, category, status = 'all') => { const params = { page, size, status }; if (query) params.query = query; if (category) params.category = category; return api.get('/admin/prompts', { params }) },
   freezePrompts: (ids, frozen = true) => api.post('/admin/prompts/freeze', { ids, frozen }),
-  deletePrompt: promptId => api.delete(`/admin/prompts/${promptId}`),
+  deletePrompt: promptId => api.post(`/admin/prompts/${promptId}/delete`),
   batchDeletePrompts: ids => api.post('/admin/prompts/batch-delete', { ids }),
   history: (page = 1, size = 20, query) => { const params = { page, size }; if (query) params.query = query; return api.get('/admin/history', { params }) },
-  deleteHistory: taskId => api.delete(`/admin/history/${taskId}`),
+  deleteHistory: taskId => api.post(`/admin/history/${taskId}/delete`),
   imageStats: () => api.get('/admin/hosting/stats'),
   hostingImages: (page = 1, size = 50) => api.get('/admin/hosting', { params: { page, size } }),
   batchDeleteHosting: urls => api.post('/admin/hosting/batch-delete', { urls }),
@@ -103,10 +103,10 @@ export const adminAPI = {
   bannedWords: (page = 1, size = 20, query) => { const params = { page, size }; if (query) params.query = query; return api.get('/admin/banned-words', { params }) },
   addBannedWord: word => api.post('/admin/banned-words', { word }),
   batchImportBannedWords: text => api.post('/admin/banned-words/batch-import', { text }),
-  deleteBannedWord: wordId => api.delete(`/admin/banned-words/${wordId}`),
+  deleteBannedWord: wordId => api.post(`/admin/banned-words/${wordId}/delete`),
   codes: (page = 1, size = 20, sort = 'created_at', order = 'desc') => api.get('/admin/codes', { params: { page, size, sort, order } }),
   generateCodes: data => api.post('/admin/codes', data),
-  deleteCode: codeId => api.delete(`/admin/codes/${codeId}`),
+  deleteCode: codeId => api.post(`/admin/codes/${codeId}/delete`),
   adjustPoints: (userId, data) => api.post(`/admin/users/${userId}/points`, data),
   resetPassword: (userId, password) => api.post(`/admin/users/${userId}/reset-password`, { password }),
   migratePoints: () => api.post('/admin/migrate-points'),
@@ -129,7 +129,7 @@ export const pointsAPI = {
 export const announcementAPI = {
   create: data => api.post('/announcements', data),
   list: (page = 1, size = 20) => api.get('/announcements', { params: { page, size } }),
-  delete: id => api.delete(`/announcements/${id}`),
+  delete: id => api.post(`/announcements/${id}/delete`),
   getUnread: () => api.get('/announcements/unread'),
   markRead: id => api.post(`/announcements/${id}/read`),
 }

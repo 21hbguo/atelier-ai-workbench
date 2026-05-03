@@ -335,7 +335,7 @@ function PromptsTab({ query, sort, activeCategory, isAdmin }) {
 
   const { cards, total, page, setPage, loading, refreshing, refresh, handleLike } = useCardData({
     type: 'prompt',
-    pageSize: isAdmin ? 20 : 50,
+    pageSize: 50,
     apiFn: async (p, s) => {
       if (isAdmin) {
         const res = await adminAPI.prompts(p, s, query || undefined, activeCategory || undefined, status)
@@ -348,7 +348,7 @@ function PromptsTab({ query, sort, activeCategory, isAdmin }) {
     deps,
   })
 
-  const totalPages = Math.ceil(total / (isAdmin ? 20 : 50))
+  const totalPages = Math.ceil(total / 50)
 
   const toggleCheck = useCallback((id) => {
     setChecked(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })

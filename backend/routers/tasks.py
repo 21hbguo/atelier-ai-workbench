@@ -101,3 +101,7 @@ async def delete_task(task_id: str, user=Depends(get_current_user)):
     if not success:
         raise HTTPException(status_code=404, detail="任务不存在")
     return {"task_id": task_id, "message": "任务已删除"}
+
+@router.post("/tasks/{task_id}/delete")
+async def delete_task_post(task_id: str, user=Depends(get_current_user)):
+    return await delete_task(task_id, user)

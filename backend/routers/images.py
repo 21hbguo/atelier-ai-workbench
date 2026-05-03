@@ -324,6 +324,10 @@ async def delete_image(filename: str, user=Depends(get_current_user)):
         logger.exception("删除图片失败")
         raise HTTPException(status_code=500, detail="删除图片失败")
 
+@router.post("/images/{filename}/delete")
+async def delete_image_post(filename: str, user=Depends(get_current_user)):
+    return await delete_image(filename, user)
+
 
 @router.post("/images/{filename}/metadata")
 async def save_image_metadata_route(filename: str, metadata: dict, user=Depends(get_current_user)):

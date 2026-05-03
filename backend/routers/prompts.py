@@ -123,6 +123,7 @@ async def update_category(category_id: int, request: CategoryUpdateRequest, admi
 
 
 @router.delete("/categories/{category_id}")
+@router.post("/categories/{category_id}/delete")
 async def delete_category(category_id: int, admin=Depends(require_admin)):
     try:
         success = CategoryService.delete(category_id)
@@ -215,6 +216,7 @@ async def update_prompt(prompt_id: str, request: PromptUpdateRequest, user=Depen
 
 
 @router.delete("/{prompt_id}")
+@router.post("/{prompt_id}/delete")
 async def delete_prompt(prompt_id: str, user=Depends(get_current_user)):
     _check_ownership(prompt_id, user)
     success = PromptService.delete(prompt_id)

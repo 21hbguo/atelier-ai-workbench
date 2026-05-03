@@ -79,3 +79,7 @@ async def delete_announcement(announcement_id: int, admin=Depends(require_admin)
         conn.execute("DELETE FROM announcement_reads WHERE announcement_id = %s", (announcement_id,))
         conn.execute("DELETE FROM announcements WHERE id = %s", (announcement_id,))
         return {"message": "公告已删除"}
+
+@router.post("/{announcement_id}/delete")
+async def delete_announcement_post(announcement_id: int, admin=Depends(require_admin)):
+    return await delete_announcement(announcement_id, admin)
