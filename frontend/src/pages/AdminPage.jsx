@@ -9,8 +9,10 @@ import SearchInput from '../components/SearchInput'
 import Pagination from '../components/Pagination'
 import UnifiedCard from '../components/UnifiedCard'
 import { readUser } from '../auth'
+import { useAppDialog } from '../components/AppDialogProvider'
 
 export default function AdminPage() {
+  const dialog = useAppDialog()
   const navigate = useNavigate()
   const [tab, setTab] = useState('users')
   const [users, setUsers] = useState([])
@@ -146,20 +148,20 @@ export default function AdminPage() {
         login_rate_limit_per_minute_per_ip: Number(data.login_rate_limit_per_minute_per_ip || 5),
         register_rate_limit_per_minute_per_ip: Number(data.register_rate_limit_per_minute_per_ip || 3),
       })
-    } catch (e) { alert(e.message || '加载配置失败') } finally { setLoading(false) }
+    } catch (e) { dialog.alert(e.message || '加载配置失败') } finally { setLoading(false) }
   }
   const onConfigInput = (k, v) => setRuntimeConfig(prev => ({ ...prev, [k]: v }))
   const handleSaveConfig = async () => {
     const n = ['generate_concurrent_limit_per_user', 'points_cost_per_generation', 'points_checkin_reward', 'points_register_bonus', 'points_migration_amount', 'login_rate_limit_per_minute_per_ip', 'register_rate_limit_per_minute_per_ip']
     const payload = { ...runtimeConfig }
     for (const k of n) payload[k] = Number(payload[k])
-    if (payload.generate_concurrent_limit_per_user < 1 || payload.points_cost_per_generation < 1 || payload.login_rate_limit_per_minute_per_ip < 1 || payload.register_rate_limit_per_minute_per_ip < 1 || payload.points_checkin_reward < 0 || payload.points_register_bonus < 0 || payload.points_migration_amount < 0) { alert('限制配置不合法'); return }
+    if (payload.generate_concurrent_limit_per_user < 1 || payload.points_cost_per_generation < 1 || payload.login_rate_limit_per_minute_per_ip < 1 || payload.register_rate_limit_per_minute_per_ip < 1 || payload.points_checkin_reward < 0 || payload.points_register_bonus < 0 || payload.points_migration_amount < 0) { dialog.alert('限制配置不合法'); return }
     setConfigSaving(true)
     try {
       await configAPI.update(payload)
-      alert('保存成功')
+      dialog.alert('保存成功')
       fetchRuntimeConfig()
-    } catch (e) { alert(e.message || '保存失败') } finally { setConfigSaving(false) }
+    } catch (e) { dialog.alert(e.message || '保存失败') } finally { setConfigSaving(false) }
   }
 
 
@@ -180,16 +182,16 @@ export default function AdminPage() {
       setNewTitle(''); setNewContent('')
       fetchAnnouncements()
     } catch (e) {
-      alert(e.message || '发布失败')
+      dialog.alert(e.message || '发布失败')
     } finally { setCreatingAnnouncement(false) }
   }
 
   const handleDeleteAnnouncement = async (id) => {
-    if (!confirm('确定删除此公告？')) return
+    if (!await dialog.confirm('确定删除此公告？')) return
     try {
       await announcementAPI.delete(id)
       fetchAnnouncements()
-    } catch (e) { alert(e.message || '删除失败') }
+    } catch (e) { dialog.alert(e.message || '删除失败') }
   }
 
   const fetchHostingImages = async () => {
@@ -218,16 +220,16 @@ export default function AdminPage() {
       setNewBannedWord('')
       fetchBannedWords()
     } catch (e) {
-      alert(e.message || '添加失败')
+      dialog.alert(e.message || '添加失败')
     }
   }
 
   const handleDeleteBannedWord = async (wordId, word) => {
-    if (!confirm(`确定删除违禁词 "${word}"？`)) return
+    if (!await dialog.confirm(`确定删除违禁词 "${word}"？`)) return
     try {
       await adminAPI.deleteBannedWord(wordId)
       fetchBannedWords()
-    } catch (e) { alert(e.message || '删除失败') }
+    } catch (e) { dialog.alert(e.message || '删除失败') }
   }
 
   const fetchRechargeRequests = async () => {
@@ -241,21 +243,21 @@ export default function AdminPage() {
 
   const handleApproveRecharge = async (id) => {
     const points = parseInt(reviewPoints) || 0
-    if (points <= 0) { alert('发放积分必须大于0'); return }
+    if (points <= 0) { dialog.alert('发放积分必须大于0'); return }
     try {
       await adminAPI.approveRecharge(id, { points, review_note: reviewNote || '审核通过' })
       setReviewModal(null); setReviewNote(''); setReviewPoints('')
       fetchRechargeRequests()
-    } catch (e) { alert(e.message || '操作失败') }
+    } catch (e) { dialog.alert(e.message || '操作失败') }
   }
 
   const handleRejectRecharge = async (id) => {
-    if (!reviewNote.trim()) { alert('拒绝原因不能为空'); return }
+    if (!reviewNote.trim()) { dialog.alert('拒绝原因不能为空'); return }
     try {
       await adminAPI.rejectRecharge(id, { review_note: reviewNote })
       setReviewModal(null); setReviewNote('')
       fetchRechargeRequests()
-    } catch (e) { alert(e.message || '操作失败') }
+    } catch (e) { dialog.alert(e.message || '操作失败') }
   }
 
   const handleGenerateCodes = async () => {
@@ -267,16 +269,16 @@ export default function AdminPage() {
       setCustomCode('')
       fetchRechargeRequests()
     } catch (e) {
-      alert(e.message || '生成失败')
+      dialog.alert(e.message || '生成失败')
     } finally { setGeneratingCodes(false) }
   }
 
   const handleDeleteCode = async (codeId, code) => {
-    if (!confirm(`确定删除兑换码 "${code}"？`)) return
+    if (!await dialog.confirm(`确定删除兑换码 "${code}"？`)) return
     try {
       await adminAPI.deleteCode(codeId)
       fetchRechargeRequests()
-    } catch (e) { alert(e.message || '删除失败') }
+    } catch (e) { dialog.alert(e.message || '删除失败') }
   }
 
   const handleAdjustPoints = async (userId) => {
@@ -286,16 +288,16 @@ export default function AdminPage() {
       await adminAPI.adjustPoints(userId, { amount, description: adjustDesc || '管理员调整' })
       setAdjustUserId(null); setAdjustAmount(''); setAdjustDesc('')
       fetchUsers()
-    } catch (e) { alert(e.message || '调整失败') }
+    } catch (e) { dialog.alert(e.message || '调整失败') }
   }
 
   const handleMigratePoints = async () => {
-    if (!confirm('确认给所有现有用户（积分=0）补发 50 积分？')) return
+    if (!await dialog.confirm('确认给所有现有用户（积分=0）补发 50 积分？')) return
     try {
       const { data } = await adminAPI.migratePoints()
-      alert(data.message)
+      dialog.alert(data.message)
       fetchUsers()
-    } catch (e) { alert(e.message || '操作失败') }
+    } catch (e) { dialog.alert(e.message || '操作失败') }
   }
 
   const handleBatchImport = async () => {
@@ -304,44 +306,44 @@ export default function AdminPage() {
     setBatchImporting(true)
     try {
       const { data } = await adminAPI.batchImportBannedWords(text)
-      alert(data.message)
+      dialog.alert(data.message)
       setShowBatchImport(false)
       setBatchImportText('')
       fetchBannedWords()
     } catch (e) {
-      alert(e.message || '导入失败')
+      dialog.alert(e.message || '导入失败')
     } finally {
       setBatchImporting(false)
     }
   }
 
   const handleHostingBatchDelete = useCallback(async () => {
-    if (!confirm(`确定删除选中的 ${hostingChecked.size} 个图床映射？`)) return
+    if (!await dialog.confirm(`确定删除选中的 ${hostingChecked.size} 个图床映射？`)) return
     const urls = hostingImages.filter(i => hostingChecked.has(i.url)).map(i => i.url)
     try {
       await adminAPI.batchDeleteHosting(urls)
       setHostingChecked(new Set()); setHostingSelectMode(false)
       fetchHostingImages(); fetchHostingStats()
-    } catch (e) { alert(e.message || '删除失败') }
+    } catch (e) { dialog.alert(e.message || '删除失败') }
   }, [hostingChecked, hostingImages])
 
   const handleCleanDuplicates = async () => {
-    if (!confirm('确定清理重复的图床映射？将基于URL去重，保留最早的记录。')) return
+    if (!await dialog.confirm('确定清理重复的图床映射？将基于URL去重，保留最早的记录。')) return
     try {
       const { data } = await adminAPI.cleanDuplicates()
-      alert(`清理完成，删除了 ${data.deleted} 条重复记录`)
+      dialog.alert(`清理完成，删除了 ${data.deleted} 条重复记录`)
       fetchHostingImages(); fetchHostingStats()
     } catch (e) {
-      alert(e.message || '清理失败')
+      dialog.alert(e.message || '清理失败')
     }
   }
 
   const handleDeleteHistory = async (taskId) => {
-    if (!confirm('确定删除此任务？')) return
+    if (!await dialog.confirm('确定删除此任务？')) return
     try {
       await adminAPI.deleteHistory(taskId)
       fetchHistory()
-    } catch (e) { alert(e.message || '删除失败') }
+    } catch (e) { dialog.alert(e.message || '删除失败') }
   }
 
   const handleToggleFreeze = async (userId, username) => {
@@ -352,22 +354,22 @@ export default function AdminPage() {
   }
 
   const handleDeleteUser = async (userId, username) => {
-    if (!confirm(`确定删除用户 "${username}"？该用户的所有广场图片也会被删除。`)) return
+    if (!await dialog.confirm(`确定删除用户 "${username}"？该用户的所有广场图片也会被删除。`)) return
     try {
       await adminAPI.deleteUser(userId)
       fetchUsers()
-    } catch (e) { alert(e.message || '删除失败') }
+    } catch (e) { dialog.alert(e.message || '删除失败') }
   }
 
   const handleResetPassword = async (userId) => {
     if (!resetPwdValue.trim()) return
-    if (resetPwdValue.length < 6) { alert('密码长度至少6位'); return }
+    if (resetPwdValue.length < 6) { dialog.alert('密码长度至少6位'); return }
     try {
       await adminAPI.resetPassword(userId, resetPwdValue)
-      alert('密码重置成功')
+      dialog.alert('密码重置成功')
       setResetPwdUserId(null)
       setResetPwdValue('')
-    } catch (e) { alert(e.message || '重置失败') }
+    } catch (e) { dialog.alert(e.message || '重置失败') }
   }
 
   const toggleHostingCheck = useCallback((filename) => {
@@ -1112,11 +1114,11 @@ export default function AdminPage() {
                 </div>
                 <div>
                   <button onClick={async () => {
-                    if (!confirm('确定删除此图床映射？（仅删除映射记录，不删除图床上的图片）')) return
+                    if (!await dialog.confirm('确定删除此图床映射？（仅删除映射记录，不删除图床上的图片）')) return
                     try {
                       await adminAPI.batchDeleteHosting([hostingDetail.url])
                       setHostingDetail(null); fetchHostingImages(); fetchHostingStats()
-                    } catch (e) { alert(e.message || '删除失败') }
+                    } catch (e) { dialog.alert(e.message || '删除失败') }
                   }} className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-red-500 text-white text-xs font-medium hover:bg-red-600">
                     <Trash2 size={14} /> 删除映射
                   </button>

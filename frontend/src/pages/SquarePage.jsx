@@ -9,6 +9,7 @@ import UnifiedDetailModal from '../components/UnifiedDetailModal'
 import CategoryFilter from '../components/CategoryFilter'
 import { useCardData } from '../hooks/useCardData'
 import { readUser } from '../auth'
+import { useAppDialog } from '../components/AppDialogProvider'
 
 function useImageActions() {
   const navigate = useNavigate()
@@ -60,6 +61,7 @@ function usePromptActions() {
 }
 
 export default function SquarePage() {
+  const dialog = useAppDialog()
   const [tab, setTab] = useState('works')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState('likes')
@@ -106,9 +108,9 @@ export default function SquarePage() {
         )}
         <div className="flex-1 overflow-y-auto px-4 sm:px-6 pb-6">
           {tab === 'works' ? (
-            <WorksTab query={query} sort={sort} isAdmin={isAdmin} />
+            <WorksTab query={query} sort={sort} isAdmin={isAdmin} dialog={dialog} />
           ) : tab === 'prompts' ? (
-            <PromptsTab query={query} sort={sort} activeCategory={activeCategory} isAdmin={isAdmin} />
+            <PromptsTab query={query} sort={sort} activeCategory={activeCategory} isAdmin={isAdmin} dialog={dialog} />
           ) : (
             <MySharesTab />
           )}
@@ -118,7 +120,7 @@ export default function SquarePage() {
   )
 }
 
-function WorksTab({ query, sort, isAdmin }) {
+function WorksTab({ query, sort, isAdmin, dialog }) {
   const [detailIdx, setDetailIdx] = useState(null)
   const { handleUsePrompt, handleUseImage } = useImageActions()
   const [status, setStatus] = useState('all')
@@ -151,27 +153,27 @@ function WorksTab({ query, sort, isAdmin }) {
     try {
       await adminAPI.freezeSquare(ids, frozen)
       setChecked(new Set()); setSelectMode(false); refresh()
-    } catch (e) { alert(e?.response?.data?.detail || e.message || '操作失败') }
-  }, [checked, refresh])
+    } catch (e) { dialog.alert(e?.response?.data?.detail || e.message || '操作失败') }
+  }, [checked, refresh, dialog])
 
   const handleBatchDelete = useCallback(async () => {
-    if (!confirm(`确定删除选中的 ${checked.size} 张图片？`)) return
+    if (!await dialog.confirm(`确定删除选中的 ${checked.size} 张图片？`)) return
     try {
       await adminAPI.batchDeleteSquare([...checked])
       setChecked(new Set()); setSelectMode(false); refresh()
-    } catch (e) { alert(e?.response?.data?.detail || e.message || '删除失败') }
-  }, [checked, refresh])
+    } catch (e) { dialog.alert(e?.response?.data?.detail || e.message || '删除失败') }
+  }, [checked, refresh, dialog])
 
   const handleSingleFreeze = useCallback(async (id, frozen) => {
     try { await adminAPI.freezeSquare([id], frozen); refresh() }
-    catch (e) { alert(e?.response?.data?.detail || e.message || '操作失败') }
-  }, [refresh])
+    catch (e) { dialog.alert(e?.response?.data?.detail || e.message || '操作失败') }
+  }, [refresh, dialog])
 
   const handleSingleDelete = useCallback(async (id) => {
-    if (!confirm('确定删除这张图片？')) return
+    if (!await dialog.confirm('确定删除这张图片？')) return
     try { await adminAPI.batchDeleteSquare([id]); refresh() }
-    catch (e) { alert(e?.response?.data?.detail || e.message || '删除失败') }
-  }, [refresh])
+    catch (e) { dialog.alert(e?.response?.data?.detail || e.message || '删除失败') }
+  }, [refresh, dialog])
 
   return (
     <>
@@ -324,7 +326,7 @@ function MySharesTab() {
   )
 }
 
-function PromptsTab({ query, sort, activeCategory, isAdmin }) {
+function PromptsTab({ query, sort, activeCategory, isAdmin, dialog }) {
   const user = readUser()
   const [detailIdx, setDetailIdx] = useState(null)
   const { handleUsePrompt, handleUseImage } = usePromptActions()
@@ -360,28 +362,28 @@ function PromptsTab({ query, sort, activeCategory, isAdmin }) {
   }, [checked.size, cards])
 
   const handleBatchDelete = useCallback(async () => {
-    if (!confirm(`确定删除选中的 ${checked.size} 条提示词？`)) return
+    if (!await dialog.confirm(`确定删除选中的 ${checked.size} 条提示词？`)) return
     try {
       await adminAPI.batchDeletePrompts([...checked])
       setChecked(new Set()); setSelectMode(false); refresh()
-    } catch (e) { alert(e?.response?.data?.detail || e.message || '删除失败') }
-  }, [checked, refresh])
+    } catch (e) { dialog.alert(e?.response?.data?.detail || e.message || '删除失败') }
+  }, [checked, refresh, dialog])
   const handleBatchFreeze = useCallback(async (frozen) => {
     try {
       await adminAPI.freezePrompts([...checked], frozen)
       setChecked(new Set()); setSelectMode(false); refresh()
-    } catch (e) { alert(e?.response?.data?.detail || e.message || '操作失败') }
-  }, [checked, refresh])
+    } catch (e) { dialog.alert(e?.response?.data?.detail || e.message || '操作失败') }
+  }, [checked, refresh, dialog])
 
   const handleDeletePrompt = useCallback(async (id) => {
-    if (!confirm('确定删除此提示词？')) return
+    if (!await dialog.confirm('确定删除此提示词？')) return
     try { await adminAPI.deletePrompt(id); refresh() }
-    catch (e) { alert(e?.response?.data?.detail || e.message || '删除失败') }
-  }, [refresh])
+    catch (e) { dialog.alert(e?.response?.data?.detail || e.message || '删除失败') }
+  }, [refresh, dialog])
   const handleTogglePromptFreeze = useCallback(async (id, frozen) => {
     try { await adminAPI.freezePrompts([id], frozen); refresh() }
-    catch (e) { alert(e?.response?.data?.detail || e.message || '操作失败') }
-  }, [refresh])
+    catch (e) { dialog.alert(e?.response?.data?.detail || e.message || '操作失败') }
+  }, [refresh, dialog])
 
   return (
     <>

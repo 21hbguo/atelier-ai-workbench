@@ -4,6 +4,7 @@ import { Sun, Moon, BookOpen, MessageSquare, X, Globe, LogOut, User, Shield, Coi
 import { useTheme } from '../ThemeContext'
 import { authAPI, pointsAPI } from '../api'
 import { clearUser, readUser } from '../auth'
+import { useAppDialog } from './AppDialogProvider'
 
 const navItems = [
   { path: '/', icon: MessageSquare, label: '生成' },
@@ -14,6 +15,7 @@ const navItems = [
 ]
 
 export default function Sidebar({ open, onClose }) {
+  const dialog = useAppDialog()
   const { dark, toggle } = useTheme()
   const location = useLocation()
   const navigate = useNavigate()
@@ -49,9 +51,9 @@ export default function Sidebar({ open, onClose }) {
       const u = readUser()
       if (u) { u.points = res.data.points; localStorage.setItem('user', JSON.stringify(u)) }
       window.dispatchEvent(new Event('points-updated'))
-      alert(res.data.message || '签到成功')
+      dialog.alert(res.data.message || '签到成功')
     } catch (err) {
-      alert(err.message || '签到失败')
+      dialog.alert(err.message || '签到失败')
     }
   }
 

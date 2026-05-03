@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { ThemeProvider } from './ThemeContext'
 import ErrorBoundary from './components/ErrorBoundary'
+import AppDialogProvider from './components/AppDialogProvider'
 import { useUserSync } from './hooks/useUserSync'
 import AnnouncementModal from './components/AnnouncementModal'
 import { announcementAPI, authAPI } from './api'
@@ -96,6 +97,7 @@ function AppContent() {
   return (
     <ErrorBoundary>
     <ThemeProvider>
+      <AppDialogProvider>
       <BrowserRouter>
         <AnnouncementManager user={user} />
         <Routes>
@@ -113,6 +115,7 @@ function AppContent() {
           <Route path="/admin" element={<AdminRoute authReady={authReady} user={user}><AdminPage /></AdminRoute>} />
         </Routes>
       </BrowserRouter>
+      </AppDialogProvider>
     </ThemeProvider>
     </ErrorBoundary>
   )

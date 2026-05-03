@@ -6,8 +6,10 @@ import MainLayout from '../components/MainLayout'
 import SearchInput from '../components/SearchInput'
 import CardGrid from '../components/CardGrid'
 import { useCardData } from '../hooks/useCardData'
+import { useAppDialog } from '../components/AppDialogProvider'
 
 export default function PromptsPage() {
+  const dialog = useAppDialog()
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState(new Set())
@@ -46,7 +48,7 @@ export default function PromptsPage() {
       await promptAPI.update(detail.id, payload)
       setDetail(null)
       refresh()
-    } catch (e) { alert('失败: ' + e.message) }
+    } catch (e) { dialog.alert('失败: ' + e.message) }
   }
 
   const handleCreate = async () => {
@@ -57,28 +59,28 @@ export default function PromptsPage() {
       setShowNewForm(false)
       setForm({ name: '', prompt: '', tags: '', category: '' })
       refresh()
-    } catch (e) { alert('失败: ' + e.message) }
+    } catch (e) { dialog.alert('失败: ' + e.message) }
   }
 
   const handleDelete = async (id) => {
-    if (!confirm('确定删除？')) return
-    try { await promptAPI.delete(id); if (detail?.id === id) setDetail(null); refresh() } catch (e) { alert(e.message || '删除失败') }
+    if (!await dialog.confirm('确定删除？')) return
+    try { await promptAPI.delete(id); if (detail?.id === id) setDetail(null); refresh() } catch (e) { dialog.alert(e.message || '删除失败') }
   }
 
   const handleBatchDelete = async () => {
-    if (selected.size === 0 || !confirm(`删除 ${selected.size} 条？`)) return
-    try { await promptAPI.batchDelete([...selected]); setSelected(new Set()); refresh() } catch (e) { alert(e.message || '批量删除失败') }
+    if (selected.size === 0 || !await dialog.confirm(`删除 ${selected.size} 条？`)) return
+    try { await promptAPI.batchDelete([...selected]); setSelected(new Set()); refresh() } catch (e) { dialog.alert(e.message || '批量删除失败') }
   }
 
   const handleImport = async (e) => {
     const file = e.target.files[0]
     if (!file) return
-    try { const { data } = await promptAPI.import(file); alert(`成功: ${data.success}, 失败: ${data.failed}`); refresh() } catch {}
+    try { const { data } = await promptAPI.import(file); dialog.alert(`成功: ${data.success}, 失败: ${data.failed}`); refresh() } catch (e) { dialog.alert(e.message || '导入失败') }
     e.target.value = ''
   }
 
   const handleExport = async () => {
-    try { const { data } = await promptAPI.export(selected.size > 0 ? [...selected] : null, 'json'); const url = URL.createObjectURL(new Blob([data])); const a = document.createElement('a'); a.href = url; a.download = 'prompts.json'; a.click() } catch {}
+    try { const { data } = await promptAPI.export(selected.size > 0 ? [...selected] : null, 'json'); const url = URL.createObjectURL(new Blob([data])); const a = document.createElement('a'); a.href = url; a.download = 'prompts.json'; a.click() } catch (e) { dialog.alert(e.message || '导出失败') }
   }
 
   const handleToggleSelect = (id) => {

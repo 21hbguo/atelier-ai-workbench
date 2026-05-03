@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { X, Copy, Download, Trash2, Plus, Image as ImageIcon, Maximize2, Heart, ChevronLeft, ChevronRight, Edit2, Check } from 'lucide-react'
 import { imageAPI } from '../api'
+import { useAppDialog } from './AppDialogProvider'
 
 function InfoItem({ label, value }) {
   return (
@@ -29,6 +30,7 @@ export default function UnifiedDetailModal({
   hideDownload = false,
   allowMetadataEdit = false,
 }) {
+  const dialog = useAppDialog()
   const [lightbox, setLightbox] = useState(false)
   const [copied, setCopied] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -92,7 +94,7 @@ export default function UnifiedDetailModal({
       setEditForm(null)
       onMetadataSaved?.(editForm)
     } catch (e) {
-      alert('保存失败: ' + (e?.message || '未知错误'))
+      dialog.alert('保存失败: ' + (e?.message || '未知错误'))
     } finally {
       setSaving(false)
     }

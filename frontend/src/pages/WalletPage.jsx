@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Coins, ArrowUpCircle, ArrowDownCircle, RefreshCw, User, Mail, Gift, Wallet, Upload } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
 import Pagination from '../components/Pagination'
+import { useAppDialog } from '../components/AppDialogProvider'
 import api, { pointsAPI, uploadAPI } from '../api'
 import { readUser } from '../auth'
 const typeMap={register_bonus:{label:'注册赠送',color:'var(--accent)'},daily_checkin:{label:'每日签到',color:'var(--accent)'},generate_consume:{label:'生成消耗',color:'#ef4444'},generate_refund:{label:'生成退款',color:'#22c55e'},redeem_code:{label:'兑换码兑换',color:'var(--accent)'},admin_grant:{label:'管理员调整',color:'#8b5cf6'},migration:{label:'历史补偿',color:'var(--accent)'},migration_bonus:{label:'历史补偿',color:'var(--accent)'},recharge_pending:{label:'充值待审核',color:'#f59e0b'}}
@@ -9,6 +10,7 @@ const rechargePackages=[{amount:9.9,points:120,label:'体验包'},{amount:29.9,p
 const channelLabel={wechat:'微信',alipay:'支付宝'}
 const statusMap={pending:{label:'待审核',color:'#f59e0b'},approved:{label:'已通过',color:'#22c55e'},rejected:{label:'已拒绝',color:'#ef4444'}}
 export default function WalletPage(){
+const dialog=useAppDialog()
 const user=readUser()
 const isAdmin=Boolean(user?.is_admin)
 const [points,setPoints]=useState(user?.points??0)
@@ -91,7 +93,7 @@ if(u){u.points=res.data.points;localStorage.setItem('user',JSON.stringify(u))}
 window.dispatchEvent(new Event('points-updated'))
 fetchData(page)
 }catch(e){
-alert(e.message||'签到失败')
+dialog.alert(e.message||'签到失败')
 }finally{
 setCheckinLoading(false)
 }

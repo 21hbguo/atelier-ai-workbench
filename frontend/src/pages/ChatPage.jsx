@@ -6,6 +6,7 @@ import GenerationCard from '../components/GenerationCard'
 import SearchInput from '../components/SearchInput'
 import MainLayout from '../components/MainLayout'
 import UnifiedDetailModal from '../components/UnifiedDetailModal'
+import { useAppDialog } from '../components/AppDialogProvider'
 import { generateAPI, uploadAPI, taskAPI, imageAPI, squareAPI, adminAPI, pointsAPI } from '../api'
 import { readUser } from '../auth'
 
@@ -27,6 +28,7 @@ function makeTaskId() {
 function getExpiryByFilename(map, filename) { return (filename && map && map[filename]) ? map[filename] : {} }
 
 export default function ChatPage() {
+  const dialog = useAppDialog()
   const user = readUser()
   const isAdmin = Boolean(user?.is_admin)
   const activeStatuses = ['pending', 'queued', 'processing', 'running', 'generating']
@@ -412,12 +414,12 @@ export default function ChatPage() {
       await refreshTasks()
       window.dispatchEvent(new Event('gallery-updated'))
     } catch (e) {
-      alert(e?.message || '分享失败')
+      dialog.alert(e?.message || '分享失败')
     }
   }, [refreshTasks])
   const handleExtendImages = useCallback(async (filenames) => {
     const uniq = [...new Set((filenames || []).filter(Boolean))]
-    if (uniq.length === 0) { alert('没有可延长的图片'); return }
+    if (uniq.length === 0) { dialog.alert('没有可延长的图片'); return }
     try {
       const { data } = await imageAPI.extend(uniq)
       if (!isAdmin && typeof data.points === 'number') {
@@ -428,11 +430,11 @@ export default function ChatPage() {
       }
       await refreshTasks()
       const msg = `成功${data.success_count||0}，跳过${data.skipped_count||0}，失败${data.failed_count||0}${data.total_cost ? `，扣除${data.total_cost}积分` : ''}`
-      alert(msg)
+      dialog.alert(msg)
     } catch (e) {
-      alert(e?.message || '延长失败')
+      dialog.alert(e?.message || '延长失败')
     }
-  }, [isAdmin, refreshTasks])
+  }, [isAdmin, refreshTasks, dialog])
   const handleDetailExtend = useCallback(async (card) => { await handleExtendImages([card.filename]) }, [handleExtendImages])
 
   const toggleCheck = useCallback((taskId) => {
@@ -454,7 +456,7 @@ export default function ChatPage() {
   }, [checked, filtered])
 
   const handleBatchDelete = useCallback(async () => {
-    if (!confirm(`确定删除选中的 ${checked.size} 项？`)) return
+    if (!await dialog.confirm(`确定删除选中的 ${checked.size} 项？`)) return
     let failed = 0
     for (const taskId of checked) {
       try {
@@ -469,8 +471,8 @@ export default function ChatPage() {
     setChecked(new Set()); setSelectMode(false)
     refreshTasks()
     window.dispatchEvent(new Event('gallery-updated'))
-    if (failed > 0) alert(`${failed} 项删除失败`)
-  }, [checked, refreshTasks])
+    if (failed > 0) dialog.alert(`${failed} 项删除失败`)
+  }, [checked, refreshTasks, dialog])
   const handleBatchExtend = useCallback(async () => {
     const filenames = []
     for (const task of filtered) {
