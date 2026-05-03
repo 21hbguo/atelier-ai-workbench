@@ -190,6 +190,11 @@ export default function ChatPage() {
   const handleAddPrompt = useCallback((promptText) => {
     inputRef.current?.setPrompt(promptText)
   }, [])
+  const markSquareShared = useCallback((filename, shareId) => {
+    if (!filename || !shareId) return
+    squareIdMapRef.current[filename] = shareId
+    setDetailCards(prev => prev.map(c => c.filename === filename ? { ...c, square_image_id: shareId } : c))
+  }, [])
 
   const updateTask = useCallback((taskId, updates) => {
     setTasks(prev => {
@@ -201,13 +206,14 @@ export default function ChatPage() {
 
   const shareImageToSquare = useCallback(async (filename, prompt, params, hasImages) => {
     try {
-      await squareAPI.share({
+      const { data } = await squareAPI.share({
         filename,
         prompt,
         metadata: { size: params?.size, type: hasImages ? 'image' : 'text' },
       })
+      markSquareShared(filename, data?.id)
     } catch {}
-  }, [])
+  }, [markSquareShared])
   const refreshPointsOnFailed = useCallback(() => {
     if (isAdmin) return
     pointsAPI.balance().then(res => {
@@ -423,13 +429,12 @@ export default function ChatPage() {
   const handleDetailShare = useCallback(async (card) => {
     try {
       const { data } = await squareAPI.share({ filename: card.filename, prompt: card.prompt || '', metadata: { size: card?._raw?.metadata?.size, type: card?._raw?.metadata?.type || 'text' } })
-      if (data?.id) squareIdMapRef.current[card.filename] = data.id
-      setDetailCards(prev => prev.map(c => c.filename === card.filename ? { ...c, square_image_id: data.id } : c))
+      markSquareShared(card.filename, data?.id)
       window.dispatchEvent(new Event('gallery-updated'))
     } catch (e) {
       dialog.alert(e?.response?.data?.detail || e.message || '分享失败')
     }
-  }, [dialog])
+  }, [dialog, markSquareShared])
   const handleDetailUnshare = useCallback(async (card) => {
     const sid = card.square_image_id || squareIdMapRef.current[card.filename]
     if (!sid) { dialog.alert('无法找到分享记录'); return }
