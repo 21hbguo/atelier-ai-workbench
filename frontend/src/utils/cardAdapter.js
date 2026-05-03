@@ -41,6 +41,7 @@ export function normalizePrompt(raw) {
     createdAt: raw.created_at || '',
     likesCount: raw.likes_count || 0,
     isLiked: !!raw.is_liked,
+    isFrozen: !!raw.is_frozen,
     filename: null,
     metadataType: null,
     metadataSize: null,

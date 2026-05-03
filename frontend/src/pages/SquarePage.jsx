@@ -328,16 +328,17 @@ function PromptsTab({ query, sort, activeCategory, isAdmin }) {
   const user = readUser()
   const [detailIdx, setDetailIdx] = useState(null)
   const { handleUsePrompt, handleUseImage } = usePromptActions()
+  const [status, setStatus] = useState('all')
   const [selectMode, setSelectMode] = useState(false)
   const [checked, setChecked] = useState(new Set())
-  const deps = useMemo(() => [query, sort, activeCategory], [query, sort, activeCategory])
+  const deps = useMemo(() => isAdmin ? [query, sort, activeCategory, status] : [query, sort, activeCategory], [query, sort, activeCategory, status, isAdmin])
 
   const { cards, total, page, setPage, loading, refreshing, refresh, handleLike } = useCardData({
     type: 'prompt',
     pageSize: isAdmin ? 20 : 50,
     apiFn: async (p, s) => {
       if (isAdmin) {
-        const res = await adminAPI.prompts(p, s, query || undefined)
+        const res = await adminAPI.prompts(p, s, query || undefined, activeCategory || undefined, status)
         res.data.prompts = res.data.items || []
         return res
       }
@@ -365,36 +366,63 @@ function PromptsTab({ query, sort, activeCategory, isAdmin }) {
       setChecked(new Set()); setSelectMode(false); refresh()
     } catch (e) { alert(e?.response?.data?.detail || e.message || '删除失败') }
   }, [checked, refresh])
+  const handleBatchFreeze = useCallback(async (frozen) => {
+    try {
+      await adminAPI.freezePrompts([...checked], frozen)
+      setChecked(new Set()); setSelectMode(false); refresh()
+    } catch (e) { alert(e?.response?.data?.detail || e.message || '操作失败') }
+  }, [checked, refresh])
 
   const handleDeletePrompt = useCallback(async (id) => {
     if (!confirm('确定删除此提示词？')) return
     try { await adminAPI.deletePrompt(id); refresh() }
     catch (e) { alert(e?.response?.data?.detail || e.message || '删除失败') }
   }, [refresh])
+  const handleTogglePromptFreeze = useCallback(async (id, frozen) => {
+    try { await adminAPI.freezePrompts([id], frozen); refresh() }
+    catch (e) { alert(e?.response?.data?.detail || e.message || '操作失败') }
+  }, [refresh])
 
   return (
     <>
       {isAdmin && (
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>共 {total} 条提示词</span>
-          <div className="flex items-center gap-2">
-            {selectMode && (
-              <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>
-                {checked.size === cards.length ? '取消全选' : '全选'}
-              </button>
-            )}
-            {selectMode && checked.size > 0 && (
-              <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500 text-white hover:bg-red-600">
-                <Trash2 size={14} /> 删除 {checked.size} 条
-              </button>
-            )}
-            {selectMode ? (
-              <button onClick={() => { setSelectMode(false); setChecked(new Set()) }} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button>
-            ) : (
-              <button onClick={() => setSelectMode(true)} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>选择</button>
-            )}
+        <>
+          <div className="flex items-center gap-1 mb-3 p-0.5 rounded-lg" style={{ background: 'var(--border-color)' }}>
+            {[{ k: 'all', l: '全部' }, { k: 'active', l: '正常' }, { k: 'frozen', l: '冻结' }].map(({ k, l }) => (
+              <button key={k} onClick={() => setStatus(k)}
+                className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${status === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`}
+                style={{ color: status === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{l}</button>
+            ))}
           </div>
-        </div>
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>共 {total} 条提示词</span>
+            <div className="flex items-center gap-2">
+              {selectMode && (
+                <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>
+                  {checked.size === cards.length ? '取消全选' : '全选'}
+                </button>
+              )}
+              {selectMode && checked.size > 0 && (
+                <>
+                  <button onClick={() => handleBatchFreeze(false)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500 text-white hover:bg-blue-600">
+                    <Sun size={14} /> 解冻 {checked.size} 条
+                  </button>
+                  <button onClick={() => handleBatchFreeze(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500 text-white hover:bg-amber-600">
+                    <Snowflake size={14} /> 冻结 {checked.size} 条
+                  </button>
+                  <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500 text-white hover:bg-red-600">
+                    <Trash2 size={14} /> 删除 {checked.size} 条
+                  </button>
+                </>
+              )}
+              {selectMode ? (
+                <button onClick={() => { setSelectMode(false); setChecked(new Set()) }} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button>
+              ) : (
+                <button onClick={() => setSelectMode(true)} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>选择</button>
+              )}
+            </div>
+          </div>
+        </>
       )}
 
       <CardGrid
@@ -416,14 +444,25 @@ function PromptsTab({ query, sort, activeCategory, isAdmin }) {
         selected={checked}
         onToggleSelect={isAdmin ? toggleCheck : undefined}
         renderOverlay={isAdmin ? (card) => (
-          !selectMode ? (
-            <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-end">
-              <button onClick={(e) => { e.stopPropagation(); handleDeletePrompt(card.id) }}
-                className="p-1 rounded bg-black/50 text-white hover:bg-red-500" title="删除">
-                <Trash2 size={12} />
-              </button>
-            </div>
-          ) : null
+          <>
+            {card.isFrozen && (
+              <div className="absolute top-2 right-2 z-10 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/90 text-white">
+                <Snowflake size={10} className="inline mr-0.5" />冻结
+              </div>
+            )}
+            {!selectMode ? (
+              <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-end gap-1">
+                <button onClick={(e) => { e.stopPropagation(); handleTogglePromptFreeze(card.id, !card.isFrozen) }}
+                  className="p-1 rounded bg-black/50 text-white hover:bg-blue-500" title={card.isFrozen ? '解冻' : '冻结'}>
+                  {card.isFrozen ? <Sun size={12} /> : <Snowflake size={12} />}
+                </button>
+                <button onClick={(e) => { e.stopPropagation(); handleDeletePrompt(card.id) }}
+                  className="p-1 rounded bg-black/50 text-white hover:bg-red-500" title="删除">
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ) : null}
+          </>
         ) : undefined}
       />
 

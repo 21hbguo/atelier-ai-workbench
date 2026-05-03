@@ -35,9 +35,9 @@ class PromptService:
             elif scope == "external":
                 where_clauses.append("p.source IS NOT NULL")
             elif scope in ("all", "community"):
-                pass
+                where_clauses.append("COALESCE(p.is_frozen, FALSE) = FALSE")
             else:
-                where_clauses.append("p.user_id IS NULL")
+                where_clauses.append("p.user_id IS NULL AND COALESCE(p.is_frozen, FALSE) = FALSE")
 
             if category:
                 where_clauses.append("p.category = %s")
@@ -140,9 +140,9 @@ class PromptService:
             elif scope == "external":
                 where_clauses.append("p.source IS NOT NULL")
             elif scope in ("all", "community"):
-                pass
+                where_clauses.append("COALESCE(p.is_frozen, FALSE) = FALSE")
             else:
-                where_clauses.append("p.user_id IS NULL")
+                where_clauses.append("p.user_id IS NULL AND COALESCE(p.is_frozen, FALSE) = FALSE")
 
             if category:
                 where_clauses.append("p.category = %s")

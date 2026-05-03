@@ -405,39 +405,35 @@ async def batch_import_banned_words(body: dict, admin=Depends(require_admin)):
 # ============ 提示词管理 ============
 
 @router.get("/prompts")
-async def list_all_prompts(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), query: str = Query(None), admin=Depends(require_admin)):
+async def list_all_prompts(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), query: str = Query(None), category: str = Query(None), status: str = Query("all"), admin=Depends(require_admin)):
     offset = (page - 1) * size
     with get_db() as conn:
+        where = ["p.user_id IS NULL"]
+        params = []
         if query:
             q = f"%{query}%"
-            total = conn.execute(
-                "SELECT COUNT(*) as cnt FROM prompts p LEFT JOIN users u ON p.user_id = u.id WHERE p.user_id IS NULL AND (p.name LIKE %s OR p.prompt LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s)",
-                (q, q, q, q),
-            ).fetchone()["cnt"]
-            rows = conn.execute(
-                """
-                SELECT p.*, u.username, u.nickname
-                FROM prompts p
-                LEFT JOIN users u ON p.user_id = u.id
-                WHERE p.user_id IS NULL AND (p.name LIKE %s OR p.prompt LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s)
-                ORDER BY p.created_at DESC
-                LIMIT %s OFFSET %s
-                """,
-                (q, q, q, q, size, offset),
-            ).fetchall()
-        else:
-            total = conn.execute("SELECT COUNT(*) as cnt FROM prompts WHERE user_id IS NULL").fetchone()["cnt"]
-            rows = conn.execute(
-                """
-                SELECT p.*, u.username, u.nickname
-                FROM prompts p
-                LEFT JOIN users u ON p.user_id = u.id
-                WHERE p.user_id IS NULL
-                ORDER BY p.created_at DESC
-                LIMIT %s OFFSET %s
-                """,
-                (size, offset),
-            ).fetchall()
+            where.append("(p.name LIKE %s OR p.prompt LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s)")
+            params.extend([q, q, q, q])
+        if category:
+            where.append("p.category = %s")
+            params.append(category)
+        if status == "frozen":
+            where.append("COALESCE(p.is_frozen, FALSE) = TRUE")
+        elif status == "active":
+            where.append("COALESCE(p.is_frozen, FALSE) = FALSE")
+        where_sql = "WHERE " + " AND ".join(where)
+        total = conn.execute(f"SELECT COUNT(*) as cnt FROM prompts p LEFT JOIN users u ON p.user_id = u.id {where_sql}", params).fetchone()["cnt"]
+        rows = conn.execute(
+            f"""
+            SELECT p.*, u.username, u.nickname
+            FROM prompts p
+            LEFT JOIN users u ON p.user_id = u.id
+            {where_sql}
+            ORDER BY p.created_at DESC
+            LIMIT %s OFFSET %s
+            """,
+            params + [size, offset],
+        ).fetchall()
         items = []
         for row in rows:
             d = dict(row)
@@ -445,8 +441,21 @@ async def list_all_prompts(page: int = Query(1, ge=1), size: int = Query(20, ge=
                 d["tags"] = json.loads(d.get("tags") or "[]")
             except (json.JSONDecodeError, TypeError):
                 d["tags"] = []
+            d["is_frozen"] = bool(d.get("is_frozen"))
             items.append(d)
         return {"items": items, "total": total}
+
+
+@router.post("/prompts/freeze")
+async def batch_freeze_prompts(body: dict, admin=Depends(require_admin)):
+    ids = body.get("ids", [])
+    frozen = body.get("frozen", True)
+    if not ids:
+        raise HTTPException(status_code=400, detail="未提供要操作的ID")
+    ids = [str(i) for i in ids]
+    with get_db() as conn:
+        conn.execute("UPDATE prompts SET is_frozen = %s WHERE id = ANY(%s)", (frozen, ids))
+        return {"message": f"已{'冻结' if frozen else '解冻'} {len(ids)} 条提示词", "updated": len(ids), "frozen": bool(frozen)}
 
 
 @router.delete("/prompts/{prompt_id}")
@@ -465,7 +474,7 @@ async def batch_delete_prompts(body: dict, admin=Depends(require_admin)):
     ids = body.get("ids", [])
     if not ids:
         raise HTTPException(status_code=400, detail="未提供要删除的ID")
-    ids = [int(i) for i in ids]
+    ids = [str(i) for i in ids]
     with get_db() as conn:
         conn.execute("DELETE FROM prompt_likes WHERE prompt_id = ANY(%s)", (ids,))
         conn.execute("DELETE FROM prompts WHERE id = ANY(%s)", (ids,))

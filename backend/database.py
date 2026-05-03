@@ -265,6 +265,8 @@ def init_db():
         # 迁移：给 square_images 添加 is_frozen 字段
             if not _column_exists(conn, "square_images", "is_frozen"):
                 conn.execute("ALTER TABLE square_images ADD COLUMN is_frozen BOOLEAN DEFAULT FALSE")
+            if not _column_exists(conn, "prompts", "is_frozen"):
+                conn.execute("ALTER TABLE prompts ADD COLUMN is_frozen BOOLEAN DEFAULT FALSE")
 
         # 初始化默认分类
             count = conn.execute("SELECT COUNT(*) AS cnt FROM categories").fetchone()["cnt"]
