@@ -63,6 +63,8 @@ _runtime_config = {
     "default_model_id": os.getenv("GEN_DEFAULT_MODEL_ID", "image-default"),
     "generation_models": _safe_json_obj(os.getenv("GENERATION_MODELS_JSON", ""), {}),
     "generation_providers": _safe_json_obj(os.getenv("GENERATION_PROVIDERS_JSON", ""), {}),
+    "cost_profit_config": _safe_json_obj(os.getenv("COST_PROFIT_CONFIG_JSON", ""), {}),
+    "cost_profit_launch_at": os.getenv("COST_PROFIT_LAUNCH_AT", ""),
 }
 _runtime_config_defaults = dict(_runtime_config)
 if not _runtime_config["generation_models"]:

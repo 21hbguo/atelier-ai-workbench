@@ -22,6 +22,7 @@ from backend.models.schemas import (
 from backend.auth import get_current_user, record_request, update_user_ip, get_client_ip
 from backend.database import get_db
 from backend.services.image_expiry import RETENTION_DAYS, mark_image_permanent
+from backend.config import get_config
 
 router = APIRouter(prefix="/api/generate", tags=["generate"])
 
@@ -62,12 +63,20 @@ async def _run_generation(task_id: str, task_type: str, submit_payload: dict, me
         external_task_id = result["external_task_id"]
         provider_id = result["provider_id"]
         model_id = result["model_id"]
+        cp = (get_config() or {}).get("cost_profit_config") or {}
+        unit_cost = cp.get("model_provider_costs", {}).get(f"{model_id}__{provider_id}")
+        try:
+            unit_cost = float(unit_cost)
+        except Exception:
+            unit_cost = None
         logger.info(f"[submit.accepted] type={task_type} task={task_id} user={user_id} model={model_id} provider={provider_id} external={external_task_id}")
         task_params = dict(submit_payload)
         task_params["model_id"] = model_id
         task_params["provider_id"] = provider_id
         task_params["external_task_id"] = external_task_id
         task_params["provider_trace"] = result.get("provider_trace") or []
+        task_params["cost_unit"] = unit_cost
+        task_params["cost_amount"] = unit_cost if unit_cost is not None else None
         TaskManager.update_task(task_id, params=task_params)
         urls = await _poll_and_download(provider_id, external_task_id, task_id, meta, user_id=user_id)
         if urls:

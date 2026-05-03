@@ -27,6 +27,8 @@ class ConfigUpdate(BaseModel):
     default_model_id: Optional[str] = None
     generation_models: Optional[Dict[str, Any]] = None
     generation_providers: Optional[Dict[str, Any]] = None
+    cost_profit_config: Optional[Dict[str, Any]] = None
+    cost_profit_launch_at: Optional[str] = None
 
 
 @router.get("")

@@ -115,6 +115,7 @@ export const adminAPI = {
   approveRecharge: (id, data) => api.post(`/admin/recharge-requests/${id}/approve`, data || {}),
   rejectRecharge: (id, data) => api.post(`/admin/recharge-requests/${id}/reject`, data || {}),
   statsOverview: (range = '7d') => api.get('/admin/stats/overview', { params: { range } }),
+  statsCostProfit: (range = '30d') => api.get('/admin/stats/cost-profit', { params: { range } }),
 }
 export const configAPI = { admin: () => api.get('/config/admin'), update: data => api.post('/config', data), generationAdmin: () => api.get('/config/generation/admin'), models: () => api.get('/config/models') }
 

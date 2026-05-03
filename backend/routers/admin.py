@@ -12,11 +12,23 @@ from backend.services.image_mapping import ImageUrlMapping
 from backend.services.points_service import PointsService
 from backend.services.notification_service import NotificationService
 from backend.services.image_expiry import refresh_permanent_flags_by_filenames
-from backend.config import get_generation_providers, get_generation_models
+from backend.config import get_generation_providers, get_generation_models, get_config
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 logger = logging.getLogger(__name__)
 ACTIVE_TASK_TIMEOUT_MINUTES = 20
+
+def _safe_float(v, default=0.0):
+    try:
+        return float(v)
+    except Exception:
+        return float(default)
+
+def _safe_int(v, default=0):
+    try:
+        return int(v)
+    except Exception:
+        return int(default)
 
 def _normalize_banned_word(word: str) -> str:
     return " ".join((word or "").replace("\u3000", " ").strip().split())
@@ -925,3 +937,101 @@ async def admin_stats_overview(time_range: str = Query("7d", alias="range"), adm
         "categories": {"admin_all": [{"category": r["category"], "count": int(r["cnt"] or 0)} for r in cat_all_rows], "user_visible": [{"category": r["category"], "count": int(r["cnt"] or 0)} for r in cat_visible_rows]},
         "generation": {"models": model_stats, "providers": provider_stats, "provider_types": provider_type_stats, "fallback_attempts": fallback_stats, "matrix": matrix},
     }
+
+
+@router.get("/stats/cost-profit")
+async def admin_stats_cost_profit(time_range: str = Query("30d", alias="range"), admin=Depends(require_admin)):
+    from datetime import timedelta as _td
+    cfg = get_config() or {}
+    cp = cfg.get("cost_profit_config") or {}
+    launch_at = (cfg.get("cost_profit_launch_at") or "").strip()
+    now = datetime.now()
+    today_start = datetime(now.year, now.month, now.day)
+    launch_dt = None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        if launch_dt: break
+        try:
+            launch_dt = datetime.strptime(launch_at, fmt)
+        except Exception:
+            pass
+    if not launch_dt:
+        launch_dt = now
+        launch_at = now.strftime("%Y-%m-%d %H:%M:%S")
+    start_dt = launch_dt
+    if time_range == "today":
+        start_dt = max(launch_dt, today_start)
+    elif time_range == "7d":
+        start_dt = max(launch_dt, today_start - _td(days=6))
+    elif time_range == "30d":
+        start_dt = max(launch_dt, today_start - _td(days=29))
+    elif time_range != "all":
+        time_range = "30d"
+        start_dt = max(launch_dt, today_start - _td(days=29))
+    start_s = start_dt.strftime("%Y-%m-%d %H:%M:%S")
+    end_s = now.strftime("%Y-%m-%d %H:%M:%S")
+    model_provider_costs = cp.get("model_provider_costs") or {}
+    provider_quotas = cp.get("provider_quotas") or {}
+    quota_ledger = cp.get("quota_ledger") or []
+    provider_cfg = get_generation_providers() or {}
+    with get_db() as conn:
+        rev = conn.execute("SELECT COALESCE(SUM(amount),0) amt, COUNT(*) cnt FROM recharge_requests WHERE status='approved' AND created_at >= %s AND created_at <= %s", (start_s, end_s)).fetchone()
+        rows = conn.execute(
+            """
+            SELECT COALESCE(NULLIF(params->>'model_id',''),'image-default') model_id,
+                   COALESCE(NULLIF(params->>'provider_id',''),NULLIF(params->'provider_trace'->0->>'provider_id',''),'unknown') provider_id,
+                   COUNT(*) cnt,
+                   COUNT(*) FILTER (WHERE status='completed') success_cnt,
+                   COUNT(*) FILTER (WHERE status='failed') failed_cnt,
+                   COALESCE(SUM(CASE WHEN COALESCE(params->>'cost_amount','') ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN (params->>'cost_amount')::numeric ELSE 0 END),0) cost_snap
+            FROM tasks
+            WHERE created_at >= %s AND created_at <= %s
+              AND COALESCE(NULLIF(params->>'provider_id',''),NULLIF(params->'provider_trace'->0->>'provider_id',''),'') <> ''
+            GROUP BY COALESCE(NULLIF(params->>'model_id',''),'image-default'), COALESCE(NULLIF(params->>'provider_id',''),NULLIF(params->'provider_trace'->0->>'provider_id',''),'unknown')
+            ORDER BY cnt DESC, model_id ASC, provider_id ASC
+            """,
+            (start_s, end_s),
+        ).fetchall()
+    matrix = []
+    provider_map = {}
+    total_cost = 0.0
+    unpriced_calls = 0
+    for r in rows:
+        mid = r["model_id"]
+        pid = r["provider_id"]
+        key = f"{mid}__{pid}"
+        snap_cost = _safe_float(r.get("cost_snap"), 0)
+        unit_cost = _safe_float(model_provider_costs.get(key), -1)
+        cnt = int(r["cnt"] or 0)
+        success = int(r["success_cnt"] or 0)
+        failed = int(r["failed_cnt"] or 0)
+        priced = unit_cost >= 0
+        cost_amt = round(snap_cost if snap_cost > 0 else (unit_cost * cnt if priced else 0.0), 6)
+        if (not priced) and snap_cost <= 0: unpriced_calls += cnt
+        else: total_cost += cost_amt
+        matrix.append({"model_id": mid, "provider_id": pid, "calls": cnt, "success": success, "failed": failed, "success_rate": round((success / (cnt or 1)) * 100, 1), "unit_cost": None if unit_cost < 0 else round(unit_cost, 6), "cost_amount": round(cost_amt, 6), "priced": priced or snap_cost > 0})
+        if pid not in provider_map:
+            provider_map[pid] = {"provider_id": pid, "provider_type": ((provider_cfg.get(pid) or {}).get("type") or "unknown"), "calls": 0, "success": 0, "failed": 0, "cost_amount": 0.0}
+        provider_map[pid]["calls"] += cnt
+        provider_map[pid]["success"] += success
+        provider_map[pid]["failed"] += failed
+        provider_map[pid]["cost_amount"] = round(provider_map[pid]["cost_amount"] + cost_amt, 6)
+    for pid in set(list(provider_cfg.keys()) + list(provider_quotas.keys())):
+        if pid not in provider_map: provider_map[pid] = {"provider_id": pid, "provider_type": ((provider_cfg.get(pid) or {}).get("type") or "unknown"), "calls": 0, "success": 0, "failed": 0, "cost_amount": 0.0}
+    provider_stats = []
+    for pid, item in provider_map.items():
+        q = provider_quotas.get(pid) or {}
+        total_quota = _safe_float(q.get("total_quota"), 0)
+        unit_quota_cost = _safe_float(q.get("unit_quota_cost"), 0)
+        current_balance = q.get("current_balance")
+        if current_balance is None:
+            ledger_add = sum(_safe_float(x.get("change_amount"), 0) for x in quota_ledger if str(x.get("provider_id")) == pid)
+            current_balance = total_quota + ledger_add
+        current_balance = round(_safe_float(current_balance, 0), 6)
+        remaining_times = int(current_balance // unit_quota_cost) if unit_quota_cost > 0 else 0
+        provider_stats.append({**item, "success_rate": round((item["success"] / (item["calls"] or 1)) * 100, 1), "total_quota": round(total_quota, 6), "current_balance": current_balance, "unit_quota_cost": round(unit_quota_cost, 6), "remaining_times": remaining_times, "enabled": (q.get("enabled") is not False)})
+    provider_stats.sort(key=lambda x: (-x["calls"], x["provider_id"]))
+    total_revenue = round(_safe_float((rev or {}).get("amt"), 0), 2)
+    total_cost = round(total_cost, 6)
+    profit = round(total_revenue - total_cost, 6)
+    profit_rate = round((profit / total_revenue) * 100, 2) if total_revenue > 0 else 0.0
+    return {"range": time_range, "start_date": start_dt.strftime("%Y-%m-%d"), "end_date": now.strftime("%Y-%m-%d"), "launch_at": launch_at, "summary": {"revenue_amount": total_revenue, "revenue_orders": int((rev or {}).get("cnt") or 0), "cost_amount": total_cost, "profit_amount": profit, "profit_rate": profit_rate, "unpriced_calls": int(unpriced_calls)}, "providers": provider_stats, "matrix": matrix}
