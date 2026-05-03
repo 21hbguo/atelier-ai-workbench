@@ -1,12 +1,21 @@
 from datetime import datetime
 from backend.database import get_db
+from backend.config import get_limit_config
 
 
 class PointsService:
-    COST_PER_GENERATION = 10
-    CHECKIN_REWARD = 10
-    REGISTER_BONUS = 50
-    MIGRATION_AMOUNT = 50
+    @classmethod
+    def cost_per_generation(cls) -> int:
+        return get_limit_config()["points_cost_per_generation"]
+    @classmethod
+    def checkin_reward(cls) -> int:
+        return get_limit_config()["points_checkin_reward"]
+    @classmethod
+    def register_bonus(cls) -> int:
+        return get_limit_config()["points_register_bonus"]
+    @classmethod
+    def migration_amount(cls) -> int:
+        return get_limit_config()["points_migration_amount"]
 
     @classmethod
     def get_balance(cls, user_id: int) -> int:
@@ -71,6 +80,7 @@ class PointsService:
     @classmethod
     def check_in(cls, user_id: int) -> dict:
         today = datetime.now().strftime("%Y-%m-%d")
+        reward = cls.checkin_reward()
         with get_db() as conn:
             existing = conn.execute(
                 "SELECT id FROM daily_checkins WHERE user_id = %s AND checkin_date = %s",
@@ -82,13 +92,13 @@ class PointsService:
                 "INSERT INTO daily_checkins (user_id, checkin_date) VALUES (%s, %s)",
                 (user_id, today),
             )
-            conn.execute("UPDATE users SET points = points + %s WHERE id = %s", (cls.CHECKIN_REWARD, user_id))
+            conn.execute("UPDATE users SET points = points + %s WHERE id = %s", (reward, user_id))
             new_balance = conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()["points"]
             conn.execute(
                 "INSERT INTO point_transactions (user_id, amount, balance_after, type, description) VALUES (%s, %s, %s, %s, %s)",
-                (user_id, cls.CHECKIN_REWARD, new_balance, "daily_checkin", "每日签到"),
+                (user_id, reward, new_balance, "daily_checkin", "每日签到"),
             )
-            return {"success": True, "points": new_balance, "message": f"签到成功 +{cls.CHECKIN_REWARD}"}
+            return {"success": True, "points": new_balance, "message": f"签到成功 +{reward}"}
 
     @classmethod
     def has_checked_in_today(cls, user_id: int) -> bool:
@@ -126,16 +136,17 @@ class PointsService:
 
     @classmethod
     def migrate_existing_users(cls) -> dict:
+        amount = cls.migration_amount()
         with get_db() as conn:
             users = conn.execute("SELECT id FROM users WHERE points = 0").fetchall()
             count = 0
             for user in users:
                 uid = user["id"]
-                conn.execute("UPDATE users SET points = points + %s WHERE id = %s", (cls.MIGRATION_AMOUNT, uid))
+                conn.execute("UPDATE users SET points = points + %s WHERE id = %s", (amount, uid))
                 new_balance = conn.execute("SELECT points FROM users WHERE id = %s", (uid,)).fetchone()["points"]
                 conn.execute(
                     "INSERT INTO point_transactions (user_id, amount, balance_after, type, description) VALUES (%s, %s, %s, %s, %s)",
-                    (uid, cls.MIGRATION_AMOUNT, new_balance, "migration", "系统补发"),
+                    (uid, amount, new_balance, "migration", "系统补发"),
                 )
                 count += 1
             return {"migrated": count}

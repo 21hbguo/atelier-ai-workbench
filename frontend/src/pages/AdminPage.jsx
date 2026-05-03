@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Trash2, Users, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket, Megaphone, Wallet, Key } from 'lucide-react'
+import { Trash2, Users, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket, Megaphone, Wallet, Key, SlidersHorizontal } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { adminAPI, announcementAPI } from '../api'
+import { adminAPI, announcementAPI, configAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 import PageLayout from '../components/PageLayout'
 import SearchInput from '../components/SearchInput'
@@ -71,6 +71,8 @@ export default function AdminPage() {
   const [newTitle, setNewTitle] = useState('')
   const [newContent, setNewContent] = useState('')
   const [creatingAnnouncement, setCreatingAnnouncement] = useState(false)
+  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3 })
+  const [configSaving, setConfigSaving] = useState(false)
 
   useEffect(() => { setUserPage(1) }, [userQuery])
   useEffect(() => { setHistoryPage(1) }, [historyQuery])
@@ -82,6 +84,7 @@ export default function AdminPage() {
   useEffect(() => { if (tab === 'banned') fetchBannedWords() }, [tab, bannedWordsPage, bannedWordsQuery])
   useEffect(() => { if (tab === 'recharge') fetchRechargeRequests() }, [tab, codesPage, codesSort, codesOrder, rechargeStatusFilter])
   useEffect(() => { if (tab === 'announcements') fetchAnnouncements() }, [tab, announcementPage])
+  useEffect(() => { if (tab === 'config') fetchRuntimeConfig() }, [tab])
 
   const fetchUsers = async () => {
     setLoading(true)
@@ -106,6 +109,41 @@ export default function AdminPage() {
       const { data } = await adminAPI.imageStats()
       setHostingStats(data)
     } catch {}
+  }
+  const fetchRuntimeConfig = async () => {
+    setLoading(true)
+    try {
+      const { data } = await configAPI.admin()
+      setRuntimeConfig({
+        api_url: data.api_url || '',
+        image_hosting_upload_url: data.image_hosting_upload_url || '',
+        image_hosting_base_url: data.image_hosting_base_url || '',
+        image_hosting_referer: data.image_hosting_referer || '',
+        wechat_pay_qr_url: data.wechat_pay_qr_url || '',
+        alipay_pay_qr_url: data.alipay_pay_qr_url || '',
+        manual_recharge_notice: data.manual_recharge_notice || '',
+        generate_concurrent_limit_per_user: Number(data.generate_concurrent_limit_per_user || 10),
+        points_cost_per_generation: Number(data.points_cost_per_generation || 10),
+        points_checkin_reward: Number(data.points_checkin_reward || 10),
+        points_register_bonus: Number(data.points_register_bonus || 50),
+        points_migration_amount: Number(data.points_migration_amount || 50),
+        login_rate_limit_per_minute_per_ip: Number(data.login_rate_limit_per_minute_per_ip || 5),
+        register_rate_limit_per_minute_per_ip: Number(data.register_rate_limit_per_minute_per_ip || 3),
+      })
+    } catch (e) { alert(e.message || '加载配置失败') } finally { setLoading(false) }
+  }
+  const onConfigInput = (k, v) => setRuntimeConfig(prev => ({ ...prev, [k]: v }))
+  const handleSaveConfig = async () => {
+    const n = ['generate_concurrent_limit_per_user', 'points_cost_per_generation', 'points_checkin_reward', 'points_register_bonus', 'points_migration_amount', 'login_rate_limit_per_minute_per_ip', 'register_rate_limit_per_minute_per_ip']
+    const payload = { ...runtimeConfig }
+    for (const k of n) payload[k] = Number(payload[k])
+    if (payload.generate_concurrent_limit_per_user < 1 || payload.points_cost_per_generation < 1 || payload.login_rate_limit_per_minute_per_ip < 1 || payload.register_rate_limit_per_minute_per_ip < 1 || payload.points_checkin_reward < 0 || payload.points_register_bonus < 0 || payload.points_migration_amount < 0) { alert('限制配置不合法'); return }
+    setConfigSaving(true)
+    try {
+      await configAPI.update(payload)
+      alert('保存成功')
+      fetchRuntimeConfig()
+    } catch (e) { alert(e.message || '保存失败') } finally { setConfigSaving(false) }
   }
 
 
@@ -337,7 +375,7 @@ export default function AdminPage() {
     <MainLayout>
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="flex gap-1 p-0.5 rounded-lg mb-4 overflow-x-auto scrollbar-hide" style={{ background: 'var(--border-color)', scrollbarWidth: 'none' }}>
-          {[{ k: 'users', l: '用户管理', i: Users }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'recharge', l: '充值审核', i: Wallet }, { k: 'announcements', l: '公告管理', i: Megaphone }].map(({ k, l, i: Icon }) => (
+          {[{ k: 'users', l: '用户管理', i: Users }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'recharge', l: '充值审核', i: Wallet }, { k: 'announcements', l: '公告管理', i: Megaphone }, { k: 'config', l: '配置中心', i: SlidersHorizontal }].map(({ k, l, i: Icon }) => (
             <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
               <Icon size={14} />{l}
@@ -801,6 +839,38 @@ export default function AdminPage() {
                 </div>
               )}
               <Pagination page={codesPage} totalPages={Math.ceil(codesTotal / 20)} onPageChange={setCodesPage} />
+            </div>
+          </div>
+        ) : tab === 'config' ? (
+          <div className="space-y-4">
+            <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>核心限制配置</h3>
+                <button onClick={handleSaveConfig} disabled={configSaving} className="px-4 py-2 rounded-lg text-xs font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50">{configSaving ? '保存中...' : '保存配置'}</button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {[{ k: 'generate_concurrent_limit_per_user', l: '生成并发上限/用户', min: 1 }, { k: 'points_cost_per_generation', l: '每次生成扣分', min: 1 }, { k: 'points_checkin_reward', l: '每日签到奖励', min: 0 }, { k: 'points_register_bonus', l: '注册送分', min: 0 }, { k: 'points_migration_amount', l: '补发积分值', min: 0 }, { k: 'login_rate_limit_per_minute_per_ip', l: '登录限流/分钟/IP', min: 1 }, { k: 'register_rate_limit_per_minute_per_ip', l: '注册限流/分钟/IP', min: 1 }].map(item => (
+                  <div key={item.k}>
+                    <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>{item.l}</label>
+                    <input type="number" min={item.min} value={runtimeConfig[item.k]} onChange={e => onConfigInput(item.k, e.target.value)} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+              <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>运行时配置</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {[{ k: 'api_url', l: '生成 API URL' }, { k: 'image_hosting_upload_url', l: '图床上传 URL' }, { k: 'image_hosting_base_url', l: '图床基础 URL' }, { k: 'image_hosting_referer', l: '图床 Referer' }, { k: 'wechat_pay_qr_url', l: '微信收款码 URL' }, { k: 'alipay_pay_qr_url', l: '支付宝收款码 URL' }].map(item => (
+                  <div key={item.k}>
+                    <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>{item.l}</label>
+                    <input type="text" value={runtimeConfig[item.k]} onChange={e => onConfigInput(item.k, e.target.value)} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3">
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>手动充值提示文案</label>
+                <textarea value={runtimeConfig.manual_recharge_notice} onChange={e => onConfigInput('manual_recharge_notice', e.target.value)} rows={3} className="w-full px-3 py-2 rounded-lg text-sm border resize-none outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
             </div>
           </div>
         ) : (
