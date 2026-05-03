@@ -150,6 +150,7 @@ export default function PromptsPage() {
 
         <CardGrid
           cards={cards}
+          totalUnit="条"
           loading={loading}
           total={total}
           page={page}

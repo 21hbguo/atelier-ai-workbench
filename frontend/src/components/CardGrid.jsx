@@ -8,6 +8,7 @@ export default function CardGrid({
   showAuthor = false, selectable = false, selected = new Set(), onToggleSelect,
   loading = false, refreshing = false, onRefresh,
   total = 0, page = 1, totalPages = 1, onPageChange,
+  showTotal = true, totalUnit = '张',
   emptyText = '暂无作品',
   renderOverlay,
 }) {
@@ -35,7 +36,7 @@ export default function CardGrid({
   return (
     <>
       <div className="flex items-center justify-between mb-3">
-        {total > 0 && <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{total} 张</span>}
+        {showTotal && total > 0 && <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{total} {totalUnit}</span>}
         {onRefresh && (
           <button onClick={onRefresh} disabled={refreshing}
             className="p-1.5 rounded-lg hover:bg-black/5 transition-colors disabled:opacity-50"

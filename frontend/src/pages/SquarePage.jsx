@@ -219,6 +219,7 @@ function WorksTab({ query, sort, isAdmin, dialog }) {
 
       <CardGrid
         cards={cards}
+        showTotal={!isAdmin}
         loading={loading}
         refreshing={refreshing}
         onRefresh={refresh}
@@ -429,6 +430,7 @@ function PromptsTab({ query, sort, activeCategory, isAdmin, dialog }) {
 
       <CardGrid
         cards={cards}
+        showTotal={!isAdmin}
         loading={loading}
         refreshing={refreshing}
         onRefresh={refresh}
