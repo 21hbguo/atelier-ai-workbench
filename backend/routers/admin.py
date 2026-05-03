@@ -9,6 +9,7 @@ from backend.services.task_manager import TaskManager
 from backend.services.banned_words import BannedWordsService
 from backend.services.image_mapping import ImageUrlMapping
 from backend.services.points_service import PointsService
+from backend.services.image_expiry import refresh_permanent_flags_by_filenames
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 ACTIVE_TASK_TIMEOUT_MINUTES = 20
@@ -116,7 +117,9 @@ async def delete_user(user_id: int, admin=Depends(require_admin)):
         prompt_ids = [r["id"] for r in conn.execute("SELECT id FROM prompts WHERE user_id = %s", (user_id,)).fetchall()]
         if prompt_ids:
             conn.execute("DELETE FROM prompt_likes WHERE prompt_id = ANY(%s)", (prompt_ids,))
-        square_image_ids = [r["id"] for r in conn.execute("SELECT id FROM square_images WHERE user_id = %s", (user_id,)).fetchall()]
+        square_rows = conn.execute("SELECT id,filename FROM square_images WHERE user_id = %s", (user_id,)).fetchall()
+        square_image_ids = [r["id"] for r in square_rows]
+        square_filenames = [r["filename"] for r in square_rows]
         if square_image_ids:
             conn.execute("DELETE FROM square_likes WHERE image_id = ANY(%s)", (square_image_ids,))
         conn.execute("DELETE FROM upload_files WHERE owner_id = %s", (user_id,))
@@ -130,6 +133,8 @@ async def delete_user(user_id: int, admin=Depends(require_admin)):
         conn.execute("UPDATE announcements SET created_by = %s WHERE created_by = %s", (admin["user_id"], user_id))
         conn.execute("DELETE FROM auth_refresh_tokens WHERE user_id = %s", (user_id,))
         conn.execute("DELETE FROM square_images WHERE user_id = %s", (user_id,))
+        if square_filenames:
+            refresh_permanent_flags_by_filenames(square_filenames, conn=conn)
         conn.execute("DELETE FROM point_transactions WHERE user_id = %s", (user_id,))
         conn.execute("DELETE FROM daily_checkins WHERE user_id = %s", (user_id,))
         conn.execute("DELETE FROM users WHERE id = %s", (user_id,))
@@ -197,8 +202,12 @@ async def batch_delete_square(body: dict, admin=Depends(require_admin)):
         raise HTTPException(status_code=400, detail="未提供要删除的ID")
     ids = [int(i) for i in ids]
     with get_db() as conn:
+        rows = conn.execute("SELECT filename FROM square_images WHERE id = ANY(%s)", (ids,)).fetchall()
+        filenames = [r["filename"] for r in rows]
         conn.execute("DELETE FROM square_likes WHERE image_id = ANY(%s)", (ids,))
         conn.execute("DELETE FROM square_images WHERE id = ANY(%s)", (ids,))
+        if filenames:
+            refresh_permanent_flags_by_filenames(filenames, conn=conn)
         return {"message": f"已删除 {len(ids)} 张图片", "deleted": len(ids)}
 
 
@@ -209,8 +218,11 @@ async def delete_square_image(image_id: int, admin=Depends(require_admin)):
         image = conn.execute("SELECT id FROM square_images WHERE id = %s", (image_id,)).fetchone()
         if not image:
             raise HTTPException(status_code=404, detail="图片不存在")
+        row = conn.execute("SELECT filename FROM square_images WHERE id = %s", (image_id,)).fetchone()
         conn.execute("DELETE FROM square_likes WHERE image_id = %s", (image_id,))
         conn.execute("DELETE FROM square_images WHERE id = %s", (image_id,))
+        if row:
+            refresh_permanent_flags_by_filenames([row["filename"]], conn=conn)
         return {"message": "删除成功"}
 
 

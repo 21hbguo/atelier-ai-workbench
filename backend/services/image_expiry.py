@@ -58,6 +58,19 @@ def mark_image_permanent(filename: str, conn=None) -> None:
         return
     with get_db() as c:
         _run(c)
+def refresh_permanent_flags_by_filenames(filenames: list[str], conn=None) -> int:
+    names=[str(x).strip() for x in (filenames or []) if str(x).strip()]
+    names=list(dict.fromkeys(names))
+    if not names:
+        return 0
+    def _run(c):
+        placeholders=",".join(["%s"]*len(names))
+        cur=c.execute(f"UPDATE image_metadata m SET is_permanent = CASE WHEN EXISTS (SELECT 1 FROM square_images s WHERE s.filename = m.filename) THEN TRUE ELSE FALSE END, expires_at = CASE WHEN EXISTS (SELECT 1 FROM square_images s WHERE s.filename = m.filename) THEN NULL ELSE COALESCE(m.expires_at, COALESCE(m.created_at, NOW()) + interval '3 day') END WHERE m.filename IN ({placeholders})", names)
+        return cur.rowcount
+    if conn is not None:
+        return _run(conn)
+    with get_db() as c:
+        return _run(c)
 
 def set_generated_image_expiry(filename: str, created_at: datetime | None = None, conn=None) -> dict:
     created_at=created_at or _now()
