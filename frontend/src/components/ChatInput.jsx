@@ -120,10 +120,11 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
                 style={{ color: showParams ? 'var(--accent)' : 'var(--text-secondary)' }}>
                 <Settings size={16} />
               </button>
-              {/* <button onClick={() => setShareToSquare(!shareToSquare)} className="p-2 rounded-lg hover:bg-black/5 transition-colors"
-                style={{ color: shareToSquare ? '#22c55e' : 'var(--text-secondary)' }}>
+              <button onClick={() => setShareToSquare(!shareToSquare)} className="p-2 rounded-lg hover:bg-black/5 transition-colors relative"
+                style={{ color: shareToSquare ? '#22c55e' : 'var(--text-secondary)' }} title={shareToSquare ? '已开启分享到广场' : '已关闭分享到广场'}>
                 <Share2 size={16} />
-              </button> */}
+                <span className="absolute -right-0.5 -top-0.5 w-2 h-2 rounded-full" style={{ background: shareToSquare ? '#22c55e' : 'var(--border-color)' }} />
+              </button>
             </div>
             <div className="flex-1 relative">
               <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react'
-import { X, Copy, Download, Trash2, Plus, Image as ImageIcon, Maximize2, Heart, ChevronLeft, ChevronRight, Edit2, Check } from 'lucide-react'
+import { X, Copy, Download, Trash2, Plus, Image as ImageIcon, Maximize2, Heart, ChevronLeft, ChevronRight, Edit2, Check, Share2 } from 'lucide-react'
 import { imageAPI } from '../api'
 import { useAppDialog } from './AppDialogProvider'
 
@@ -348,11 +348,11 @@ export default function UnifiedDetailModal({
     if (onShare && isImage && raw.filename) {
       actions.push(
         <button key="share" onClick={() => onShare(card)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
-          分享广场
+          <Share2 size={14} /> 分享广场
         </button>
       )
     }
-    if (onUnshare && raw.id) {
+    if (onUnshare) {
       actions.push(
         <button key="unshare" onClick={() => onUnshare(card)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/20">
           撤回分享

@@ -157,8 +157,10 @@ async def delete_user(user_id: int, admin=Depends(require_admin)):
         return {"message": "删除成功"}
 
 
+_SQUARE_ORDER_MAP = {"likes": "si.likes_count DESC, si.id DESC", "time": "si.created_at DESC, si.id DESC"}
+_PROMPT_ORDER_MAP = {"likes": "p.likes_count DESC, p.id DESC", "time": "p.created_at DESC, p.id DESC"}
 @router.get("/square")
-async def list_all_square(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), query: str = Query(None), status: str = Query("all"), admin=Depends(require_admin)):
+async def list_all_square(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), query: str = Query(None), status: str = Query("all"), sort: str = Query("likes", regex="^(likes|time)$"), admin=Depends(require_admin)):
     with get_db() as conn:
         import json
         offset = (page - 1) * size
@@ -178,13 +180,14 @@ async def list_all_square(page: int = Query(1, ge=1), size: int = Query(20, ge=1
             f"SELECT COUNT(*) as cnt FROM square_images si JOIN users u ON si.user_id = u.id {where_sql}",
             params,
         ).fetchone()["cnt"]
+        order = _SQUARE_ORDER_MAP.get(sort, _SQUARE_ORDER_MAP["likes"])
         rows = conn.execute(
             f"""
             SELECT si.*, u.username, u.nickname
             FROM square_images si
             JOIN users u ON si.user_id = u.id
             {where_sql}
-            ORDER BY si.created_at DESC, si.id DESC
+            ORDER BY {order}
             LIMIT %s OFFSET %s
             """,
             params + [size, offset],
@@ -485,7 +488,7 @@ async def batch_import_banned_words(body: dict, admin=Depends(require_admin)):
 # ============ 提示词管理 ============
 
 @router.get("/prompts")
-async def list_all_prompts(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), query: str = Query(None), category: str = Query(None), status: str = Query("all"), admin=Depends(require_admin)):
+async def list_all_prompts(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), query: str = Query(None), category: str = Query(None), status: str = Query("all"), sort: str = Query("likes", regex="^(likes|time)$"), admin=Depends(require_admin)):
     offset = (page - 1) * size
     with get_db() as conn:
         where = ["p.user_id IS NULL"]
@@ -503,13 +506,14 @@ async def list_all_prompts(page: int = Query(1, ge=1), size: int = Query(20, ge=
             where.append("COALESCE(p.is_frozen, FALSE) = FALSE")
         where_sql = "WHERE " + " AND ".join(where)
         total = conn.execute(f"SELECT COUNT(*) as cnt FROM prompts p LEFT JOIN users u ON p.user_id = u.id {where_sql}", params).fetchone()["cnt"]
+        order = _PROMPT_ORDER_MAP.get(sort, _PROMPT_ORDER_MAP["likes"])
         rows = conn.execute(
             f"""
             SELECT p.*, u.username, u.nickname
             FROM prompts p
             LEFT JOIN users u ON p.user_id = u.id
             {where_sql}
-            ORDER BY p.created_at DESC, p.id DESC
+            ORDER BY {order}
             LIMIT %s OFFSET %s
             """,
             params + [size, offset],

@@ -151,7 +151,7 @@ function WorksTab({ query, sort, isAdmin, dialog, refreshTrigger }) {
   const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike } = useCardData({
     type: 'image',
     apiFn: (p, s) => isAdmin
-      ? adminAPI.square(p, s, query || undefined, status)
+      ? adminAPI.square(p, s, query || undefined, status, sort)
       : squareAPI.list(p, s, query || undefined, sort),
     deps,
     atomicPaging: true,
@@ -310,6 +310,15 @@ function MySharesTab({ refreshTrigger }) {
   const { handleUsePrompt, handleUseImage } = useImageActions()
   const dialog = useAppDialog()
 
+  const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike } = useCardData({
+    type: 'image',
+    apiFn: (p, s) => squareAPI.my(p, s),
+    deps: [refreshTrigger],
+    atomicPaging: true,
+    preloadCount: 12,
+    preloadTimeoutMs: 900,
+  })
+
   const handleUnshare = useCallback(async (card) => {
     if (!await dialog.confirm('确定撤回该分享？撤回后图片将恢复3天有效期。')) return
     try {
@@ -319,16 +328,7 @@ function MySharesTab({ refreshTrigger }) {
     } catch (e) {
       dialog.alert(e?.response?.data?.detail || e.message || '撤回失败')
     }
-  }, [refresh])
-
-  const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike } = useCardData({
-    type: 'image',
-    apiFn: (p, s) => squareAPI.my(p, s),
-    deps: [refreshTrigger],
-    atomicPaging: true,
-    preloadCount: 12,
-    preloadTimeoutMs: 900,
-  })
+  }, [refresh, dialog])
 
   const totalPages = Math.ceil(total / 20)
 
@@ -389,7 +389,7 @@ function PromptsTab({ query, sort, activeCategory, isAdmin, dialog, refreshTrigg
     pageSize: 50,
     apiFn: async (p, s) => {
       if (isAdmin) {
-        const res = await adminAPI.prompts(p, s, query || undefined, activeCategory || undefined, status)
+        const res = await adminAPI.prompts(p, s, query || undefined, activeCategory || undefined, status, sort)
         res.data.prompts = res.data.items || []
         return res
       }

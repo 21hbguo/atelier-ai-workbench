@@ -407,17 +407,15 @@ export default function ChatPage() {
   }, [tasks, pollTask, updateTask])
 
   const completedTasks = visibleTasks.filter(t => t.status === 'completed' && t.result_urls?.length)
+  const visibleDetailCards = useMemo(() => {
+    const ids = new Set(completedTasks.map(t => t.task_id))
+    return detailCards.filter(c => ids.has(c?._raw?.metadata?.task_id))
+  }, [completedTasks, detailCards])
 
-  const handleCardViewDetail = useCallback((taskIndex) => {
-    const completedIndex = completedTasks.findIndex(t => t.task_id === taskIndex)
-    if (completedIndex >= 0) {
-      let imageIndex = 0
-      for (let i = 0; i < completedIndex; i++) {
-        imageIndex += completedTasks[i].result_urls.length
-      }
-      setSelectedCardIndex(imageIndex)
-    }
-  }, [completedTasks])
+  const handleCardViewDetail = useCallback((taskId) => {
+    const idx = visibleDetailCards.findIndex(c => c?._raw?.metadata?.task_id === taskId)
+    if (idx >= 0) setSelectedCardIndex(idx)
+  }, [visibleDetailCards])
 
   const handleModalNavigate = useCallback((newIndex) => {
     setSelectedCardIndex(newIndex)
@@ -626,17 +624,17 @@ export default function ChatPage() {
       )}
       <ChatInput ref={inputRef} onSubmit={handleSubmit} loading={loading} requestCost={isAdmin ? 0 : 10} />
 
-      {selectedCardIndex !== null && detailCards.length > 0 && detailCards[selectedCardIndex] && (
+      {selectedCardIndex !== null && visibleDetailCards.length > 0 && visibleDetailCards[selectedCardIndex] && (
         <UnifiedDetailModal
-          card={detailCards[selectedCardIndex]}
-          cards={detailCards}
+          card={visibleDetailCards[selectedCardIndex]}
+          cards={visibleDetailCards}
           currentIndex={selectedCardIndex}
           onNavigate={handleModalNavigate}
           onClose={() => setSelectedCardIndex(null)}
           onUseImage={card => inputRef.current?.addImage(card.fullUrl)}
           onUsePrompt={handleAddPrompt}
-          onShare={detailCards[selectedCardIndex]?.square_image_id ? undefined : handleDetailShare}
-          onUnshare={detailCards[selectedCardIndex]?.square_image_id ? handleDetailUnshare : undefined}
+          onShare={visibleDetailCards[selectedCardIndex]?.square_image_id ? undefined : handleDetailShare}
+          onUnshare={visibleDetailCards[selectedCardIndex]?.square_image_id ? handleDetailUnshare : undefined}
           onExtend={handleDetailExtend}
           title="生成详情"
           allowMetadataEdit
