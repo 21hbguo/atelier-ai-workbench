@@ -189,7 +189,7 @@ export default function AdminPage() {
     try {
       await announcementAPI.delete(id)
       fetchAnnouncements()
-    } catch {}
+    } catch (e) { alert(e.message || '删除失败') }
   }
 
   const fetchHostingImages = async () => {
@@ -227,7 +227,7 @@ export default function AdminPage() {
     try {
       await adminAPI.deleteBannedWord(wordId)
       fetchBannedWords()
-    } catch {}
+    } catch (e) { alert(e.message || '删除失败') }
   }
 
   const fetchRechargeRequests = async () => {
@@ -322,7 +322,7 @@ export default function AdminPage() {
       await adminAPI.batchDeleteHosting(urls)
       setHostingChecked(new Set()); setHostingSelectMode(false)
       fetchHostingImages(); fetchHostingStats()
-    } catch {}
+    } catch (e) { alert(e.message || '删除失败') }
   }, [hostingChecked, hostingImages])
 
   const handleCleanDuplicates = async () => {
@@ -341,7 +341,7 @@ export default function AdminPage() {
     try {
       await adminAPI.deleteHistory(taskId)
       fetchHistory()
-    } catch {}
+    } catch (e) { alert(e.message || '删除失败') }
   }
 
   const handleToggleFreeze = async (userId, username) => {
@@ -356,7 +356,7 @@ export default function AdminPage() {
     try {
       await adminAPI.deleteUser(userId)
       fetchUsers()
-    } catch {}
+    } catch (e) { alert(e.message || '删除失败') }
   }
 
   const handleResetPassword = async (userId) => {
@@ -1116,7 +1116,7 @@ export default function AdminPage() {
                     try {
                       await adminAPI.batchDeleteHosting([hostingDetail.url])
                       setHostingDetail(null); fetchHostingImages(); fetchHostingStats()
-                    } catch {}
+                    } catch (e) { alert(e.message || '删除失败') }
                   }} className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-red-500 text-white text-xs font-medium hover:bg-red-600">
                     <Trash2 size={14} /> 删除映射
                   </button>

@@ -455,6 +455,7 @@ export default function ChatPage() {
 
   const handleBatchDelete = useCallback(async () => {
     if (!confirm(`确定删除选中的 ${checked.size} 项？`)) return
+    let failed = 0
     for (const taskId of checked) {
       try {
         if (taskId.startsWith('img-')) {
@@ -463,11 +464,12 @@ export default function ChatPage() {
         } else {
           await taskAPI.delete(taskId)
         }
-      } catch {}
+      } catch { failed += 1 }
     }
     setChecked(new Set()); setSelectMode(false)
     refreshTasks()
     window.dispatchEvent(new Event('gallery-updated'))
+    if (failed > 0) alert(`${failed} 项删除失败`)
   }, [checked, refreshTasks])
   const handleBatchExtend = useCallback(async () => {
     const filenames = []

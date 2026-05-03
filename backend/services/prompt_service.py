@@ -115,6 +115,7 @@ class PromptService:
     @classmethod
     def delete(cls, prompt_id: str) -> bool:
         with get_db() as conn:
+            conn.execute("DELETE FROM prompt_likes WHERE prompt_id = %s", (prompt_id,))
             cur = conn.execute("DELETE FROM prompts WHERE id = %s", (prompt_id,))
             return cur.rowcount > 0
 
@@ -122,6 +123,7 @@ class PromptService:
     def batch_delete(cls, ids: List[str]) -> int:
         with get_db() as conn:
             placeholders = ",".join("%s" for _ in ids)
+            conn.execute(f"DELETE FROM prompt_likes WHERE prompt_id IN ({placeholders})", ids)
             cur = conn.execute(f"DELETE FROM prompts WHERE id IN ({placeholders})", ids)
             return cur.rowcount
 

@@ -107,8 +107,28 @@ async def delete_user(user_id: int, admin=Depends(require_admin)):
         user = conn.execute("SELECT id FROM users WHERE id = %s", (user_id,)).fetchone()
         if not user:
             raise HTTPException(status_code=404, detail="用户不存在")
+        recharge_ids = [r["id"] for r in conn.execute("SELECT id FROM recharge_requests WHERE user_id = %s", (user_id,)).fetchall()]
+        if recharge_ids:
+            conn.execute("UPDATE point_transactions SET recharge_request_id = NULL WHERE recharge_request_id = ANY(%s)", (recharge_ids,))
+            conn.execute("UPDATE redemption_codes SET recharge_request_id = NULL WHERE recharge_request_id = ANY(%s)", (recharge_ids,))
+            conn.execute("DELETE FROM recharge_requests WHERE id = ANY(%s)", (recharge_ids,))
+        conn.execute("UPDATE redemption_codes SET used_by = NULL, used_by_ip = '', used_at = NULL WHERE used_by = %s", (user_id,))
+        prompt_ids = [r["id"] for r in conn.execute("SELECT id FROM prompts WHERE user_id = %s", (user_id,)).fetchall()]
+        if prompt_ids:
+            conn.execute("DELETE FROM prompt_likes WHERE prompt_id = ANY(%s)", (prompt_ids,))
+        square_image_ids = [r["id"] for r in conn.execute("SELECT id FROM square_images WHERE user_id = %s", (user_id,)).fetchall()]
+        if square_image_ids:
+            conn.execute("DELETE FROM square_likes WHERE image_id = ANY(%s)", (square_image_ids,))
+        conn.execute("DELETE FROM upload_files WHERE owner_id = %s", (user_id,))
+        conn.execute("DELETE FROM image_metadata WHERE user_id = %s", (user_id,))
+        conn.execute("DELETE FROM tasks WHERE user_id = %s", (user_id,))
+        conn.execute("DELETE FROM prompts WHERE user_id = %s", (user_id,))
         conn.execute("DELETE FROM user_requests WHERE user_id = %s", (user_id,))
         conn.execute("DELETE FROM square_likes WHERE user_id = %s", (user_id,))
+        conn.execute("DELETE FROM prompt_likes WHERE user_id = %s", (user_id,))
+        conn.execute("DELETE FROM announcement_reads WHERE user_id = %s", (user_id,))
+        conn.execute("UPDATE announcements SET created_by = %s WHERE created_by = %s", (admin["user_id"], user_id))
+        conn.execute("DELETE FROM auth_refresh_tokens WHERE user_id = %s", (user_id,))
         conn.execute("DELETE FROM square_images WHERE user_id = %s", (user_id,))
         conn.execute("DELETE FROM point_transactions WHERE user_id = %s", (user_id,))
         conn.execute("DELETE FROM daily_checkins WHERE user_id = %s", (user_id,))

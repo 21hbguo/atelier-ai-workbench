@@ -62,12 +62,12 @@ export default function PromptsPage() {
 
   const handleDelete = async (id) => {
     if (!confirm('确定删除？')) return
-    try { await promptAPI.delete(id); if (detail?.id === id) setDetail(null); refresh() } catch {}
+    try { await promptAPI.delete(id); if (detail?.id === id) setDetail(null); refresh() } catch (e) { alert(e.message || '删除失败') }
   }
 
   const handleBatchDelete = async () => {
     if (selected.size === 0 || !confirm(`删除 ${selected.size} 条？`)) return
-    try { await promptAPI.batchDelete([...selected]); setSelected(new Set()); refresh() } catch {}
+    try { await promptAPI.batchDelete([...selected]); setSelected(new Set()); refresh() } catch (e) { alert(e.message || '批量删除失败') }
   }
 
   const handleImport = async (e) => {
