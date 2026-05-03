@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Image, BookOpen, Share2, Trash2, Snowflake, Sun } from 'lucide-react'
 import { squareAPI, promptAPI, adminAPI } from '../api'
