@@ -76,8 +76,62 @@ class GithubImageHostingService:
             raise Exception(f"GitHub 上传失败（{response.status_code}）: {response.text}")
 
         cdn_url = f"https://cdn.jsdelivr.net/gh/{repo}@{branch}/{file_path}"
-        return cdn_url, None
+        return cdn_url, file_path
+
+    @classmethod
+    async def _get_file_sha(cls, file_path: str) -> Optional[str]:
+        """获取 GitHub 仓库中文件的 SHA"""
+        repo = GITHUB_HOSTING_REPO()
+        token = GITHUB_HOSTING_TOKEN()
+        branch = GITHUB_HOSTING_BRANCH()
+        if not repo or not token:
+            return None
+        api_url = f"{GITHUB_API}/repos/{repo}/contents/{file_path}"
+        headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(api_url, headers=headers, params={"ref": branch})
+            if resp.status_code == 200:
+                return resp.json().get("sha")
+        return None
 
     @classmethod
     async def delete_image(cls, delete_token: str) -> bool:
+        """删除 GitHub 仓库中的图片，delete_token 为文件路径"""
+        if not delete_token:
+            return False
+        file_path = delete_token
+        repo = GITHUB_HOSTING_REPO()
+        token = GITHUB_HOSTING_TOKEN()
+        branch = GITHUB_HOSTING_BRANCH()
+        if not repo or not token:
+            logger.warning("GitHub hosting not configured, cannot delete")
+            return False
+        sha = await cls._get_file_sha(file_path)
+        if not sha:
+            logger.warning(f"Cannot get SHA for {file_path}, file may not exist")
+            return False
+        api_url = f"{GITHUB_API}/repos/{repo}/contents/{file_path}"
+        headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
+        payload = {"message": f"delete {file_path}", "sha": sha, "branch": branch}
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.delete(api_url, json=payload, headers=headers)
+        if response.status_code == 200:
+            logger.info(f"GitHub delete success: {file_path}")
+            return True
+        logger.warning(f"GitHub delete failed ({response.status_code}): {response.text}")
         return False
+
+    @classmethod
+    async def get_repo_size_kb(cls) -> Optional[int]:
+        """获取 GitHub 仓库大小（KB）"""
+        repo = GITHUB_HOSTING_REPO()
+        token = GITHUB_HOSTING_TOKEN()
+        if not repo or not token:
+            return None
+        api_url = f"{GITHUB_API}/repos/{repo}"
+        headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(api_url, headers=headers)
+        if resp.status_code == 200:
+            return resp.json().get("size")
+        return None

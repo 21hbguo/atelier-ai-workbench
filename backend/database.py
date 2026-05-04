@@ -406,7 +406,8 @@ def init_db():
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_user_client_req ON tasks(user_id, ((params->>'client_request_id'))) WHERE params ? 'client_request_id'")
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_favorites_user_target ON favorites(user_id,target_type,target_id)")
             conn.execute("UPDATE image_metadata m SET is_permanent = TRUE, expires_at = NULL WHERE EXISTS (SELECT 1 FROM square_images s WHERE s.filename = m.filename)")
-            conn.execute("UPDATE image_metadata SET expires_at = COALESCE(created_at, NOW()) + interval '3 day' WHERE is_permanent = FALSE AND expires_at IS NULL")
+            conn.execute("UPDATE image_metadata SET expires_at = COALESCE(created_at, NOW()) + interval '2 day' WHERE is_permanent = FALSE AND expires_at IS NULL")
+            conn.execute("UPDATE image_metadata SET expires_at = created_at + interval '2 day' WHERE is_permanent = FALSE AND expires_at IS NOT NULL AND expires_at > NOW() + interval '1 day' AND expires_at <= NOW() + interval '3 day'")
             if not _column_exists(conn, "users", "email"):
                 conn.execute("ALTER TABLE users ADD COLUMN email VARCHAR(255) DEFAULT ''")
             dup_nickname = conn.execute("SELECT nickname,COUNT(*) cnt FROM users WHERE nickname IS NOT NULL AND nickname<>'' GROUP BY nickname HAVING COUNT(*)>1 LIMIT 1").fetchone()

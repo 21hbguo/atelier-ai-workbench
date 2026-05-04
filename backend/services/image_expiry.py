@@ -2,16 +2,24 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import os
 from datetime import datetime, timedelta
-from backend.config import GENERATED_IMAGES_DIR
+from backend.config import GENERATED_IMAGES_DIR, is_github_hosting_enabled
 from backend.database import get_db
 from backend.services.task_manager import TaskManager
 logger=logging.getLogger(__name__)
 EXTEND_DAYS=3
 EXTEND_COST_PER_IMAGE=2
-RETENTION_DAYS=3
+RETENTION_DAYS=2
 IMAGE_EXTEND_TX_TYPE="image_expire_extend"
 IMAGE_GENERATED_TX_TYPE="image_generated"
+GITHUB_REPO_SIZE_LIMIT_MB=200
+
+
+def _detect_hosting_type(url: str) -> str:
+    if "cdn.jsdelivr.net" in url:
+        return "github"
+    return "heliar"
 def _now():
     return datetime.now()
 def _parse_dt(v):
@@ -65,7 +73,7 @@ def refresh_permanent_flags_by_filenames(filenames: list[str], conn=None) -> int
         return 0
     def _run(c):
         placeholders=",".join(["%s"]*len(names))
-        cur=c.execute(f"UPDATE image_metadata m SET is_permanent = CASE WHEN EXISTS (SELECT 1 FROM square_images s WHERE s.filename = m.filename) THEN TRUE ELSE FALSE END, expires_at = CASE WHEN EXISTS (SELECT 1 FROM square_images s WHERE s.filename = m.filename) THEN NULL ELSE COALESCE(m.expires_at, COALESCE(m.created_at, NOW()) + interval '3 day') END WHERE m.filename IN ({placeholders})", names)
+        cur=c.execute(f"UPDATE image_metadata m SET is_permanent = CASE WHEN EXISTS (SELECT 1 FROM square_images s WHERE s.filename = m.filename) THEN TRUE ELSE FALSE END, expires_at = CASE WHEN EXISTS (SELECT 1 FROM square_images s WHERE s.filename = m.filename) THEN NULL ELSE COALESCE(m.expires_at, COALESCE(m.created_at, NOW()) + interval '2 day') END WHERE m.filename IN ({placeholders})", names)
         return cur.rowcount
     if conn is not None:
         return _run(conn)
@@ -132,36 +140,129 @@ def extend_images(filenames: list[str], user_id: int) -> dict:
         return {"success": success, "skipped": skipped, "failed": failed, "total_cost": total_cost, "points": new_balance}
 
 async def cleanup_expired_images() -> dict:
+    from backend.services.github_image_hosting import GithubImageHostingService
+    github_enabled=is_github_hosting_enabled()
     now=_fmt_dt(_now())
     deleted=0
     missing=0
     failed=0
+    github_cleanup=0
+    github_failed=0
     with get_db() as conn:
-        rows=conn.execute("SELECT filename FROM image_metadata WHERE is_permanent = FALSE AND expires_at IS NOT NULL AND expires_at <= %s", (now,)).fetchall()
+        rows=conn.execute("SELECT m.filename, im.url, im.delete_token, im.local_path FROM image_metadata m LEFT JOIN image_mappings im ON im.local_path = CONCAT(%s, '/', m.filename) WHERE m.is_permanent = FALSE AND m.expires_at IS NOT NULL AND m.expires_at <= %s", (str(GENERATED_IMAGES_DIR), now)).fetchall()
         for row in rows:
             filename=row["filename"]
             image_path=GENERATED_IMAGES_DIR / filename
+            url=row["url"]
+            delete_token=row["delete_token"]
+            local_path=row["local_path"]
             try:
+                if github_enabled and url and _detect_hosting_type(url)=="github" and delete_token:
+                    try:
+                        if await GithubImageHostingService.delete_image(delete_token):
+                            github_cleanup+=1
+                        else:
+                            github_failed+=1
+                    except Exception:
+                        github_failed+=1
+                        logger.exception(f"github cleanup failed filename={filename}")
                 if image_path.exists():
                     image_path.unlink()
-                    deleted += 1
+                    deleted+=1
                 else:
-                    missing += 1
+                    missing+=1
                 conn.execute("DELETE FROM image_metadata WHERE filename = %s", (filename,))
+                if local_path:
+                    conn.execute("DELETE FROM image_mappings WHERE local_path = %s", (local_path,))
                 try:
                     TaskManager.remove_image_from_tasks(str(image_path))
                 except Exception:
-                    logger.exception(f"cleanup task refs failed filename={filename}")
+                    pass
             except Exception:
-                failed += 1
+                failed+=1
                 logger.exception(f"cleanup remove file failed filename={filename}")
-    return {"deleted": deleted, "missing": missing, "failed": failed}
+    return {"deleted": deleted, "missing": missing, "failed": failed, "github_cleanup": github_cleanup, "github_failed": github_failed}
+
+
+async def cleanup_dangling_mappings() -> dict:
+    from backend.services.github_image_hosting import GithubImageHostingService
+    github_enabled=is_github_hosting_enabled()
+    cleaned=0
+    github_deleted=0
+    github_failed=0
+    with get_db() as conn:
+        rows=conn.execute("SELECT id, local_path, url, delete_token FROM image_mappings").fetchall()
+        for row in rows:
+            local_path=row["local_path"]
+            if not os.path.exists(local_path):
+                if github_enabled and _detect_hosting_type(row["url"])=="github" and row["delete_token"]:
+                    try:
+                        if await GithubImageHostingService.delete_image(row["delete_token"]):
+                            github_deleted+=1
+                        else:
+                            github_failed+=1
+                    except Exception:
+                        github_failed+=1
+                conn.execute("DELETE FROM image_mappings WHERE id = %s", (row["id"],))
+                cleaned+=1
+    return {"cleaned": cleaned, "github_deleted": github_deleted, "github_failed": github_failed}
+
+
+async def enforce_github_repo_size_limit() -> dict:
+    from backend.services.github_image_hosting import GithubImageHostingService
+    size_kb=await GithubImageHostingService.get_repo_size_kb()
+    if size_kb is None:
+        return {"checked": False, "reason": "unable to get repo size"}
+    size_mb=size_kb/1024
+    if size_mb<=GITHUB_REPO_SIZE_LIMIT_MB:
+        return {"checked": True, "size_mb": round(size_mb, 1), "over_limit": False, "deleted": 0}
+    logger.warning(f"GitHub repo size {size_mb:.1f}MB exceeds limit {GITHUB_REPO_SIZE_LIMIT_MB}MB")
+    deleted=0
+    github_deleted=0
+    github_failed=0
+    with get_db() as conn:
+        rows=conn.execute("SELECT m.filename, im.delete_token, im.url, im.local_path FROM image_metadata m JOIN image_mappings im ON im.local_path = CONCAT(%s, '/', m.filename) WHERE m.is_permanent = FALSE AND im.url LIKE '%%cdn.jsdelivr.net%%' AND im.delete_token != '' ORDER BY m.created_at ASC LIMIT 20", (str(GENERATED_IMAGES_DIR),)).fetchall()
+        for row in rows:
+            try:
+                sha=await GithubImageHostingService._get_file_sha(row["delete_token"])
+                if sha:
+                    success=await GithubImageHostingService.delete_image(row["delete_token"])
+                    if success:
+                        github_deleted+=1
+                        image_path=GENERATED_IMAGES_DIR/row["filename"]
+                        if image_path.exists():
+                            image_path.unlink()
+                        conn.execute("DELETE FROM image_metadata WHERE filename = %s", (row["filename"],))
+                        conn.execute("DELETE FROM image_mappings WHERE local_path = %s", (row["local_path"],))
+                        deleted+=1
+                    else:
+                        github_failed+=1
+                else:
+                    image_path=GENERATED_IMAGES_DIR/row["filename"]
+                    if image_path.exists():
+                        image_path.unlink()
+                    conn.execute("DELETE FROM image_metadata WHERE filename = %s", (row["filename"],))
+                    conn.execute("DELETE FROM image_mappings WHERE local_path = %s", (row["local_path"],))
+                    deleted+=1
+            except Exception:
+                github_failed+=1
+                logger.exception(f"repo size enforcement delete failed filename={row['filename']}")
+    new_size_kb=await GithubImageHostingService.get_repo_size_kb()
+    new_size_mb=(new_size_kb/1024) if new_size_kb else None
+    return {"checked": True, "size_mb": round(size_mb, 1), "new_size_mb": round(new_size_mb, 1) if new_size_mb else None, "over_limit": new_size_mb is not None and new_size_mb>GITHUB_REPO_SIZE_LIMIT_MB, "deleted": deleted, "github_deleted": github_deleted, "github_failed": github_failed}
 
 async def expiry_cleanup_loop(interval_seconds: int = 3600):
     while True:
         try:
             result=await cleanup_expired_images()
             logger.info(f"image expiry cleanup result={result}")
+            mapping_result=await cleanup_dangling_mappings()
+            if mapping_result["cleaned"]>0:
+                logger.info(f"dangling mappings cleanup result={mapping_result}")
+            if is_github_hosting_enabled():
+                size_result=await enforce_github_repo_size_limit()
+                if size_result.get("deleted", 0)>0:
+                    logger.info(f"github repo size enforcement result={size_result}")
         except Exception:
             logger.exception("image expiry cleanup crashed")
         await asyncio.sleep(max(60, int(interval_seconds or 3600)))
