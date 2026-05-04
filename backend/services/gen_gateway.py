@@ -55,14 +55,13 @@ class GenGateway:
         m=resolved["model"]
         providers=(m.get("providers") or [])[:]
         all_providers=get_generation_providers() or {}
-        candidates=[]
+        provider_ids=[]
         for pid in providers:
             conf=all_providers.get(pid) or {}
             if not conf or conf.get("enabled") is False: continue
             if cls._is_open(pid,conf): continue
-            candidates.append((pid,int(conf.get("priority",100) or 100)))
-        candidates.sort(key=lambda x:x[1],reverse=True)
-        return {"model_id":resolved["model_id"],"model":m,"provider_ids":[x[0] for x in candidates]}
+            provider_ids.append(pid)
+        return {"model_id":resolved["model_id"],"model":m,"provider_ids":provider_ids}
     @classmethod
     async def submit(cls, model_id: Optional[str], prompt: str, size: str="auto", image_urls: Optional[List[str]]=None) -> Dict[str, Any]:
         chain=cls.choose_provider_chain(model_id)
