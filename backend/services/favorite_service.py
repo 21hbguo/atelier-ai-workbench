@@ -25,7 +25,6 @@ class FavoriteService:
                 exists=conn.execute("SELECT id FROM prompts WHERE id=%s AND COALESCE(is_frozen,FALSE)=FALSE",(str(target_id),)).fetchone()
             if not exists:raise ValueError("收藏目标不存在")
             conn.execute("INSERT INTO favorites(user_id,target_type,target_id) VALUES(%s,%s,%s)",(user_id,t,str(target_id)))
-            cls.ensure_like_links(user_id,t,[str(target_id)],conn=conn)
             return True
 
     @classmethod
@@ -35,31 +34,6 @@ class FavoriteService:
             placeholders=",".join("%s" for _ in target_ids)
             rows=conn.execute(f"SELECT target_id FROM favorites WHERE user_id=%s AND target_type=%s AND target_id IN ({placeholders})",[user_id,target_type,*[str(i) for i in target_ids]]).fetchall()
             return {str(r["target_id"]) for r in rows}
-        if conn is not None:return _run(conn)
-        with get_db() as conn:return _run(conn)
-
-    @classmethod
-    def ensure_like_links(cls,user_id:int,target_type:str,target_ids:List[str],conn=None)->set:
-        t=(target_type or "").strip()
-        ids=[str(i) for i in (target_ids or []) if str(i).strip()]
-        if not user_id or t not in _ALLOWED_TYPES or not ids:return set()
-        def _run(conn):
-            fixed=set()
-            if t=="image":
-                for sid in ids:
-                    if not sid.isdigit():continue
-                    iid=int(sid)
-                    row=conn.execute("INSERT INTO square_likes(image_id,user_id) VALUES(%s,%s) ON CONFLICT(image_id,user_id) DO NOTHING RETURNING image_id",(iid,user_id)).fetchone()
-                    if row:
-                        conn.execute("UPDATE square_images SET likes_count=likes_count+1 WHERE id=%s",(iid,))
-                        fixed.add(str(iid))
-            else:
-                for sid in ids:
-                    row=conn.execute("INSERT INTO prompt_likes(prompt_id,user_id) VALUES(%s,%s) ON CONFLICT(prompt_id,user_id) DO NOTHING RETURNING prompt_id",(sid,user_id)).fetchone()
-                    if row:
-                        conn.execute("UPDATE prompts SET likes_count=likes_count+1 WHERE id=%s",(sid,))
-                        fixed.add(str(sid))
-            return fixed
         if conn is not None:return _run(conn)
         with get_db() as conn:return _run(conn)
 
@@ -78,16 +52,14 @@ class FavoriteService:
             refs=conn.execute(f"SELECT target_type,target_id,created_at FROM favorites WHERE {where_sql} ORDER BY created_at DESC,id DESC LIMIT %s OFFSET %s",params+[size,offset]).fetchall()
             image_ids=[int(r["target_id"]) for r in refs if r["target_type"]=="image" and str(r["target_id"]).isdigit()]
             prompt_ids=[str(r["target_id"]) for r in refs if r["target_type"]=="prompt"]
-            image_fixed_ids=cls.ensure_like_links(user_id,"image",[str(i) for i in image_ids],conn=conn) if image_ids else set()
-            prompt_fixed_ids=cls.ensure_like_links(user_id,"prompt",prompt_ids,conn=conn) if prompt_ids else set()
             image_liked_ids=set()
             prompt_liked_ids=set()
             if image_ids:
                 placeholders=",".join("%s" for _ in image_ids)
-                image_liked_ids={str(r["image_id"]) for r in conn.execute(f"SELECT image_id FROM square_likes WHERE user_id=%s AND image_id IN ({placeholders})",[user_id,*image_ids]).fetchall()}|image_fixed_ids
+                image_liked_ids={str(r["image_id"]) for r in conn.execute(f"SELECT image_id FROM square_likes WHERE user_id=%s AND image_id IN ({placeholders})",[user_id,*image_ids]).fetchall()}
             if prompt_ids:
                 placeholders=",".join("%s" for _ in prompt_ids)
-                prompt_liked_ids={str(r["prompt_id"]) for r in conn.execute(f"SELECT prompt_id FROM prompt_likes WHERE user_id=%s AND prompt_id IN ({placeholders})",[user_id,*prompt_ids]).fetchall()}|prompt_fixed_ids
+                prompt_liked_ids={str(r["prompt_id"]) for r in conn.execute(f"SELECT prompt_id FROM prompt_likes WHERE user_id=%s AND prompt_id IN ({placeholders})",[user_id,*prompt_ids]).fetchall()}
             image_map={}
             prompt_map={}
             if image_ids:
@@ -95,7 +67,6 @@ class FavoriteService:
                 rows=conn.execute(f"SELECT si.*,u.username,u.nickname FROM square_images si JOIN users u ON si.user_id=u.id WHERE si.id IN ({placeholders}) AND COALESCE(si.is_frozen,FALSE)=FALSE",image_ids).fetchall()
                 image_map={str(r["id"]):dict(r) for r in rows}
                 for k,v in image_map.items():
-                    if k in image_fixed_ids:v["likes_count"]=(v.get("likes_count") or 0)+1
                     v["is_liked"]=k in image_liked_ids
                     w,h=get_image_dimensions(str(GENERATED_IMAGES_DIR / v["filename"]))
                     v["width"]=w;v["height"]=h
@@ -104,7 +75,6 @@ class FavoriteService:
                 rows=conn.execute(f"SELECT p.*,u.username,u.nickname,cat.label AS category_label FROM prompts p LEFT JOIN users u ON p.user_id=u.id LEFT JOIN categories cat ON p.category=cat.slug WHERE p.id IN ({placeholders}) AND COALESCE(p.is_frozen,FALSE)=FALSE",prompt_ids).fetchall()
                 prompt_map={str(r["id"]):dict(r) for r in rows}
                 for k,v in prompt_map.items():
-                    if k in prompt_fixed_ids:v["likes_count"]=(v.get("likes_count") or 0)+1
                     v["is_liked"]=k in prompt_liked_ids
                     if v.get("image_path"):
                         w,h=get_image_dimensions(str((EVO_IMAGES_DIR if "/" in str(v["image_path"]) else UPLOAD_DIR) / v["image_path"]))

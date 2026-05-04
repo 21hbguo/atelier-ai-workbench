@@ -98,8 +98,8 @@ export function useCardData({ type, apiFn, pageSize = 20, deps = [], atomicPagin
     if (!card) return
     const shouldRemoveOnUnfavorite = typeof removeOnUnfavorite === 'function' ? removeOnUnfavorite(card) : !!removeOnUnfavorite
     const nextFavorited = !card.isFavorited
-    const nextLiked = nextFavorited ? true : card.isLiked
-    const nextLikesCount = nextFavorited && !card.isLiked ? card.likesCount + 1 : card.likesCount
+    const nextLiked = card.isLiked
+    const nextLikesCount = card.likesCount
     if (!shouldRemoveOnUnfavorite || nextFavorited) setCards(prev => prev.map(c => c.id === id ? { ...c, isFavorited: nextFavorited, isLiked: nextLiked, likesCount: nextLikesCount } : c))
     try {
       await favoriteAPI.toggle(card._type === 'image' ? 'image' : 'prompt', id)
