@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react'
-import { X, Copy, Download, Trash2, Plus, Image as ImageIcon, Maximize2, Heart, ChevronLeft, ChevronRight, Edit2, Check, Share2 } from 'lucide-react'
+import { X, Copy, Download, Trash2, Plus, Image as ImageIcon, Maximize2, Heart, ChevronLeft, ChevronRight, Edit2, Check, Share2, Star } from 'lucide-react'
 import { imageAPI } from '../api'
 import { useAppDialog } from './AppDialogProvider'
 
@@ -19,6 +19,7 @@ export default function UnifiedDetailModal({
   onNavigate,
   onClose,
   onLike,
+  onFavorite,
   onUsePrompt,
   onUseImage,
   onDelete,
@@ -338,6 +339,13 @@ export default function UnifiedDetailModal({
       actions.push(
         <button key="like" onClick={() => onLike(card.id)} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium ${card.isLiked ? 'bg-[var(--color-error)]/10' : 'hover:bg-bg-hover'}`} style={{ color: card.isLiked ? 'var(--color-error)' : 'var(--text-primary)' }}>
           <Heart size={14} className={card.isLiked ? 'fill-current' : ''} /> {(card.likesCount > 0 || card.isLiked) ? card.likesCount : ''}
+        </button>
+      )
+    }
+    if (onFavorite) {
+      actions.push(
+        <button key="favorite" onClick={() => onFavorite(card.id)} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium ${card.isFavorited ? 'bg-yellow-400/15' : 'hover:bg-bg-hover'}`} style={{ color: card.isFavorited ? '#ca8a04' : 'var(--text-primary)' }}>
+          <Star size={14} className={card.isFavorited ? 'fill-current' : ''} /> {card.isFavorited ? '已收藏' : '收藏'}
         </button>
       )
     }

@@ -16,7 +16,7 @@ async function preloadThumbs(cards, maxCount, timeoutMs) {
   ])
 }
 
-export function useCardData({ type, apiFn, pageSize = 20, deps = [], atomicPaging = false, preloadCount = 0, preloadTimeoutMs = 800, mapCards }) {
+export function useCardData({ type, apiFn, pageSize = 20, deps = [], atomicPaging = false, preloadCount = 0, preloadTimeoutMs = 800, mapCards, removeOnUnfavorite = false }) {
   const [cards, setCards] = useState([])
   const [total, setTotal] = useState(0)
   const [page, setPageState] = useState(1)
@@ -93,18 +93,23 @@ export function useCardData({ type, apiFn, pageSize = 20, deps = [], atomicPagin
   }, [cards, type])
 
   const handleFavorite = useCallback(async (id) => {
-    const card = cards.find(c => c.id === id)
+    const cardIndex = cards.findIndex(c => c.id === id)
+    const card = cardIndex >= 0 ? cards[cardIndex] : null
     if (!card) return
     const nextFavorited = !card.isFavorited
     const nextLiked = nextFavorited ? true : card.isLiked
     const nextLikesCount = nextFavorited && !card.isLiked ? card.likesCount + 1 : card.likesCount
-    setCards(prev => prev.map(c => c.id === id ? { ...c, isFavorited: nextFavorited, isLiked: nextLiked, likesCount: nextLikesCount } : c))
+    setCards(prev => removeOnUnfavorite && !nextFavorited ? prev.filter(c => c.id !== id) : prev.map(c => c.id === id ? { ...c, isFavorited: nextFavorited, isLiked: nextLiked, likesCount: nextLikesCount } : c))
+    if (removeOnUnfavorite && !nextFavorited) setTotal(prev => Math.max(0, prev - 1))
     try {
       await favoriteAPI.toggle(card._type === 'image' ? 'image' : 'prompt', id)
+      return true
     } catch {
-      setCards(prev => prev.map(c => c.id === id ? { ...c, isFavorited: card.isFavorited, isLiked: card.isLiked, likesCount: card.likesCount } : c))
+      if (removeOnUnfavorite && !nextFavorited) setTotal(prev => prev + 1)
+      setCards(prev => removeOnUnfavorite && !nextFavorited ? [...prev.slice(0, cardIndex), card, ...prev.slice(cardIndex)] : prev.map(c => c.id === id ? { ...c, isFavorited: card.isFavorited, isLiked: card.isLiked, likesCount: card.likesCount } : c))
+      return false
     }
-  }, [cards])
+  }, [cards, removeOnUnfavorite])
 
   const updateCard = useCallback((id, updater) => {
     setCards(prev => prev.map(c => c.id === id ? updater(c) : c))

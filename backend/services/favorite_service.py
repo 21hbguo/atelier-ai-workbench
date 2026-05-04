@@ -78,8 +78,16 @@ class FavoriteService:
             refs=conn.execute(f"SELECT target_type,target_id,created_at FROM favorites WHERE {where_sql} ORDER BY created_at DESC,id DESC LIMIT %s OFFSET %s",params+[size,offset]).fetchall()
             image_ids=[int(r["target_id"]) for r in refs if r["target_type"]=="image" and str(r["target_id"]).isdigit()]
             prompt_ids=[str(r["target_id"]) for r in refs if r["target_type"]=="prompt"]
-            if image_ids:cls.ensure_like_links(user_id,"image",[str(i) for i in image_ids],conn=conn)
-            if prompt_ids:cls.ensure_like_links(user_id,"prompt",prompt_ids,conn=conn)
+            image_fixed_ids=cls.ensure_like_links(user_id,"image",[str(i) for i in image_ids],conn=conn) if image_ids else set()
+            prompt_fixed_ids=cls.ensure_like_links(user_id,"prompt",prompt_ids,conn=conn) if prompt_ids else set()
+            image_liked_ids=set()
+            prompt_liked_ids=set()
+            if image_ids:
+                placeholders=",".join("%s" for _ in image_ids)
+                image_liked_ids={str(r["image_id"]) for r in conn.execute(f"SELECT image_id FROM square_likes WHERE user_id=%s AND image_id IN ({placeholders})",[user_id,*image_ids]).fetchall()}|image_fixed_ids
+            if prompt_ids:
+                placeholders=",".join("%s" for _ in prompt_ids)
+                prompt_liked_ids={str(r["prompt_id"]) for r in conn.execute(f"SELECT prompt_id FROM prompt_likes WHERE user_id=%s AND prompt_id IN ({placeholders})",[user_id,*prompt_ids]).fetchall()}|prompt_fixed_ids
             image_map={}
             prompt_map={}
             if image_ids:
@@ -87,6 +95,8 @@ class FavoriteService:
                 rows=conn.execute(f"SELECT si.*,u.username,u.nickname FROM square_images si JOIN users u ON si.user_id=u.id WHERE si.id IN ({placeholders}) AND COALESCE(si.is_frozen,FALSE)=FALSE",image_ids).fetchall()
                 image_map={str(r["id"]):dict(r) for r in rows}
                 for k,v in image_map.items():
+                    if k in image_fixed_ids:v["likes_count"]=(v.get("likes_count") or 0)+1
+                    v["is_liked"]=k in image_liked_ids
                     w,h=get_image_dimensions(str(GENERATED_IMAGES_DIR / v["filename"]))
                     v["width"]=w;v["height"]=h
             if prompt_ids:
@@ -94,6 +104,8 @@ class FavoriteService:
                 rows=conn.execute(f"SELECT p.*,u.username,u.nickname,cat.label AS category_label FROM prompts p LEFT JOIN users u ON p.user_id=u.id LEFT JOIN categories cat ON p.category=cat.slug WHERE p.id IN ({placeholders}) AND COALESCE(p.is_frozen,FALSE)=FALSE",prompt_ids).fetchall()
                 prompt_map={str(r["id"]):dict(r) for r in rows}
                 for k,v in prompt_map.items():
+                    if k in prompt_fixed_ids:v["likes_count"]=(v.get("likes_count") or 0)+1
+                    v["is_liked"]=k in prompt_liked_ids
                     if v.get("image_path"):
                         w,h=get_image_dimensions(str(EVO_IMAGES_DIR / v["image_path"]))
                         v["width"]=w;v["height"]=h

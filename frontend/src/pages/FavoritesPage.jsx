@@ -54,6 +54,7 @@ export default function FavoritesPage() {
     preloadCount: 12,
     preloadTimeoutMs: 900,
     mapCards: items => items,
+    removeOnUnfavorite: true,
   })
   const totalPages = Math.ceil(total / 20)
   return (
@@ -66,7 +67,7 @@ export default function FavoritesPage() {
         </div>
         <CardGrid cards={cards} layoutMode={tab === 'image' ? layoutMode : 'grid'} showTotal totalUnit={tab === 'prompt' ? '条' : '项'} loading={loading} paging={paging} refreshing={refreshing} onRefresh={refresh} hideRefresh total={total} page={page} totalPages={totalPages} onPageChange={setPage} onCardClick={(_, idx) => setDetailIdx(idx)} onFavorite={handleFavorite} onUsePrompt={handleUsePrompt} onUseImage={handleUseImage} showAuthor showLike={false} emptyText="暂无收藏" />
       </div>
-      {detailIdx !== null && cards[detailIdx] && <UnifiedDetailModal card={cards[detailIdx]} cards={cards} currentIndex={detailIdx} onNavigate={setDetailIdx} onClose={() => setDetailIdx(null)} onUsePrompt={handleUsePrompt} onUseImage={handleUseImage} title="收藏详情" hideDownload />}
+      {detailIdx !== null && cards[detailIdx] && <UnifiedDetailModal card={cards[detailIdx]} cards={cards} currentIndex={detailIdx} onNavigate={setDetailIdx} onClose={() => setDetailIdx(null)} onFavorite={async (id) => { const ok = await handleFavorite(id); if (ok && cards[detailIdx]?.id === id) setDetailIdx(null) }} onUsePrompt={handleUsePrompt} onUseImage={handleUseImage} title="收藏详情" hideDownload />}
     </MainLayout>
   )
 }
