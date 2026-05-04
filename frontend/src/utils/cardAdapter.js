@@ -45,6 +45,7 @@ export function normalizePrompt(raw) {
     fullUrl: hasImage ? `/api/prompts/evo-thumb/${raw.image_path}?size=800` : null,
     author: raw.author || raw.nickname || raw.username || '',
     authorId: raw.user_id ? String(raw.user_id) : null,
+    authorName: raw.author || raw.nickname || raw.username || '',
     createdAt: raw.created_at || '',
     likesCount: raw.likes_count || 0,
     isLiked: !!raw.is_liked,

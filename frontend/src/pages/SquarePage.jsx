@@ -93,8 +93,8 @@ export default function SquarePage() {
 
   const handleRefresh = () => setRefreshTrigger(n => n + 1)
   const handleAuthorFilter = useCallback((card) => {
-    if (!card?.authorId || !card?.author) return
-    setAuthorFilter({ id: card.authorId, name: card.author })
+    if (!card?.author) return
+    setAuthorFilter({ id: card.authorId || null, name: card.authorName || card.author })
   }, [])
 
   return (
@@ -163,7 +163,7 @@ function WorksTab({ query, sort, authorFilter, onAuthorFilter, isAdmin, dialog, 
   const [selectMode, setSelectMode] = useState(false)
   const [checked, setChecked] = useState(new Set())
 
-  const deps = useMemo(() => isAdmin ? [query, sort, status, refreshTrigger, authorFilter?.id || ''] : [query, sort, refreshTrigger, authorFilter?.id || ''], [query, sort, status, isAdmin, refreshTrigger, authorFilter])
+  const deps = useMemo(() => isAdmin ? [query, sort, status, refreshTrigger, authorFilter?.id || '', authorFilter?.name || ''] : [query, sort, refreshTrigger, authorFilter?.id || '', authorFilter?.name || ''], [query, sort, status, isAdmin, refreshTrigger, authorFilter])
 
   useEffect(() => { setDetailIdx(null) }, [query, sort, status])
 
@@ -406,7 +406,7 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
   const [status, setStatus] = useState('all')
   const [selectMode, setSelectMode] = useState(false)
   const [checked, setChecked] = useState(new Set())
-  const deps = useMemo(() => isAdmin ? [query, sort, activeCategory, status, refreshTrigger, authorFilter?.id || ''] : [query, sort, activeCategory, refreshTrigger, authorFilter?.id || ''], [query, sort, activeCategory, status, isAdmin, refreshTrigger, authorFilter])
+  const deps = useMemo(() => isAdmin ? [query, sort, activeCategory, status, refreshTrigger, authorFilter?.id || '', authorFilter?.name || ''] : [query, sort, activeCategory, refreshTrigger, authorFilter?.id || '', authorFilter?.name || ''], [query, sort, activeCategory, status, isAdmin, refreshTrigger, authorFilter])
 
   useEffect(() => { setDetailIdx(null) }, [activeCategory, query, sort])
 
@@ -415,12 +415,12 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
     pageSize: 50,
     apiFn: async (p, s) => {
       if (isAdmin) {
-        const res = await adminAPI.prompts(p, s, query || undefined, activeCategory || undefined, status, sort)
+        const res = await adminAPI.prompts(p, s, query || undefined, activeCategory || undefined, status, sort, authorFilter?.id || undefined, authorFilter?.name || undefined)
         res.data.prompts = res.data.items || []
         return res
       }
-      if (!user) return promptAPI.listPublic(query, sort, activeCategory, p, 50, authorFilter?.id || undefined)
-      return promptAPI.list(query, null, 'community', sort, activeCategory, p, 50, authorFilter?.id || undefined)
+      if (!user) return promptAPI.listPublic(query, sort, activeCategory, p, 50, authorFilter?.id || undefined, authorFilter?.name || undefined)
+      return promptAPI.list(query, null, 'community', sort, activeCategory, p, 50, authorFilter?.id || undefined, authorFilter?.name || undefined)
     },
     deps,
     atomicPaging: true,

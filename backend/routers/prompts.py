@@ -43,6 +43,7 @@ async def get_prompts(
     sort: str = Query("likes", regex="^(likes|time)$"),
     category: Optional[str] = Query(None),
     author_id: Optional[int] = Query(None),
+    author_name: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
     user=Depends(get_current_user),
@@ -52,10 +53,10 @@ async def get_prompts(
         uid = user["user_id"]
         if query or tag_list:
             result = PromptService.search(query=query or "", tags=tag_list, scope=scope,
-                                          user_id=uid, sort=sort, category=category, author_id=author_id, page=page, size=size)
+                                          user_id=uid, sort=sort, category=category, author_id=author_id, author_name=author_name, page=page, size=size)
         else:
             result = PromptService.get_all(scope=scope, user_id=uid, sort=sort,
-                                          category=category, author_id=author_id, page=page, size=size)
+                                          category=category, author_id=author_id, author_name=author_name, page=page, size=size)
         return result
     except Exception as e:
         logger.exception("获取提示词列表失败")
@@ -68,6 +69,7 @@ async def get_public_prompts(
     tags: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
     author_id: Optional[int] = Query(None),
+    author_name: Optional[str] = Query(None),
     sort: str = Query("likes", regex="^(likes|time)$"),
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=200),
@@ -78,10 +80,10 @@ async def get_public_prompts(
         uid = user["user_id"] if user else None
         if query or tag_list:
             result = PromptService.search(query=query or "", tags=tag_list, scope="community",
-                                          user_id=uid, sort=sort, category=category, author_id=author_id, page=page, size=size)
+                                          user_id=uid, sort=sort, category=category, author_id=author_id, author_name=author_name, page=page, size=size)
         else:
             result = PromptService.get_all(scope="community", user_id=uid, sort=sort,
-                                          category=category, author_id=author_id, page=page, size=size)
+                                          category=category, author_id=author_id, author_name=author_name, page=page, size=size)
         return result
     except Exception as e:
         logger.exception("获取公开提示词列表失败")

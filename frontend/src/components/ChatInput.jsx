@@ -19,6 +19,8 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const lightboxPushedRef = useRef(false)
   const lightboxClosingByPopRef = useRef(false)
   const imagesRef = useRef([])
+  const restoredRef = useRef(false)
+  const pendingConsumedRef = useRef(false)
   const appendImages = useCallback((items) => {
     if (!items?.length) return
     setImages(prev => {
@@ -40,18 +42,22 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     const pendingImg = localStorage.getItem('pending_image')
 
     if (pendingPrompt) {
+      pendingConsumedRef.current = true
       localStorage.removeItem('pending_prompt')
       setPrompt(pendingPrompt)
       return
     }
 
     if (pendingImg) {
+      pendingConsumedRef.current = true
       localStorage.removeItem('pending_image')
       try {
         const { dataUrl, name } = JSON.parse(pendingImg)
         const res = await fetch(dataUrl)
         const blob = await res.blob()
         const file = new File([blob], name || `ref-${Date.now()}.png`, { type: blob.type })
+        restoredRef.current = true
+        await clearAllCachedImages()
         setImages([{ file, preview: URL.createObjectURL(file) }])
       } catch {}
     }
@@ -65,9 +71,9 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     ;(async () => {
       try {
         const count = await getCachedImage('_count')
-        if (!count) return
+        if (!count) { restoredRef.current = true; return }
         const n = Number(await count.text())
-        if (!n) return
+        if (!n) { restoredRef.current = true; return }
         const items = []
         for (let i = 0; i < n; i++) {
           const blob = await getCachedImage(`img_${i}`)
@@ -76,8 +82,9 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
             items.push({ file, preview: URL.createObjectURL(file) })
           }
         }
-        if (items.length > 0) setImages(items)
+        if (items.length > 0 && !pendingConsumedRef.current) setImages(items)
       } catch {}
+      restoredRef.current = true
     })()
   }, [])
 
@@ -98,8 +105,9 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
 
   useEffect(() => { imagesRef.current = images }, [images])
 
-  // 参考图变化时同步到 IndexedDB
+  // 参考图变化时同步到 IndexedDB（初始恢复完成前跳过，防止清空缓存）
   useEffect(() => {
+    if (!restoredRef.current) return
     ;(async () => {
       try {
         await clearAllCachedImages()

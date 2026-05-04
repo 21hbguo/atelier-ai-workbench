@@ -52,8 +52,8 @@ export const imageAPI = {
 }
 
 export const promptAPI = {
-  list: (query, tags, scope = 'private', sort = 'likes', category, page = 1, size = 50, authorId) => { const params = { scope, sort, page, size }; if (query) params.query = query; if (tags) params.tags = tags; if (category) params.category = category; if (authorId) params.author_id = authorId; return api.get('/prompts', { params }) },
-  listPublic: (query, sort = 'likes', category, page = 1, size = 50, authorId) => { const params = { sort, page, size }; if (query) params.query = query; if (category) params.category = category; if (authorId) params.author_id = authorId; return api.get('/prompts/public', { params }) },
+  list: (query, tags, scope = 'private', sort = 'likes', category, page = 1, size = 50, authorId, authorName) => { const params = { scope, sort, page, size }; if (query) params.query = query; if (tags) params.tags = tags; if (category) params.category = category; if (authorId) params.author_id = authorId; if (authorName) params.author_name = authorName; return api.get('/prompts', { params }) },
+  listPublic: (query, sort = 'likes', category, page = 1, size = 50, authorId, authorName) => { const params = { sort, page, size }; if (query) params.query = query; if (category) params.category = category; if (authorId) params.author_id = authorId; if (authorName) params.author_name = authorName; return api.get('/prompts/public', { params }) },
   categories: () => api.get('/prompts/categories'),
   like: promptId => api.post(`/prompts/like?prompt_id=${promptId}`),
   create: data => api.post('/prompts', data),
@@ -96,7 +96,7 @@ export const adminAPI = {
   deleteSquare: imageId => api.post(`/admin/square/${imageId}/delete`),
   freezeSquare: (ids, frozen = true) => api.post('/admin/square/freeze', { ids, frozen }),
   batchDeleteSquare: ids => api.post('/admin/square/batch-delete', { ids }),
-  prompts: (page = 1, size = 20, query, category, status = 'all', sort = 'likes') => { const params = { page, size, status, sort }; if (query) params.query = query; if (category) params.category = category; return api.get('/admin/prompts', { params }) },
+  prompts: (page = 1, size = 20, query, category, status = 'all', sort = 'likes', authorId, authorName) => { const params = { page, size, status, sort }; if (query) params.query = query; if (category) params.category = category; if (authorId) params.author_id = authorId; if (authorName) params.author_name = authorName; return api.get('/admin/prompts', { params }) },
   freezePrompts: (ids, frozen = true) => api.post('/admin/prompts/freeze', { ids, frozen }),
   deletePrompt: promptId => api.post(`/admin/prompts/${promptId}/delete`),
   batchDeletePrompts: ids => api.post('/admin/prompts/batch-delete', { ids }),

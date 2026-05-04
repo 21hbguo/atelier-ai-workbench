@@ -552,15 +552,21 @@ async def batch_import_banned_words(body: dict, admin=Depends(require_admin)):
 # ============ 提示词管理 ============
 
 @router.get("/prompts")
-async def list_all_prompts(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), query: str = Query(None), category: str = Query(None), status: str = Query("all"), sort: str = Query("likes", regex="^(likes|time)$"), admin=Depends(require_admin)):
+async def list_all_prompts(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), query: str = Query(None), category: str = Query(None), author_id: int = Query(None), author_name: str = Query(None), status: str = Query("all"), sort: str = Query("likes", regex="^(likes|time)$"), admin=Depends(require_admin)):
     offset = (page - 1) * size
     with get_db() as conn:
         where = ["p.user_id IS NULL"]
         params = []
+        if author_id is not None:
+            where.append("p.user_id = %s")
+            params.append(author_id)
+        if author_name:
+            where.append("(p.author = %s OR u.username = %s OR u.nickname = %s)")
+            params.extend([author_name, author_name, author_name])
         if query:
             q = f"%{query}%"
-            where.append("(p.name LIKE %s OR p.prompt LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s)")
-            params.extend([q, q, q, q])
+            where.append("(p.name LIKE %s OR p.prompt LIKE %s OR p.author LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s)")
+            params.extend([q, q, q, q, q])
         if category:
             where.append("p.category = %s")
             params.append(category)
