@@ -39,7 +39,7 @@ export default function MessageBubble({ message, onReusePrompt, onSavePrompt, on
               )}
             </div>
           )}
-          {message.error && <div className="text-sm text-red-500">{message.error}</div>}
+          {message.error && <div className="text-sm text-[var(--color-error)]">{message.error}</div>}
           {message.resultImages && message.resultImages.length > 0 && (
             <div className="mt-2">
               <div className="grid gap-2" style={{ gridTemplateColumns: message.resultImages.length > 1 ? 'repeat(2, 1fr)' : '1fr' }}>
@@ -51,12 +51,12 @@ export default function MessageBubble({ message, onReusePrompt, onSavePrompt, on
               </div>
               {!isUser && message.resultImages.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-3 pt-3" style={{ borderTop: '1px solid var(--border-color)' }}>
-                  <button onClick={onRegenerate} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5 transition-colors"
+                  <button onClick={onRegenerate} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover transition-colors"
                     style={{ color: 'var(--text-secondary)' }}><Repeat size={14} /> 重新生成</button>
-                  <button onClick={onSavePrompt} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5 transition-colors"
+                  <button onClick={onSavePrompt} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover transition-colors"
                     style={{ color: 'var(--text-secondary)' }}><BookmarkPlus size={14} /> 保存提示词</button>
                   {message.resultImages.map((src, i) => (
-                    <a key={i} href={src} download className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5 transition-colors"
+                    <a key={i} href={src} download className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover transition-colors"
                       style={{ color: 'var(--text-secondary)' }}><Download size={14} /> 下载 {i + 1}</a>
                   ))}
                 </div>

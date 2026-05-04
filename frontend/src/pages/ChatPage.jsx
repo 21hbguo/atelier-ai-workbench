@@ -559,13 +559,13 @@ export default function ChatPage() {
       {selectMode && checked.size > 0 && (
         <div className="px-4 py-3 flex items-center gap-3" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
           <span className="text-sm" style={{ color: 'var(--text-primary)' }}>已选 {checked.size} 项</span>
-          <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>
+          <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
             {checked.size === visibleTasks.length ? '取消全选' : '全选'}
           </button>
           <div className="ml-auto flex gap-2">
-            <button onClick={handleBatchExtend} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: '#2563eb' }}>延长3天</button>
+            <button onClick={handleBatchExtend} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--color-info)' }}>延长3天</button>
             <button onClick={handleBatchDownload} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}><Download size={14} /> 下载</button>
-            <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"><Trash2 size={14} /> 删除</button>
+            <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-[var(--color-error)] hover:bg-[var(--color-error)]/10"><Trash2 size={14} /> 删除</button>
           </div>
         </div>
       )}
@@ -606,22 +606,22 @@ export default function ChatPage() {
         )}
         <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="搜索提示词..." />
         <button onClick={handleRefresh} disabled={refreshing}
-          className="p-1.5 rounded-lg hover:bg-black/5 transition-colors disabled:opacity-50"
+          className="p-1.5 rounded-lg hover:bg-bg-hover transition-colors disabled:opacity-50"
           style={{ color: 'var(--text-secondary)' }}>
           <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
         </button>
-        <div className="flex items-center gap-1 rounded-lg p-0.5" style={{ background: 'var(--border-color)' }}>
+        <div className="flex items-center gap-1 rounded-lg p-0.5" style={{ background: 'var(--bg-active)' }}>
           {timeRangeOptions.map(({ k, l }) => (
-            <button key={k} onClick={() => setTimeRange(k)} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${timeRange === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`} style={{ color: timeRange === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{l}</button>
+            <button key={k} onClick={() => setTimeRange(k)} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${timeRange === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`} style={{ color: timeRange === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{l}</button>
           ))}
         </div>
         {selectMode ? (
-          <button onClick={exitSelectMode} className="ml-auto px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button>
+          <button onClick={exitSelectMode} className="ml-auto px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
         ) : (
-          <button onClick={() => setSelectMode(true)} className="ml-auto px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>选择</button>
+          <button onClick={() => setSelectMode(true)} className="ml-auto px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>选择</button>
         )}
       </div>
-      {loadError && <div className="mx-4 mt-2 px-3 py-2 rounded-lg text-xs" style={{ background: 'rgba(245,158,11,.12)', color: '#b45309' }}>{loadError}</div>}
+      {loadError && <div className="mx-4 mt-2 px-3 py-2 rounded-lg text-xs" style={{ background: 'color-mix(in srgb, var(--color-warning) 12%, transparent)', color: 'var(--color-warning)' }}>{loadError}</div>}
       <div ref={feedRef} className="flex-1 min-h-0 overflow-y-auto px-4 pb-56 lg:pb-6">
         {!loaded ? (
           <div className="flex justify-center items-center h-full"><div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} /></div>

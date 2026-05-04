@@ -43,7 +43,7 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <div className="login-card rounded-2xl p-6" style={{ background: 'var(--bg-ai-bubble)', boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}>
+        <div className="login-card rounded-2xl p-6" style={{ background: 'var(--bg-ai-bubble)', boxShadow: 'var(--shadow-lg)' }}>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div>
               <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>用户名</label>
@@ -89,7 +89,7 @@ export default function LoginPage() {
             </div>
 
             {error && (
-              <p className="text-sm text-red-500 text-center">{error}</p>
+              <p className="text-sm text-[var(--color-error)] text-center">{error}</p>
             )}
 
             <button

@@ -145,7 +145,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     <>
       <div className="w-full px-4 pt-2 pb-2">
         <div
-          className="rounded-xl border-2 transition-all duration-150"
+          className="rounded-2xl border transition-all duration-300"
           style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-md)', position: 'relative' }}
         >
           {showParams && <div className="p-3 border-b" style={{ borderColor: 'var(--border-color)' }}><ParamPanel params={params} onChange={setParams} /></div>}
@@ -170,13 +170,13 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
               rows={1} style={{ color: 'var(--text-primary)', minHeight: '40px', maxHeight: '120px' }} />
             <div className="mt-2 flex items-center justify-between gap-3">
               <div className="flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
-                <button onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-black/5 transition-colors text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}><Paperclip size={14} /><span>上传</span></button>
-                <button onClick={toggleParams} className="inline-flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-black/5 transition-colors text-[11px] font-medium" style={{ color: showParams ? 'var(--accent)' : 'var(--text-secondary)' }}><Settings size={13} /><span>参数</span></button>
-                <button onClick={() => setShareToSquare(!shareToSquare)} className="inline-flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-black/5 transition-colors relative text-[11px] font-medium" style={{ color: shareToSquare ? '#22c55e' : 'var(--text-secondary)' }} title={shareToSquare ? '已开启分享到广场' : '已关闭分享到广场'}><Share2 size={13} /><span>分享</span><span className="absolute -right-0.5 -top-0.5 w-1.5 h-1.5 rounded-full" style={{ background: shareToSquare ? '#22c55e' : 'var(--border-color)' }} /></button>
+                <button onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-bg-hover transition-colors text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}><Paperclip size={14} /><span>上传</span></button>
+                <button onClick={toggleParams} className="inline-flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-bg-hover transition-colors text-[11px] font-medium" style={{ color: showParams ? 'var(--accent)' : 'var(--text-secondary)' }}><Settings size={13} /><span>参数</span></button>
+                <button onClick={() => setShareToSquare(!shareToSquare)} className="inline-flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-bg-hover transition-colors relative text-[11px] font-medium" style={{ color: shareToSquare ? 'var(--color-success)' : 'var(--text-secondary)' }} title={shareToSquare ? '已开启分享到广场' : '已关闭分享到广场'}><Share2 size={13} /><span>分享</span><span className="absolute -right-0.5 -top-0.5 w-1.5 h-1.5 rounded-full" style={{ background: shareToSquare ? 'var(--color-success)' : 'var(--border-color)' }} /></button>
               </div>
               <div className="min-w-0 flex items-center justify-end gap-1 flex-1">
                 {prompt.length > 0 && <span className="text-[10px] tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{prompt.length}</span>}
-                <button onClick={() => handleSend(true)} disabled={!prompt.trim() || loading} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-white disabled:opacity-40 flex-shrink-0" style={{ background: prompt.trim() && !loading ? '#2563eb' : 'var(--border-color)' }}><Send size={13} /><span className="text-[10px] font-medium leading-none">×{batchCount}</span></button>
+                <button onClick={() => handleSend(true)} disabled={!prompt.trim() || loading} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-white disabled:opacity-40 flex-shrink-0" style={{ background: prompt.trim() && !loading ? 'var(--accent)' : 'var(--border-color)' }}><Send size={13} /><span className="text-[10px] font-medium leading-none">×{batchCount}</span></button>
                 <button onClick={() => handleSend(false)} disabled={!prompt.trim() || loading} className="p-1 rounded-md transition-all duration-150 disabled:opacity-40 flex-shrink-0" style={{ background: prompt.trim() && !loading ? 'var(--accent)' : 'var(--border-color)', color: '#fff' }}><Send size={13} /></button>
               </div>
             </div>

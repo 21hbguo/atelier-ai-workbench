@@ -644,9 +644,9 @@ export default function AdminPage() {
       <div className="admin-dense flex-1 overflow-y-auto p-3 sm:p-4">
         <div className="flex gap-1 p-0.5 rounded-lg mb-4 overflow-x-auto scrollbar-hide" style={{ background: 'var(--border-color)', scrollbarWidth: 'none' }}>
           {[{ k: 'stats', l: '系统统计', i: BarChart3 }, { k: 'users', l: '用户管理', i: Users }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'recharge', l: '充值审核', i: Wallet }, { k: 'announcements', l: '公告管理', i: Megaphone }, { k: 'config', l: '配置中心', i: SlidersHorizontal }].map(({ k, l, i: Icon }) => (
-            <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`}
+            <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
-              <Icon size={14} />{l}{k === 'recharge' && rechargePendingCount > 0 && <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] text-white" style={{ background: '#ef4444' }}>{rechargePendingCount}</span>}
+              <Icon size={14} />{l}{k === 'recharge' && rechargePendingCount > 0 && <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] text-white" style={{ background: 'var(--color-error)' }}>{rechargePendingCount}</span>}
             </button>
           ))}
         </div>
@@ -672,13 +672,13 @@ export default function AdminPage() {
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>请求数</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{overviewStats?.kpi?.requests ?? 0}</div></div>
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>成功数</div><div className="text-lg font-semibold" style={{ color: '#22c55e' }}>{overviewStats?.kpi?.success ?? 0}</div></div>
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>成功率</div><div className="text-lg font-semibold" style={{ color: '#22c55e' }}>{overviewStats?.kpi?.success_rate ?? 0}%</div></div>
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>成功数</div><div className="text-lg font-semibold" style={{ color: 'var(--color-success)' }}>{overviewStats?.kpi?.success ?? 0}</div></div>
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>成功率</div><div className="text-lg font-semibold" style={{ color: 'var(--color-success)' }}>{overviewStats?.kpi?.success_rate ?? 0}%</div></div>
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>平均耗时</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{overviewStats?.kpi?.avg_duration_seconds ?? 0}s</div></div>
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>新增用户</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{overviewStats?.kpi?.new_users ?? 0}</div></div>
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>活跃用户</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{overviewStats?.kpi?.active_users ?? 0}</div></div>
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>处理中</div><div className="text-lg font-semibold" style={{ color: '#f59e0b' }}>{overviewStats?.kpi?.processing_tasks ?? 0}</div></div>
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>积分消耗</div><div className="text-lg font-semibold" style={{ color: '#ef4444' }}>{(overviewStats?.trends_30d || []).reduce((s, i) => s + Number(i.points_spent || 0), 0)}</div></div>
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>处理中</div><div className="text-lg font-semibold" style={{ color: 'var(--color-warning)' }}>{overviewStats?.kpi?.processing_tasks ?? 0}</div></div>
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>积分消耗</div><div className="text-lg font-semibold" style={{ color: 'var(--color-error)' }}>{(overviewStats?.trends_30d || []).reduce((s, i) => s + Number(i.points_spent || 0), 0)}</div></div>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
                   <div className="p-3 rounded-xl border lg:col-span-2" style={{ borderColor: 'var(--border-color)' }}>
@@ -725,13 +725,13 @@ export default function AdminPage() {
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>近30天生成Top用户</div>
                     <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
-                      {(overviewStats?.leaderboards?.success_top || []).slice(0, 8).map((i, idx) => <div key={`s-${i.user_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.nickname || i.username}`} style={{ color: 'var(--text-primary)' }}>{idx + 1}. {i.nickname || i.username}</span><span className="shrink-0" style={{ color: '#22c55e' }}>{i.success_count}</span></div>)}
+                      {(overviewStats?.leaderboards?.success_top || []).slice(0, 8).map((i, idx) => <div key={`s-${i.user_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.nickname || i.username}`} style={{ color: 'var(--text-primary)' }}>{idx + 1}. {i.nickname || i.username}</span><span className="shrink-0" style={{ color: 'var(--color-success)' }}>{i.success_count}</span></div>)}
                     </div>
                   </div>
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>近30天充值Top用户</div>
                     <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
-                      {(overviewStats?.leaderboards?.recharge_top || []).slice(0, 8).map((i, idx) => <div key={`r-${i.user_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.nickname || i.username}`} style={{ color: 'var(--text-primary)' }}>{idx + 1}. {i.nickname || i.username}</span><span className="shrink-0" style={{ color: '#f59e0b' }}>¥{i.amount}</span></div>)}
+                      {(overviewStats?.leaderboards?.recharge_top || []).slice(0, 8).map((i, idx) => <div key={`r-${i.user_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.nickname || i.username}`} style={{ color: 'var(--text-primary)' }}>{idx + 1}. {i.nickname || i.username}</span><span className="shrink-0" style={{ color: 'var(--color-warning)' }}>¥{i.amount}</span></div>)}
                     </div>
                   </div>
                 </div>
@@ -783,8 +783,8 @@ export default function AdminPage() {
                     <table className="w-full text-xs">
                       <thead>
                         <tr>
-                          <th className="px-2 py-1.5 text-left font-medium sticky left-0 z-10" style={{ color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}>模型\\渠道</th>
-                          {(overviewStats?.generation?.matrix?.providers || []).map(pid => <th key={`mxh-${pid}`} className="px-2 py-1.5 text-right font-medium whitespace-nowrap" style={{ color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}>{pid}</th>)}
+                          <th className="px-2 py-1.5 text-left font-medium sticky left-0 z-10" style={{ color: 'var(--text-secondary)', background: 'var(--bg-card)' }}>模型\\渠道</th>
+                          {(overviewStats?.generation?.matrix?.providers || []).map(pid => <th key={`mxh-${pid}`} className="px-2 py-1.5 text-right font-medium whitespace-nowrap" style={{ color: 'var(--text-secondary)', background: 'var(--bg-card)' }}>{pid}</th>)}
                         </tr>
                       </thead>
                       <tbody>
@@ -824,10 +824,10 @@ export default function AdminPage() {
                     <div className="space-y-3">
                       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                         <div><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>总收入</div><div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>¥{costProfitStats?.summary?.revenue_amount ?? 0}</div></div>
-                        <div><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>总成本</div><div className="text-sm font-semibold" style={{ color: '#ef4444' }}>¥{costProfitStats?.summary?.cost_amount ?? 0}</div></div>
-                        <div><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>利润</div><div className="text-sm font-semibold" style={{ color: '#22c55e' }}>¥{costProfitStats?.summary?.profit_amount ?? 0}</div></div>
-                        <div><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>利润率</div><div className="text-sm font-semibold" style={{ color: '#22c55e' }}>{costProfitStats?.summary?.profit_rate ?? 0}%</div></div>
-                        <div><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>未定价调用</div><div className="text-sm font-semibold" style={{ color: '#f59e0b' }}>{costProfitStats?.summary?.unpriced_calls ?? 0}</div></div>
+                        <div><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>总成本</div><div className="text-sm font-semibold" style={{ color: 'var(--color-error)' }}>¥{costProfitStats?.summary?.cost_amount ?? 0}</div></div>
+                        <div><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>利润</div><div className="text-sm font-semibold" style={{ color: 'var(--color-success)' }}>¥{costProfitStats?.summary?.profit_amount ?? 0}</div></div>
+                        <div><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>利润率</div><div className="text-sm font-semibold" style={{ color: 'var(--color-success)' }}>{costProfitStats?.summary?.profit_rate ?? 0}%</div></div>
+                        <div><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>未定价调用</div><div className="text-sm font-semibold" style={{ color: 'var(--color-warning)' }}>{costProfitStats?.summary?.unpriced_calls ?? 0}</div></div>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
@@ -845,7 +845,7 @@ export default function AdminPage() {
                       </div>
                       <div className="overflow-x-auto">
                         <div className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>模型×渠道成本</div>
-                        <table className="w-full text-xs"><thead><tr><th className="px-2 py-1.5 text-left" style={{ color: 'var(--text-secondary)' }}>模型</th><th className="px-2 py-1.5 text-left" style={{ color: 'var(--text-secondary)' }}>渠道</th><th className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>调用</th><th className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>单次成本</th><th className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>成本汇总</th><th className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>操作</th></tr></thead><tbody>{(costProfitStats?.matrix || []).map(i => <tr key={`${i.model_id}-${i.provider_id}`} className="border-t" style={{ borderColor: 'var(--border-color)' }}><td className="px-2 py-1.5" style={{ color: 'var(--text-primary)' }}>{modelLabelMap[i.model_id] || i.model_id}</td><td className="px-2 py-1.5" style={{ color: 'var(--text-primary)' }}>{i.provider_id}</td><td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>{i.calls}</td><td className="px-2 py-1.5 text-right" style={{ color: i.priced ? 'var(--text-secondary)' : '#f59e0b' }}>{i.priced ? i.unit_cost : '未定价'}</td><td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>¥{i.cost_amount}</td><td className="px-2 py-1.5 text-right"><button onClick={() => openCostEditor(i.model_id, i.provider_id)} className="px-2 py-1 rounded text-[11px] border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>定价</button></td></tr>)}</tbody></table>
+                        <table className="w-full text-xs"><thead><tr><th className="px-2 py-1.5 text-left" style={{ color: 'var(--text-secondary)' }}>模型</th><th className="px-2 py-1.5 text-left" style={{ color: 'var(--text-secondary)' }}>渠道</th><th className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>调用</th><th className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>单次成本</th><th className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>成本汇总</th><th className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>操作</th></tr></thead><tbody>{(costProfitStats?.matrix || []).map(i => <tr key={`${i.model_id}-${i.provider_id}`} className="border-t" style={{ borderColor: 'var(--border-color)' }}><td className="px-2 py-1.5" style={{ color: 'var(--text-primary)' }}>{modelLabelMap[i.model_id] || i.model_id}</td><td className="px-2 py-1.5" style={{ color: 'var(--text-primary)' }}>{i.provider_id}</td><td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>{i.calls}</td><td className="px-2 py-1.5 text-right" style={{ color: i.priced ? 'var(--text-secondary)' : 'var(--color-warning)' }}>{i.priced ? i.unit_cost : '未定价'}</td><td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>¥{i.cost_amount}</td><td className="px-2 py-1.5 text-right"><button onClick={() => openCostEditor(i.model_id, i.provider_id)} className="px-2 py-1 rounded text-[11px] border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>定价</button></td></tr>)}</tbody></table>
                       </div>
                     </div>
                   )}
@@ -898,7 +898,7 @@ export default function AdminPage() {
               {generatedCodes.length > 0 && (
                 <div className="mt-3 p-2.5 rounded-lg text-xs" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }}>
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium" style={{ background: '#22c55e20', color: '#22c55e' }}>成功</span>
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium" style={{ background: 'color-mix(in srgb, var(--color-success) 12%, transparent)', color: 'var(--color-success)' }}>成功</span>
                     <span style={{ color: 'var(--text-secondary)' }}>已生成 {generatedCodes.length} 个兑换码</span>
                   </div>
                   <div className="font-mono break-all leading-relaxed" style={{ color: 'var(--accent)' }}>{generatedCodes.join('、')}</div>
@@ -911,10 +911,10 @@ export default function AdminPage() {
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>充值记录</h3>
-                  {rechargePendingCount > 0 && <span className="px-2 py-0.5 rounded-full text-[11px] text-white" style={{ background: '#ef4444' }}>待审 {rechargePendingCount}</span>}
+                  {rechargePendingCount > 0 && <span className="px-2 py-0.5 rounded-full text-[11px] text-white" style={{ background: 'var(--color-error)' }}>待审 {rechargePendingCount}</span>}
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {rechargePendingCount > 0 && rechargeStatusFilter !== 'pending' && <button onClick={() => { setRechargeStatusFilter('pending'); setCodesPage(1) }} className="px-2 py-1 rounded-lg text-xs font-medium text-white" style={{ background: '#ef4444' }}>只看待审</button>}
+                  {rechargePendingCount > 0 && rechargeStatusFilter !== 'pending' && <button onClick={() => { setRechargeStatusFilter('pending'); setCodesPage(1) }} className="px-2 py-1 rounded-lg text-xs font-medium text-white" style={{ background: 'var(--color-error)' }}>只看待审</button>}
                   <select value={rechargeStatusFilter} onChange={e => { setRechargeStatusFilter(e.target.value); setCodesPage(1) }}
                     className="px-2 py-1 rounded-lg text-xs font-medium border outline-none cursor-pointer"
                     style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
@@ -931,16 +931,16 @@ export default function AdminPage() {
                     <option value="points">按积分额度</option>
                   </select>
                   <button onClick={() => setCodesOrder(o => o === 'desc' ? 'asc' : 'desc')}
-                    className="px-2 py-1 rounded-lg text-xs font-medium border hover:bg-black/5 transition-colors"
+                    className="px-2 py-1 rounded-lg text-xs font-medium border hover:bg-bg-hover transition-colors"
                     style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
                     {codesOrder === 'desc' ? '↓' : '↑'}
                   </button>
                 </div>
               </div>
               {rechargePendingCount > 0 && (
-                <div className="mb-3 px-3 py-2 rounded-xl border text-sm flex items-center justify-between gap-3" style={{ borderColor: '#f59e0b', background: 'rgba(245,158,11,0.12)', color: '#b45309' }}>
+                <div className="mb-3 px-3 py-2 rounded-xl border text-sm flex items-center justify-between gap-3" style={{ borderColor: 'var(--color-warning)', background: 'color-mix(in srgb, var(--color-warning) 12%, transparent)', color: 'var(--color-warning)' }}>
                   <span>当前有 {rechargePendingCount} 条充值申请待审核。</span>
-                  <button onClick={() => { setRechargeStatusFilter('pending'); setCodesPage(1) }} className="px-2 py-1 rounded-lg text-xs font-medium text-white" style={{ background: '#f59e0b' }}>直达待审</button>
+                  <button onClick={() => { setRechargeStatusFilter('pending'); setCodesPage(1) }} className="px-2 py-1 rounded-lg text-xs font-medium text-white" style={{ background: 'var(--color-warning)' }}>直达待审</button>
                 </div>
               )}
               {loading ? (
@@ -952,7 +952,7 @@ export default function AdminPage() {
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
-                        <tr style={{ background: 'var(--bg-secondary)' }}>
+                        <tr style={{ background: 'var(--bg-card)' }}>
                           <th className="px-4 py-3 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>用户</th>
                           <th className="px-4 py-3 text-center font-semibold" style={{ color: 'var(--text-secondary)' }}>渠道</th>
                           <th className="px-4 py-3 text-right font-semibold" style={{ color: 'var(--text-secondary)' }}>金额</th>
@@ -967,7 +967,7 @@ export default function AdminPage() {
                       </thead>
                       <tbody>
                         {codes.map(c => (
-                          <tr key={c.id} className="border-t transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02]" style={{ borderColor: 'var(--border-color)' }}>
+                          <tr key={c.id} className="border-t transition-colors hover:bg-bg-hover" style={{ borderColor: 'var(--border-color)' }}>
                             <td className="px-4 py-3">
                               <div style={{ color: 'var(--text-primary)' }}>{c.nickname || c.username}</div>
                               <div className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>@{c.username}</div>
@@ -986,8 +986,8 @@ export default function AdminPage() {
                             </td>
                             <td className="px-4 py-3 text-center">
                               <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{
-                                color: c.status === 'approved' ? '#22c55e' : c.status === 'rejected' ? '#ef4444' : '#f59e0b',
-                                background: c.status === 'approved' ? '#22c55e20' : c.status === 'rejected' ? '#ef444420' : '#f59e0b20'
+                                color: c.status === 'approved' ? 'var(--color-success)' : c.status === 'rejected' ? 'var(--color-error)' : 'var(--color-warning)',
+                                background: c.status === 'approved' ? 'color-mix(in srgb, var(--color-success) 12%, transparent)' : c.status === 'rejected' ? 'color-mix(in srgb, var(--color-error) 12%, transparent)' : 'color-mix(in srgb, var(--color-warning) 12%, transparent)'
                               }}>
                                 {{ pending: '待审核', approved: '已通过', rejected: '已拒绝' }[c.status]}
                               </span>
@@ -1013,7 +1013,7 @@ export default function AdminPage() {
                                     通过
                                   </button>
                                   <button onClick={() => { setReviewModal({ ...c, action: 'reject' }); setReviewNote('') }}
-                                    className="px-2 py-1 rounded-lg text-[11px] font-medium bg-red-500 text-white hover:bg-red-600">
+                                    className="px-2 py-1 rounded-lg text-[11px] font-medium bg-[var(--color-error)] text-white hover:opacity-90">
                                     拒绝
                                   </button>
                                 </div>
@@ -1095,7 +1095,7 @@ export default function AdminPage() {
                 <div className="overflow-x-auto overflow-y-auto max-h-[28rem] rounded border" style={{ borderColor: 'var(--border-color)' }}>
                   <table className="w-full text-xs">
                     <thead>
-                      <tr style={{ background: 'var(--bg-secondary)' }}>
+                      <tr style={{ background: 'var(--bg-card)' }}>
                         <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>选择</th>
                         <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>类别</th>
                         <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>ID</th>
@@ -1108,14 +1108,14 @@ export default function AdminPage() {
                       {Object.entries(genModelsObj).map(([mid, m]) => (
                         <tr key={`m:${mid}`} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
                           <td className="px-3 py-2 text-center"><input type="radio" name="gen-row" checked={selectedGenRow === `m:${mid}`} onChange={() => setSelectedGenRow(`m:${mid}`)} /></td>
-                          <td className="px-3 py-2" style={{ color: '#2563eb' }}>模型</td>
+                          <td className="px-3 py-2" style={{ color: 'var(--color-info)' }}>模型</td>
                           <td className="px-3 py-2 font-mono" style={{ color: 'var(--text-primary)' }}>{mid}</td>
                           <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{`${m?.label || '-'} | ${m?.capability || 'image'} | providers: ${(Array.isArray(m?.providers) ? m.providers : []).join(',') || '-'}`}</td>
-                          <td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 rounded-full text-[11px] ${m?.enabled !== false ? 'bg-green-500/15 text-green-600' : 'bg-gray-500/15 text-gray-500'}`}>{m?.enabled !== false ? '启用' : '禁用'}</span></td>
+                          <td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 rounded-full text-[11px] ${m?.enabled !== false ? 'bg-green-500/15 text-[var(--color-success)]' : 'bg-gray-500/15 text-gray-500'}`}>{m?.enabled !== false ? '启用' : '禁用'}</span></td>
                           <td className="px-3 py-2 text-right">
                             <div className="inline-flex items-center gap-2">
                               <button onClick={() => openModelEditor(mid)} className="px-2 py-1 rounded text-xs border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>编辑</button>
-                              <button onClick={() => handleDeleteModel(mid)} className="px-2 py-1 rounded text-xs border text-red-500" style={{ borderColor: 'var(--border-color)' }}>删除</button>
+                              <button onClick={() => handleDeleteModel(mid)} className="px-2 py-1 rounded text-xs border text-[var(--color-error)]" style={{ borderColor: 'var(--border-color)' }}>删除</button>
                             </div>
                           </td>
                         </tr>
@@ -1123,14 +1123,14 @@ export default function AdminPage() {
                       {Object.entries(genProvidersObj).map(([pid, p]) => (
                         <tr key={`p:${pid}`} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
                           <td className="px-3 py-2 text-center"><input type="radio" name="gen-row" checked={selectedGenRow === `p:${pid}`} onChange={() => setSelectedGenRow(`p:${pid}`)} /></td>
-                          <td className="px-3 py-2" style={{ color: '#7c3aed' }}>供应商</td>
+                          <td className="px-3 py-2" style={{ color: '#8B7BA8' }}>供应商</td>
                           <td className="px-3 py-2 font-mono" style={{ color: 'var(--text-primary)' }}>{pid}</td>
                           <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{`${p?.type || 'wuyin'} | priority:${Number(p?.priority ?? 100)} | ${p?.api_url || '全局api_url'}`}</td>
-                          <td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 rounded-full text-[11px] ${p?.enabled !== false ? 'bg-green-500/15 text-green-600' : 'bg-gray-500/15 text-gray-500'}`}>{p?.enabled !== false ? '启用' : '禁用'}</span></td>
+                          <td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 rounded-full text-[11px] ${p?.enabled !== false ? 'bg-green-500/15 text-[var(--color-success)]' : 'bg-gray-500/15 text-gray-500'}`}>{p?.enabled !== false ? '启用' : '禁用'}</span></td>
                           <td className="px-3 py-2 text-right">
                             <div className="inline-flex items-center gap-2">
                               <button onClick={() => openProviderEditor(pid)} className="px-2 py-1 rounded text-xs border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>编辑</button>
-                              <button onClick={() => handleDeleteProvider(pid)} className="px-2 py-1 rounded text-xs border text-red-500" style={{ borderColor: 'var(--border-color)' }}>删除</button>
+                              <button onClick={() => handleDeleteProvider(pid)} className="px-2 py-1 rounded text-xs border text-[var(--color-error)]" style={{ borderColor: 'var(--border-color)' }}>删除</button>
                             </div>
                           </td>
                         </tr>
@@ -1183,7 +1183,7 @@ export default function AdminPage() {
             <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>模型ID</label>
-                <input type="text" value={editingModelId} readOnly className="w-full px-3 py-2 rounded-lg text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }} />
+                <input type="text" value={editingModelId} readOnly className="w-full px-3 py-2 rounded-lg text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-secondary)' }} />
               </div>
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>显示名</label>
@@ -1202,7 +1202,7 @@ export default function AdminPage() {
               </div>
             </div>
             <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
-              <button onClick={() => setEditingModelId('')} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button>
+              <button onClick={() => setEditingModelId('')} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
               <button onClick={applyModelEditor} className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:opacity-90">保存</button>
             </div>
           </div>
@@ -1221,7 +1221,7 @@ export default function AdminPage() {
             <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>供应商ID</label>
-                <input type="text" value={editingProviderId} readOnly className="w-full px-3 py-2 rounded-lg text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }} />
+                <input type="text" value={editingProviderId} readOnly className="w-full px-3 py-2 rounded-lg text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-secondary)' }} />
               </div>
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>类型</label>
@@ -1252,7 +1252,7 @@ export default function AdminPage() {
               </div>
             </div>
             <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
-              <button onClick={() => setEditingProviderId('')} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button>
+              <button onClick={() => setEditingProviderId('')} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
               <button onClick={applyProviderEditor} className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:opacity-90">保存</button>
             </div>
           </div>
@@ -1270,7 +1270,7 @@ export default function AdminPage() {
             <div className="w-72 flex-shrink-0 p-4 overflow-y-auto border-l" style={{ borderColor: 'var(--border-color)' }}>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>图片详情</h3>
-                <button onClick={() => setHostingDetail(null)} className="p-1 rounded-lg hover:bg-black/5">
+                <button onClick={() => setHostingDetail(null)} className="p-1 rounded-lg hover:bg-bg-hover">
                   <X size={16} style={{ color: 'var(--text-secondary)' }} />
                 </button>
               </div>
@@ -1294,14 +1294,14 @@ export default function AdminPage() {
                 <div>
                   <div style={{ color: 'var(--text-secondary)' }}>本地文件</div>
                   <div className="mt-0.5">
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${hostingDetail.exists ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${hostingDetail.exists ? 'bg-[var(--color-success)]/20 text-[var(--color-success)]' : 'bg-[var(--color-error)]/20 text-[var(--color-error)]'}`}>
                       {hostingDetail.exists ? '存在' : '已丢失'}
                     </span>
                   </div>
                 </div>
                 <div className="pt-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
                   <a href={hostingDetail.url} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-blue-500 text-white text-xs font-medium hover:bg-blue-600">
+                    className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-[var(--color-info)] text-white text-xs font-medium hover:opacity-90">
                     <Download size={14} /> 打开原图
                   </a>
                 </div>
@@ -1347,7 +1347,7 @@ export default function AdminPage() {
               </div>
             </div>
             <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
-              <button onClick={() => setAdjustUserId(null)} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button>
+              <button onClick={() => setAdjustUserId(null)} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
               <button onClick={() => handleAdjustPoints(adjustUserId)} disabled={!adjustAmount}
                 className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50">确认</button>
             </div>
@@ -1384,7 +1384,7 @@ export default function AdminPage() {
             <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
               <button
                 onClick={() => { setShowBatchImport(false); setBatchImportText('') }}
-                className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5"
+                className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover"
                 style={{ color: 'var(--text-secondary)' }}
               >
                 取消
@@ -1412,7 +1412,7 @@ export default function AdminPage() {
             </div>
             <div className="flex justify-between p-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
               <button onClick={addQuotaLedger} className="px-4 py-2 rounded-lg text-sm font-medium border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>补充/扣减额度</button>
-              <div className="flex gap-2"><button onClick={() => setEditingQuotaProviderId('')} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button><button onClick={applyQuotaEditor} className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:opacity-90">保存</button></div>
+              <div className="flex gap-2"><button onClick={() => setEditingQuotaProviderId('')} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button><button onClick={applyQuotaEditor} className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:opacity-90">保存</button></div>
             </div>
           </div>
         </div>
@@ -1423,7 +1423,7 @@ export default function AdminPage() {
           <div className="relative w-full max-w-md rounded-2xl overflow-hidden" style={{ background: 'var(--bg-primary)' }} onClick={e => e.stopPropagation()}>
             <div className="p-4 border-b" style={{ borderColor: 'var(--border-color)' }}><h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>设置单次成本</h3><div className="text-xs mt-1 font-mono" style={{ color: 'var(--text-secondary)' }}>{editingCostKey}</div></div>
             <div className="p-4"><input type="number" value={editingCostValue} onChange={e => setEditingCostValue(e.target.value)} placeholder="输入>=0成本金额" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)', color: 'var(--text-primary)' }} /></div>
-            <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--border-color)' }}><button onClick={() => setEditingCostKey('')} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button><button onClick={applyCostEditor} className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:opacity-90">保存</button></div>
+            <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--border-color)' }}><button onClick={() => setEditingCostKey('')} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button><button onClick={applyCostEditor} className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:opacity-90">保存</button></div>
           </div>
         </div>
       )}
@@ -1458,7 +1458,7 @@ export default function AdminPage() {
                   <div className="flex flex-wrap gap-1.5 mb-2">
                     {['凭证不清晰', '金额不符', '重复提交', '信息不完整'].map(text => (
                       <button key={text} onClick={() => setReviewNote(text)}
-                        className={`px-2 py-1 rounded-lg text-[11px] font-medium transition-colors ${reviewNote === text ? 'bg-red-500 text-white' : 'border hover:border-red-500/50'}`}
+                        className={`px-2 py-1 rounded-lg text-[11px] font-medium transition-colors ${reviewNote === text ? 'bg-[var(--color-error)] text-white' : 'border hover:border-[var(--color-error)]/50'}`}
                         style={reviewNote === text ? {} : { borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
                         {text}
                       </button>
@@ -1472,10 +1472,10 @@ export default function AdminPage() {
               </div>
             </div>
             <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
-              <button onClick={() => setReviewModal(null)} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>取消</button>
+              <button onClick={() => setReviewModal(null)} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
               <button onClick={() => reviewModal.action === 'approve' ? handleApproveRecharge(reviewModal.id) : handleRejectRecharge(reviewModal.id)}
                 disabled={reviewModal.action === 'reject' && !reviewNote.trim()}
-                className={`px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50 ${reviewModal.action === 'approve' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'}`}>
+                className={`px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50 ${reviewModal.action === 'approve' ? 'bg-[var(--color-success)] hover:opacity-90' : 'bg-red-500 hover:bg-red-600'}`}>
                 {reviewModal.action === 'approve' ? '确认通过' : '确认拒绝'}
               </button>
             </div>

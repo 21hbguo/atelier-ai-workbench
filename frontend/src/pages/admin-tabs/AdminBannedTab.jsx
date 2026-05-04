@@ -49,9 +49,9 @@ export default function AdminBannedTab({
         <>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
             {bannedWords.map(item => (
-              <div key={item.id} className="flex items-center justify-between px-3 py-2 rounded-lg border hover:bg-black/5 dark:hover:bg-white/5" style={{ borderColor: 'var(--border-color)' }}>
+              <div key={item.id} className="flex items-center justify-between px-3 py-2 rounded-lg border hover:bg-bg-hover" style={{ borderColor: 'var(--border-color)' }}>
                 <span className="text-sm truncate" title={item.word} style={{ color: 'var(--text-primary)' }}>{item.word}</span>
-                <button onClick={() => handleDeleteBannedWord(item.id, item.word)} className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500" title="删除">
+                <button onClick={() => handleDeleteBannedWord(item.id, item.word)} className="p-1 rounded hover:bg-[var(--color-error)]/10 text-[var(--color-error)]" title="删除">
                   <Trash2 size={12} />
                 </button>
               </div>

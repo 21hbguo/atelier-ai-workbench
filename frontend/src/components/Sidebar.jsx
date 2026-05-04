@@ -76,15 +76,15 @@ export default function Sidebar({ open, onClose }) {
         style={{ background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border-color)' }}>
         <div className="px-3 py-2 border-b flex items-center" style={{ borderColor: 'var(--border-color)' }}>
           <h1 className="flex-1 truncate" style={{ color: 'var(--text-primary)', fontFamily: "'Alex Brush', cursive", fontSize: '2.5rem', lineHeight: '1' }}>Atelier</h1>
-          <button className="lg:hidden p-1 rounded-md hover:bg-black/10" onClick={onClose}><X size={16} /></button>
+          <button className="lg:hidden p-1 rounded-md hover:bg-[var(--bg-hover)]" onClick={onClose}><X size={16} /></button>
         </div>
         <nav className="flex-1 px-2 py-2 space-y-0.5 overflow-y-auto">
           {navItems.map(({ path, icon: Icon, label }) => {
             const active = location.pathname === path
             return (
             <Link key={path} to={path}
-                className={`sidebar-nav-link ${active ? 'bg-accent/10' : 'hover:bg-black/5'}`}
-                style={{ color: active ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: active ? 'var(--accent)15' : undefined }}
+                className={`sidebar-nav-link ${active ? 'bg-accent/10' : 'hover:bg-bg-hover'}`}
+                style={{ color: active ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: active ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined }}
                 onClick={() => onClose?.()}>
                 <Icon size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">{label}</span>{path==='/notifications'&&unreadNoticeCount>0&&<span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{background:'var(--accent)'}}>{unreadNoticeCount>99?'99+':unreadNoticeCount}</span>}
               </Link>
@@ -92,8 +92,8 @@ export default function Sidebar({ open, onClose }) {
           })}
           {isAdmin && (
             <Link to="/admin"
-              className={`sidebar-nav-link ${location.pathname === '/admin' ? 'bg-accent/10' : 'hover:bg-black/5'}`}
-              style={{ color: location.pathname === '/admin' ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: location.pathname === '/admin' ? 'var(--accent)15' : undefined }}
+              className={`sidebar-nav-link ${location.pathname === '/admin' ? 'bg-accent/10' : 'hover:bg-bg-hover'}`}
+              style={{ color: location.pathname === '/admin' ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: location.pathname === '/admin' ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined }}
               onClick={() => onClose?.()}>
               <Shield size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">管理后台</span>
             </Link>
@@ -106,11 +106,11 @@ export default function Sidebar({ open, onClose }) {
               <span className="sidebar-nav-text text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{user.nickname || user.username}</span>
             </div>
           )}
-          <button onClick={toggle} className="sidebar-control-btn hover:bg-black/5"
+          <button onClick={toggle} className="sidebar-control-btn hover:bg-bg-hover"
             style={{ color: 'var(--text-primary)' }}>
             {dark ? <Sun size={16} className="sidebar-nav-icon" /> : <Moon size={16} className="sidebar-nav-icon" />}<span className="sidebar-nav-text">{dark ? '浅色' : '深色'}</span>
           </button>
-          <button onClick={handleLogout} className="sidebar-control-btn hover:bg-black/5"
+          <button onClick={handleLogout} className="sidebar-control-btn hover:bg-bg-hover"
             style={{ color: 'var(--text-primary)' }}>
             <LogOut size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">退出登录</span>
           </button>

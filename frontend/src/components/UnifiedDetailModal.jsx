@@ -197,7 +197,7 @@ export default function UnifiedDetailModal({
   const renderLeftPanel = () => {
     if (!fullUrl) {
       return (
-        <div className={`md:w-3/5 bg-black flex items-center justify-center min-h-[260px] h-[44vh] md:h-full relative transition-opacity duration-150 ${contentVisible ? 'opacity-100' : 'opacity-0'}`} style={{ background: 'linear-gradient(135deg, var(--accent)08, var(--accent)15)' }}>
+        <div className={`md:w-3/5 bg-black flex items-center justify-center min-h-[260px] h-[44vh] md:h-full relative transition-opacity duration-150 ${contentVisible ? 'opacity-100' : 'opacity-0'}`} style={{ background: 'color-mix(in srgb, var(--accent) 8%, var(--bg-primary))' }}>
           <ImageIcon size={64} style={{ color: 'var(--accent)', opacity: 0.3 }} />
         </div>
       )
@@ -241,7 +241,7 @@ export default function UnifiedDetailModal({
             <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>提示词</label>
             <div className="relative">
               <p className="text-sm p-2.5 rounded-lg pr-9 max-h-36 md:max-h-56 overflow-y-auto whitespace-pre-wrap break-words leading-5" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>{card.prompt}</p>
-              <button onClick={() => handleCopy(card.prompt)} className="absolute right-2 top-2 p-1 rounded hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>
+              <button onClick={() => handleCopy(card.prompt)} className="absolute right-2 top-2 p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
                 <Copy size={14} />
               </button>
             </div>
@@ -287,7 +287,7 @@ export default function UnifiedDetailModal({
           <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>提示词</label>
           <div className="relative">
             <p className="text-sm p-2.5 rounded-lg pr-9 max-h-36 md:max-h-56 overflow-y-auto whitespace-pre-wrap break-words leading-5" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>{card.prompt}</p>
-            <button onClick={() => handleCopy(card.prompt)} className="absolute right-2 top-2 p-1 rounded hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}>
+            <button onClick={() => handleCopy(card.prompt)} className="absolute right-2 top-2 p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
               <Copy size={14} />
             </button>
           </div>
@@ -323,49 +323,49 @@ export default function UnifiedDetailModal({
     }
     if (onUsePrompt) {
       actions.push(
-        <button key="use-prompt" onClick={() => { onUsePrompt(card.prompt); requestCloseModal() }} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
+        <button key="use-prompt" onClick={() => { onUsePrompt(card.prompt); requestCloseModal() }} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-primary)' }}>
           <Plus size={14} /> 使用提示词
         </button>
       )
     }
     if (fullUrl && onUseImage) {
       actions.push(
-        <button key="use-image" onClick={() => { onUseImage(card); requestCloseModal() }} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
+        <button key="use-image" onClick={() => { onUseImage(card); requestCloseModal() }} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-primary)' }}>
           <ImageIcon size={14} /> 参考图
         </button>
       )
     }
     if (onLike) {
       actions.push(
-        <button key="like" onClick={() => onLike(card.id)} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium ${card.isLiked ? 'bg-red-50 dark:bg-red-900/20' : 'hover:bg-black/5'}`} style={{ color: card.isLiked ? '#ef4444' : 'var(--text-primary)' }}>
+        <button key="like" onClick={() => onLike(card.id)} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium ${card.isLiked ? 'bg-[var(--color-error)]/10' : 'hover:bg-bg-hover'}`} style={{ color: card.isLiked ? 'var(--color-error)' : 'var(--text-primary)' }}>
           <Heart size={14} className={card.isLiked ? 'fill-current' : ''} /> {(card.likesCount > 0 || card.isLiked) ? card.likesCount : ''}
         </button>
       )
     }
     if (onDelete && isImage && raw.filename) {
       actions.push(
-        <button key="delete" onClick={() => onDelete(raw.filename)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">
+        <button key="delete" onClick={() => onDelete(raw.filename)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-[var(--color-error)] hover:bg-[var(--color-error)]/10">
           <Trash2 size={14} /> 删除
         </button>
       )
     }
     if (onShare && isImage && raw.filename) {
       actions.push(
-        <button key="share" onClick={() => onShare(card)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
+        <button key="share" onClick={() => onShare(card)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-primary)' }}>
           <Share2 size={14} /> 分享广场
         </button>
       )
     }
     if (onUnshare) {
       actions.push(
-        <button key="unshare" onClick={() => onUnshare(card)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/20">
+        <button key="unshare" onClick={() => onUnshare(card)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-[var(--color-warning)] hover:bg-[var(--color-warning)]/10">
           撤回分享
         </button>
       )
     }
     if (onExtend && isImage && raw.filename && !card.is_permanent) {
       actions.push(
-        <button key="extend" onClick={() => onExtend(card)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>
+        <button key="extend" onClick={() => onExtend(card)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-primary)' }}>
           延长3天(-2积分)
         </button>
       )
@@ -377,7 +377,8 @@ export default function UnifiedDetailModal({
     <>
       <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 md:p-4" onClick={requestCloseModal}>
         <div
-          className="bg-white dark:bg-gray-900 rounded-2xl overflow-hidden max-w-5xl w-full h-[88vh] md:h-[84vh] flex flex-col md:flex-row shadow-2xl relative"
+          className="rounded-2xl overflow-hidden max-w-5xl w-full h-[88vh] md:h-[84vh] flex flex-col md:flex-row relative"
+          style={{ background: 'var(--bg-card)', boxShadow: 'var(--shadow-lg)' }}
           onClick={(e) => e.stopPropagation()}
           onTouchStart={hasNavigation ? handleTouchStart : undefined}
           onTouchMove={hasNavigation ? handleTouchMove : undefined}
@@ -400,8 +401,8 @@ export default function UnifiedDetailModal({
             <div className="flex items-center justify-between mb-0.5">
               <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{title}</span>
               <div className="flex items-center gap-2">
-                {allowMetadataEdit && isImage && raw.filename && !detailExtra && (editing ? <button onClick={handleSaveMetadata} disabled={saving} className="p-1 rounded hover:bg-black/5" style={{ color: 'var(--accent)' }}><Check size={16} /></button> : <button onClick={startEditing} className="p-1 rounded hover:bg-black/5" style={{ color: 'var(--text-secondary)' }}><Edit2 size={16} /></button>)}
-                <button onClick={requestCloseModal} className="p-1 rounded hover:bg-black/5"><X size={18} /></button>
+                {allowMetadataEdit && isImage && raw.filename && !detailExtra && (editing ? <button onClick={handleSaveMetadata} disabled={saving} className="p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--accent)' }}><Check size={16} /></button> : <button onClick={startEditing} className="p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}><Edit2 size={16} /></button>)}
+                <button onClick={requestCloseModal} className="p-1 rounded hover:bg-bg-hover"><X size={18} /></button>
               </div>
             </div>
 
