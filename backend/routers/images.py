@@ -18,6 +18,7 @@ from backend.services.image_mapping import ImageUrlMapping
 from backend.auth import get_current_user, require_admin
 from backend.services.image_expiry import get_expiry_data, extend_images, RETENTION_DAYS, EXTEND_DAYS, EXTEND_COST_PER_IMAGE
 from backend.services.points_service import PointsService
+from backend.services.image_dimensions import get_image_dimensions
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["images"])
@@ -129,6 +130,7 @@ async def list_images(page: int = Query(1, ge=1), page_size: int = Query(20, ge=
             metadata = _parse_metadata(row["metadata"])
             username = (row["nickname"] or row["username"] or "") if is_admin else ""
             expiry = get_expiry_data({"created_at": row["created_at"], "expires_at": row["expires_at"], "is_permanent": row["is_permanent"]})
+            width,height=get_image_dimensions(str(f))
             images.append({
                 "filename": filename,
                 "path": str(f) if is_admin else "",
@@ -140,6 +142,8 @@ async def list_images(page: int = Query(1, ge=1), page_size: int = Query(20, ge=
                 "is_permanent": expiry["is_permanent"],
                 "days_left": expiry["days_left"],
                 "expired": expiry["expired"],
+                "width": width,
+                "height": height,
             })
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         if elapsed_ms > 1200:

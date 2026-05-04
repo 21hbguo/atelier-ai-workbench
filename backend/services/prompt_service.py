@@ -7,6 +7,8 @@ from uuid import uuid4
 from backend.database import get_db
 from backend.services.category_service import CategoryService
 from backend.services.favorite_service import FavoriteService
+from backend.config import EVO_IMAGES_DIR
+from backend.services.image_dimensions import get_image_dimensions
 
 
 class PromptService:
@@ -15,6 +17,10 @@ class PromptService:
         d = dict(row)
         val = d.get("tags")
         d["tags"] = val if isinstance(val, list) else json.loads(val or "[]")
+        if d.get("image_path"):
+            w,h=get_image_dimensions(str(EVO_IMAGES_DIR / d["image_path"]))
+            d["width"]=w
+            d["height"]=h
         return d
 
     _ORDER_MAP = {

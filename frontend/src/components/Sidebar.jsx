@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useLocation, Link, useNavigate } from 'react-router-dom'
-import { Sun, Moon, BookOpen, MessageSquare, X, Globe, LogOut, User, Shield, Coins, Wallet, Megaphone, Bell, Settings, Share2, Star } from 'lucide-react'
+import { Sun, Moon, BookOpen, MessageSquare, X, Globe, LogOut, User, Shield, Coins, Wallet, Megaphone, Bell, Settings, Share2, Star, LayoutGrid } from 'lucide-react'
 import { useTheme } from '../ThemeContext'
+import { useLayoutMode } from '../LayoutModeContext'
 import { authAPI, pointsAPI, notificationAPI } from '../api'
 import { clearUser, readUser } from '../auth'
 import { useAppDialog } from './AppDialogProvider'
@@ -21,6 +22,7 @@ const navItems = [
 export default function Sidebar({ open, onClose }) {
   const dialog = useAppDialog()
   const { dark, toggle } = useTheme()
+  const { layoutMode, toggleLayoutMode } = useLayoutMode()
   const location = useLocation()
   const navigate = useNavigate()
   const user = readUser()
@@ -109,6 +111,10 @@ export default function Sidebar({ open, onClose }) {
           <button onClick={toggle} className="sidebar-control-btn hover:bg-bg-hover"
             style={{ color: 'var(--text-primary)' }}>
             {dark ? <Sun size={16} className="sidebar-nav-icon" /> : <Moon size={16} className="sidebar-nav-icon" />}<span className="sidebar-nav-text">{dark ? '浅色' : '深色'}</span>
+          </button>
+          <button onClick={toggleLayoutMode} className="sidebar-control-btn hover:bg-bg-hover"
+            style={{ color: 'var(--text-primary)' }}>
+            <LayoutGrid size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">{layoutMode === 'masonry' ? '切换为网格' : '切换为瀑布流'}</span>
           </button>
           <button onClick={handleLogout} className="sidebar-control-btn hover:bg-bg-hover"
             style={{ color: 'var(--text-primary)' }}>

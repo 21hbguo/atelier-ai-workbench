@@ -147,6 +147,7 @@ export const notificationAPI = {
   unreadCount: () => api.get('/notifications/unread-count'),
   markRead: id => api.post(`/notifications/${id}/read`),
   markAllRead: () => api.post('/notifications/read-all'),
+  clearRead: () => api.post('/notifications/clear-read'),
 }
 
 export const accountAPI = {

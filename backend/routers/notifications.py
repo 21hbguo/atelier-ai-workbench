@@ -22,3 +22,8 @@ async def mark_read(notification_id: int, user=Depends(get_current_user)):
 async def mark_all_read(user=Depends(get_current_user)):
     changed = NotificationService.mark_all_read(user["user_id"])
     return {"updated": changed, "message": "已全部标记已读"}
+
+@router.post("/clear-read")
+async def clear_read(user=Depends(get_current_user)):
+    deleted = NotificationService.clear_read(user["user_id"])
+    return {"deleted": deleted, "message": "已清除已读通知"}

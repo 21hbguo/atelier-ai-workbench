@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { ThemeProvider } from './ThemeContext'
+import { LayoutModeProvider } from './LayoutModeContext'
 import ErrorBoundary from './components/ErrorBoundary'
 import AppDialogProvider from './components/AppDialogProvider'
 import { useUserSync } from './hooks/useUserSync'
@@ -101,6 +102,7 @@ function AppContent() {
   return (
     <ErrorBoundary>
     <ThemeProvider>
+      <LayoutModeProvider>
       <AppDialogProvider>
       <BrowserRouter>
         <AnnouncementManager user={user} />
@@ -123,6 +125,7 @@ function AppContent() {
         </Routes></Suspense>
       </BrowserRouter>
       </AppDialogProvider>
+      </LayoutModeProvider>
     </ThemeProvider>
     </ErrorBoundary>
   )

@@ -40,3 +40,9 @@ class NotificationService:
         with get_db() as conn:
             row = conn.execute("UPDATE notifications SET is_read = TRUE, read_at = %s WHERE user_id = %s AND COALESCE(is_read,FALSE)=FALSE RETURNING id", (now, user_id)).fetchall()
         return len(row or [])
+
+    @staticmethod
+    def clear_read(user_id: int) -> int:
+        with get_db() as conn:
+            rows = conn.execute("DELETE FROM notifications WHERE user_id = %s AND is_read = TRUE RETURNING id", (user_id,)).fetchall()
+        return len(rows or [])

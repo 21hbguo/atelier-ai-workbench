@@ -1,5 +1,7 @@
 from typing import Any, Dict, List, Optional
 from backend.database import get_db
+from backend.config import GENERATED_IMAGES_DIR, EVO_IMAGES_DIR
+from backend.services.image_dimensions import get_image_dimensions
 
 _ALLOWED_TYPES={"image","prompt"}
 
@@ -84,10 +86,17 @@ class FavoriteService:
                 placeholders=",".join("%s" for _ in image_ids)
                 rows=conn.execute(f"SELECT si.*,u.username,u.nickname FROM square_images si JOIN users u ON si.user_id=u.id WHERE si.id IN ({placeholders}) AND COALESCE(si.is_frozen,FALSE)=FALSE",image_ids).fetchall()
                 image_map={str(r["id"]):dict(r) for r in rows}
+                for k,v in image_map.items():
+                    w,h=get_image_dimensions(str(GENERATED_IMAGES_DIR / v["filename"]))
+                    v["width"]=w;v["height"]=h
             if prompt_ids:
                 placeholders=",".join("%s" for _ in prompt_ids)
                 rows=conn.execute(f"SELECT p.*,u.username,u.nickname,cat.label AS category_label FROM prompts p LEFT JOIN users u ON p.user_id=u.id LEFT JOIN categories cat ON p.category=cat.slug WHERE p.id IN ({placeholders}) AND COALESCE(p.is_frozen,FALSE)=FALSE",prompt_ids).fetchall()
                 prompt_map={str(r["id"]):dict(r) for r in rows}
+                for k,v in prompt_map.items():
+                    if v.get("image_path"):
+                        w,h=get_image_dimensions(str(EVO_IMAGES_DIR / v["image_path"]))
+                        v["width"]=w;v["height"]=h
             images=[];prompts=[]
             for r in refs:
                 tid=str(r["target_id"])

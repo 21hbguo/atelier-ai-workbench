@@ -5,6 +5,8 @@ from backend.database import get_db
 from backend.auth import get_current_user, get_optional_user
 from backend.services.image_expiry import mark_image_permanent
 from backend.services.favorite_service import FavoriteService
+from backend.config import GENERATED_IMAGES_DIR
+from backend.services.image_dimensions import get_image_dimensions
 
 router = APIRouter(prefix="/api/square", tags=["square"])
 
@@ -115,6 +117,9 @@ async def list_square_images(
             if str(item["id"]) in fixed_ids:item["likes_count"]=(item.get("likes_count") or 0)+1
             item["is_liked"] = str(item["id"]) in liked_ids if user else False
             item["is_favorited"] = str(item["id"]) in favorited_ids if user else False
+            width,height=get_image_dimensions(str(GENERATED_IMAGES_DIR / item["filename"]))
+            item["width"]=width
+            item["height"]=height
             images.append(item)
 
         return {"images": images, "total": total, "page": page, "size": size}
@@ -189,6 +194,9 @@ async def my_shares(
             if str(item["id"]) in fixed_ids:item["likes_count"]=(item.get("likes_count") or 0)+1
             item["is_liked"] = str(item["id"]) in liked_ids
             item["is_favorited"] = str(item["id"]) in favorited_ids
+            width,height=get_image_dimensions(str(GENERATED_IMAGES_DIR / item["filename"]))
+            item["width"]=width
+            item["height"]=height
             images.append(item)
 
         return {"images": images, "total": total, "page": page, "size": size}

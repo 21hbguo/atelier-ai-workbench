@@ -11,14 +11,19 @@ export default function CardGrid({
   showTotal = true, totalUnit = '张',
   emptyText = '暂无作品',
   showLike = true,
+  layoutMode = 'grid',
   renderOverlay,
   paginationScrollTargetId,
   scrollAfterPaging = false,
 }) {
   const [failedUrls, setFailedUrls] = useState(new Set())
+  const [masonryReady, setMasonryReady] = useState(true)
   const [gridMinHeight, setGridMinHeight] = useState(0)
   const gridRef = useRef(null)
   const prevPagingRef = useRef(false)
+  const revealTimerRef = useRef(null)
+  const useMasonry = layoutMode === 'masonry'
+  const mediaClassName = useMasonry ? 'card-feed-media-masonry' : 'card-feed-media'
   const scrollParentToTop = () => {
     if (paginationScrollTargetId) {
       const t = document.getElementById(paginationScrollTargetId)
@@ -41,7 +46,26 @@ export default function CardGrid({
       const next = new Set([...prev].filter(u => currentUrls.has(u)))
       return next.size === prev.size ? prev : next
     })
+    setMasonryReady(!useMasonry || cards.length === 0)
   }, [cards])
+  useEffect(() => {
+    if (!useMasonry) return
+    if (loading || paging || cards.length === 0) { setMasonryReady(false); return }
+    const el = gridRef.current
+    if (!el) return
+    const scheduleReveal = () => {
+      if (revealTimerRef.current) clearTimeout(revealTimerRef.current)
+      revealTimerRef.current = setTimeout(() => setMasonryReady(true), 120)
+    }
+    setMasonryReady(false)
+    scheduleReveal()
+    const observer = new ResizeObserver(() => { setMasonryReady(false); scheduleReveal() })
+    observer.observe(el)
+    return () => {
+      observer.disconnect()
+      if (revealTimerRef.current) { clearTimeout(revealTimerRef.current); revealTimerRef.current = null }
+    }
+  }, [useMasonry, loading, paging, cards])
   useEffect(() => {
     if (!loading && !paging && gridRef.current) {
       const h = gridRef.current.offsetHeight || 0
@@ -49,7 +73,7 @@ export default function CardGrid({
     }
   }, [loading, paging, cards.length, page])
   useEffect(() => {
-    if (scrollAfterPaging && prevPagingRef.current && !paging) requestAnimationFrame(scrollParentToTop)
+    if (scrollAfterPaging && !prevPagingRef.current && paging) requestAnimationFrame(scrollParentToTop)
     prevPagingRef.current = paging
   }, [paging, scrollAfterPaging, page])
   if (loading && cards.length === 0) {
@@ -79,13 +103,15 @@ export default function CardGrid({
         </div>
       )}
 
-      <div ref={gridRef} className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3" style={(loading || paging) && gridMinHeight > 0 ? { minHeight: `${gridMinHeight}px` } : undefined}>
+      <div ref={gridRef} className={useMasonry ? 'card-feed-masonry' : 'card-feed-grid'} style={(loading || paging) && gridMinHeight > 0 ? { minHeight: `${gridMinHeight}px` } : undefined}>
+        {useMasonry && !masonryReady && <div className="card-feed-masonry-mask" />}
         {cards.map((card, idx) => (
           <UnifiedCard
             key={card.id}
+            className={useMasonry ? 'card-feed-item-masonry' : ''}
             checked={selectable && selected.has(card.id)}
             onClick={(e) => { if (e.target.type === 'checkbox' || e.target.closest('button')) return; if (selectable) { onToggleSelect?.(card.id); return } onCardClick?.(card, idx) }}
-            mediaNode={card.thumbUrl && !failedUrls.has(card.thumbUrl) ? <img src={card.thumbUrl} alt="" className="w-full aspect-square object-cover" loading={idx < 8 ? 'eager' : 'lazy'} onError={(e) => { e.target.onerror = null; setFailedUrls(prev => new Set(prev).add(card.thumbUrl)) }} /> : <div className="w-full aspect-square flex items-center justify-center p-3" style={{ background: 'linear-gradient(135deg, var(--accent)12, var(--accent)20)' }}>{(() => { const text = card.title || card.subtitle || '无提示词'; const len = text.length; const fontSize = len <= 4 ? '2rem' : len <= 8 ? '1.5rem' : len <= 16 ? '1.125rem' : '0.875rem'; return <p className="text-center font-bold leading-tight line-clamp-4" style={{ color: 'var(--accent)', fontSize }}>{text}</p> })()}</div>}
+            mediaNode={card.thumbUrl && !failedUrls.has(card.thumbUrl) ? <img src={card.thumbUrl} srcSet={card.thumbUrl2x ? `${card.thumbUrl} 1x, ${card.thumbUrl2x} 2x` : undefined} sizes={useMasonry ? '(min-width: 1024px) 20vw, (min-width: 768px) 25vw, (min-width: 640px) 33vw, 50vw' : '(min-width: 1024px) 20vw, (min-width: 768px) 25vw, (min-width: 640px) 33vw, 50vw'} width={card.width || undefined} height={card.height || undefined} alt="" className={mediaClassName} loading={idx < 8 ? 'eager' : 'lazy'} onError={(e) => { e.target.onerror = null; setFailedUrls(prev => new Set(prev).add(card.thumbUrl)) }} /> : <div className="w-full aspect-square flex items-center justify-center p-3" style={{ background: 'linear-gradient(135deg, var(--accent)12, var(--accent)20)' }}>{(() => { const text = card.title || card.subtitle || '无提示词'; const len = text.length; const fontSize = len <= 4 ? '2rem' : len <= 8 ? '1.5rem' : len <= 16 ? '1.125rem' : '0.875rem'; return <p className="text-center font-bold leading-tight line-clamp-4" style={{ color: 'var(--accent)', fontSize }}>{text}</p> })()}</div>}
             hoverNode={<div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors hidden md:flex items-center justify-center gap-1.5">{Boolean(card.prompt) && <button onClick={(e) => { e.stopPropagation(); onUsePrompt?.(card.prompt) }} className="opacity-0 group-hover:opacity-100 transition-opacity px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[var(--bg-card)]/90 text-[var(--text-primary)] hover:bg-[var(--bg-card)] flex items-center gap-1"><Plus size={12} /> 提示词</button>}{Boolean(card.fullUrl) && <button onClick={(e) => { e.stopPropagation(); onUseImage?.(card) }} className="opacity-0 group-hover:opacity-100 transition-opacity px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[var(--bg-card)]/90 text-[var(--text-primary)] hover:bg-[var(--bg-card)] flex items-center gap-1"><ImageIcon size={12} /> 参考图</button>}</div>}
             bottomNode={<div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 bg-gradient-to-t from-black/70 to-transparent"><p className="text-white text-xs truncate">{card.subtitle || '无提示词'}</p></div>}
             topRightNode={(showLike && onLike) || onFavorite ? <div className="absolute top-2 right-2 flex flex-col items-end gap-1.5">{showLike && onLike ? <div onClick={(e) => { e.stopPropagation(); onLike(card.id) }} className="flex items-center gap-1 h-7 px-2 rounded-full bg-black/50 backdrop-blur-sm cursor-pointer hover:bg-black/70 transition-colors"><Heart size={12} className={card.isLiked ? 'fill-red-500 text-red-500' : 'text-white'} />{(card.likesCount > 0 || card.isLiked) && <span className="text-white text-xs">{card.likesCount}</span>}</div> : null}{onFavorite ? <div onClick={(e) => { e.stopPropagation(); onFavorite(card.id) }} className="flex items-center justify-center w-7 h-7 rounded-full bg-black/50 backdrop-blur-sm cursor-pointer hover:bg-black/70 transition-colors"><Star size={12} className={card.isFavorited ? 'fill-yellow-400 text-yellow-400' : 'text-white'} /></div> : null}</div> : null}

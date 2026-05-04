@@ -8,6 +8,7 @@ import CardGrid from '../components/CardGrid'
 import UnifiedDetailModal from '../components/UnifiedDetailModal'
 import CategoryFilter from '../components/CategoryFilter'
 import { useCardData } from '../hooks/useCardData'
+import { useLayoutMode } from '../LayoutModeContext'
 import { readUser } from '../auth'
 import { useAppDialog } from '../components/AppDialogProvider'
 
@@ -70,12 +71,14 @@ function usePromptActions() {
 
 export default function SquarePage() {
   const dialog = useAppDialog()
+  const { layoutMode, setLayoutMode } = useLayoutMode()
   const [tab, setTab] = useState('prompts')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState('likes')
   const [activeCategory, setActiveCategory] = useState(null)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   const isAdmin = Boolean(readUser()?.is_admin)
+  useEffect(() => { setLayoutMode('masonry') }, [setLayoutMode])
 
   const handleTabChange = (newTab) => {
     setTab(newTab)
@@ -124,11 +127,11 @@ export default function SquarePage() {
         </div>
         <div id="square-scroll-container" className="flex-1 overflow-y-auto px-4 sm:px-6 pb-6">
           {tab === 'works' ? (
-            <WorksTab query={query} sort={sort} isAdmin={isAdmin} dialog={dialog} refreshTrigger={refreshTrigger} />
+            <WorksTab query={query} sort={sort} isAdmin={isAdmin} dialog={dialog} refreshTrigger={refreshTrigger} layoutMode={layoutMode} />
           ) : tab === 'prompts' ? (
-            <PromptsTab query={query} sort={sort} activeCategory={activeCategory} isAdmin={isAdmin} dialog={dialog} refreshTrigger={refreshTrigger} />
+            <PromptsTab query={query} sort={sort} activeCategory={activeCategory} isAdmin={isAdmin} dialog={dialog} refreshTrigger={refreshTrigger} layoutMode={layoutMode} />
           ) : (
-            <MySharesTab refreshTrigger={refreshTrigger} />
+            <MySharesTab refreshTrigger={refreshTrigger} layoutMode={layoutMode} />
           )}
         </div>
       </div>
@@ -136,7 +139,7 @@ export default function SquarePage() {
   )
 }
 
-function WorksTab({ query, sort, isAdmin, dialog, refreshTrigger }) {
+function WorksTab({ query, sort, isAdmin, dialog, refreshTrigger, layoutMode }) {
   const [detailIdx, setDetailIdx] = useState(null)
   const { handleUsePrompt, handleUseImage } = useImageActions()
   const [status, setStatus] = useState('all')
@@ -240,6 +243,7 @@ function WorksTab({ query, sort, isAdmin, dialog, refreshTrigger }) {
 
       <CardGrid
         cards={cards}
+        layoutMode={layoutMode}
         showTotal={!isAdmin}
         loading={loading}
         paging={paging}
@@ -306,7 +310,7 @@ function WorksTab({ query, sort, isAdmin, dialog, refreshTrigger }) {
   )
 }
 
-function MySharesTab({ refreshTrigger }) {
+function MySharesTab({ refreshTrigger, layoutMode }) {
   const [detailIdx, setDetailIdx] = useState(null)
   const { handleUsePrompt, handleUseImage } = useImageActions()
   const dialog = useAppDialog()
@@ -337,6 +341,7 @@ function MySharesTab({ refreshTrigger }) {
     <>
       <CardGrid
         cards={cards}
+        layoutMode={layoutMode}
         loading={loading}
         paging={paging}
         refreshing={refreshing}
@@ -376,7 +381,7 @@ function MySharesTab({ refreshTrigger }) {
   )
 }
 
-function PromptsTab({ query, sort, activeCategory, isAdmin, dialog, refreshTrigger }) {
+function PromptsTab({ query, sort, activeCategory, isAdmin, dialog, refreshTrigger, layoutMode }) {
   const user = readUser()
   const [detailIdx, setDetailIdx] = useState(null)
   const { handleUsePrompt, handleUseImage } = usePromptActions()
@@ -484,6 +489,7 @@ function PromptsTab({ query, sort, activeCategory, isAdmin, dialog, refreshTrigg
 
       <CardGrid
         cards={cards}
+        layoutMode={layoutMode}
         showTotal={!isAdmin}
         loading={loading}
         paging={paging}

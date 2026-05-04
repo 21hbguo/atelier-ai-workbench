@@ -5,6 +5,7 @@ import MainLayout from '../components/MainLayout'
 import CardGrid from '../components/CardGrid'
 import UnifiedDetailModal from '../components/UnifiedDetailModal'
 import { useCardData } from '../hooks/useCardData'
+import { useLayoutMode } from '../LayoutModeContext'
 import { normalizeList } from '../utils/cardAdapter'
 import { useNavigate } from 'react-router-dom'
 
@@ -31,6 +32,7 @@ function useActions() {
 }
 
 export default function FavoritesPage() {
+  const { layoutMode } = useLayoutMode()
   const [tab, setTab] = useState('all')
   const [detailIdx, setDetailIdx] = useState(null)
   const { handleUsePrompt, handleUseImage } = useActions()
@@ -62,7 +64,7 @@ export default function FavoritesPage() {
             <button key={k} onClick={() => { setTab(k); setDetailIdx(null) }} className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors flex items-center justify-center gap-1 ${tab === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`} style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{Icon ? <Icon size={12} /> : null}{l}</button>
           ))}
         </div>
-        <CardGrid cards={cards} showTotal totalUnit={tab === 'prompt' ? '条' : '项'} loading={loading} paging={paging} refreshing={refreshing} onRefresh={refresh} hideRefresh total={total} page={page} totalPages={totalPages} onPageChange={setPage} onCardClick={(_, idx) => setDetailIdx(idx)} onFavorite={handleFavorite} onUsePrompt={handleUsePrompt} onUseImage={handleUseImage} showAuthor showLike={false} emptyText="暂无收藏" />
+        <CardGrid cards={cards} layoutMode={tab === 'image' ? layoutMode : 'grid'} showTotal totalUnit={tab === 'prompt' ? '条' : '项'} loading={loading} paging={paging} refreshing={refreshing} onRefresh={refresh} hideRefresh total={total} page={page} totalPages={totalPages} onPageChange={setPage} onCardClick={(_, idx) => setDetailIdx(idx)} onFavorite={handleFavorite} onUsePrompt={handleUsePrompt} onUseImage={handleUseImage} showAuthor showLike={false} emptyText="暂无收藏" />
       </div>
       {detailIdx !== null && cards[detailIdx] && <UnifiedDetailModal card={cards[detailIdx]} cards={cards} currentIndex={detailIdx} onNavigate={setDetailIdx} onClose={() => setDetailIdx(null)} onUsePrompt={handleUsePrompt} onUseImage={handleUseImage} title="收藏详情" hideDownload />}
     </MainLayout>

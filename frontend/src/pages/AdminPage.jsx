@@ -678,12 +678,12 @@ export default function AdminPage() {
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>新增用户</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{overviewStats?.kpi?.new_users ?? 0}</div></div>
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>活跃用户</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{overviewStats?.kpi?.active_users ?? 0}</div></div>
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>处理中</div><div className="text-lg font-semibold" style={{ color: 'var(--color-warning)' }}>{overviewStats?.kpi?.processing_tasks ?? 0}</div></div>
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>积分消耗</div><div className="text-lg font-semibold" style={{ color: 'var(--color-error)' }}>{(overviewStats?.trends_30d || []).reduce((s, i) => s + Number(i.points_spent || 0), 0)}</div></div>
+                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>积分消耗</div><div className="text-lg font-semibold" style={{ color: 'var(--color-error)' }}>{(overviewStats?.trends || []).reduce((s, i) => s + Number(i.points_spent || 0), 0)}</div></div>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
                   <div className="p-3 rounded-xl border lg:col-span-2" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="flex items-center gap-2 mb-2">
-                      <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>30天趋势</div>
+                      <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>{{all:'总计',today:'今日',7d:'7天',30d:'30天'}[statsRange] || '7天'}趋势</div>
                       {[
                         { v: 'requests', l: '请求' },
                         { v: 'success', l: '成功' },
@@ -696,7 +696,7 @@ export default function AdminPage() {
                     </div>
                     <div className="h-56">
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={overviewStats?.trends_30d || []} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                        <LineChart data={overviewStats?.trends || []} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
                           <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--text-secondary)' }} />
                           <YAxis tick={{ fontSize: 10, fill: 'var(--text-secondary)' }} />
@@ -723,13 +723,13 @@ export default function AdminPage() {
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
-                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>近30天生成Top用户</div>
+                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>{{all:'总计',today:'今日',7d:'近7天',30d:'近30天'}[statsRange] || '近7天'}生成Top用户</div>
                     <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
                       {(overviewStats?.leaderboards?.success_top || []).slice(0, 8).map((i, idx) => <div key={`s-${i.user_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.nickname || i.username}`} style={{ color: 'var(--text-primary)' }}>{idx + 1}. {i.nickname || i.username}</span><span className="shrink-0" style={{ color: 'var(--color-success)' }}>{i.success_count}</span></div>)}
                     </div>
                   </div>
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
-                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>近30天充值Top用户</div>
+                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>{{all:'总计',today:'今日',7d:'近7天',30d:'近30天'}[statsRange] || '近7天'}充值Top用户</div>
                     <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
                       {(overviewStats?.leaderboards?.recharge_top || []).slice(0, 8).map((i, idx) => <div key={`r-${i.user_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.nickname || i.username}`} style={{ color: 'var(--text-primary)' }}>{idx + 1}. {i.nickname || i.username}</span><span className="shrink-0" style={{ color: 'var(--color-warning)' }}>¥{i.amount}</span></div>)}
                     </div>

@@ -7,6 +7,7 @@ import SearchInput from '../components/SearchInput'
 import MainLayout from '../components/MainLayout'
 import UnifiedDetailModal from '../components/UnifiedDetailModal'
 import { useAppDialog } from '../components/AppDialogProvider'
+import { useLayoutMode } from '../LayoutModeContext'
 import { generateAPI, uploadAPI, taskAPI, imageAPI, squareAPI, adminAPI, pointsAPI, configAPI } from '../api'
 import { readUser } from '../auth'
 
@@ -33,6 +34,7 @@ function parseTaskTime(value) {
 
 export default function ChatPage() {
   const dialog = useAppDialog()
+  const { layoutMode } = useLayoutMode()
   const [currentUser, setCurrentUser] = useState(() => readUser())
   const isAdmin = Boolean(currentUser?.is_admin)
   const activeStatuses = ['pending', 'queued', 'processing', 'running', 'generating']
@@ -134,7 +136,7 @@ export default function ChatPage() {
     for (const t of allTasks) {
       for (const u of (t.result_urls || [])) taskImageFiles.add(u.split('/').pop())
     }
-    const expiryByFilename = Object.fromEntries(allImages.map(img => [img.filename, { expires_at: img.expires_at, is_permanent: !!img.is_permanent, days_left: img.days_left, expired: !!img.expired }]))
+    const expiryByFilename = Object.fromEntries(allImages.map(img => [img.filename, { expires_at: img.expires_at, is_permanent: !!img.is_permanent, days_left: img.days_left, expired: !!img.expired, width: img.width || null, height: img.height || null }]))
     let orphans = allImages.filter(img => !taskImageFiles.has(img.filename)).map(img => ({
       task_id: 'img-' + img.filename,
       status: 'completed',
@@ -148,12 +150,14 @@ export default function ChatPage() {
       is_permanent: !!img.is_permanent,
       days_left: img.days_left,
       expired: !!img.expired,
+      width: img.width || null,
+      height: img.height || null,
     }))
     if (q) {
       const lower = q.toLowerCase()
       orphans = orphans.filter(o => ((o.params?.prompt || '').toLowerCase().includes(lower)))
     }
-    const merged = [...orphans, ...allTasks.map(t => { const fn = t.result_urls?.[0]?.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, fn); return { ...t, expires_at: exp.expires_at || t.expires_at, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : t.is_permanent, days_left: typeof exp.days_left === 'number' ? exp.days_left : t.days_left, expired: typeof exp.expired === 'boolean' ? exp.expired : t.expired } })].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
+    const merged = [...orphans, ...allTasks.map(t => { const fn = t.result_urls?.[0]?.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, fn); return { ...t, expires_at: exp.expires_at || t.expires_at, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : t.is_permanent, days_left: typeof exp.days_left === 'number' ? exp.days_left : t.days_left, expired: typeof exp.expired === 'boolean' ? exp.expired : t.expired, width: exp.width || t.width || null, height: exp.height || t.height || null } })].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
     setTasks(merged)
     const completedMerged = merged.filter(t => t.status === 'completed' && t.result_urls?.length)
     setDetailCards(completedMerged.flatMap(task => { const prompt = task.params?.prompt || task.prompt || ''; return task.result_urls.map((url, idx) => { const filename = url.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, filename); return { _type: 'image', _raw: { filename, metadata: { prompt, task_id: task.task_id, created_at: task.created_at, started_at: task.started_at, completed_at: task.completed_at, type: task.params?.image_urls?.length ? 'image' : 'text', size: task.params?.size, input_urls: task.params?.image_urls } }, id: `${task.task_id}-${idx}`, prompt, fullUrl: `/api/images/file/${filename}`, filename, expiresAt: exp.expires_at || task.expires_at || null, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : !!task.is_permanent, daysLeft: typeof exp.days_left === 'number' ? exp.days_left : task.days_left, expired: typeof exp.expired === 'boolean' ? exp.expired : !!task.expired, square_image_id: squareIdMapRef.current[filename] || null } }) }))
@@ -631,8 +635,8 @@ export default function ChatPage() {
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{tasks.length === 0 ? '输入提示词或上传参考图，AI 为你创作' : '当前时间筛选下没有记录'}</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 pt-4">
-            {visibleTasks.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onAddPrompt={handleAddPrompt} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id)} onToggleCheck={() => toggleCheck(task.task_id)} showUsername={isAdmin} username={task.username} onViewDetail={() => handleCardViewDetail(task.task_id)} />)}
+          <div className={`${layoutMode === 'masonry' ? 'card-feed-masonry' : 'card-feed-grid'} pt-4`}>
+            {visibleTasks.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onAddPrompt={handleAddPrompt} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id)} onToggleCheck={() => toggleCheck(task.task_id)} showUsername={isAdmin} username={task.username} onViewDetail={() => handleCardViewDetail(task.task_id)} masonry={layoutMode === 'masonry'} />)}
           </div>
         )}
       </div>
