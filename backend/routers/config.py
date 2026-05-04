@@ -41,6 +41,7 @@ async def get_runtime_config(user=Depends(get_current_user)):
         "wechat_pay_qr_url": cfg.get("wechat_pay_qr_url", ""),
         "alipay_pay_qr_url": cfg.get("alipay_pay_qr_url", ""),
         "manual_recharge_notice": cfg.get("manual_recharge_notice", ""),
+        "points_cost_per_generation": cfg.get("points_cost_per_generation", 10),
     }
 
 

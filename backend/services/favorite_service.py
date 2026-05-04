@@ -14,20 +14,52 @@ class FavoriteService:
                 conn.execute("DELETE FROM favorites WHERE id=%s",(row["id"],))
                 return False
             if t=="image":
-                exists=conn.execute("SELECT id FROM square_images WHERE id=%s AND COALESCE(is_frozen,FALSE)=FALSE",(int(target_id),)).fetchone()
+                try:
+                    image_id=int(target_id)
+                except:
+                    raise ValueError("收藏目标不存在")
+                exists=conn.execute("SELECT id FROM square_images WHERE id=%s AND COALESCE(is_frozen,FALSE)=FALSE",(image_id,)).fetchone()
             else:
                 exists=conn.execute("SELECT id FROM prompts WHERE id=%s AND COALESCE(is_frozen,FALSE)=FALSE",(str(target_id),)).fetchone()
             if not exists:raise ValueError("收藏目标不存在")
             conn.execute("INSERT INTO favorites(user_id,target_type,target_id) VALUES(%s,%s,%s)",(user_id,t,str(target_id)))
+            cls.ensure_like_links(user_id,t,[str(target_id)],conn=conn)
             return True
 
     @classmethod
-    def get_flags(cls,user_id:int,target_type:str,target_ids:List[str])->set:
+    def get_flags(cls,user_id:int,target_type:str,target_ids:List[str],conn=None)->set:
         if not user_id or not target_ids:return set()
-        with get_db() as conn:
+        def _run(conn):
             placeholders=",".join("%s" for _ in target_ids)
             rows=conn.execute(f"SELECT target_id FROM favorites WHERE user_id=%s AND target_type=%s AND target_id IN ({placeholders})",[user_id,target_type,*[str(i) for i in target_ids]]).fetchall()
             return {str(r["target_id"]) for r in rows}
+        if conn is not None:return _run(conn)
+        with get_db() as conn:return _run(conn)
+
+    @classmethod
+    def ensure_like_links(cls,user_id:int,target_type:str,target_ids:List[str],conn=None)->set:
+        t=(target_type or "").strip()
+        ids=[str(i) for i in (target_ids or []) if str(i).strip()]
+        if not user_id or t not in _ALLOWED_TYPES or not ids:return set()
+        def _run(conn):
+            fixed=set()
+            if t=="image":
+                for sid in ids:
+                    if not sid.isdigit():continue
+                    iid=int(sid)
+                    row=conn.execute("INSERT INTO square_likes(image_id,user_id) VALUES(%s,%s) ON CONFLICT(image_id,user_id) DO NOTHING RETURNING image_id",(iid,user_id)).fetchone()
+                    if row:
+                        conn.execute("UPDATE square_images SET likes_count=likes_count+1 WHERE id=%s",(iid,))
+                        fixed.add(str(iid))
+            else:
+                for sid in ids:
+                    row=conn.execute("INSERT INTO prompt_likes(prompt_id,user_id) VALUES(%s,%s) ON CONFLICT(prompt_id,user_id) DO NOTHING RETURNING prompt_id",(sid,user_id)).fetchone()
+                    if row:
+                        conn.execute("UPDATE prompts SET likes_count=likes_count+1 WHERE id=%s",(sid,))
+                        fixed.add(str(sid))
+            return fixed
+        if conn is not None:return _run(conn)
+        with get_db() as conn:return _run(conn)
 
     @classmethod
     def list(cls,user_id:int,favorite_type:str="all",page:int=1,size:int=20)->Dict[str,Any]:
@@ -44,6 +76,8 @@ class FavoriteService:
             refs=conn.execute(f"SELECT target_type,target_id,created_at FROM favorites WHERE {where_sql} ORDER BY created_at DESC,id DESC LIMIT %s OFFSET %s",params+[size,offset]).fetchall()
             image_ids=[int(r["target_id"]) for r in refs if r["target_type"]=="image" and str(r["target_id"]).isdigit()]
             prompt_ids=[str(r["target_id"]) for r in refs if r["target_type"]=="prompt"]
+            if image_ids:cls.ensure_like_links(user_id,"image",[str(i) for i in image_ids],conn=conn)
+            if prompt_ids:cls.ensure_like_links(user_id,"prompt",prompt_ids,conn=conn)
             image_map={}
             prompt_map={}
             if image_ids:

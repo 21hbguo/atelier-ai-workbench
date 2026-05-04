@@ -70,7 +70,7 @@ function usePromptActions() {
 
 export default function SquarePage() {
   const dialog = useAppDialog()
-  const [tab, setTab] = useState('works')
+  const [tab, setTab] = useState('prompts')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState('likes')
   const [activeCategory, setActiveCategory] = useState(null)
@@ -91,7 +91,7 @@ export default function SquarePage() {
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="square-top-block sm:pt-4">
           <div className="square-tab-strip scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
-          {[{ k: 'works', l: '用户作品库', i: Image }, { k: 'prompts', l: '提示词库', i: BookOpen }, { k: 'my', l: '我的分享', i: Share2 }].map(({ k, l, i: Icon }) => (
+          {[{ k: 'prompts', l: '提示词库', i: BookOpen }, { k: 'works', l: '用户作品库', i: Image }, { k: 'my', l: '我的分享', i: Share2 }].map(({ k, l, i: Icon }) => (
             <button key={k} onClick={() => handleTabChange(k)} className={`square-tab-btn ${tab === k ? 'bg-white dark:bg-gray-800 shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
               <Icon size={14} className="block shrink-0" /><span className="leading-none translate-y-[0.5px]">{l}</span>

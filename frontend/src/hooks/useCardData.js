@@ -95,11 +95,14 @@ export function useCardData({ type, apiFn, pageSize = 20, deps = [], atomicPagin
   const handleFavorite = useCallback(async (id) => {
     const card = cards.find(c => c.id === id)
     if (!card) return
-    setCards(prev => prev.map(c => c.id === id ? { ...c, isFavorited: !c.isFavorited } : c))
+    const nextFavorited = !card.isFavorited
+    const nextLiked = nextFavorited ? true : card.isLiked
+    const nextLikesCount = nextFavorited && !card.isLiked ? card.likesCount + 1 : card.likesCount
+    setCards(prev => prev.map(c => c.id === id ? { ...c, isFavorited: nextFavorited, isLiked: nextLiked, likesCount: nextLikesCount } : c))
     try {
       await favoriteAPI.toggle(card._type === 'image' ? 'image' : 'prompt', id)
     } catch {
-      setCards(prev => prev.map(c => c.id === id ? { ...c, isFavorited: card.isFavorited } : c))
+      setCards(prev => prev.map(c => c.id === id ? { ...c, isFavorited: card.isFavorited, isLiked: card.isLiked, likesCount: card.likesCount } : c))
     }
   }, [cards])
 

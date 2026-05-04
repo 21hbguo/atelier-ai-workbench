@@ -62,8 +62,11 @@ class PromptService:
                 prompt_ids = [p["id"] for p in results]
                 like_rows = conn.execute(f"SELECT prompt_id FROM prompt_likes WHERE user_id = %s AND prompt_id IN ({','.join('%s' for _ in prompt_ids)})", [user_id, *prompt_ids]).fetchall()
                 liked_ids = {str(r["prompt_id"]) for r in like_rows}
-                favorited_ids = FavoriteService.get_flags(user_id, "prompt", prompt_ids)
+                favorited_ids = FavoriteService.get_flags(user_id, "prompt", prompt_ids, conn=conn)
+                fixed_ids = FavoriteService.ensure_like_links(user_id, "prompt", list(favorited_ids), conn=conn)
+                liked_ids |= fixed_ids
                 for p in results:
+                    if str(p["id"]) in fixed_ids:p["likes_count"]=(p.get("likes_count") or 0)+1
                     p["is_liked"] = str(p["id"]) in liked_ids
                     p["is_favorited"] = str(p["id"]) in favorited_ids
             return {"prompts": results, "total": total}
@@ -194,8 +197,11 @@ class PromptService:
                 if prompt_ids:
                     like_rows = conn.execute(f"SELECT prompt_id FROM prompt_likes WHERE user_id = %s AND prompt_id IN ({','.join('%s' for _ in prompt_ids)})", [user_id, *prompt_ids]).fetchall()
                     liked_ids = {str(r["prompt_id"]) for r in like_rows}
-                    favorited_ids = FavoriteService.get_flags(user_id, "prompt", prompt_ids)
+                    favorited_ids = FavoriteService.get_flags(user_id, "prompt", prompt_ids, conn=conn)
+                    fixed_ids = FavoriteService.ensure_like_links(user_id, "prompt", list(favorited_ids), conn=conn)
+                    liked_ids |= fixed_ids
                     for p in results:
+                        if str(p["id"]) in fixed_ids:p["likes_count"]=(p.get("likes_count") or 0)+1
                         p["is_liked"] = str(p["id"]) in liked_ids
                         p["is_favorited"] = str(p["id"]) in favorited_ids
             return {"prompts": results, "total": total}

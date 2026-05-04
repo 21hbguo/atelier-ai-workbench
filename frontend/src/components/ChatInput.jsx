@@ -11,6 +11,9 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const [lightbox, setLightbox] = useState(null)
   const fileRef = useRef(null)
   const textareaRef = useRef(null)
+  const paramsStatePushedRef = useRef(false)
+  const paramsStateTokenRef = useRef(`chatinput_params_${Date.now()}_${Math.random().toString(36).slice(2)}`)
+  const paramsClosingByPopRef = useRef(false)
 
   const consumePending = useCallback(() => {
     const pending = localStorage.getItem('pending_prompt')
@@ -43,6 +46,17 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
       textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px'
     }
   }, [prompt])
+  const openParams = useCallback(() => { setShowParams(true) }, [])
+  const closeParams = useCallback(() => {
+    if (!showParams) return
+    if (paramsStatePushedRef.current && window.history.state?.__chatinput_params === paramsStateTokenRef.current && !paramsClosingByPopRef.current) {
+      paramsClosingByPopRef.current = true
+      window.history.back()
+      return
+    }
+    setShowParams(false)
+  }, [showParams])
+  const toggleParams = useCallback(() => { if (showParams) closeParams(); else openParams() }, [showParams, closeParams, openParams])
   useEffect(() => {
     const ta = textareaRef.current
     if (!ta) return
@@ -63,6 +77,22 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
       vv?.removeEventListener('resize', onViewportChange)
     }
   }, [])
+  useEffect(() => {
+    if (!showParams) return
+    if (!paramsStatePushedRef.current) {
+      window.history.pushState({ __chatinput_params: paramsStateTokenRef.current }, '')
+      paramsStatePushedRef.current = true
+    }
+    const onPopState = () => {
+      if (!paramsStatePushedRef.current) return
+      paramsStatePushedRef.current = false
+      paramsClosingByPopRef.current = true
+      setShowParams(false)
+      setTimeout(() => { paramsClosingByPopRef.current = false }, 0)
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [showParams])
 
   useImperativeHandle(ref, () => ({
     addFiles(files) { handleFiles(files) },
@@ -105,6 +135,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     setPrompt('')
     setImages([])
   }
+  const batchCount = Math.min(5, Math.max(2, Number(params.roll_count) || 5))
 
   const removeImage = (idx) => {
     setImages(prev => { const next = [...prev]; if (next[idx].file) URL.revokeObjectURL(next[idx].preview); next.splice(idx, 1); return next })
@@ -112,7 +143,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
 
   return (
     <>
-      <div className="w-full px-4 pt-4 pb-2">
+      <div className="w-full px-4 pt-2 pb-2">
         <div
           className="rounded-xl border-2 transition-all duration-150"
           style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-md)', position: 'relative' }}
@@ -131,21 +162,23 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
               ))}
             </div>
           )}
-          <div className="relative px-2 pt-2 pb-2">
+          <div className="px-2 pt-2 pb-2">
             <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(false) } }}
               placeholder="输入提示词..."
-              className="w-full resize-none bg-transparent outline-none text-sm py-2 pr-[120px] pb-11"
+              className="block w-full resize-none bg-transparent outline-none text-sm py-2"
               rows={1} style={{ color: 'var(--text-primary)', minHeight: '40px', maxHeight: '120px' }} />
-            <div className="absolute left-2 bottom-2 flex items-center gap-0.5">
-              <button onClick={() => fileRef.current?.click()} className="p-1.5 rounded-md hover:bg-black/5 transition-colors" style={{ color: 'var(--text-secondary)' }}><Paperclip size={14} /></button>
-              <button onClick={() => setShowParams(!showParams)} className="p-1.5 rounded-md hover:bg-black/5 transition-colors" style={{ color: showParams ? 'var(--accent)' : 'var(--text-secondary)' }}><Settings size={13} /></button>
-              <button onClick={() => setShareToSquare(!shareToSquare)} className="p-1.5 rounded-md hover:bg-black/5 transition-colors relative" style={{ color: shareToSquare ? '#22c55e' : 'var(--text-secondary)' }} title={shareToSquare ? '已开启分享到广场' : '已关闭分享到广场'}><Share2 size={13} /><span className="absolute -right-0.5 -top-0.5 w-1.5 h-1.5 rounded-full" style={{ background: shareToSquare ? '#22c55e' : 'var(--border-color)' }} /></button>
-            </div>
-            <div className="absolute right-2 bottom-2 flex items-center gap-1">
-              {prompt.length > 0 && <span className="text-[10px] tabular-nums" style={{ color: 'var(--text-secondary)' }}>{prompt.length}</span>}
-              <button onClick={() => handleSend(true)} disabled={!prompt.trim() || loading} className="px-1.5 py-1 rounded-md text-[10px] font-medium text-white disabled:opacity-40" style={{ background: prompt.trim() && !loading ? '#2563eb' : 'var(--border-color)' }}>R{Math.min(5, Math.max(2, Number(params.roll_count) || 5))}</button>
-              <button onClick={() => handleSend(false)} disabled={!prompt.trim() || loading} className="p-1 rounded-md transition-all duration-150 disabled:opacity-40" style={{ background: prompt.trim() && !loading ? 'var(--accent)' : 'var(--border-color)', color: '#fff' }}><Send size={13} /></button>
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
+                <button onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-black/5 transition-colors text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}><Paperclip size={14} /><span>上传</span></button>
+                <button onClick={toggleParams} className="inline-flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-black/5 transition-colors text-[11px] font-medium" style={{ color: showParams ? 'var(--accent)' : 'var(--text-secondary)' }}><Settings size={13} /><span>参数</span></button>
+                <button onClick={() => setShareToSquare(!shareToSquare)} className="inline-flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-black/5 transition-colors relative text-[11px] font-medium" style={{ color: shareToSquare ? '#22c55e' : 'var(--text-secondary)' }} title={shareToSquare ? '已开启分享到广场' : '已关闭分享到广场'}><Share2 size={13} /><span>分享</span><span className="absolute -right-0.5 -top-0.5 w-1.5 h-1.5 rounded-full" style={{ background: shareToSquare ? '#22c55e' : 'var(--border-color)' }} /></button>
+              </div>
+              <div className="min-w-0 flex items-center justify-end gap-1 flex-1">
+                {prompt.length > 0 && <span className="text-[10px] tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{prompt.length}</span>}
+                <button onClick={() => handleSend(true)} disabled={!prompt.trim() || loading} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-white disabled:opacity-40 flex-shrink-0" style={{ background: prompt.trim() && !loading ? '#2563eb' : 'var(--border-color)' }}><Send size={13} /><span className="text-[10px] font-medium leading-none">×{batchCount}</span></button>
+                <button onClick={() => handleSend(false)} disabled={!prompt.trim() || loading} className="p-1 rounded-md transition-all duration-150 disabled:opacity-40 flex-shrink-0" style={{ background: prompt.trim() && !loading ? 'var(--accent)' : 'var(--border-color)', color: '#fff' }}><Send size={13} /></button>
+              </div>
             </div>
           </div>
         </div>

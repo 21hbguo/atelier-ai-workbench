@@ -7,7 +7,7 @@ import SearchInput from '../components/SearchInput'
 import MainLayout from '../components/MainLayout'
 import UnifiedDetailModal from '../components/UnifiedDetailModal'
 import { useAppDialog } from '../components/AppDialogProvider'
-import { generateAPI, uploadAPI, taskAPI, imageAPI, squareAPI, adminAPI, pointsAPI } from '../api'
+import { generateAPI, uploadAPI, taskAPI, imageAPI, squareAPI, adminAPI, pointsAPI, configAPI } from '../api'
 import { readUser } from '../auth'
 
 function formatLocalTime(d) {
@@ -33,10 +33,10 @@ function parseTaskTime(value) {
 
 export default function ChatPage() {
   const dialog = useAppDialog()
-  const user = readUser()
-  const isAdmin = Boolean(user?.is_admin)
+  const [currentUser, setCurrentUser] = useState(() => readUser())
+  const isAdmin = Boolean(currentUser?.is_admin)
   const activeStatuses = ['pending', 'queued', 'processing', 'running', 'generating']
-  const activeCacheKey = user?.id ? `active_tasks_${user.id}` : 'active_tasks_guest'
+  const activeCacheKey = currentUser?.id ? `active_tasks_${currentUser.id}` : 'active_tasks_guest'
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
@@ -48,7 +48,8 @@ export default function ChatPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [userList, setUserList] = useState([])
   const [selectedUserId, setSelectedUserId] = useState(null)
-  const [points, setPoints] = useState(user?.points ?? 0)
+  const [points, setPoints] = useState(currentUser?.points ?? 0)
+  const [requestCost, setRequestCost] = useState(isAdmin ? 0 : 10)
   const [loadError, setLoadError] = useState('')
   const [selectedCardIndex, setSelectedCardIndex] = useState(null)
   const [detailCards, setDetailCards] = useState([])
@@ -173,14 +174,28 @@ export default function ChatPage() {
   }, [isAdmin])
 
   useEffect(() => {
+    const syncUser = () => setCurrentUser(readUser())
+    window.addEventListener('auth-changed', syncUser)
+    window.addEventListener('points-updated', syncUser)
+    return () => { window.removeEventListener('auth-changed', syncUser); window.removeEventListener('points-updated', syncUser) }
+  }, [])
+  useEffect(() => {
+    setPoints(currentUser?.points ?? 0)
+  }, [currentUser])
+  useEffect(() => {
     pointsAPI.balance().then(res => setPoints(res.data.points)).catch(() => {})
     const handleUpdate = () => {
       const u = readUser()
+      setCurrentUser(u)
       if (u) setPoints(u.points ?? 0)
     }
     window.addEventListener('points-updated', handleUpdate)
     return () => window.removeEventListener('points-updated', handleUpdate)
   }, [])
+  useEffect(() => {
+    if (isAdmin) { setRequestCost(0); return }
+    configAPI.get().then(res => setRequestCost(Math.max(0, Number(res.data?.points_cost_per_generation) || 10))).catch(() => setRequestCost(10))
+  }, [isAdmin])
 
   useEffect(() => {
     if (loaded && feedRef.current) {
@@ -296,9 +311,11 @@ export default function ChatPage() {
   }, [updateTask, shareImageToSquare, refreshPointsOnFailed])
 
   const handleSubmit = useCallback(async ({ prompt, images, params, shareToSquare, rollCount = 1 }) => {
+    const latestUser = readUser()
+    const latestIsAdmin = Boolean(latestUser?.is_admin)
     const batchCount = Math.min(5, Math.max(1, Number(rollCount) || 1))
     if (batchCount > 1) {
-      const cost = isAdmin ? 0 : 10
+      const cost = latestIsAdmin ? 0 : requestCost
       if (!await dialog.confirm(`本次将提交 ${batchCount} 次生成，预计消耗 ${batchCount * cost} 积分，是否继续？`)) return false
     }
     setLoading(true)
@@ -315,10 +332,10 @@ export default function ChatPage() {
         const taskId = makeTaskId()
         try {
           const data = hasImages ? (await generateAPI.submitTextImage({ prompt, image_urls: imageUrls, size: params?.size || 'auto', model_id: params?.model_id, task_id: taskId, share_to_square: !!shareToSquare })).data : (await generateAPI.submitText({ prompt, size: params?.size || 'auto', model_id: params?.model_id, task_id: taskId, share_to_square: !!shareToSquare })).data
-          if (!isAdmin) {
-            setPoints(p => Math.max(0, p - 10))
+          if (!latestIsAdmin) {
+            setPoints(p => Math.max(0, p - requestCost))
             const u = readUser()
-            if (u) { u.points = Math.max(0, (u.points ?? 0) - 10); localStorage.setItem('user', JSON.stringify(u)) }
+            if (u) { u.points = Math.max(0, (u.points ?? 0) - requestCost); localStorage.setItem('user', JSON.stringify(u)) }
             window.dispatchEvent(new Event('points-updated'))
           }
           const realId = data.task_id
@@ -371,7 +388,7 @@ export default function ChatPage() {
     } finally {
       setLoading(false)
     }
-  }, [dialog, isAdmin, pollTask, refreshPointsOnFailed, scroll, shareImageToSquare, updateTask, saveCachedActiveTasks])
+  }, [dialog, pollTask, refreshPointsOnFailed, requestCost, scroll, shareImageToSquare, updateTask, saveCachedActiveTasks])
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true)
@@ -552,7 +569,7 @@ export default function ChatPage() {
           </div>
         </div>
       )}
-      <ChatInput ref={inputRef} onSubmit={handleSubmit} loading={loading} requestCost={isAdmin ? 0 : 10} />
+      <ChatInput ref={inputRef} onSubmit={handleSubmit} loading={loading} requestCost={requestCost} />
     </div>
   )
 
