@@ -4,17 +4,22 @@ const STORE_NAME = 'images'
 const CACHED_IMAGES_KEY = '__cached_images__'
 const PENDING_IMAGE_KEY = '__pending_image__'
 
-function openDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION)
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE_NAME)
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error)
-  })
+let _dbPromise = null
+
+function getDB() {
+  if (!_dbPromise) {
+    _dbPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION)
+      req.onupgradeneeded = () => req.result.createObjectStore(STORE_NAME)
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => { _dbPromise = null; reject(req.error) }
+    })
+  }
+  return _dbPromise
 }
 
 export async function getCachedImage(key) {
-  const db = await openDB()
+  const db = await getDB()
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readonly')
     const req = tx.objectStore(STORE_NAME).get(key)
@@ -24,7 +29,7 @@ export async function getCachedImage(key) {
 }
 
 export async function setCachedImage(key, blob) {
-  const db = await openDB()
+  const db = await getDB()
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite')
     tx.objectStore(STORE_NAME).put(blob, key)
@@ -34,7 +39,7 @@ export async function setCachedImage(key, blob) {
 }
 
 export async function clearCachedImage(key) {
-  const db = await openDB()
+  const db = await getDB()
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite')
     tx.objectStore(STORE_NAME).delete(key)
@@ -44,7 +49,7 @@ export async function clearCachedImage(key) {
 }
 
 export async function clearAllCachedImages() {
-  const db = await openDB()
+  const db = await getDB()
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite')
     tx.objectStore(STORE_NAME).clear()
@@ -59,7 +64,7 @@ export async function getCachedImages() {
 }
 
 export async function setCachedImages(items) {
-  const db = await openDB()
+  const db = await getDB()
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite')
     tx.objectStore(STORE_NAME).put(Array.isArray(items) ? items : [], CACHED_IMAGES_KEY)
@@ -73,7 +78,7 @@ export async function getPendingImage() {
 }
 
 export async function setPendingImage(item) {
-  const db = await openDB()
+  const db = await getDB()
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite')
     tx.objectStore(STORE_NAME).put(item || null, PENDING_IMAGE_KEY)

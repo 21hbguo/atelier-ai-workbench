@@ -59,6 +59,8 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
 
   const consumePending = useCallback(async () => {
     const pendingPrompt = localStorage.getItem('pending_prompt')
+    const pendingImgUrl = localStorage.getItem('pending_image_url')
+    const pendingImgName = localStorage.getItem('pending_image_name')
     const pendingImg = localStorage.getItem('pending_image')
 
     if (pendingPrompt) {
@@ -66,6 +68,20 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
       setPrompt(pendingPrompt)
     }
 
+    // URL-based pending image (from square/favorites)
+    if (pendingImgUrl) {
+      pendingImageConsumedRef.current = true
+      const name = pendingImgName || 'reference.png'
+      const entry = { url: pendingImgUrl, preview: pendingImgUrl, name }
+      setImages(prev => [...prev, entry].slice(0, MAX_IMAGES))
+      localStorage.setItem('ref_image_url', pendingImgUrl)
+      localStorage.setItem('ref_image_name', name)
+      localStorage.removeItem('pending_image_url')
+      localStorage.removeItem('pending_image_name')
+      return
+    }
+
+    // Legacy blob-based pending image (from IndexedDB)
     if (pendingImg || localStorage.getItem('pending_image_token')) {
       pendingImageConsumedRef.current = true
       try {
@@ -79,10 +95,12 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
           type = pending.type || pending.blob.type || type
         } else if (pendingImg) {
           const parsed = JSON.parse(pendingImg)
-          const res = await fetch(parsed.dataUrl)
-          blob = await res.blob()
-          name = parsed.name || name
-          type = blob.type || type
+          if (parsed?.dataUrl) {
+            const res = await fetch(parsed.dataUrl)
+            blob = await res.blob()
+            name = parsed.name || name
+            type = blob.type || type
+          }
         }
         if (blob) {
           const file = new File([blob], name, { type })
@@ -93,7 +111,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
             return merged
           })
         }
-      } catch {}
+      } catch (e) { console.error('[consumePending] error:', e) }
       localStorage.removeItem('pending_image')
       localStorage.removeItem('pending_image_token')
       await clearPendingImage().catch(() => {})
@@ -105,11 +123,18 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     const cached = localStorage.getItem('cached_prompt')
     if (cached) setPrompt(cached)
 
+    // 恢复 localStorage 中的参考图 URL
+    const refUrl = localStorage.getItem('ref_image_url')
+    const refName = localStorage.getItem('ref_image_name')
+    if (refUrl && !pendingImageConsumedRef.current) {
+      setImages([{ url: refUrl, preview: refUrl, name: refName || 'reference.png' }])
+    }
+
     ;(async () => {
       try {
         const cachedImages = await getCachedImages()
         const items = cachedImages.map((item, i) => item?.blob ? { file: new File([item.blob], item.name || `cached-${i}.png`, { type: item.type || item.blob.type || 'image/png' }), preview: URL.createObjectURL(item.blob), name: item.name || `cached-${i}.png` } : null).filter(Boolean)
-        if (items.length > 0 && !pendingImageConsumedRef.current) setImages(items)
+        if (items.length > 0 && !pendingImageConsumedRef.current && !refUrl) setImages(items)
       } catch {}
     })()
   }, [])
@@ -259,11 +284,18 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     const ok = await onSubmit({ prompt: prompt.trim(), images, params, shareToSquare, rollCount: batch ? Math.min(5, Math.max(2, Number(params.roll_count) || 5)) : 1 })
     if (ok === false) return
     setPrompt('')
+    setImages([])
+    localStorage.removeItem('ref_image_url')
+    localStorage.removeItem('ref_image_name')
   }
   const batchCount = Math.min(5, Math.max(2, Number(params.roll_count) || 5))
 
   const removeImage = (idx) => {
-    setImages(prev => { const next = [...prev]; if (next[idx].file) URL.revokeObjectURL(next[idx].preview); next.splice(idx, 1); void persistImages(next); return next })
+    setImages(prev => {
+      const next = [...prev]; if (next[idx].file) URL.revokeObjectURL(next[idx].preview); next.splice(idx, 1)
+      if (next.length === 0) { localStorage.removeItem('ref_image_url'); localStorage.removeItem('ref_image_name') }
+      void persistImages(next); return next
+    })
   }
 
   return (

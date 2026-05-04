@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Image, BookOpen } from 'lucide-react'
-import { favoriteAPI, imageAPI } from '../api'
+import { favoriteAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 import CardGrid from '../components/CardGrid'
 import UnifiedDetailModal from '../components/UnifiedDetailModal'
@@ -8,7 +8,6 @@ import { useCardData } from '../hooks/useCardData'
 import { useLayoutMode } from '../LayoutModeContext'
 import { normalizeList } from '../utils/cardAdapter'
 import { useNavigate } from 'react-router-dom'
-import { setPendingImage } from '../utils/imageDB'
 
 function useActions() {
   const navigate = useNavigate()
@@ -19,16 +18,13 @@ function useActions() {
     window.dispatchEvent(new Event('pending-prompt-updated'))
     navigate('/')
   }
-  const handleUseImage = async (card) => {
-    if (!card.fullUrl) return
-    try {
-      const { data } = await imageAPI.getBlobByUrl(card.fullUrl)
-      const blob = data
-      await setPendingImage({ blob, name: card.filename || card.name || 'favorite', type: blob.type || 'image/png' })
-      localStorage.setItem('pending_image_token', String(Date.now()))
-      window.dispatchEvent(new Event('pending-image-updated'))
-      navigate('/')
-    } catch { alert('添加参考图失败') }
+  const handleUseImage = (card) => {
+    const url = card.thumbUrl2x || card.fullUrl
+    if (!url) { alert('图片地址不存在'); return }
+    localStorage.setItem('pending_image_url', url)
+    localStorage.setItem('pending_image_name', card.filename || card.name || 'favorite')
+    window.dispatchEvent(new Event('pending-image-updated'))
+    navigate('/')
   }
   return { handleUsePrompt, handleUseImage }
 }

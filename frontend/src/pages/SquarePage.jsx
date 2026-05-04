@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Image, BookOpen, Share2, Trash2, Snowflake, Sun, RefreshCw, Star, X } from 'lucide-react'
-import { squareAPI, promptAPI, adminAPI, favoriteAPI, imageAPI } from '../api'
+import { squareAPI, promptAPI, adminAPI, favoriteAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 import SearchInput from '../components/SearchInput'
 import CardGrid from '../components/CardGrid'
@@ -12,7 +12,6 @@ import { useLayoutMode } from '../LayoutModeContext'
 import { normalizeList } from '../utils/cardAdapter'
 import { readUser } from '../auth'
 import { useAppDialog } from '../components/AppDialogProvider'
-import { setPendingImage } from '../utils/imageDB'
 
 function useImageActions() {
   const navigate = useNavigate()
@@ -26,15 +25,13 @@ function useImageActions() {
     setTimeout(() => { if (window.location.pathname === '/square') window.location.href = '/' }, 120)
   }
 
-  const handleUseImage = async (card) => {
-    try {
-      const { data } = await imageAPI.getBlobByUrl(card.fullUrl)
-      const blob = data
-      await setPendingImage({ blob, name: card.filename || card.title || 'image', type: blob.type || 'image/png' })
-      localStorage.setItem('pending_image_token', String(Date.now()))
-      window.dispatchEvent(new Event('pending-image-updated'))
-      navigate('/')
-    } catch { alert('添加参考图失败') }
+  const handleUseImage = (card) => {
+    const url = card.thumbUrl2x || card.fullUrl
+    if (!url) { alert('图片地址不存在'); return }
+    localStorage.setItem('pending_image_url', url)
+    localStorage.setItem('pending_image_name', card.filename || card.title || 'image')
+    window.dispatchEvent(new Event('pending-image-updated'))
+    navigate('/')
   }
 
   return { handleUsePrompt, handleUseImage }
@@ -52,16 +49,13 @@ function usePromptActions() {
     setTimeout(() => { if (window.location.pathname === '/square') window.location.href = '/' }, 120)
   }
 
-  const handleUseImage = async (card) => {
-    if (!card.fullUrl) return
-    try {
-      const { data } = await imageAPI.getBlobByUrl(card.fullUrl)
-      const blob = data
-      await setPendingImage({ blob, name: (card.name || 'prompt') + '.jpg', type: blob.type || 'image/jpeg' })
-      localStorage.setItem('pending_image_token', String(Date.now()))
-      window.dispatchEvent(new Event('pending-image-updated'))
-      navigate('/')
-    } catch { alert('添加参考图失败') }
+  const handleUseImage = (card) => {
+    const url = card.thumbUrl2x || card.fullUrl
+    if (!url) { alert('图片地址不存在'); return }
+    localStorage.setItem('pending_image_url', url)
+    localStorage.setItem('pending_image_name', (card.name || 'prompt') + '.jpg')
+    window.dispatchEvent(new Event('pending-image-updated'))
+    navigate('/')
   }
 
   return { handleUsePrompt, handleUseImage }

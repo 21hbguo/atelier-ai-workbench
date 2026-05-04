@@ -325,7 +325,12 @@ export default function ChatPage() {
     setLoading(true)
     try {
       const previewImages = images?.map(i => i.preview) || []
-      const uploaded = images?.length > 0 ? await Promise.all(images.map(img => img.url ? Promise.resolve({ data: { url: img.url } }) : uploadAPI.upload(img.file))) : []
+      const uploaded = images?.length > 0 ? await Promise.all(images.map(img => {
+        if (img.file) return uploadAPI.upload(img.file)
+        if (img.url && img.url.startsWith('http')) return Promise.resolve({ data: { url: img.url } })
+        if (img.url) return fetch(img.url).then(r => { if (!r.ok) throw new Error(`fetch ${r.status}`); return r.blob() }).then(blob => uploadAPI.upload(new File([blob], img.name || 'ref.png', { type: blob.type || 'image/png' })))
+        return Promise.resolve({ data: { url: '' } })
+      })) : []
       const imageUrls = uploaded.map(r => r.data.url)
       const hasImages = imageUrls.length > 0
       const submitOne = async (index) => {
