@@ -134,7 +134,7 @@ async def upload_local(file: UploadFile = File(...), user=Depends(get_current_us
     save_path = UPLOAD_DIR / filename
     await asyncio.to_thread(_write_file, save_path, content)
     UploadFileService.create(file_key=file_key, owner_id=user["user_id"], original_name=_safe_filename(file.filename), storage_name=filename, content_type=content_type, category="payment_proof")
-    return UploadResponse(url=f"/api/uploads/{file_key}", is_duplicate=False)
+    return UploadResponse(url=f"/api/uploads/{file_key}", is_duplicate=False, storage_name=filename)
 
 
 @router.get("/uploads/{file_key}")

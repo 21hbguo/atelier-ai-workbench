@@ -172,6 +172,16 @@ async def serve_evo_thumbnail(path: str, size: int = Query(400)):
         raise HTTPException(status_code=500, detail="生成缩略图失败")
 
 
+@router.get("/image/{storage_name}")
+async def serve_prompt_image(storage_name: str):
+    from backend.config import UPLOAD_DIR
+    from fastapi.responses import FileResponse
+    path = UPLOAD_DIR / storage_name
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="图片不存在")
+    return FileResponse(str(path))
+
+
 @router.post("", response_model=PromptItem)
 async def create_prompt(request: PromptCreateRequest, user=Depends(get_current_user)):
     try:

@@ -475,7 +475,8 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
     await promptAPI.update(id, payload)
     if (newCardRef.current?.id === id) {
       const imgPath = payload.image_path
-      const isFullUrl = imgPath && imgPath.startsWith('http')
+      const isEvoPath = imgPath && imgPath.includes('/')
+      const imgUrl = imgPath ? (isEvoPath ? `/api/prompts/evo-thumb/${imgPath}` : `/api/prompts/image/${imgPath}`) : null
       const updated = {
         ...newCardRef.current,
         name: payload.name,
@@ -487,9 +488,9 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
         title: payload.name,
         subtitle: payload.name || payload.prompt,
         imagePath: imgPath || null,
-        thumbUrl: imgPath ? (isFullUrl ? imgPath : `/api/prompts/evo-thumb/${imgPath}?size=400`) : null,
-        thumbUrl2x: imgPath ? (isFullUrl ? imgPath : `/api/prompts/evo-thumb/${imgPath}?size=800`) : null,
-        fullUrl: imgPath ? (isFullUrl ? imgPath : `/api/prompts/evo-thumb/${imgPath}?size=800`) : null,
+        thumbUrl: imgUrl ? (isEvoPath ? `${imgUrl}?size=400` : imgUrl) : null,
+        thumbUrl2x: imgUrl ? (isEvoPath ? `${imgUrl}?size=800` : imgUrl) : null,
+        fullUrl: imgUrl ? (isEvoPath ? `${imgUrl}?size=800` : imgUrl) : null,
       }
       setNewCard(updated)
       newCardRef.current = updated

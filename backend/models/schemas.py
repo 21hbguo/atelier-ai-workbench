@@ -37,6 +37,7 @@ class TaskStatusResponse(BaseModel):
 class UploadResponse(BaseModel):
     url: str
     is_duplicate: bool = False
+    storage_name: Optional[str] = None
 
 class PromptItem(BaseModel):
     id: str

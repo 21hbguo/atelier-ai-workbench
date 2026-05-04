@@ -213,8 +213,8 @@ export default function UnifiedDetailModal({
     if (!file) return
     setUploading(true)
     try {
-      const { data } = await uploadAPI.upload(file)
-      setEditForm(f => ({ ...f, image_path: data.url }))
+      const { data } = await uploadAPI.uploadLocal(file)
+      setEditForm(f => ({ ...f, image_path: data.storage_name }))
     } catch (err) {
       dialog.alert('图片上传失败: ' + (err?.message || '未知错误'))
     } finally {
