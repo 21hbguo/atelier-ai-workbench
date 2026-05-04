@@ -65,7 +65,7 @@ export default function SquarePage() {
   const dialog = useAppDialog()
   const { layoutMode, setLayoutMode } = useLayoutMode()
   const location = useLocation()
-  const [tab, setTab] = useState(() => location.state?.tab === 'favorites' ? 'favorites' : 'prompts')
+  const [tab, setTab] = useState(() => location.state?.tab === 'favorites' || location.state?.tab === 'shared' ? 'shared' : 'prompts')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState('likes')
   const [activeCategory, setActiveCategory] = useState(null)
@@ -93,7 +93,7 @@ export default function SquarePage() {
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="square-top-block sm:pt-4">
           <div className="square-tab-strip scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
-          {[{ k: 'prompts', l: '提示词库', i: BookOpen }, { k: 'works', l: '用户作品库', i: Image }, { k: 'my', l: '我的分享', i: Share2 }, { k: 'favorites', l: '收藏', i: Star }].map(({ k, l, i: Icon }) => (
+          {[{ k: 'prompts', l: '提示词库', i: BookOpen }, { k: 'works', l: '用户作品库', i: Image }, { k: 'shared', l: '分享与收藏', i: Share2 }].map(({ k, l, i: Icon }) => (
             <button key={k} onClick={() => handleTabChange(k)} className={`square-tab-btn ${tab === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
               <Icon size={14} className="block shrink-0" /><span className="leading-none translate-y-[0.5px]">{l}</span>
@@ -103,7 +103,7 @@ export default function SquarePage() {
         </div>
         <div className="square-subtop-block sm:pt-3">
           <div className="square-section-row">
-            {tab !== 'my' && tab !== 'favorites' && (
+            {tab !== 'shared' && (
               <div className="flex gap-1 flex-shrink-0">
                 <button onClick={() => setSort('likes')} className={`square-filter-btn ${sort === 'likes' ? 'bg-accent/10' : 'hover:bg-bg-hover'}`}
                   style={{ color: sort === 'likes' ? 'var(--accent)' : 'var(--text-secondary)' }}>最热</button>
@@ -111,7 +111,7 @@ export default function SquarePage() {
                   style={{ color: sort === 'time' ? 'var(--accent)' : 'var(--text-secondary)' }}>最新</button>
               </div>
             )}
-            {tab !== 'my' && tab !== 'favorites' && (
+            {tab !== 'shared' && (
               <div className="square-search-wrap"><SearchInput value={query} onChange={setQuery} placeholder={tab === 'works' ? '搜索提示词/作者...' : '搜索提示词...'} /></div>
             )}
             <button onClick={handleRefresh} className="inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-bg-hover transition-colors flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>
@@ -136,11 +136,9 @@ export default function SquarePage() {
             <WorksTab query={query} sort={sort} authorFilter={authorFilter} onAuthorFilter={handleAuthorFilter} isAdmin={isAdmin} dialog={dialog} refreshTrigger={refreshTrigger} layoutMode={layoutMode} />
           ) : tab === 'prompts' ? (
             <PromptsTab query={query} sort={sort} activeCategory={activeCategory} authorFilter={authorFilter} onAuthorFilter={handleAuthorFilter} isAdmin={isAdmin} dialog={dialog} refreshTrigger={refreshTrigger} layoutMode={layoutMode} />
-          ) : tab === 'my' ? (
-            <MySharesTab refreshTrigger={refreshTrigger} layoutMode={layoutMode} />
-          ) : (
-            <FavoritesTab layoutMode={layoutMode} />
-          )}
+          ) : tab === 'shared' ? (
+            <SharedTab refreshTrigger={refreshTrigger} layoutMode={layoutMode} />
+          ) : null}
         </div>
       </div>
     </MainLayout>
@@ -312,77 +310,6 @@ function WorksTab({ query, sort, authorFilter, onAuthorFilter, isAdmin, dialog, 
           onUsePrompt={handleUsePrompt}
           onUseImage={handleUseImage}
           title={`${cards[detailIdx].author} 的作品`}
-          hideDownload
-        />
-      )}
-    </>
-  )
-}
-
-function MySharesTab({ refreshTrigger, layoutMode }) {
-  const [detailIdx, setDetailIdx] = useState(null)
-  const { handleUsePrompt, handleUseImage } = useImageActions()
-  const dialog = useAppDialog()
-
-  const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike, handleFavorite } = useCardData({
-    type: 'image',
-    apiFn: (p, s) => squareAPI.my(p, s),
-    deps: [refreshTrigger],
-    atomicPaging: true,
-    preloadCount: 12,
-    preloadTimeoutMs: 900,
-  })
-
-  const handleUnshare = useCallback(async (card) => {
-    if (!await dialog.confirm('确定撤回该分享？撤回后图片将恢复3天有效期。')) return
-    try {
-      await squareAPI.unshare(card._raw.id)
-      setDetailIdx(null)
-      refresh()
-    } catch (e) {
-      dialog.alert(e?.response?.data?.detail || e.message || '撤回失败')
-    }
-  }, [refresh, dialog])
-
-  const totalPages = Math.ceil(total / 20)
-
-  return (
-    <>
-      <CardGrid
-        cards={cards}
-        layoutMode={layoutMode}
-        loading={loading}
-        paging={paging}
-        refreshing={refreshing}
-        onRefresh={refresh}
-        hideRefresh
-        total={total}
-        page={page}
-        totalPages={totalPages}
-        onPageChange={setPage}
-        onCardClick={(_, idx) => setDetailIdx(idx)}
-        onLike={handleLike}
-        onFavorite={handleFavorite}
-        onUsePrompt={handleUsePrompt}
-        onUseImage={handleUseImage}
-        paginationScrollTargetId="square-scroll-container"
-        scrollAfterPaging
-        emptyText="暂无分享"
-      />
-
-      {detailIdx !== null && cards[detailIdx] && (
-        <UnifiedDetailModal
-          card={cards[detailIdx]}
-          cards={cards}
-          currentIndex={detailIdx}
-          onNavigate={setDetailIdx}
-          onClose={() => setDetailIdx(null)}
-          onLike={handleLike}
-          onFavorite={handleFavorite}
-          onUsePrompt={handleUsePrompt}
-          onUseImage={handleUseImage}
-          onUnshare={handleUnshare}
-          title="我的作品"
           hideDownload
         />
       )}
@@ -622,18 +549,29 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
   )
 }
 
-function FavoritesTab({ layoutMode }) {
+function SharedTab({ refreshTrigger, layoutMode }) {
   const [subTab, setSubTab] = useState('all')
   const [detailIdx, setDetailIdx] = useState(null)
   const { handleUsePrompt, handleUseImage } = useImageActions()
-  const deps = useMemo(() => [subTab], [subTab])
+  const dialog = useAppDialog()
+
+  const deps = useMemo(() => [subTab, refreshTrigger], [subTab, refreshTrigger])
   const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike, handleFavorite } = useCardData({
     type: subTab === 'prompt' ? 'prompt' : 'image',
     pageSize: 20,
     apiFn: async (p, s) => {
-      const { data } = await favoriteAPI.list(subTab, p, s)
-      if (subTab === 'image') return { data: { images: normalizeList(data.images || [], 'image'), total: data.total || 0 } }
-      if (subTab === 'prompt') return { data: { images: normalizeList(data.prompts || [], 'prompt'), total: data.total || 0 } }
+      if (subTab === 'my-shares') {
+        return squareAPI.my(p, s)
+      }
+      if (subTab === 'prompt') {
+        const { data } = await favoriteAPI.list('prompt', p, s)
+        return { data: { images: normalizeList(data.prompts || [], 'prompt'), total: data.total || 0 } }
+      }
+      if (subTab === 'image') {
+        const { data } = await favoriteAPI.list('image', p, s)
+        return { data: { images: normalizeList(data.images || [], 'image'), total: data.total || 0 } }
+      }
+      const { data } = await favoriteAPI.list('all', p, s)
       const images = normalizeList(data.images || [], 'image').map(x => ({ ...x, _favCreatedAt: x._raw.favorite_created_at || '' }))
       const prompts = normalizeList(data.prompts || [], 'prompt').map(x => ({ ...x, _favCreatedAt: x._raw.favorite_created_at || '' }))
       const mixed = [...images, ...prompts].sort((a, b) => String(b._favCreatedAt).localeCompare(String(a._favCreatedAt)))
@@ -644,18 +582,36 @@ function FavoritesTab({ layoutMode }) {
     preloadCount: 12,
     preloadTimeoutMs: 900,
     mapCards: items => items,
-    removeOnUnfavorite: true,
+    removeOnUnfavorite: subTab !== 'my-shares',
   })
   const totalPages = Math.ceil(total / 20)
+
+  const handleUnshare = useCallback(async (card) => {
+    if (!await dialog.confirm('确定撤回该分享？撤回后图片将恢复3天有效期。')) return
+    try {
+      await squareAPI.unshare(card._raw.id)
+      setDetailIdx(null)
+      refresh()
+    } catch (e) {
+      dialog.alert(e?.response?.data?.detail || e.message || '撤回失败')
+    }
+  }, [refresh, dialog])
+
   return (
     <>
       <div className="flex items-center gap-1 mb-3 p-0.5 rounded-lg max-w-sm" style={{ background: 'var(--bg-active)' }}>
-        {[{ k: 'all', l: '全部' }, { k: 'image', l: '图片', i: Image }, { k: 'prompt', l: '提示词', i: BookOpen }].map(({ k, l, i: Icon }) => (
+        {[{ k: 'all', l: '全部' }, { k: 'my-shares', l: '我的分享', i: Share2 }, { k: 'image', l: '图片', i: Image }, { k: 'prompt', l: '提示词', i: BookOpen }].map(({ k, l, i: Icon }) => (
           <button key={k} onClick={() => { setSubTab(k); setDetailIdx(null) }} className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors flex items-center justify-center gap-1 ${subTab === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`} style={{ color: subTab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{Icon ? <Icon size={12} /> : null}{l}</button>
         ))}
       </div>
-      <CardGrid cards={cards} layoutMode={subTab === 'image' ? layoutMode : 'grid'} showTotal totalUnit={subTab === 'prompt' ? '条' : '项'} loading={loading} paging={paging} refreshing={refreshing} onRefresh={refresh} hideRefresh total={total} page={page} totalPages={totalPages} onPageChange={setPage} paginationScrollTargetId="square-scroll-container" scrollAfterPaging onCardClick={(_, idx) => setDetailIdx(idx)} onFavorite={handleFavorite} onUsePrompt={handleUsePrompt} onUseImage={handleUseImage} showAuthor showLike={false} emptyText="暂无收藏" />
-      {detailIdx !== null && cards[detailIdx] && <UnifiedDetailModal card={cards[detailIdx]} cards={cards} currentIndex={detailIdx} onNavigate={setDetailIdx} onClose={() => setDetailIdx(null)} onFavorite={async (id) => { const targetId = cards[detailIdx]?.id; setDetailIdx(null); const ok = await handleFavorite(id); if (!ok && targetId) { const idx = cards.findIndex(c => c.id === targetId); if (idx >= 0) setDetailIdx(idx) } }} onUsePrompt={handleUsePrompt} onUseImage={handleUseImage} title="收藏详情" hideDownload />}
+      <CardGrid cards={cards} layoutMode={subTab === 'prompt' ? 'grid' : layoutMode} showTotal totalUnit={subTab === 'prompt' ? '条' : '项'} loading={loading} paging={paging} refreshing={refreshing} onRefresh={refresh} hideRefresh total={total} page={page} totalPages={totalPages} onPageChange={setPage} paginationScrollTargetId="square-scroll-container" scrollAfterPaging onCardClick={(_, idx) => setDetailIdx(idx)} onFavorite={handleFavorite} onUsePrompt={handleUsePrompt} onUseImage={handleUseImage} showAuthor showLike={false} emptyText="暂无内容" />
+      {detailIdx !== null && cards[detailIdx] && (
+        <UnifiedDetailModal card={cards[detailIdx]} cards={cards} currentIndex={detailIdx} onNavigate={setDetailIdx} onClose={() => setDetailIdx(null)}
+          onFavorite={subTab === 'my-shares' ? undefined : async (id) => { const targetId = cards[detailIdx]?.id; setDetailIdx(null); const ok = await handleFavorite(id); if (!ok && targetId) { const idx = cards.findIndex(c => c.id === targetId); if (idx >= 0) setDetailIdx(idx) } }}
+          onUnshare={subTab === 'my-shares' || (subTab === 'all' && cards[detailIdx]?._raw?.user_id) ? handleUnshare : undefined}
+          onUsePrompt={handleUsePrompt} onUseImage={handleUseImage}
+          title={subTab === 'my-shares' ? '我的作品' : '收藏详情'} hideDownload />
+      )}
     </>
   )
 }
