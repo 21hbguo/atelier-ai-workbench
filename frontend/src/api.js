@@ -23,7 +23,22 @@ api.interceptors.response.use(
         if (window.location.pathname !== '/login') window.location.href = '/login'
       }
     }
-    const msg = err.response?.data?.detail || err.message || '请求失败'
+    const detail = err.response?.data?.detail
+    const translateMsg = (s) => {
+      if (typeof s !== 'string') return String(s)
+      const map = [
+        [/String should have at least (\d+) character/, '内容至少需要 $1 个字符'],
+        [/String should have at most (\d+) character/, '内容最多 $1 个字符'],
+        [/ensure this value is less than or equal to (\d+)/, '值不能超过 $1'],
+        [/ensure this value is greater than or equal to (\d+)/, '值不能小于 $1'],
+        [/field required/, '必填字段缺失'],
+        [/value is not a valid /, '格式不正确'],
+        [/invalid json/, '请求格式错误'],
+      ]
+      for (const [re, t] of map) { const m = s.match(re); if (m) return t.replace('$1', m[1]) }
+      return s
+    }
+    const msg = Array.isArray(detail) ? detail.map(d => translateMsg(d.msg || d.message || String(d))).join('；') : (typeof detail === 'string' ? detail : null) || err.message || '请求失败'
     return Promise.reject(new Error(msg))
   }
 )

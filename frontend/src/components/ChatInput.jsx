@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
-import { Paperclip, X, Settings, Send, Maximize2, Share2, Loader2, Sparkles } from 'lucide-react'
+import { Paperclip, X, Settings, Send, Maximize2, Share2, Loader2, Sparkles, Palette, Wind } from 'lucide-react'
 import ParamPanel from './ParamPanel'
+import QuickSelector from './QuickSelector'
+import { STYLE_OPTIONS, MOOD_OPTIONS } from '../data/quickOptions'
 import { promptOptimizeAPI } from '../api'
 import { getCachedImages, setCachedImages, getPendingImage, clearPendingImage } from '../utils/imageDB'
 
@@ -29,6 +31,10 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const [optimizeLoading, setOptimizeLoading] = useState(false)
   const [optimizeResults, setOptimizeResults] = useState(null)
   const [showOptimizeOverlay, setShowOptimizeOverlay] = useState(false)
+  const [toast, setToast] = useState(null)
+  const [style, setStyle] = useState(() => localStorage.getItem('cached_style') || '')
+  const [mood, setMood] = useState(() => localStorage.getItem('cached_mood') || '')
+  const [showSelector, setShowSelector] = useState(null)
   const fileRef = useRef(null)
   const textareaRef = useRef(null)
   const paramsStatePushedRef = useRef(false)
@@ -161,6 +167,16 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     else localStorage.removeItem('cached_prompt')
   }, [prompt])
 
+  useEffect(() => {
+    if (style) localStorage.setItem('cached_style', style)
+    else localStorage.removeItem('cached_style')
+  }, [style])
+
+  useEffect(() => {
+    if (mood) localStorage.setItem('cached_mood', mood)
+    else localStorage.removeItem('cached_mood')
+  }, [mood])
+
   useEffect(() => { imagesRef.current = images }, [images])
 
   useEffect(() => {
@@ -271,6 +287,12 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     input.click()
   }, [])
 
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 3000)
+    return () => clearTimeout(t)
+  }, [toast])
+
   const handleOptimize = useCallback(async () => {
     if (!prompt.trim() || optimizeLoading) return
     setOptimizeLoading(true)
@@ -279,7 +301,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
       setOptimizeResults(data)
       setShowOptimizeOverlay(true)
     } catch (e) {
-      alert(e.message || '优化失败，请重试')
+      setToast(typeof e?.message === 'string' ? e.message : '优化失败，请重试')
     } finally {
       setOptimizeLoading(false)
     }
@@ -314,12 +336,16 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     appendImages(valid.map(f => ({ file: f, preview: URL.createObjectURL(f) })))
   }, [appendImages])
 
+  const canSend = prompt.trim() || style || mood
   const handleSend = async (batch = false) => {
-    if (!prompt.trim() || loading) return
-    const ok = await onSubmit({ prompt: prompt.trim(), images, params, shareToSquare, rollCount: batch ? Math.min(5, Math.max(2, Number(params.roll_count) || 5)) : 1 })
+    if (!canSend || loading) return
+    const fullPrompt = `${style ? `风格为${style} ` : ''}${mood ? `氛围为${mood} ` : ''}${prompt.trim()}`.trim()
+    const ok = await onSubmit({ prompt: fullPrompt, images, params, shareToSquare, rollCount: batch ? Math.min(5, Math.max(2, Number(params.roll_count) || 5)) : 1 })
     if (ok === false) return
     setPrompt('')
     setImages([])
+    setStyle('')
+    setMood('')
     localStorage.removeItem('ref_images')
     localStorage.removeItem('ref_image_url')
     localStorage.removeItem('ref_image_name')
@@ -339,21 +365,70 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     <>
       <div className="w-full px-4 pt-2 pb-2 relative">
         {showOptimizeOverlay && optimizeResults && (
-          <div className="absolute bottom-full left-0 right-0 mb-2 mx-2 rounded-xl border p-3 z-30" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-lg)' }}>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>AI 优化结果（点击选择）</span>
-              <button onClick={handleDismissOptimize} className="p-0.5 rounded hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}><X size={14} /></button>
-            </div>
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {optimizeResults.versions.map((v, i) => (
-                <button key={i} onClick={() => handleSelectOptimized(v)} className="w-full text-left p-2.5 rounded-lg border transition-colors hover:border-[var(--accent)]" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
-                  <span className="text-[10px] font-medium block mb-1" style={{ color: 'var(--accent)' }}>版本 {i + 1}</span>
-                  <span className="text-xs leading-relaxed" style={{ color: 'var(--text-primary)' }}>{v}</span>
-                </button>
-              ))}
+          <div className="absolute bottom-full left-0 right-0 mb-3 z-30" onClick={e => e.stopPropagation()}>
+            <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-lg)' }}>
+              <div className="flex items-center justify-between px-4 py-2.5 border-b" style={{ borderColor: 'var(--border-color)' }}>
+                <div className="flex items-center gap-1.5">
+                  <Sparkles size={14} style={{ color: 'var(--accent)' }} />
+                  <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>AI 优化结果</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: 'var(--accent)', color: '#fff', opacity: 0.85 }}>{optimizeResults.versions.length}</span>
+                </div>
+                <button onClick={handleDismissOptimize} className="p-1 rounded-lg hover:bg-bg-hover transition-colors"><X size={14} style={{ color: 'var(--text-secondary)' }} /></button>
+              </div>
+              <div className="p-2 space-y-1.5 max-h-56 overflow-y-auto">
+                {optimizeResults.versions.map((v, i) => (
+                  <div key={i} className="group rounded-xl border p-3 transition-all hover:border-[var(--accent)]" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+                    <div className="flex items-start gap-2">
+                      <span className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold mt-0.5" style={{ background: 'var(--accent)', color: '#fff' }}>{i + 1}</span>
+                      <p className="flex-1 text-xs leading-relaxed min-w-0" style={{ color: 'var(--text-primary)', wordBreak: 'break-word' }}>{v}</p>
+                      <button onClick={() => handleSelectOptimized(v)} className="flex-shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-medium opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: 'var(--accent)', color: '#fff' }}>使用</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}
+        {toast && (
+          <div className="absolute bottom-full left-0 right-0 mb-1 mx-4 flex justify-center z-40 pointer-events-none">
+            <div className="px-3 py-1.5 rounded-lg text-xs font-medium animate-fade-in-up" style={{ background: 'var(--color-error)', color: '#fff' }}>{toast}</div>
+          </div>
+        )}
+        <div className="flex gap-2 mb-1.5 px-1 relative">
+          {showSelector && (
+            <QuickSelector
+              title={showSelector === 'style' ? '选择风格' : '选择氛围'}
+              options={showSelector === 'style' ? STYLE_OPTIONS : MOOD_OPTIONS}
+              selected={showSelector === 'style' ? style : mood}
+              onSelect={(val) => { showSelector === 'style' ? setStyle(val) : setMood(val) }}
+              onClose={() => setShowSelector(null)}
+            />
+          )}
+          <button
+            onClick={() => setShowSelector(showSelector === 'style' ? null : 'style')}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
+            style={{
+              background: style ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'var(--bg-card)',
+              borderColor: style ? 'var(--accent)' : 'var(--border-color)',
+              color: style ? 'var(--accent)' : 'var(--text-secondary)',
+            }}
+          >
+            <Palette size={13} />
+            <span>{style || '风格'}</span>
+          </button>
+          <button
+            onClick={() => setShowSelector(showSelector === 'mood' ? null : 'mood')}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
+            style={{
+              background: mood ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'var(--bg-card)',
+              borderColor: mood ? 'var(--accent)' : 'var(--border-color)',
+              color: mood ? 'var(--accent)' : 'var(--text-secondary)',
+            }}
+          >
+            <Wind size={13} />
+            <span>{mood || '氛围'}</span>
+          </button>
+        </div>
         <div
           className="rounded-2xl border transition-all duration-300"
           style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-md)', position: 'relative' }}
@@ -373,6 +448,22 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
             </div>
           )}
           <div className="px-2 pt-2 pb-2">
+            {(style || mood) && (
+              <div className="flex gap-1.5 mb-1 flex-wrap">
+                {style && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ background: 'color-mix(in srgb, var(--accent) 15%, transparent)', color: 'var(--accent)' }}>
+                    {style}
+                    <button onClick={() => setStyle('')} className="ml-0.5 hover:opacity-70"><X size={11} /></button>
+                  </span>
+                )}
+                {mood && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ background: 'color-mix(in srgb, var(--accent) 15%, transparent)', color: 'var(--accent)' }}>
+                    {mood}
+                    <button onClick={() => setMood('')} className="ml-0.5 hover:opacity-70"><X size={11} /></button>
+                  </span>
+                )}
+              </div>
+            )}
             <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(false) } }}
               placeholder="把脑洞变成画✨"
@@ -388,8 +479,8 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
               <div className="min-w-0 flex items-center justify-end gap-1 flex-1">
                 {loading && <span className="inline-flex items-center gap-1 text-[10px] flex-shrink-0" style={{ color: 'var(--accent)' }}><Loader2 size={11} className="animate-spin" /><span>{images.length > 0 ? '上传并提交中' : '提交中'}</span></span>}
                 {prompt.length > 0 && <span className="text-[10px] tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{prompt.length}</span>}
-                <button onClick={() => handleSend(true)} disabled={!prompt.trim() || loading} title={`批量生成 ${batchCount} 张`} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white disabled:opacity-40 flex-shrink-0" style={{ background: prompt.trim() && !loading ? 'var(--accent)' : 'var(--border-color)' }}>{loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}<span className="text-xs font-medium leading-none">×{batchCount}</span></button>
-                <button onClick={() => handleSend(false)} disabled={!prompt.trim() || loading} title="生成 1 张" className="px-2.5 py-1.5 rounded-lg transition-all duration-150 disabled:opacity-40 flex-shrink-0" style={{ background: prompt.trim() && !loading ? 'var(--accent)' : 'var(--border-color)', color: '#fff' }}>{loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}</button>
+                <button onClick={() => handleSend(true)} disabled={!canSend || loading} title={`批量生成 ${batchCount} 张`} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white disabled:opacity-40 flex-shrink-0" style={{ background: canSend && !loading ? 'var(--accent)' : 'var(--border-color)' }}>{loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}<span className="text-xs font-medium leading-none">×{batchCount}</span></button>
+                <button onClick={() => handleSend(false)} disabled={!canSend || loading} title="生成 1 张" className="px-2.5 py-1.5 rounded-lg transition-all duration-150 disabled:opacity-40 flex-shrink-0" style={{ background: canSend && !loading ? 'var(--accent)' : 'var(--border-color)', color: '#fff' }}>{loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}</button>
               </div>
             </div>
           </div>

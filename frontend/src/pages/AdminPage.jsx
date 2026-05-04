@@ -243,6 +243,12 @@ export default function AdminPage() {
         smtp_password: data.smtp_password || '',
         smtp_sender: data.smtp_sender || '',
         smtp_sender_name: data.smtp_sender_name || 'Atelier·AI造梦工坊',
+        llm_base_url: data.llm_base_url || '',
+        llm_api_key: data.llm_api_key || '',
+        llm_model: data.llm_model || '',
+        llm_max_tokens: Number(data.llm_max_tokens || 2000),
+        llm_timeout_seconds: Number(data.llm_timeout_seconds || 30),
+        prompt_optimize_enabled: data.prompt_optimize_enabled !== false,
       })
       setDefaultModelId(gen.default_model_id || 'image-default')
       const modelsObj = gen.generation_models || {}
@@ -352,7 +358,7 @@ export default function AdminPage() {
   const handleAddRechargePackage = () => setRuntimeConfig(prev => { const list = Array.isArray(prev.recharge_packages) ? prev.recharge_packages : []; return { ...prev, recharge_packages: [...list, { amount: '', points: '', label: `套餐${list.length + 1}` }] } })
   const handleDeleteRechargePackage = (idx) => setRuntimeConfig(prev => { const list = Array.isArray(prev.recharge_packages) ? prev.recharge_packages : []; return { ...prev, recharge_packages: list.length <= 1 ? list : list.filter((_, i) => i !== idx) } })
   const handleSaveConfig = async () => {
-    const n = ['generate_concurrent_limit_per_user', 'points_cost_per_generation', 'points_checkin_reward', 'points_register_bonus', 'points_migration_amount', 'login_rate_limit_per_minute_per_ip', 'register_rate_limit_per_minute_per_ip', 'smtp_port']
+    const n = ['generate_concurrent_limit_per_user', 'points_cost_per_generation', 'points_checkin_reward', 'points_register_bonus', 'points_migration_amount', 'login_rate_limit_per_minute_per_ip', 'register_rate_limit_per_minute_per_ip', 'smtp_port', 'llm_max_tokens', 'llm_timeout_seconds']
     const payload = { ...runtimeConfig }
     payload.default_model_id = (defaultModelId || '').trim() || 'image-default'
     let recharge_packages = []
@@ -1242,6 +1248,37 @@ export default function AdminPage() {
                 </div>
               </div>
               <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>填写发件人邮箱和授权码即可，服务器默认 smtp.qq.com:465。QQ 邮箱请在设置中开启 SMTP 并获取授权码。</p>
+            </div>
+            <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>AI 提示词优化（LLM）</h3>
+                <button type="button" onClick={() => onConfigToggle('prompt_optimize_enabled', !runtimeConfig.prompt_optimize_enabled)} className="relative inline-flex h-7 w-12 items-center rounded-full transition-colors" style={{ background: runtimeConfig.prompt_optimize_enabled ? 'var(--accent)' : 'var(--border-color)' }}>
+                  <span className="inline-block h-5 w-5 transform rounded-full bg-white transition-transform" style={{ transform: runtimeConfig.prompt_optimize_enabled ? 'translateX(22px)' : 'translateX(3px)' }} />
+                </button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>API Base URL</label>
+                  <input type="text" value={runtimeConfig.llm_base_url || ''} onChange={e => onConfigInput('llm_base_url', e.target.value)} placeholder="https://api.anthropic.com" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                </div>
+                <div>
+                  <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>API Key</label>
+                  <input type="password" value={runtimeConfig.llm_api_key || ''} onChange={e => onConfigInput('llm_api_key', e.target.value)} placeholder="sk-..." className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                </div>
+                <div>
+                  <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>模型名称</label>
+                  <input type="text" value={runtimeConfig.llm_model || ''} onChange={e => onConfigInput('llm_model', e.target.value)} placeholder="mimo-v2.5" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                </div>
+                <div>
+                  <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>Max Tokens</label>
+                  <input type="number" min={100} max={10000} value={runtimeConfig.llm_max_tokens || 2000} onChange={e => onConfigInput('llm_max_tokens', e.target.value)} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                </div>
+                <div>
+                  <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>超时（秒）</label>
+                  <input type="number" min={5} max={120} value={runtimeConfig.llm_timeout_seconds || 30} onChange={e => onConfigInput('llm_timeout_seconds', e.target.value)} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                </div>
+              </div>
+              <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>用于提示词优化功能，调用 Anthropic 兼容 API。关闭开关将禁用优化按钮，用户输入直接进入生图流程。</p>
             </div>
             </>
             ) : configSubtab === 'route' ? (

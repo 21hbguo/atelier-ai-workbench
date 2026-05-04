@@ -115,10 +115,15 @@ input,textarea,[contenteditable="true"],[contenteditable="plaintext-only"]{-webk
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .animate-fade-in-up { animation: fadeInUp 200ms ease-out; }
+.animate-slide-up { animation: slideUp 250ms ease-out; }
 .animate-pulse-slow { animation: pulse 2s ease-in-out infinite; }
 .animate-spin-slow { animation: spin 1s linear infinite; }
 .admin-dense .mb-6{margin-bottom:1rem!important}
