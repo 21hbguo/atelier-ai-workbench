@@ -10,10 +10,11 @@ from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from PIL import Image, UnidentifiedImageError
 from backend.services.image_hosting import ImageHostingService
+from backend.services.github_image_hosting import GithubImageHostingService
 from backend.services.image_mapping import ImageUrlMapping
+from backend.config import UPLOAD_DIR, MAX_FILE_SIZE, is_github_hosting_enabled
 from backend.services.upload_file_service import UploadFileService
 from backend.models.schemas import UploadResponse
-from backend.config import UPLOAD_DIR, MAX_FILE_SIZE
 from backend.auth import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -96,7 +97,12 @@ async def _do_upload(file: UploadFile) -> UploadResponse:
     filename = f"{secrets.token_hex(16)}.{ext}"
     save_path = UPLOAD_DIR / filename
     await asyncio.to_thread(_write_file, save_path, content)
-    url, delete_token = await ImageHostingService.upload_image(str(save_path))
+    logger.info(f"上传文件: {filename}, github_hosting={is_github_hosting_enabled()}")
+    if is_github_hosting_enabled():
+        url, delete_token = await GithubImageHostingService.upload_image(str(save_path))
+    else:
+        url, delete_token = await ImageHostingService.upload_image(str(save_path))
+    logger.info(f"上传结果: url={url}")
     existing_url = ImageUrlMapping.save_url(str(save_path), url, content_hash, delete_token or "")
     if existing_url:
         return UploadResponse(url=existing_url, is_duplicate=True)

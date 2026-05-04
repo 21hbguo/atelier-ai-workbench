@@ -1,4 +1,114 @@
 import { Check, HardDrive, Trash2 } from 'lucide-react'
 import Pagination from '../../components/Pagination'
 import UnifiedCard from '../../components/UnifiedCard'
-export default function AdminHostingTab({hostingStats,handleCleanDuplicates,hostingTotal,hostingSelectMode,hostingChecked,hostingImages,setHostingChecked,handleHostingBatchDelete,setHostingSelectMode,loading,toggleHostingCheck,setHostingDetail,hostingPage,setHostingPage}){return(<div>{hostingStats&&(<div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4"><div className="px-3 py-2 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{hostingStats.total_count}</div><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>图床图片</div></div><div className="px-3 py-2 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{hostingStats.total_size_fmt}</div><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>本地文件大小</div></div><button onClick={handleCleanDuplicates} className="px-3 py-2 rounded-xl border hover:bg-bg-hover transition-colors" style={{ borderColor: 'var(--border-color)' }}><div className="text-sm font-medium" style={{ color: 'var(--accent)' }}>清理重复</div><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>基于URL去重</div></button></div>)}<div className="flex items-center justify-between mb-4"><span className="text-sm" style={{ color: 'var(--text-secondary)' }}>共 {hostingTotal} 条图床映射</span><div className="flex items-center gap-2">{hostingSelectMode&&(<button onClick={() => {if (hostingChecked.size === hostingImages.length) setHostingChecked(new Set());else setHostingChecked(new Set(hostingImages.map(i => i.url)))} } className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>{hostingChecked.size === hostingImages.length ? '取消全选' : '全选'}</button>)}{hostingSelectMode&&hostingChecked.size>0&&(<button onClick={handleHostingBatchDelete} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-error)] text-white hover:opacity-90"><Trash2 size={14} /> 删除 {hostingChecked.size} 项</button>)}{hostingSelectMode?(<button onClick={() => { setHostingSelectMode(false); setHostingChecked(new Set()) }} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>):(<button onClick={() => setHostingSelectMode(true)} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>选择</button>)}</div></div>{loading?(<div className="flex justify-center py-20"><div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} /></div>):(<><div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">{hostingImages.map(img=><UnifiedCard key={img.url} checked={hostingChecked.has(img.url)} onClick={() => hostingSelectMode ? toggleHostingCheck(img.url) : setHostingDetail(img)} mediaNode={img.exists ? <img src={`/api/images/local-thumb?path=${encodeURIComponent(img.local_path)}&size=400`} alt="" className="w-full aspect-square object-cover" loading="lazy" /> : <div className="w-full aspect-square flex items-center justify-center" style={{ background: 'var(--border-color)' }}><HardDrive size={24} style={{ color: 'var(--text-secondary)', opacity: 0.5 }} /></div>} bottomNode={<div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"><p className="text-white text-[10px] truncate">{img.filename}</p></div>} selectNode={hostingSelectMode ? <><div className={`absolute top-2 left-2 z-20 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${hostingChecked.has(img.url) ? 'bg-accent border-accent' : 'bg-[var(--bg-card)]/80 border-[var(--border-color)]'}`}>{hostingChecked.has(img.url) && <Check size={12} className="text-white" />}</div>{hostingChecked.has(img.url) && <div className="absolute inset-0 bg-accent/10 pointer-events-none z-10" />}</> : null} overlayNode={!img.exists ? <div className="absolute inset-0 bg-[var(--color-error)]/20 pointer-events-none" title="本地文件已不存在" /> : null} />)}</div><Pagination page={hostingPage} totalPages={Math.ceil(hostingTotal / 50)} onPageChange={setHostingPage} /></>)}</div>)}
+
+const TYPE_LABELS = { '': '全部', heliar: 'img.heliar.top', github: 'GitHub/jsdelivr' }
+
+export default function AdminHostingTab({
+  hostingStats, handleCleanDuplicates, hostingTotal, hostingSelectMode, hostingChecked,
+  hostingImages, setHostingChecked, handleHostingBatchDelete, setHostingSelectMode,
+  loading, toggleHostingCheck, setHostingDetail, hostingPage, setHostingPage,
+  hostingTypeFilter, setHostingTypeFilter,
+}) {
+  return (
+    <div>
+      {hostingStats && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          <div className="px-3 py-2 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+            <div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{hostingStats.total_count}</div>
+            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>全部图片</div>
+          </div>
+          <div className="px-3 py-2 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+            <div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{hostingStats.total_size_fmt}</div>
+            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>本地文件大小</div>
+          </div>
+          {hostingStats.type_stats && Object.entries(hostingStats.type_stats).map(([k, v]) => (
+            <div key={k} className="px-3 py-2 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+              <div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{v.count}</div>
+              <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>{TYPE_LABELS[k] || k}</div>
+            </div>
+          ))}
+          <button onClick={handleCleanDuplicates} className="px-3 py-2 rounded-xl border hover:bg-bg-hover transition-colors" style={{ borderColor: 'var(--border-color)' }}>
+            <div className="text-sm font-medium" style={{ color: 'var(--accent)' }}>清理重复</div>
+            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>基于URL去重</div>
+          </button>
+        </div>
+      )}
+      <div className="flex items-center gap-2 mb-4">
+        {Object.entries(TYPE_LABELS).map(([k, label]) => (
+          <button key={k} onClick={() => { setHostingTypeFilter(k); setHostingPage(1); setHostingChecked(new Set()) }}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+            style={{
+              background: hostingTypeFilter === k ? 'var(--accent)' : 'var(--bg-primary)',
+              color: hostingTypeFilter === k ? 'white' : 'var(--text-secondary)',
+              border: '1px solid', borderColor: hostingTypeFilter === k ? 'var(--accent)' : 'var(--border-color)',
+            }}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>共 {hostingTotal} 条图床映射</span>
+        <div className="flex items-center gap-2">
+          {hostingSelectMode && (
+            <button onClick={() => { if (hostingChecked.size === hostingImages.length) setHostingChecked(new Set()); else setHostingChecked(new Set(hostingImages.map(i => i.url))) }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
+              {hostingChecked.size === hostingImages.length ? '取消全选' : '全选'}
+            </button>
+          )}
+          {hostingSelectMode && hostingChecked.size > 0 && (
+            <button onClick={handleHostingBatchDelete} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-error)] text-white hover:opacity-90">
+              <Trash2 size={14} /> 删除 {hostingChecked.size} 项
+            </button>
+          )}
+          {hostingSelectMode ? (
+            <button onClick={() => { setHostingSelectMode(false); setHostingChecked(new Set()) }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
+          ) : (
+            <button onClick={() => setHostingSelectMode(true)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>选择</button>
+          )}
+        </div>
+      </div>
+      {loading ? (
+        <div className="flex justify-center py-20">
+          <div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} />
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
+            {hostingImages.map(img => (
+              <UnifiedCard key={img.url}
+                checked={hostingChecked.has(img.url)}
+                onClick={() => hostingSelectMode ? toggleHostingCheck(img.url) : setHostingDetail(img)}
+                mediaNode={img.exists ? (
+                  <img src={`/api/images/local-thumb?path=${encodeURIComponent(img.local_path)}&size=400`} alt="" className="w-full aspect-square object-cover" loading="lazy" />
+                ) : (
+                  <div className="w-full aspect-square flex items-center justify-center" style={{ background: 'var(--border-color)' }}>
+                    <HardDrive size={24} style={{ color: 'var(--text-secondary)', opacity: 0.5 }} />
+                  </div>
+                )}
+                bottomNode={
+                  <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                    <p className="text-white text-[10px] truncate">{img.filename}</p>
+                    <p className="text-white/60 text-[9px]">{TYPE_LABELS[img.hosting_type] || img.hosting_type}</p>
+                  </div>
+                }
+                selectNode={hostingSelectMode ? (
+                  <>
+                    <div className={`absolute top-2 left-2 z-20 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${hostingChecked.has(img.url) ? 'bg-accent border-accent' : 'bg-[var(--bg-card)]/80 border-[var(--border-color)]'}`}>
+                      {hostingChecked.has(img.url) && <Check size={12} className="text-white" />}
+                    </div>
+                    {hostingChecked.has(img.url) && <div className="absolute inset-0 bg-accent/10 pointer-events-none z-10" />}
+                  </>
+                ) : null}
+                overlayNode={!img.exists ? <div className="absolute inset-0 bg-[var(--color-error)]/20 pointer-events-none" title="本地文件已不存在" /> : null}
+              />
+            ))}
+          </div>
+          <Pagination page={hostingPage} totalPages={Math.ceil(hostingTotal / 50)} onPageChange={setHostingPage} />
+        </>
+      )}
+    </div>
+  )
+}
