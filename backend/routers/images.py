@@ -178,11 +178,11 @@ async def proxy_thumbnail(url: str = Query(...), size: int = Query(400, ge=50, l
 
     url_hash = hashlib.md5(url.encode()).hexdigest()[:12]
     ext = url.split('.')[-1].split('?')[0][:4]
-    thumb_name = f"{size}_{url_hash}.{ext}"
+    thumb_name = f"{size}_{url_hash}.webp"
     thumb_path = THUMBS_DIR / thumb_name
 
     if thumb_path.exists():
-        return FileResponse(str(thumb_path), media_type="image/jpeg")
+        return FileResponse(str(thumb_path), media_type="image/webp")
 
     from backend.config import IMAGE_HOSTING_REFERER
     headers = {"Referer": IMAGE_HOSTING_REFERER(), "User-Agent": "Mozilla/5.0"}
@@ -204,14 +204,10 @@ async def proxy_thumbnail(url: str = Query(...), size: int = Query(400, ge=50, l
         import io
         img = Image.open(io.BytesIO(resp.content))
         img.thumbnail((size, size), Image.LANCZOS)
-        if img.mode == "RGBA":
-            bg = Image.new("RGB", img.size, (255, 255, 255))
-            bg.paste(img, mask=img.split()[3])
-            img = bg
-        elif img.mode != "RGB":
-            img = img.convert("RGB")
-        img.save(thumb_path, "JPEG", quality=80)
-        return FileResponse(str(thumb_path), media_type="image/jpeg")
+        if img.mode == "P":
+            img = img.convert("RGBA" if "transparency" in img.info else "RGB")
+        img.save(thumb_path, "WEBP", quality=80)
+        return FileResponse(str(thumb_path), media_type="image/webp")
     except ImportError:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
             resp = await client.get(url)
@@ -233,24 +229,20 @@ async def local_thumbnail(path: str = Query(...), size: int = Query(400, ge=50, 
     ext = os.path.splitext(abs_path)[1].lower().lstrip('.')
     if ext not in {"png", "jpg", "jpeg", "webp", "gif"}:
         raise HTTPException(status_code=400, detail="不支持的图片格式")
-    thumb_name = f"{size}_{url_hash}.{ext}"
+    thumb_name = f"{size}_{url_hash}.webp"
     thumb_path = THUMBS_DIR / thumb_name
 
     if thumb_path.exists():
-        return FileResponse(str(thumb_path), media_type="image/jpeg")
+        return FileResponse(str(thumb_path), media_type="image/webp")
 
     try:
         from PIL import Image
         img = Image.open(abs_path)
         img.thumbnail((size, size), Image.LANCZOS)
-        if img.mode == "RGBA":
-            bg = Image.new("RGB", img.size, (255, 255, 255))
-            bg.paste(img, mask=img.split()[3])
-            img = bg
-        elif img.mode != "RGB":
-            img = img.convert("RGB")
-        img.save(thumb_path, "JPEG", quality=80)
-        return FileResponse(str(thumb_path), media_type="image/jpeg")
+        if img.mode == "P":
+            img = img.convert("RGBA" if "transparency" in img.info else "RGB")
+        img.save(thumb_path, "WEBP", quality=80)
+        return FileResponse(str(thumb_path), media_type="image/webp")
     except ImportError:
         return FileResponse(abs_path, media_type=_image_media_type(abs_path))
 
@@ -267,9 +259,11 @@ async def serve_image(filename: str, user=Depends(get_current_user)):
 @router.get("/images/thumb/{filename}")
 async def serve_thumbnail(filename: str, size: int = Query(400, ge=50, le=1000), user=Depends(get_current_user)):
     _assert_generated_image_access(filename, user)
-    thumb_path = THUMBS_DIR / f"{size}_{filename}"
+    import os
+    thumb_name = f"{size}_{os.path.splitext(filename)[0]}.webp"
+    thumb_path = THUMBS_DIR / thumb_name
     if thumb_path.exists():
-        return FileResponse(str(thumb_path), media_type="image/jpeg")
+        return FileResponse(str(thumb_path), media_type="image/webp")
 
     image_path = GENERATED_IMAGES_DIR / filename
     if not image_path.exists():
@@ -279,14 +273,10 @@ async def serve_thumbnail(filename: str, size: int = Query(400, ge=50, le=1000),
         from PIL import Image
         img = Image.open(image_path)
         img.thumbnail((size, size), Image.LANCZOS)
-        if img.mode == "RGBA":
-            bg = Image.new("RGB", img.size, (255, 255, 255))
-            bg.paste(img, mask=img.split()[3])
-            img = bg
-        elif img.mode != "RGB":
-            img = img.convert("RGB")
-        img.save(thumb_path, "JPEG", quality=80)
-        return FileResponse(str(thumb_path), media_type="image/jpeg")
+        if img.mode == "P":
+            img = img.convert("RGBA" if "transparency" in img.info else "RGB")
+        img.save(thumb_path, "WEBP", quality=80)
+        return FileResponse(str(thumb_path), media_type="image/webp")
     except ImportError:
         return FileResponse(str(image_path), media_type="image/png")
 

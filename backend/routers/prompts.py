@@ -149,19 +149,19 @@ async def serve_evo_thumbnail(path: str, size: int = Query(400)):
     if not source.exists():
         raise HTTPException(status_code=404, detail="图片不存在")
 
-    thumb_name = f"{size}_{hashlib.md5(path.encode()).hexdigest()}.jpg"
+    thumb_name = f"{size}_{hashlib.md5(path.encode()).hexdigest()}.webp"
     thumb = EVO_THUMBS_DIR / thumb_name
     if thumb.exists():
-        return FileResponse(str(thumb), media_type="image/jpeg")
+        return FileResponse(str(thumb), media_type="image/webp")
 
     try:
         from PIL import Image
         img = Image.open(source)
         img.thumbnail((size, size))
-        if img.mode in ("RGBA", "P"):
-            img = img.convert("RGB")
-        img.save(thumb, "JPEG", quality=80)
-        return FileResponse(str(thumb), media_type="image/jpeg")
+        if img.mode == "P":
+            img = img.convert("RGBA" if "transparency" in img.info else "RGB")
+        img.save(thumb, "WEBP", quality=80)
+        return FileResponse(str(thumb), media_type="image/webp")
     except ImportError:
         return FileResponse(str(source))
     except Exception:
