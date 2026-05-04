@@ -102,18 +102,17 @@ export default function SquarePage() {
         <div className="square-subtop-block sm:pt-3">
           <div className="square-section-row">
             {tab !== 'my' && (
-              <div className="flex gap-1">
+              <div className="flex gap-1 flex-shrink-0">
                 <button onClick={() => setSort('likes')} className={`square-filter-btn ${sort === 'likes' ? 'bg-accent/10' : 'hover:bg-bg-hover'}`}
                   style={{ color: sort === 'likes' ? 'var(--accent)' : 'var(--text-secondary)' }}>最热</button>
                 <button onClick={() => setSort('time')} className={`square-filter-btn ${sort === 'time' ? 'bg-accent/10' : 'hover:bg-bg-hover'}`}
                   style={{ color: sort === 'time' ? 'var(--accent)' : 'var(--text-secondary)' }}>最新</button>
               </div>
             )}
-            <div className="flex-1 min-w-0" />
             {tab !== 'my' && (
               <div className="square-search-wrap"><SearchInput value={query} onChange={setQuery} placeholder={tab === 'works' ? '搜索提示词/作者...' : '搜索提示词...'} /></div>
             )}
-            <button onClick={handleRefresh} className="inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-bg-hover transition-colors" style={{ color: 'var(--text-secondary)' }}>
+            <button onClick={handleRefresh} className="inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-bg-hover transition-colors flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>
               <RefreshCw size={16} />
             </button>
           </div>
@@ -265,7 +264,7 @@ function WorksTab({ query, sort, isAdmin, dialog, refreshTrigger }) {
         renderOverlay={isAdmin ? (card) => (
           <>
             {card.isFrozen && (
-              <div className="absolute top-2 right-2 z-10 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/90 text-white">
+              <div className="absolute bottom-2 left-2 z-10 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/90 text-white">
                 <Snowflake size={10} className="inline mr-0.5" />冻结
               </div>
             )}
@@ -510,7 +509,7 @@ function PromptsTab({ query, sort, activeCategory, isAdmin, dialog, refreshTrigg
         renderOverlay={isAdmin ? (card) => (
           <>
             {card.isFrozen && (
-              <div className="absolute top-2 right-2 z-10 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/90 text-white">
+              <div className="absolute bottom-2 left-2 z-10 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/90 text-white">
                 <Snowflake size={10} className="inline mr-0.5" />冻结
               </div>
             )}

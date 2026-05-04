@@ -586,8 +586,8 @@ export default function ChatPage() {
           </div>
         </div>
       )}
-      <div className="flex-shrink-0 flex items-center gap-2 px-4 pt-3 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
-        <button onClick={() => navigate('/wallet')} className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all hover:scale-105" style={{ background: 'var(--accent)', color: '#fff' }}>
+      <div className="flex-shrink-0 flex min-h-10 items-center gap-2 px-4 pt-3 pb-1 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
+        <button onClick={() => navigate('/wallet')} className="flex h-8 flex-shrink-0 items-center gap-1.5 px-3 rounded-lg text-sm font-semibold transition-all hover:scale-105" style={{ background: 'var(--accent)', color: '#fff' }}>
           <Coins size={15} />
           <span className="tabular-nums">{points}</span>
         </button>
@@ -595,7 +595,7 @@ export default function ChatPage() {
           <select
             value={selectedUserId || ''}
             onChange={e => setSelectedUserId(e.target.value ? Number(e.target.value) : null)}
-            className="px-2 py-1.5 rounded-lg text-xs border-0 outline-none"
+            className="h-8 px-2 rounded-lg text-xs border-0 outline-none"
             style={{ background: 'var(--border-color)', color: 'var(--text-primary)' }}
           >
             <option value="">全部用户</option>
@@ -606,19 +606,19 @@ export default function ChatPage() {
         )}
         <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="搜索提示词..." />
         <button onClick={handleRefresh} disabled={refreshing}
-          className="p-1.5 rounded-lg hover:bg-bg-hover transition-colors disabled:opacity-50"
+          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg hover:bg-bg-hover transition-colors disabled:opacity-50"
           style={{ color: 'var(--text-secondary)' }}>
           <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
         </button>
-        <div className="flex items-center gap-1 rounded-lg p-0.5" style={{ background: 'var(--bg-active)' }}>
+        <div className="flex h-8 flex-shrink-0 items-center gap-1 rounded-lg p-0.5" style={{ background: 'var(--bg-active)' }}>
           {timeRangeOptions.map(({ k, l }) => (
-            <button key={k} onClick={() => setTimeRange(k)} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${timeRange === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`} style={{ color: timeRange === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{l}</button>
+            <button key={k} onClick={() => setTimeRange(k)} className={`flex h-7 items-center px-3 rounded-md text-xs font-medium transition-colors ${timeRange === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`} style={{ color: timeRange === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{l}</button>
           ))}
         </div>
         {selectMode ? (
-          <button onClick={exitSelectMode} className="ml-auto px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
+          <button onClick={exitSelectMode} className="ml-auto flex h-8 items-center px-3 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
         ) : (
-          <button onClick={() => setSelectMode(true)} className="ml-auto px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>选择</button>
+          <button onClick={() => setSelectMode(true)} className="ml-auto flex h-8 items-center px-3 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>选择</button>
         )}
       </div>
       {loadError && <div className="mx-4 mt-2 px-3 py-2 rounded-lg text-xs" style={{ background: 'color-mix(in srgb, var(--color-warning) 12%, transparent)', color: 'var(--color-warning)' }}>{loadError}</div>}

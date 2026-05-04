@@ -14,6 +14,8 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const paramsStatePushedRef = useRef(false)
   const paramsStateTokenRef = useRef(`chatinput_params_${Date.now()}_${Math.random().toString(36).slice(2)}`)
   const paramsClosingByPopRef = useRef(false)
+  const lightboxPushedRef = useRef(false)
+  const lightboxClosingByPopRef = useRef(false)
 
   const consumePending = useCallback(() => {
     const pending = localStorage.getItem('pending_prompt')
@@ -94,6 +96,34 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     return () => window.removeEventListener('popstate', onPopState)
   }, [showParams])
 
+  useEffect(() => {
+    if (!lightbox) return
+    if (!lightboxPushedRef.current) {
+      window.history.pushState({ __chatinput_lightbox: true }, '')
+      lightboxPushedRef.current = true
+    }
+    const onPopState = () => {
+      if (!lightboxPushedRef.current) return
+      lightboxPushedRef.current = false
+      lightboxClosingByPopRef.current = true
+      setLightbox(null)
+      setTimeout(() => { lightboxClosingByPopRef.current = false }, 0)
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [lightbox])
+
+  const closeLightbox = useCallback(() => {
+    if (!lightbox) return
+    if (lightboxPushedRef.current && window.history.state?.__chatinput_lightbox && !lightboxClosingByPopRef.current) {
+      lightboxClosingByPopRef.current = true
+      window.history.back()
+      return
+    }
+    lightboxPushedRef.current = false
+    setLightbox(null)
+  }, [lightbox])
+
   useImperativeHandle(ref, () => ({
     addFiles(files) { handleFiles(files) },
     setPrompt(text) { setPrompt(text) },
@@ -169,10 +199,10 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
               className="block w-full resize-none bg-transparent outline-none text-sm py-2"
               rows={1} style={{ color: 'var(--text-primary)', minHeight: '40px', maxHeight: '120px' }} />
             <div className="mt-2 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
-                <button onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-bg-hover transition-colors text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}><Paperclip size={14} /><span>上传</span></button>
-                <button onClick={toggleParams} className="inline-flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-bg-hover transition-colors text-[11px] font-medium" style={{ color: showParams ? 'var(--accent)' : 'var(--text-secondary)' }}><Settings size={13} /><span>参数</span></button>
-                <button onClick={() => setShareToSquare(!shareToSquare)} className="inline-flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-bg-hover transition-colors relative text-[11px] font-medium" style={{ color: shareToSquare ? 'var(--color-success)' : 'var(--text-secondary)' }} title={shareToSquare ? '已开启分享到广场' : '已关闭分享到广场'}><Share2 size={13} /><span>分享</span><span className="absolute -right-0.5 -top-0.5 w-1.5 h-1.5 rounded-full" style={{ background: shareToSquare ? 'var(--color-success)' : 'var(--border-color)' }} /></button>
+              <div className="flex items-center gap-0.5 flex-shrink-0 whitespace-nowrap">
+                <button onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1 px-1.5 py-1.5 rounded-md hover:bg-bg-hover transition-colors text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}><Paperclip size={14} /><span>参考图</span></button>
+                <button onClick={toggleParams} className="inline-flex items-center gap-1 px-1.5 py-1.5 rounded-md hover:bg-bg-hover transition-colors text-[11px] font-medium" style={{ color: showParams ? 'var(--accent)' : 'var(--text-secondary)' }}><Settings size={13} /><span>参数</span></button>
+                <button onClick={() => setShareToSquare(!shareToSquare)} className="inline-flex items-center gap-1 px-1.5 py-1.5 rounded-md hover:bg-bg-hover transition-colors relative text-[11px] font-medium" style={{ color: shareToSquare ? 'var(--color-success)' : 'var(--text-secondary)' }} title={shareToSquare ? '已开启分享到广场' : '已关闭分享到广场'}><Share2 size={13} /><span>分享</span><span className="absolute -right-0.5 -top-0.5 w-1.5 h-1.5 rounded-full" style={{ background: shareToSquare ? 'var(--color-success)' : 'var(--border-color)' }} /></button>
               </div>
               <div className="min-w-0 flex items-center justify-end gap-1 flex-1">
                 {prompt.length > 0 && <span className="text-[10px] tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{prompt.length}</span>}
@@ -188,7 +218,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
       </div>
 
       {lightbox && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setLightbox(null)}>
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={closeLightbox}>
           <img src={lightbox} alt="" className="max-w-full max-h-full rounded-lg" onClick={e => e.stopPropagation()} />
         </div>
       )}

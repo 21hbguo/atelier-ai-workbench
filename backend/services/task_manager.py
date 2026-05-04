@@ -212,9 +212,13 @@ class TaskManager:
             try:
                 from backend.services.notification_service import NotificationService
                 if new_status == "completed":
-                    NotificationService.create(task["user_id"], "task_completed", "生成完成", f"任务 {task_id} 已完成", task_id)
+                    prompt = (task.get("params") or {}).get("prompt", "")
+                    prompt_display = (prompt[:30] + "…") if len(prompt) > 30 else prompt
+                    NotificationService.create(task["user_id"], "task_completed", "生成完成", f"\"{prompt_display}\" 已完成", task_id)
                 elif new_status == "failed":
-                    NotificationService.create(task["user_id"], "task_failed", "生成失败", task.get("error") or f"任务 {task_id} 已失败", task_id)
+                    prompt = (task.get("params") or {}).get("prompt", "")
+                    prompt_display = (prompt[:30] + "…") if len(prompt) > 30 else prompt
+                    NotificationService.create(task["user_id"], "task_failed", "生成失败", f"\"{prompt_display}\" 失败：{task.get('error') or '未知错误'}", task_id)
             except Exception:
                 pass
 
