@@ -37,6 +37,8 @@ export default function AdminPage() {
   const [trendMetric, setTrendMetric] = useState('requests')
   const [loading, setLoading] = useState(false)
   const [userQuery, setUserQuery] = useState('')
+  const [createUserDraft, setCreateUserDraft] = useState({ username: '', password: '', nickname: '' })
+  const [creatingUser, setCreatingUser] = useState(false)
   const [historyQuery, setHistoryQuery] = useState('')
 
   // 图床管理
@@ -45,6 +47,7 @@ export default function AdminPage() {
   const [hostingPage, setHostingPage] = useState(1)
   const [hostingStats, setHostingStats] = useState(null)
   const [hostingChecked, setHostingChecked] = useState(new Set())
+  const [hostingTypeFilter, setHostingTypeFilter] = useState('')
   const [hostingSelectMode, setHostingSelectMode] = useState(false)
   const [hostingDetail, setHostingDetail] = useState(null)
 
@@ -89,7 +92,7 @@ export default function AdminPage() {
   const [newTitle, setNewTitle] = useState('')
   const [newContent, setNewContent] = useState('')
   const [creatingAnnouncement, setCreatingAnnouncement] = useState(false)
-  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3 })
+  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', register_enabled: true, image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3, github_hosting_enabled: false, github_hosting_repo: '', github_hosting_token: '', github_hosting_branch: 'main' })
   const [configSaving, setConfigSaving] = useState(false)
   const [defaultModelId, setDefaultModelId] = useState('image-default')
   const [generationModelsText, setGenerationModelsText] = useState('{}')
@@ -103,6 +106,7 @@ export default function AdminPage() {
   const [editingProviderDraft, setEditingProviderDraft] = useState({ type: 'wuyin', enabled: true, priority: 100, api_url: '', api_key: '', circuit_fail_threshold: 3, circuit_cooldown_seconds: 60, unit_name: '供应商额度', unit_code: 'vendor_quota' })
   const [editingModelId, setEditingModelId] = useState('')
   const [editingModelDraft, setEditingModelDraft] = useState({ label: '', capability: 'image', enabled: true, providers: [] })
+  const [draggingModelProviderId, setDraggingModelProviderId] = useState('')
   const [modelLabelMap, setModelLabelMap] = useState({})
   const [financeRange, setFinanceRange] = useState('30d')
   const [financeOverview, setFinanceOverview] = useState(null)
@@ -133,7 +137,7 @@ export default function AdminPage() {
   useEffect(() => { if (tab === 'users') fetchUsers() }, [tab, userPage, userQuery])
   useEffect(() => { if (tab === 'history') fetchHistory() }, [tab, historyPage, historyQuery])
   useEffect(() => { if (tab === 'stats') fetchSystemStats(statsRange) }, [tab, statsRange])
-  useEffect(() => { if (tab === 'hosting') { fetchHostingImages(); fetchHostingStats() } }, [tab, hostingPage])
+  useEffect(() => { if (tab === 'hosting') { fetchHostingImages(); fetchHostingStats() } }, [tab, hostingPage, hostingTypeFilter])
   useEffect(() => { if (tab === 'banned') fetchBannedWords() }, [tab, bannedWordsPage, bannedWordsQuery])
   useEffect(() => { if (tab === 'recharge') fetchRechargeRequests() }, [tab, codesPage, codesSort, codesOrder, rechargeStatusFilter])
   useEffect(() => { if (tab === 'announcements') fetchAnnouncements() }, [tab, announcementPage])
@@ -187,6 +191,7 @@ export default function AdminPage() {
       const gen = genRes.data || {}
       setRuntimeConfig({
         api_url: data.api_url || '',
+        register_enabled: data.register_enabled !== false,
         image_hosting_upload_url: data.image_hosting_upload_url || '',
         image_hosting_base_url: data.image_hosting_base_url || '',
         image_hosting_referer: data.image_hosting_referer || '',
@@ -200,6 +205,10 @@ export default function AdminPage() {
         points_migration_amount: Number(data.points_migration_amount || 50),
         login_rate_limit_per_minute_per_ip: Number(data.login_rate_limit_per_minute_per_ip || 5),
         register_rate_limit_per_minute_per_ip: Number(data.register_rate_limit_per_minute_per_ip || 3),
+        github_hosting_enabled: data.github_hosting_enabled === true || data.github_hosting_enabled === 'true',
+        github_hosting_repo: data.github_hosting_repo || '',
+        github_hosting_token: data.github_hosting_token || '',
+        github_hosting_branch: data.github_hosting_branch || 'main',
       })
       setDefaultModelId(gen.default_model_id || 'image-default')
       const modelsObj = gen.generation_models || {}
@@ -304,9 +313,11 @@ export default function AdminPage() {
   }
   const handleEditFinanceRule = (rule) => setFinanceRuleDraft({ id: rule.id, provider_id: rule.provider_id, model_id: rule.model_id, quota_per_success: String(rule.quota_per_success ?? ''), enabled: rule.enabled !== false, remark: rule.remark || '' })
   const onConfigInput = (k, v) => setRuntimeConfig(prev => ({ ...prev, [k]: v }))
+  const onConfigToggle = (k, v) => setRuntimeConfig(prev => ({ ...prev, [k]: v }))
   const handleSaveConfig = async () => {
     const n = ['generate_concurrent_limit_per_user', 'points_cost_per_generation', 'points_checkin_reward', 'points_register_bonus', 'points_migration_amount', 'login_rate_limit_per_minute_per_ip', 'register_rate_limit_per_minute_per_ip']
     const payload = { ...runtimeConfig }
+    payload.default_model_id = (defaultModelId || '').trim() || 'image-default'
     for (const k of n) payload[k] = Number(payload[k])
     if (payload.generate_concurrent_limit_per_user < 1 || payload.points_cost_per_generation < 1 || payload.login_rate_limit_per_minute_per_ip < 1 || payload.register_rate_limit_per_minute_per_ip < 1 || payload.points_checkin_reward < 0 || payload.points_register_bonus < 0 || payload.points_migration_amount < 0) { dialog.alert('限制配置不合法'); return }
     let generation_models = {}
@@ -324,7 +335,6 @@ export default function AdminPage() {
         if (!generation_providers[pid]) { dialog.alert(`模型 ${modelId} 引用了不存在的供应商 ${pid}`); return }
       }
     }
-    payload.default_model_id = (defaultModelId || '').trim() || 'image-default'
     payload.generation_models = generation_models
     payload.generation_providers = generation_providers
     setConfigSaving(true)
@@ -404,6 +414,7 @@ export default function AdminPage() {
   }
   const openModelEditor = (id) => {
     const m = genModelsObj[id] || {}
+    setDraggingModelProviderId('')
     setEditingModelId(id)
     setEditingModelDraft({ label: m.label || '', capability: m.capability || 'image', enabled: m.enabled !== false, providers: Array.isArray(m.providers) ? m.providers : [] })
   }
@@ -414,8 +425,38 @@ export default function AdminPage() {
   }
   const applyModelEditor = () => {
     if (!editingModelId) return
-    const next = { ...genModelsObj, [editingModelId]: { ...(genModelsObj[editingModelId] || {}), ...editingModelDraft, providers: Array.isArray(editingModelDraft.providers) ? editingModelDraft.providers : [] } }
-    setGenModelsObj(next); syncGenJsonFromForm(next, genProvidersObj); setEditingModelId('')
+    const providers = Array.isArray(editingModelDraft.providers) ? [...new Set(editingModelDraft.providers.map(i => String(i || '').trim()).filter(Boolean))] : []
+    const next = { ...genModelsObj, [editingModelId]: { ...(genModelsObj[editingModelId] || {}), ...editingModelDraft, providers } }
+    setGenModelsObj(next); syncGenJsonFromForm(next, genProvidersObj); setDraggingModelProviderId(''); setEditingModelId('')
+  }
+  const moveEditingModelProvider = (providerId, direction) => {
+    setEditingModelDraft(prev => {
+      const arr = Array.isArray(prev.providers) ? [...prev.providers] : []
+      const from = arr.indexOf(providerId)
+      if (from < 0) return prev
+      const to = direction === 'up' ? from - 1 : from + 1
+      if (to < 0 || to >= arr.length) return prev
+      const [item] = arr.splice(from, 1)
+      arr.splice(to, 0, item)
+      return { ...prev, providers: arr }
+    })
+  }
+  const reorderEditingModelProviders = (fromId, toId) => {
+    if (!fromId || !toId || fromId === toId) return
+    setEditingModelDraft(prev => {
+      const arr = Array.isArray(prev.providers) ? [...prev.providers] : []
+      const from = arr.indexOf(fromId), to = arr.indexOf(toId)
+      if (from < 0 || to < 0 || from === to) return prev
+      const [item] = arr.splice(from, 1)
+      arr.splice(to, 0, item)
+      return { ...prev, providers: arr }
+    })
+  }
+  const toggleEditingModelProvider = (providerId) => {
+    setEditingModelDraft(prev => {
+      const arr = Array.isArray(prev.providers) ? [...prev.providers] : []
+      return arr.includes(providerId) ? { ...prev, providers: arr.filter(i => i !== providerId) } : { ...prev, providers: [...arr, providerId] }
+    })
   }
   const handleCopySelectedGenRow = () => {
     if (!selectedGenRow) { dialog.alert('请先选择一行'); return }
@@ -480,7 +521,7 @@ export default function AdminPage() {
   const fetchHostingImages = async () => {
     setLoading(true)
     try {
-      const { data } = await adminAPI.hostingImages(hostingPage, 50)
+      const { data } = await adminAPI.hostingImages(hostingPage, 50, hostingTypeFilter || undefined)
       setHostingImages(data.items)
       setHostingTotal(data.total)
     } catch {} finally { setLoading(false) }
@@ -627,6 +668,18 @@ export default function AdminPage() {
       await adminAPI.deleteHistory(taskId)
       fetchHistory()
     } catch (e) { dialog.alert(e.message || '删除失败') }
+  }
+  const handleCreateUser = async () => {
+    const payload = { username: (createUserDraft.username || '').trim(), password: (createUserDraft.password || '').trim(), nickname: (createUserDraft.nickname || '').trim() }
+    if (payload.username.length < 3 || payload.username.length > 20) { dialog.alert('用户名长度需在3到20位之间'); return }
+    if (payload.password.length < 6 || payload.password.length > 50) { dialog.alert('密码长度需在6到50位之间'); return }
+    setCreatingUser(true)
+    try {
+      const { data } = await adminAPI.createUser(payload)
+      dialog.alert(`用户 ${data?.user?.username || payload.username} 已创建`)
+      setCreateUserDraft({ username: '', password: '', nickname: '' })
+      fetchUsers()
+    } catch (e) { dialog.alert(e.message || '创建失败') } finally { setCreatingUser(false) }
   }
 
   const handleToggleFreeze = async (userId, username) => {
@@ -855,11 +908,11 @@ export default function AdminPage() {
         ) : tab === 'finance' ? (
           <AdminFinanceTab financeRange={financeRange} setFinanceRange={setFinanceRange} financeOverview={financeOverview} financeProviders={financeProviders} financePurchases={financePurchases} financePurchaseTotal={financePurchaseTotal} financePurchasePage={financePurchasePage} setFinancePurchasePage={setFinancePurchasePage} financeTasks={financeTasks} financeTaskTotal={financeTaskTotal} financeTaskPage={financeTaskPage} setFinanceTaskPage={setFinanceTaskPage} financeProviderFilter={financeProviderFilter} setFinanceProviderFilter={setFinanceProviderFilter} financeTaskProviderFilter={financeTaskProviderFilter} setFinanceTaskProviderFilter={setFinanceTaskProviderFilter} financeModelFilter={financeModelFilter} setFinanceModelFilter={setFinanceModelFilter} financeStatusFilter={financeStatusFilter} setFinanceStatusFilter={setFinanceStatusFilter} financeLoading={financeLoading} financeCreatingPurchase={financeCreatingPurchase} financePurchaseDraft={financePurchaseDraft} setFinancePurchaseDraft={setFinancePurchaseDraft} handleCreatePurchase={handleCreateFinancePurchase} handleEditPurchase={handleEditFinancePurchase} handleDeletePurchase={handleDeleteFinancePurchase} handleCancelPurchaseEdit={handleCancelFinancePurchaseEdit} providerOptions={financeProviderOptions} modelOptions={financeModelOptions} financeRules={financeRules} financeRuleDraft={financeRuleDraft} setFinanceRuleDraft={setFinanceRuleDraft} financeRuleSaving={financeRuleSaving} handleSaveFinanceRule={handleSaveFinanceRule} handleEditFinanceRule={handleEditFinanceRule} handleDeleteFinanceRule={handleDeleteFinanceRule} />
         ) : tab === 'users' ? (
-          <AdminUsersTab userTotal={userTotal} userQuery={userQuery} setUserQuery={setUserQuery} handleMigratePoints={handleMigratePoints} loading={loading} users={users} setAdjustUserId={setAdjustUserId} setAdjustAmount={setAdjustAmount} setAdjustDesc={setAdjustDesc} resetPwdUserId={resetPwdUserId} setResetPwdUserId={setResetPwdUserId} resetPwdValue={resetPwdValue} setResetPwdValue={setResetPwdValue} handleToggleFreeze={handleToggleFreeze} handleDeleteUser={handleDeleteUser} handleResetPassword={handleResetPassword} userPage={userPage} setUserPage={setUserPage} />
+          <AdminUsersTab userTotal={userTotal} userQuery={userQuery} setUserQuery={setUserQuery} handleMigratePoints={handleMigratePoints} loading={loading} users={users} setAdjustUserId={setAdjustUserId} setAdjustAmount={setAdjustAmount} setAdjustDesc={setAdjustDesc} resetPwdUserId={resetPwdUserId} setResetPwdUserId={setResetPwdUserId} resetPwdValue={resetPwdValue} setResetPwdValue={setResetPwdValue} handleToggleFreeze={handleToggleFreeze} handleDeleteUser={handleDeleteUser} handleResetPassword={handleResetPassword} userPage={userPage} setUserPage={setUserPage} createUserDraft={createUserDraft} setCreateUserDraft={setCreateUserDraft} creatingUser={creatingUser} handleCreateUser={handleCreateUser} />
         ) : tab === 'announcements' ? (
           <AdminAnnouncementsTab newTitle={newTitle} setNewTitle={setNewTitle} newContent={newContent} setNewContent={setNewContent} handleCreateAnnouncement={handleCreateAnnouncement} creatingAnnouncement={creatingAnnouncement} announcementTotal={announcementTotal} loading={loading} announcements={announcements} handleDeleteAnnouncement={handleDeleteAnnouncement} announcementPage={announcementPage} setAnnouncementPage={setAnnouncementPage} />
         ) : tab === 'hosting' ? (
-          <AdminHostingTab hostingStats={hostingStats} handleCleanDuplicates={handleCleanDuplicates} hostingTotal={hostingTotal} hostingSelectMode={hostingSelectMode} hostingChecked={hostingChecked} hostingImages={hostingImages} setHostingChecked={setHostingChecked} handleHostingBatchDelete={handleHostingBatchDelete} setHostingSelectMode={setHostingSelectMode} loading={loading} toggleHostingCheck={toggleHostingCheck} setHostingDetail={setHostingDetail} hostingPage={hostingPage} setHostingPage={setHostingPage} />
+          <AdminHostingTab hostingStats={hostingStats} handleCleanDuplicates={handleCleanDuplicates} hostingTotal={hostingTotal} hostingSelectMode={hostingSelectMode} hostingChecked={hostingChecked} hostingImages={hostingImages} setHostingChecked={setHostingChecked} handleHostingBatchDelete={handleHostingBatchDelete} setHostingSelectMode={setHostingSelectMode} loading={loading} toggleHostingCheck={toggleHostingCheck} setHostingDetail={setHostingDetail} hostingPage={hostingPage} setHostingPage={setHostingPage} hostingTypeFilter={hostingTypeFilter} setHostingTypeFilter={setHostingTypeFilter} />
         ) : tab === 'banned' ? (
           <AdminBannedTab bannedWordsTotal={bannedWordsTotal} bannedWordsQuery={bannedWordsQuery} setBannedWordsQuery={setBannedWordsQuery} setShowBatchImport={setShowBatchImport} newBannedWord={newBannedWord} setNewBannedWord={setNewBannedWord} handleAddBannedWord={handleAddBannedWord} loading={loading} bannedWords={bannedWords} handleDeleteBannedWord={handleDeleteBannedWord} bannedWordsPage={bannedWordsPage} setBannedWordsPage={setBannedWordsPage} />
         ) : tab === 'recharge' ? (
@@ -1051,6 +1104,15 @@ export default function AdminPage() {
                 <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>核心限制配置</h3>
                 <button onClick={handleSaveConfig} disabled={configSaving} className="px-4 py-2 rounded-lg text-xs font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50">{configSaving ? '保存中...' : '保存配置'}</button>
               </div>
+              <div className="mb-3 p-3 rounded-lg border flex items-center justify-between gap-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+                <div>
+                  <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>允许新用户注册</div>
+                  <div className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>{runtimeConfig.register_enabled ? '开启后登录页显示注册入口，并允许新账号创建' : '关闭后登录页隐藏注册入口，注册接口同时拒绝请求'}</div>
+                </div>
+                <button type="button" onClick={() => onConfigToggle('register_enabled', !runtimeConfig.register_enabled)} className="relative inline-flex h-7 w-12 items-center rounded-full transition-colors" style={{ background: runtimeConfig.register_enabled ? 'var(--accent)' : 'var(--border-color)' }}>
+                  <span className="inline-block h-5 w-5 transform rounded-full bg-white transition-transform" style={{ transform: runtimeConfig.register_enabled ? 'translateX(22px)' : 'translateX(3px)' }} />
+                </button>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {[{ k: 'generate_concurrent_limit_per_user', l: '生成并发上限/用户', min: 1 }, { k: 'points_cost_per_generation', l: '每次生成扣分', min: 1 }, { k: 'points_checkin_reward', l: '每日签到奖励', min: 0 }, { k: 'points_register_bonus', l: '注册送分', min: 0 }, { k: 'points_migration_amount', l: '补发积分值', min: 0 }, { k: 'login_rate_limit_per_minute_per_ip', l: '登录限流/分钟/IP', min: 1 }, { k: 'register_rate_limit_per_minute_per_ip', l: '注册限流/分钟/IP', min: 1 }].map(item => (
                   <div key={item.k}>
@@ -1074,6 +1136,29 @@ export default function AdminPage() {
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>手动充值提示文案</label>
                 <textarea value={runtimeConfig.manual_recharge_notice} onChange={e => onConfigInput('manual_recharge_notice', e.target.value)} rows={3} className="w-full px-3 py-2 rounded-lg text-sm border resize-none outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
+            </div>
+            <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>GitHub 图床（jsdelivr CDN）</h3>
+                <button type="button" onClick={() => onConfigToggle('github_hosting_enabled', !runtimeConfig.github_hosting_enabled)} className="relative inline-flex h-7 w-12 items-center rounded-full transition-colors" style={{ background: runtimeConfig.github_hosting_enabled ? 'var(--accent)' : 'var(--border-color)' }}>
+                  <span className="inline-block h-5 w-5 transform rounded-full bg-white transition-transform" style={{ transform: runtimeConfig.github_hosting_enabled ? 'translateX(22px)' : 'translateX(3px)' }} />
+                </button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>仓库（owner/repo）</label>
+                  <input type="text" value={runtimeConfig.github_hosting_repo} onChange={e => onConfigInput('github_hosting_repo', e.target.value)} placeholder="user/repo" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                </div>
+                <div>
+                  <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>Personal Access Token</label>
+                  <input type="password" value={runtimeConfig.github_hosting_token} onChange={e => onConfigInput('github_hosting_token', e.target.value)} placeholder="ghp_..." className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                </div>
+                <div>
+                  <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>分支</label>
+                  <input type="text" value={runtimeConfig.github_hosting_branch} onChange={e => onConfigInput('github_hosting_branch', e.target.value)} placeholder="main" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                </div>
+              </div>
+              <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>启用后参考图上传将通过 GitHub 仓库 + jsdelivr CDN 提供。Token 需要 contents:write 权限。</p>
             </div>
             </>
             ) : configSubtab === 'route' ? (
@@ -1126,7 +1211,7 @@ export default function AdminPage() {
                           <td className="px-3 py-2 text-center"><input type="radio" name="gen-row" checked={selectedGenRow === `p:${pid}`} onChange={() => setSelectedGenRow(`p:${pid}`)} /></td>
                           <td className="px-3 py-2" style={{ color: '#8B7BA8' }}>供应商</td>
                           <td className="px-3 py-2 font-mono" style={{ color: 'var(--text-primary)' }}>{pid}</td>
-                          <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{`${p?.type || 'wuyin'} | unit:${p?.unit_name || '供应商额度'} | priority:${Number(p?.priority ?? 100)}`}</td>
+                          <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{`${p?.type || 'wuyin'} | unit:${p?.unit_name || '供应商额度'} | global_priority:${Number(p?.priority ?? 100)}`}</td>
                           <td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 rounded-full text-[11px] ${p?.enabled !== false ? 'bg-green-500/15 text-[var(--color-success)]' : 'bg-gray-500/15 text-gray-500'}`}>{p?.enabled !== false ? '启用' : '禁用'}</span></td>
                           <td className="px-3 py-2 text-right">
                             <div className="inline-flex items-center gap-2">
@@ -1139,7 +1224,7 @@ export default function AdminPage() {
                     </tbody>
                   </table>
                 </div>
-                <div className="mt-2 text-[11px]" style={{ color: 'var(--text-secondary)' }}>提示：先“选择”某一行，再点“复制”可快速克隆该配置并二次编辑；模型行绑定供应商ID，供应商行定义真实API参数。</div>
+                <div className="mt-2 text-[11px]" style={{ color: 'var(--text-secondary)' }}>提示：先“选择”某一行，再点“复制”可快速克隆该配置并二次编辑；模型行里的 providers 顺序就是该模型的真实调用优先级。</div>
               </div>
               <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
                 <div className="flex items-center justify-between">
@@ -1174,7 +1259,7 @@ export default function AdminPage() {
       </div>
 
       {editingModelId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setEditingModelId('')}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => { setDraggingModelProviderId(''); setEditingModelId('') }}>
           <div className="absolute inset-0 bg-black/50" />
           <div className="relative w-full max-w-lg rounded-2xl overflow-hidden" style={{ background: 'var(--bg-primary)' }} onClick={e => e.stopPropagation()}>
             <div className="p-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
@@ -1199,11 +1284,16 @@ export default function AdminPage() {
               </div>
               <div className="md:col-span-2">
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>绑定供应商ID</label>
-                <input type="text" value={(Array.isArray(editingModelDraft.providers) ? editingModelDraft.providers : []).join(',')} onChange={e => setEditingModelDraft(prev => ({ ...prev, providers: (e.target.value || '').split(',').map(s => s.trim()).filter(Boolean) }))} placeholder="逗号分隔，如 wuyin-main,wuyin-backup" className="w-full px-3 py-2 rounded-lg text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
+                  <div className="text-[11px] mb-2" style={{ color: 'var(--text-secondary)' }}>拖动当前列表可调整优先级，越靠前越优先；也可点下方渠道切换纳入/移除。</div>
+                  <div className="space-y-2 mb-3">{(Array.isArray(editingModelDraft.providers) ? editingModelDraft.providers : []).map((pid, idx, arr) => <div key={pid} draggable onDragStart={() => setDraggingModelProviderId(pid)} onDragEnd={() => setDraggingModelProviderId('')} onDragOver={e => e.preventDefault()} onDrop={() => { reorderEditingModelProviders(draggingModelProviderId, pid); setDraggingModelProviderId('') }} className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${draggingModelProviderId === pid ? 'opacity-60' : ''}`} style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}><div className="text-xs font-mono w-5 text-center" style={{ color: 'var(--text-secondary)' }}>{idx + 1}</div><div className="text-xs cursor-grab select-none" style={{ color: 'var(--text-secondary)' }}>拖动</div><div className="flex-1 font-mono text-sm">{pid}</div><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>{genProvidersObj?.[pid]?.type || 'unknown'} / {genProvidersObj?.[pid]?.unit_name || '供应商额度'}</div><div className="flex items-center gap-1"><button type="button" disabled={idx===0} onClick={() => moveEditingModelProvider(pid, 'up')} className="px-2 py-1 rounded text-[11px] border disabled:opacity-40" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>上移</button><button type="button" disabled={idx===arr.length-1} onClick={() => moveEditingModelProvider(pid, 'down')} className="px-2 py-1 rounded text-[11px] border disabled:opacity-40" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>下移</button><button type="button" onClick={() => toggleEditingModelProvider(pid)} className="px-2 py-1 rounded text-[11px] border" style={{ borderColor: 'var(--border-color)', color: 'var(--color-error)' }}>移除</button></div></div>)}{!(Array.isArray(editingModelDraft.providers) ? editingModelDraft.providers : []).length && <div className="px-3 py-6 rounded-lg border text-center text-xs" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>当前模型还没有绑定任何供应商</div>}</div>
+                  <div className="flex flex-wrap gap-2">{Object.keys(genProvidersObj || {}).map(pid => { const active = (Array.isArray(editingModelDraft.providers) ? editingModelDraft.providers : []).includes(pid); return <button key={pid} type="button" onClick={() => toggleEditingModelProvider(pid)} className={`px-2.5 py-1.5 rounded-lg text-xs border font-mono ${active ? 'text-white border-transparent' : ''}`} style={active ? { background: 'var(--accent)' } : { borderColor: 'var(--border-color)', color: 'var(--text-primary)', background: 'var(--bg-primary)' }}>{pid}</button> })}</div>
+                </div>
+                <input type="text" value={(Array.isArray(editingModelDraft.providers) ? editingModelDraft.providers : []).join(',')} onChange={e => setEditingModelDraft(prev => ({ ...prev, providers: (e.target.value || '').split(',').map(s => s.trim()).filter(Boolean) }))} placeholder="也可直接手填，如 wuyin-main,wuyin-backup" className="w-full mt-2 px-3 py-2 rounded-lg text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
             </div>
             <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
-              <button onClick={() => setEditingModelId('')} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
+              <button onClick={() => { setDraggingModelProviderId(''); setEditingModelId('') }} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
               <button onClick={applyModelEditor} className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:opacity-90">保存</button>
             </div>
           </div>
@@ -1229,8 +1319,8 @@ export default function AdminPage() {
                 <input type="text" value={editingProviderDraft.type || ''} onChange={e => setEditingProviderDraft(prev => ({ ...prev, type: e.target.value }))} placeholder="如 wuyin" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
               <div>
-                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>优先级</label>
-                <input type="number" value={Number(editingProviderDraft.priority ?? 100)} onChange={e => setEditingProviderDraft(prev => ({ ...prev, priority: Number(e.target.value || 0) }))} placeholder="越大越优先" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>全局权重</label>
+                <input type="number" value={Number(editingProviderDraft.priority ?? 100)} onChange={e => setEditingProviderDraft(prev => ({ ...prev, priority: Number(e.target.value || 0) }))} placeholder="当前模型内顺序优先，这里仅作备用展示" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>单位名称</label>

@@ -95,6 +95,32 @@ async def finance_tasks(time_range: str = Query("30d", alias="range"), provider_
     return FinanceService.list_task_entries(time_range, provider_id, model_id, status, page, size)
 
 
+@router.post("/users")
+async def create_user(body: dict, admin=Depends(require_admin)):
+    username = (body.get("username") or "").strip()
+    password = (body.get("password") or "").strip()
+    nickname = (body.get("nickname") or "").strip() or username
+    if len(username) < 3 or len(username) > 20:
+        raise HTTPException(status_code=400, detail="用户名长度需在3到20位之间")
+    if len(password) < 6 or len(password) > 50:
+        raise HTTPException(status_code=400, detail="密码长度需在6到50位之间")
+    with get_db() as conn:
+        existing = conn.execute("SELECT id FROM users WHERE username = %s", (username,)).fetchone()
+        if existing:
+            raise HTTPException(status_code=400, detail="用户名已存在")
+        password_hash = await hash_password(password)
+        cursor = conn.execute("INSERT INTO users (username, password_hash, nickname) VALUES (%s, %s, %s) RETURNING id, username, nickname, is_admin, is_frozen, points, created_at", (username, password_hash, nickname))
+        user = dict(cursor.fetchone())
+        register_bonus = PointsService.register_bonus()
+        if register_bonus > 0:
+            PointsService.add_points(user["id"], register_bonus, "register_bonus", "管理员创建账号赠送", conn=conn)
+            user["points"] = register_bonus
+        user["is_admin"] = bool(user.get("is_admin"))
+        user["is_frozen"] = bool(user.get("is_frozen"))
+        logger.info(f"[audit.admin_create_user] admin={admin['user_id']} user={user['id']} username={username}")
+        return {"message": "创建成功", "user": user}
+
+
 @router.get("/users")
 async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), query: str = Query(None), admin=Depends(require_admin)):
     with get_db() as conn:
@@ -424,29 +450,46 @@ def _get_local_file_size(local_path):
     return 0
 
 
+def _detect_hosting_type(url: str) -> str:
+    if "cdn.jsdelivr.net" in url:
+        return "github"
+    return "heliar"
+
+
 @router.get("/hosting/stats")
 async def get_hosting_stats(admin=Depends(require_admin)):
     mapping = ImageUrlMapping.load_mapping()
     total_count = len(mapping)
     total_size = sum(_get_local_file_size(p) for p in mapping.keys())
+    type_stats = {}
+    for local_path, url in mapping.items():
+        ht = _detect_hosting_type(url)
+        if ht not in type_stats:
+            type_stats[ht] = {"count": 0, "size": 0}
+        type_stats[ht]["count"] += 1
+        type_stats[ht]["size"] += _get_local_file_size(local_path)
     return {
         "total_count": total_count,
         "total_size": total_size,
         "total_size_fmt": _format_size(total_size),
+        "type_stats": {k: {**v, "size_fmt": _format_size(v["size"])} for k, v in type_stats.items()},
     }
 
 
 @router.get("/hosting")
-async def list_hosting_images(page: int = Query(1, ge=1), size: int = Query(50, ge=1, le=200), admin=Depends(require_admin)):
+async def list_hosting_images(page: int = Query(1, ge=1), size: int = Query(50, ge=1, le=200), hosting_type: str = Query(None), admin=Depends(require_admin)):
     mapping = ImageUrlMapping.load_mapping()
     items = []
     for local_path, url in mapping.items():
+        if hosting_type and _detect_hosting_type(url) != hosting_type:
+            continue
         filename = os.path.basename(local_path)
         file_size = _get_local_file_size(local_path)
         items.append({
             "filename": filename,
             "local_path": local_path,
             "url": url,
+            "hosting_type": _detect_hosting_type(url),
             "size": file_size,
             "size_fmt": _format_size(file_size),
             "exists": os.path.exists(local_path),
