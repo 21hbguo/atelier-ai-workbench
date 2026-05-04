@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Image, BookOpen, Share2, Trash2, Snowflake, Sun, RefreshCw, Star } from 'lucide-react'
+import { Image, BookOpen, Share2, Trash2, Snowflake, Sun, RefreshCw, Star, X } from 'lucide-react'
 import { squareAPI, promptAPI, adminAPI, favoriteAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 import SearchInput from '../components/SearchInput'
@@ -78,6 +78,7 @@ export default function SquarePage() {
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState('likes')
   const [activeCategory, setActiveCategory] = useState(null)
+  const [authorFilter, setAuthorFilter] = useState(null)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   const isAdmin = Boolean(readUser()?.is_admin)
   useEffect(() => { setLayoutMode('masonry') }, [setLayoutMode])
@@ -87,9 +88,14 @@ export default function SquarePage() {
     setQuery('')
     setSort('likes')
     setActiveCategory(null)
+    setAuthorFilter(null)
   }
 
   const handleRefresh = () => setRefreshTrigger(n => n + 1)
+  const handleAuthorFilter = useCallback((card) => {
+    if (!card?.authorId || !card?.author) return
+    setAuthorFilter({ id: card.authorId, name: card.author })
+  }, [])
 
   return (
     <MainLayout>
@@ -121,6 +127,13 @@ export default function SquarePage() {
               <RefreshCw size={16} />
             </button>
           </div>
+          {(tab === 'works' || tab === 'prompts') && authorFilter && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button onClick={() => setAuthorFilter(null)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-accent/10 hover:bg-accent/15 transition-colors" style={{ color: 'var(--accent)' }}>
+                <span>{`作者: ${authorFilter.name}`}</span><X size={12} />
+              </button>
+            </div>
+          )}
           {tab === 'prompts' && (
             <div className="mt-2">
               <PromptsCategoryFilter active={activeCategory} onChange={setActiveCategory} />
@@ -129,9 +142,9 @@ export default function SquarePage() {
         </div>
         <div id="square-scroll-container" className="flex-1 overflow-y-auto px-4 sm:px-6 pb-6">
           {tab === 'works' ? (
-            <WorksTab query={query} sort={sort} isAdmin={isAdmin} dialog={dialog} refreshTrigger={refreshTrigger} layoutMode={layoutMode} />
+            <WorksTab query={query} sort={sort} authorFilter={authorFilter} onAuthorFilter={handleAuthorFilter} isAdmin={isAdmin} dialog={dialog} refreshTrigger={refreshTrigger} layoutMode={layoutMode} />
           ) : tab === 'prompts' ? (
-            <PromptsTab query={query} sort={sort} activeCategory={activeCategory} isAdmin={isAdmin} dialog={dialog} refreshTrigger={refreshTrigger} layoutMode={layoutMode} />
+            <PromptsTab query={query} sort={sort} activeCategory={activeCategory} authorFilter={authorFilter} onAuthorFilter={handleAuthorFilter} isAdmin={isAdmin} dialog={dialog} refreshTrigger={refreshTrigger} layoutMode={layoutMode} />
           ) : tab === 'my' ? (
             <MySharesTab refreshTrigger={refreshTrigger} layoutMode={layoutMode} />
           ) : (
@@ -143,22 +156,22 @@ export default function SquarePage() {
   )
 }
 
-function WorksTab({ query, sort, isAdmin, dialog, refreshTrigger, layoutMode }) {
+function WorksTab({ query, sort, authorFilter, onAuthorFilter, isAdmin, dialog, refreshTrigger, layoutMode }) {
   const [detailIdx, setDetailIdx] = useState(null)
   const { handleUsePrompt, handleUseImage } = useImageActions()
   const [status, setStatus] = useState('all')
   const [selectMode, setSelectMode] = useState(false)
   const [checked, setChecked] = useState(new Set())
 
-  const deps = useMemo(() => isAdmin ? [query, sort, status, refreshTrigger] : [query, sort, refreshTrigger], [query, sort, status, isAdmin, refreshTrigger])
+  const deps = useMemo(() => isAdmin ? [query, sort, status, refreshTrigger, authorFilter?.id || ''] : [query, sort, refreshTrigger, authorFilter?.id || ''], [query, sort, status, isAdmin, refreshTrigger, authorFilter])
 
   useEffect(() => { setDetailIdx(null) }, [query, sort, status])
 
   const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike, handleFavorite } = useCardData({
     type: 'image',
     apiFn: (p, s) => isAdmin
-      ? adminAPI.square(p, s, query || undefined, status, sort)
-      : squareAPI.list(p, s, query || undefined, sort),
+      ? adminAPI.square(p, s, query || undefined, status, sort, authorFilter?.id || undefined)
+      : squareAPI.list(p, s, query || undefined, sort, authorFilter?.id || undefined),
     deps,
     atomicPaging: true,
     preloadCount: 12,
@@ -263,6 +276,7 @@ function WorksTab({ query, sort, isAdmin, dialog, refreshTrigger, layoutMode }) 
         onFavorite={handleFavorite}
         onUsePrompt={handleUsePrompt}
         onUseImage={handleUseImage}
+        onAuthorClick={onAuthorFilter}
         paginationScrollTargetId="square-scroll-container"
         scrollAfterPaging
         showAuthor
@@ -385,14 +399,14 @@ function MySharesTab({ refreshTrigger, layoutMode }) {
   )
 }
 
-function PromptsTab({ query, sort, activeCategory, isAdmin, dialog, refreshTrigger, layoutMode }) {
+function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, isAdmin, dialog, refreshTrigger, layoutMode }) {
   const user = readUser()
   const [detailIdx, setDetailIdx] = useState(null)
   const { handleUsePrompt, handleUseImage } = usePromptActions()
   const [status, setStatus] = useState('all')
   const [selectMode, setSelectMode] = useState(false)
   const [checked, setChecked] = useState(new Set())
-  const deps = useMemo(() => isAdmin ? [query, sort, activeCategory, status, refreshTrigger] : [query, sort, activeCategory, refreshTrigger], [query, sort, activeCategory, status, isAdmin, refreshTrigger])
+  const deps = useMemo(() => isAdmin ? [query, sort, activeCategory, status, refreshTrigger, authorFilter?.id || ''] : [query, sort, activeCategory, refreshTrigger, authorFilter?.id || ''], [query, sort, activeCategory, status, isAdmin, refreshTrigger, authorFilter])
 
   useEffect(() => { setDetailIdx(null) }, [activeCategory, query, sort])
 
@@ -405,8 +419,8 @@ function PromptsTab({ query, sort, activeCategory, isAdmin, dialog, refreshTrigg
         res.data.prompts = res.data.items || []
         return res
       }
-      if (!user) return promptAPI.listPublic(query, sort, activeCategory, p)
-      return promptAPI.list(query, null, 'community', sort, activeCategory, p)
+      if (!user) return promptAPI.listPublic(query, sort, activeCategory, p, 50, authorFilter?.id || undefined)
+      return promptAPI.list(query, null, 'community', sort, activeCategory, p, 50, authorFilter?.id || undefined)
     },
     deps,
     atomicPaging: true,
@@ -509,6 +523,7 @@ function PromptsTab({ query, sort, activeCategory, isAdmin, dialog, refreshTrigg
         onFavorite={handleFavorite}
         onUsePrompt={handleUsePrompt}
         onUseImage={handleUseImage}
+        onAuthorClick={onAuthorFilter}
         paginationScrollTargetId="square-scroll-container"
         scrollAfterPaging
         showAuthor
@@ -591,7 +606,7 @@ function FavoritesTab({ layoutMode }) {
         ))}
       </div>
       <CardGrid cards={cards} layoutMode={subTab === 'image' ? layoutMode : 'grid'} showTotal totalUnit={subTab === 'prompt' ? '条' : '项'} loading={loading} paging={paging} refreshing={refreshing} onRefresh={refresh} hideRefresh total={total} page={page} totalPages={totalPages} onPageChange={setPage} paginationScrollTargetId="square-scroll-container" scrollAfterPaging onCardClick={(_, idx) => setDetailIdx(idx)} onFavorite={handleFavorite} onUsePrompt={handleUsePrompt} onUseImage={handleUseImage} showAuthor showLike={false} emptyText="暂无收藏" />
-      {detailIdx !== null && cards[detailIdx] && <UnifiedDetailModal card={cards[detailIdx]} cards={cards} currentIndex={detailIdx} onNavigate={setDetailIdx} onClose={() => setDetailIdx(null)} onFavorite={async (id) => { const ok = await handleFavorite(id); if (ok && cards[detailIdx]?.id === id) setDetailIdx(null) }} onUsePrompt={handleUsePrompt} onUseImage={handleUseImage} title="收藏详情" hideDownload />}
+      {detailIdx !== null && cards[detailIdx] && <UnifiedDetailModal card={cards[detailIdx]} cards={cards} currentIndex={detailIdx} onNavigate={setDetailIdx} onClose={() => setDetailIdx(null)} onFavorite={async (id) => { const targetId = cards[detailIdx]?.id; setDetailIdx(null); const ok = await handleFavorite(id); if (!ok && targetId) { const idx = cards.findIndex(c => c.id === targetId); if (idx >= 0) setDetailIdx(idx) } }} onUsePrompt={handleUsePrompt} onUseImage={handleUseImage} title="收藏详情" hideDownload />}
     </>
   )
 }

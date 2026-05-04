@@ -221,12 +221,15 @@ async def delete_user(user_id: int, admin=Depends(require_admin)):
 _SQUARE_ORDER_MAP = {"likes": "si.likes_count DESC, si.id DESC", "time": "si.created_at DESC, si.id DESC"}
 _PROMPT_ORDER_MAP = {"likes": "p.likes_count DESC, p.id DESC", "time": "p.created_at DESC, p.id DESC"}
 @router.get("/square")
-async def list_all_square(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), query: str = Query(None), status: str = Query("all"), sort: str = Query("likes", regex="^(likes|time)$"), admin=Depends(require_admin)):
+async def list_all_square(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), query: str = Query(None), author_id: int = Query(None), status: str = Query("all"), sort: str = Query("likes", regex="^(likes|time)$"), admin=Depends(require_admin)):
     with get_db() as conn:
         import json
         offset = (page - 1) * size
         where = []
         params = []
+        if author_id is not None:
+            where.append("si.user_id = %s")
+            params.append(author_id)
         if query:
             q = f"%{query}%"
             where.append("(si.prompt LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s)")

@@ -61,42 +61,35 @@ async def list_square_images(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     query: str = Query(None),
+    author_id: int = Query(None),
     sort: str = Query("likes", regex="^(likes|time)$"),
     user=Depends(get_optional_user),
 ):
     with get_db() as conn:
         offset = (page - 1) * size
         order = _SQUARE_ORDER_MAP.get(sort, _SQUARE_ORDER_MAP["likes"])
+        where = ["si.is_frozen = FALSE"]
+        params = []
+        if author_id is not None:
+            where.append("si.user_id = %s")
+            params.append(author_id)
         if query:
             q = f"%{query}%"
-            total = conn.execute(
-                "SELECT COUNT(*) AS cnt FROM square_images si JOIN users u ON si.user_id = u.id WHERE si.is_frozen = FALSE AND (si.prompt LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s)",
-                (q, q, q),
-            ).fetchone()["cnt"]
-            rows = conn.execute(
-                f"""
-                SELECT si.*, u.username, u.nickname, u.avatar
-                FROM square_images si
-                JOIN users u ON si.user_id = u.id
-                WHERE si.is_frozen = FALSE AND (si.prompt LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s)
-                ORDER BY {order}
-                LIMIT %s OFFSET %s
-                """,
-                (q, q, q, size, offset),
-            ).fetchall()
-        else:
-            total = conn.execute("SELECT COUNT(*) AS cnt FROM square_images si WHERE si.is_frozen = FALSE").fetchone()["cnt"]
-            rows = conn.execute(
-                f"""
-                SELECT si.*, u.username, u.nickname, u.avatar
-                FROM square_images si
-                JOIN users u ON si.user_id = u.id
-                WHERE si.is_frozen = FALSE
-                ORDER BY {order}
-                LIMIT %s OFFSET %s
-                """,
-                (size, offset),
-            ).fetchall()
+            where.append("(si.prompt LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s)")
+            params.extend([q, q, q])
+        where_sql = " AND ".join(where)
+        total = conn.execute(f"SELECT COUNT(*) AS cnt FROM square_images si JOIN users u ON si.user_id = u.id WHERE {where_sql}", params).fetchone()["cnt"]
+        rows = conn.execute(
+            f"""
+            SELECT si.*, u.username, u.nickname, u.avatar
+            FROM square_images si
+            JOIN users u ON si.user_id = u.id
+            WHERE {where_sql}
+            ORDER BY {order}
+            LIMIT %s OFFSET %s
+            """,
+            [*params, size, offset],
+        ).fetchall()
 
         image_ids = [str(r["id"]) for r in rows]
         liked_ids = set()

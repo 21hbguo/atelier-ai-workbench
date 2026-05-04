@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
 import { Paperclip, X, Settings, Send, Maximize2, Share2, Loader2 } from 'lucide-react'
 import ParamPanel from './ParamPanel'
+import { getCachedImage, setCachedImage, clearAllCachedImages } from '../utils/imageDB'
 
 const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost = 10 }, ref) {
   const [prompt, setPrompt] = useState('')
@@ -17,6 +18,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const paramsPanelRef = useRef(null)
   const lightboxPushedRef = useRef(false)
   const lightboxClosingByPopRef = useRef(false)
+  const imagesRef = useRef([])
   const appendImages = useCallback((items) => {
     if (!items?.length) return
     setImages(prev => {
@@ -33,24 +35,90 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     })
   }, [])
 
-  const consumePending = useCallback(() => {
-    const pending = localStorage.getItem('pending_prompt')
-    if (pending) {
-      setPrompt(pending)
-      localStorage.removeItem('pending_prompt')
-    }
+  const consumePending = useCallback(async () => {
+    const pendingPrompt = localStorage.getItem('pending_prompt')
     const pendingImg = localStorage.getItem('pending_image')
+
+    if (pendingPrompt) {
+      localStorage.removeItem('pending_prompt')
+      setPrompt(pendingPrompt)
+      return
+    }
+
     if (pendingImg) {
+      localStorage.removeItem('pending_image')
       try {
         const { dataUrl, name } = JSON.parse(pendingImg)
-        fetch(dataUrl).then(r => r.blob()).then(blob => {
-          const file = new File([blob], name || `ref-${Date.now()}.png`, { type: blob.type })
-          setImages(prev => [...prev, { file, preview: URL.createObjectURL(file) }])
-        })
+        const res = await fetch(dataUrl)
+        const blob = await res.blob()
+        const file = new File([blob], name || `ref-${Date.now()}.png`, { type: blob.type })
+        setImages([{ file, preview: URL.createObjectURL(file) }])
       } catch {}
-      localStorage.removeItem('pending_image')
     }
   }, [])
+
+  // 从缓存恢复提示词和参考图
+  useEffect(() => {
+    const cached = localStorage.getItem('cached_prompt')
+    if (cached) setPrompt(cached)
+
+    ;(async () => {
+      try {
+        const count = await getCachedImage('_count')
+        if (!count) return
+        const n = Number(await count.text())
+        if (!n) return
+        const items = []
+        for (let i = 0; i < n; i++) {
+          const blob = await getCachedImage(`img_${i}`)
+          if (blob) {
+            const file = new File([blob], `cached-${i}.png`, { type: blob.type })
+            items.push({ file, preview: URL.createObjectURL(file) })
+          }
+        }
+        if (items.length > 0) setImages(items)
+      } catch {}
+    })()
+  }, [])
+
+  // 组件卸载时释放 object URL
+  useEffect(() => {
+    return () => {
+      for (const img of imagesRef.current) {
+        if (img.file && img.preview) URL.revokeObjectURL(img.preview)
+      }
+    }
+  }, [])
+
+  // 提示词变化时同步到 localStorage
+  useEffect(() => {
+    if (prompt) localStorage.setItem('cached_prompt', prompt)
+    else localStorage.removeItem('cached_prompt')
+  }, [prompt])
+
+  useEffect(() => { imagesRef.current = images }, [images])
+
+  // 参考图变化时同步到 IndexedDB
+  useEffect(() => {
+    ;(async () => {
+      try {
+        await clearAllCachedImages()
+        if (images.length === 0) return
+        for (let i = 0; i < images.length; i++) {
+          const img = images[i]
+          let blob
+          if (img.file) {
+            blob = img.file
+          } else if (img.url) {
+            const res = await fetch(img.url)
+            blob = await res.blob()
+          }
+          if (blob) await setCachedImage(`img_${i}`, blob)
+        }
+        await setCachedImage('_count', new Blob([String(images.length)]))
+      } catch {}
+    })()
+  }, [images])
 
   useEffect(() => {
     consumePending()

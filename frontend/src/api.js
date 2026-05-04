@@ -52,8 +52,8 @@ export const imageAPI = {
 }
 
 export const promptAPI = {
-  list: (query, tags, scope = 'private', sort = 'likes', category, page = 1, size = 50) => { const params = { scope, sort, page, size }; if (query) params.query = query; if (tags) params.tags = tags; if (category) params.category = category; return api.get('/prompts', { params }) },
-  listPublic: (query, sort = 'likes', category, page = 1, size = 50) => { const params = { sort, page, size }; if (query) params.query = query; if (category) params.category = category; return api.get('/prompts/public', { params }) },
+  list: (query, tags, scope = 'private', sort = 'likes', category, page = 1, size = 50, authorId) => { const params = { scope, sort, page, size }; if (query) params.query = query; if (tags) params.tags = tags; if (category) params.category = category; if (authorId) params.author_id = authorId; return api.get('/prompts', { params }) },
+  listPublic: (query, sort = 'likes', category, page = 1, size = 50, authorId) => { const params = { sort, page, size }; if (query) params.query = query; if (category) params.category = category; if (authorId) params.author_id = authorId; return api.get('/prompts/public', { params }) },
   categories: () => api.get('/prompts/categories'),
   like: promptId => api.post(`/prompts/like?prompt_id=${promptId}`),
   create: data => api.post('/prompts', data),
@@ -77,7 +77,7 @@ export const authAPI = {
 }
 
 export const squareAPI = {
-  list: (page = 1, size = 20, query, sort = 'likes') => { const params = { page, size, sort }; if (query) params.query = query; return api.get('/square', { params }) },
+  list: (page = 1, size = 20, query, sort = 'likes', authorId) => { const params = { page, size, sort }; if (query) params.query = query; if (authorId) params.author_id = authorId; return api.get('/square', { params }) },
   my: (page = 1, size = 20) => api.get('/square/my', { params: { page, size } }),
   share: data => api.post('/square/share', data),
   unshare: imageId => api.post(`/square/unshare?image_id=${imageId}`),
@@ -92,7 +92,7 @@ export const adminAPI = {
   users: (page = 1, size = 20, query) => { const params = { page, size }; if (query) params.query = query; return api.get('/admin/users', { params }) },
   deleteUser: userId => api.post(`/admin/users/${userId}/delete`),
   toggleFreeze: userId => api.post(`/admin/users/${userId}/freeze`),
-  square: (page = 1, size = 20, query, status = 'all', sort = 'likes') => { const params = { page, size, status, sort }; if (query) params.query = query; return api.get('/admin/square', { params }) },
+  square: (page = 1, size = 20, query, status = 'all', sort = 'likes', authorId) => { const params = { page, size, status, sort }; if (query) params.query = query; if (authorId) params.author_id = authorId; return api.get('/admin/square', { params }) },
   deleteSquare: imageId => api.post(`/admin/square/${imageId}/delete`),
   freezeSquare: (ids, frozen = true) => api.post('/admin/square/freeze', { ids, frozen }),
   batchDeleteSquare: ids => api.post('/admin/square/batch-delete', { ids }),

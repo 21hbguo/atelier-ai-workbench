@@ -30,7 +30,7 @@ class PromptService:
 
     @classmethod
     def get_all(cls, scope: str = "public", user_id: int = None, sort: str = "likes",
-                category: str = None, page: int = 1, size: int = 50) -> Dict[str, Any]:
+                category: str = None, author_id: int = None, page: int = 1, size: int = 50) -> Dict[str, Any]:
         with get_db() as conn:
             order = cls._ORDER_MAP.get(sort, cls._ORDER_MAP["likes"])
             where_clauses = []
@@ -49,6 +49,9 @@ class PromptService:
             if category:
                 where_clauses.append("p.category = %s")
                 params.append(category)
+            if author_id is not None:
+                where_clauses.append("p.user_id = %s")
+                params.append(author_id)
 
             where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
             join_sql = "LEFT JOIN users u ON p.user_id = u.id" if scope in ("all", "community") else ""
@@ -147,7 +150,7 @@ class PromptService:
 
     @classmethod
     def search(cls, query: str, tags: Optional[List[str]] = None, scope: str = "public",
-               user_id: int = None, sort: str = "likes", category: str = None,
+               user_id: int = None, sort: str = "likes", category: str = None, author_id: int = None,
                page: int = 1, size: int = 50) -> Dict[str, Any]:
         with get_db() as conn:
             order = cls._ORDER_MAP.get(sort, cls._ORDER_MAP["likes"])
@@ -167,6 +170,9 @@ class PromptService:
             if category:
                 where_clauses.append("p.category = %s")
                 params.append(category)
+            if author_id is not None:
+                where_clauses.append("p.user_id = %s")
+                params.append(author_id)
 
             if query:
                 q = f"%{query}%"
