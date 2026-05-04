@@ -272,7 +272,7 @@ export default function UnifiedDetailModal({
   }
 
   const renderLeftPanel = () => {
-    const editImageUrl = editing && editForm?.image_path ? editForm.image_path : null
+    const editImageUrl = editing && editForm?.image_path ? (editForm.image_path.includes('/') ? `/api/prompts/evo-thumb/${editForm.image_path}` : `/api/prompts/image/${editForm.image_path}`) : null
     const displayUrl = editImageUrl || fullUrl
     const showUploadBtn = editing && !isImage
     if (!displayUrl) {

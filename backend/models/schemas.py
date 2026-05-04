@@ -56,6 +56,7 @@ class PromptCreateRequest(BaseModel):
     negative_prompt: Optional[str] = Field(None, max_length=4000)
     tags: Optional[List[str]] = None
     category: Optional[str] = None
+    image_path: Optional[str] = Field(None, max_length=1000)
 
 class PromptUpdateRequest(BaseModel):
     name: Optional[str] = Field(None, max_length=200)

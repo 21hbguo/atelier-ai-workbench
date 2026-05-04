@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional
 from backend.database import get_db
-from backend.config import GENERATED_IMAGES_DIR, EVO_IMAGES_DIR
+from backend.config import GENERATED_IMAGES_DIR, EVO_IMAGES_DIR, UPLOAD_DIR
 from backend.services.image_dimensions import get_image_dimensions
 
 _ALLOWED_TYPES={"image","prompt"}
@@ -107,7 +107,7 @@ class FavoriteService:
                     if k in prompt_fixed_ids:v["likes_count"]=(v.get("likes_count") or 0)+1
                     v["is_liked"]=k in prompt_liked_ids
                     if v.get("image_path"):
-                        w,h=get_image_dimensions(str(EVO_IMAGES_DIR / v["image_path"]))
+                        w,h=get_image_dimensions(str((EVO_IMAGES_DIR if "/" in str(v["image_path"]) else UPLOAD_DIR) / v["image_path"]))
                         v["width"]=w;v["height"]=h
             images=[];prompts=[]
             for r in refs:

@@ -7,7 +7,7 @@ from uuid import uuid4
 from backend.database import get_db
 from backend.services.category_service import CategoryService
 from backend.services.favorite_service import FavoriteService
-from backend.config import EVO_IMAGES_DIR
+from backend.config import EVO_IMAGES_DIR, UPLOAD_DIR
 from backend.services.image_dimensions import get_image_dimensions
 
 
@@ -21,6 +21,10 @@ class PromptService:
             d["created_at"] = d["created_at"].strftime("%Y-%m-%d %H:%M:%S") if hasattr(d["created_at"], "strftime") else str(d["created_at"])
         if d.get("image_path") and "/" in d["image_path"]:
             w,h=get_image_dimensions(str(EVO_IMAGES_DIR / d["image_path"]))
+            d["width"]=w
+            d["height"]=h
+        elif d.get("image_path"):
+            w,h=get_image_dimensions(str(UPLOAD_DIR / d["image_path"]))
             d["width"]=w
             d["height"]=h
         return d
@@ -93,7 +97,7 @@ class PromptService:
 
     @classmethod
     def create(cls, name: str, prompt: str, negative_prompt: Optional[str] = None,
-               tags: Optional[List[str]] = None, user_id: int = None, category: Optional[str] = None) -> Dict[str, Any]:
+               tags: Optional[List[str]] = None, user_id: int = None, category: Optional[str] = None, image_path: Optional[str] = None) -> Dict[str, Any]:
         with get_db() as conn:
             existing = conn.execute("SELECT id FROM prompts WHERE prompt = %s AND user_id IS NOT DISTINCT FROM %s", (prompt, user_id)).fetchone()
             if existing:
@@ -107,12 +111,13 @@ class PromptService:
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "user_id": user_id,
             "category": category,
+            "image_path": image_path,
         }
         with get_db() as conn:
             conn.execute(
-                "INSERT INTO prompts (id, name, prompt, negative_prompt, tags, created_at, user_id, category) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                "INSERT INTO prompts (id, name, prompt, negative_prompt, tags, created_at, user_id, category, image_path) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (item["id"], item["name"], item["prompt"], item["negative_prompt"],
-                 json.dumps(item["tags"], ensure_ascii=False), item["created_at"], item["user_id"], item["category"]),
+                 json.dumps(item["tags"], ensure_ascii=False), item["created_at"], item["user_id"], item["category"], item["image_path"]),
             )
         return item
 
@@ -184,7 +189,7 @@ class PromptService:
 
             if query:
                 q = f"%{query}%"
-                where_clauses.append("(p.name LIKE %s OR p.prompt LIKE %s OR p.tags LIKE %s)")
+                where_clauses.append("(p.name LIKE %s OR p.prompt LIKE %s OR CAST(p.tags AS TEXT) LIKE %s)")
                 params.extend([q, q, q])
                 if scope in ("all", "community"):
                     where_clauses[-1] = f"({where_clauses[-1]} OR u.username LIKE %s OR u.nickname LIKE %s)"

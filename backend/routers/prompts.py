@@ -192,6 +192,7 @@ async def create_prompt(request: PromptCreateRequest, user=Depends(get_current_u
             tags=request.tags,
             user_id=user["user_id"],
             category=request.category,
+            image_path=request.image_path,
         )
     except Exception as e:
         logger.exception("创建提示词失败")
@@ -208,6 +209,7 @@ async def create_public_prompt(request: PromptCreateRequest, admin=Depends(requi
             tags=request.tags,
             user_id=None,
             category=request.category,
+            image_path=request.image_path,
         )
     except Exception as e:
         logger.exception("创建提示词失败")
