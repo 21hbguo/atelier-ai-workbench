@@ -7,6 +7,17 @@ _ALLOWED_TYPES={"image","prompt"}
 
 class FavoriteService:
     @classmethod
+    def _create_initial_like(cls,user_id:int,target_type:str,target_id:str,conn)->None:
+        if target_type=="image":
+            try:iid=int(target_id)
+            except: return
+            row=conn.execute("INSERT INTO square_likes(image_id,user_id) VALUES(%s,%s) ON CONFLICT(image_id,user_id) DO NOTHING RETURNING id",(iid,user_id)).fetchone()
+            if row:conn.execute("UPDATE square_images SET likes_count=likes_count+1 WHERE id=%s",(iid,))
+            return
+        row=conn.execute("INSERT INTO prompt_likes(prompt_id,user_id) VALUES(%s,%s) ON CONFLICT(prompt_id,user_id) DO NOTHING RETURNING id",(str(target_id),user_id)).fetchone()
+        if row:conn.execute("UPDATE prompts SET likes_count=likes_count+1 WHERE id=%s",(str(target_id),))
+
+    @classmethod
     def toggle(cls,user_id:int,target_type:str,target_id:str)->bool:
         t=(target_type or "").strip()
         if t not in _ALLOWED_TYPES:raise ValueError("不支持的收藏类型")
@@ -25,6 +36,7 @@ class FavoriteService:
                 exists=conn.execute("SELECT id FROM prompts WHERE id=%s AND COALESCE(is_frozen,FALSE)=FALSE",(str(target_id),)).fetchone()
             if not exists:raise ValueError("收藏目标不存在")
             conn.execute("INSERT INTO favorites(user_id,target_type,target_id) VALUES(%s,%s,%s)",(user_id,t,str(target_id)))
+            cls._create_initial_like(user_id,t,str(target_id),conn)
             return True
 
     @classmethod
