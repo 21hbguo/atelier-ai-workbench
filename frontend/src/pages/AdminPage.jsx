@@ -99,10 +99,10 @@ export default function AdminPage() {
   const [generationModelsText, setGenerationModelsText] = useState('{}')
   const [generationProvidersText, setGenerationProvidersText] = useState('{}')
   const [showAdvancedGenConfig, setShowAdvancedGenConfig] = useState(false)
+  const [jsonDirty, setJsonDirty] = useState(false)
   const [genModelsObj, setGenModelsObj] = useState({})
   const [genProvidersObj, setGenProvidersObj] = useState({})
   const [configSubtab, setConfigSubtab] = useState('basic')
-  const [selectedGenRow, setSelectedGenRow] = useState('')
   const [editingProviderId, setEditingProviderId] = useState('')
   const [editingProviderDraft, setEditingProviderDraft] = useState({ type: 'wuyin', enabled: true, priority: 100, api_url: '', api_key: '', circuit_fail_threshold: 3, circuit_cooldown_seconds: 60, unit_name: '供应商额度', unit_code: 'vendor_quota' })
   const [editingModelId, setEditingModelId] = useState('')
@@ -365,6 +365,7 @@ export default function AdminPage() {
   const syncGenJsonFromForm = (modelsObj, providersObj) => {
     setGenerationModelsText(JSON.stringify(modelsObj, null, 2))
     setGenerationProvidersText(JSON.stringify(providersObj, null, 2))
+    setJsonDirty(false)
   }
   const handleAddModel = () => {
     const id = `image-model-${Date.now()}`
@@ -376,26 +377,10 @@ export default function AdminPage() {
     delete next[id]
     setGenModelsObj(next)
     if (defaultModelId === id) setDefaultModelId(Object.keys(next)[0] || 'image-default')
-    if (selectedGenRow === `m:${id}`) setSelectedGenRow('')
-    syncGenJsonFromForm(next, genProvidersObj)
-  }
-  const handleRenameModel = (oldId, newId) => {
-    const nid = (newId || '').trim()
-    if (!nid || nid === oldId) return
-    if (genModelsObj[nid]) { dialog.alert('模型ID已存在'); return }
-    const next = {}
-    for (const [k, v] of Object.entries(genModelsObj)) next[k === oldId ? nid : k] = v
-    setGenModelsObj(next)
-    if (defaultModelId === oldId) setDefaultModelId(nid)
     syncGenJsonFromForm(next, genProvidersObj)
   }
   const handleModelField = (id, key, value) => {
     const next = { ...genModelsObj, [id]: { ...(genModelsObj[id] || {}), [key]: value } }
-    setGenModelsObj(next); syncGenJsonFromForm(next, genProvidersObj)
-  }
-  const handleModelProviders = (id, providersCsv) => {
-    const providers = (providersCsv || '').split(',').map(s => s.trim()).filter(Boolean)
-    const next = { ...genModelsObj, [id]: { ...(genModelsObj[id] || {}), providers } }
     setGenModelsObj(next); syncGenJsonFromForm(next, genProvidersObj)
   }
   const handleAddProvider = () => {
@@ -408,17 +393,6 @@ export default function AdminPage() {
     delete next[id]
     const nextModels = {}
     for (const [mid, m] of Object.entries(genModelsObj)) nextModels[mid] = { ...m, providers: (Array.isArray(m?.providers) ? m.providers : []).filter(pid => pid !== id) }
-    if (selectedGenRow === `p:${id}`) setSelectedGenRow('')
-    setGenProvidersObj(next); setGenModelsObj(nextModels); syncGenJsonFromForm(nextModels, next)
-  }
-  const handleRenameProvider = (oldId, newId) => {
-    const nid = (newId || '').trim()
-    if (!nid || nid === oldId) return
-    if (genProvidersObj[nid]) { dialog.alert('供应商ID已存在'); return }
-    const next = {}
-    for (const [k, v] of Object.entries(genProvidersObj)) next[k === oldId ? nid : k] = v
-    const nextModels = {}
-    for (const [mid, m] of Object.entries(genModelsObj)) nextModels[mid] = { ...m, providers: (Array.isArray(m?.providers) ? m.providers : []).map(pid => pid === oldId ? nid : pid) }
     setGenProvidersObj(next); setGenModelsObj(nextModels); syncGenJsonFromForm(nextModels, next)
   }
   const handleProviderField = (id, key, value) => {
@@ -447,18 +421,6 @@ export default function AdminPage() {
     const next = { ...genModelsObj, [editingModelId]: { ...(genModelsObj[editingModelId] || {}), ...editingModelDraft, providers } }
     setGenModelsObj(next); syncGenJsonFromForm(next, genProvidersObj); setDraggingModelProviderId(''); setEditingModelId('')
   }
-  const moveEditingModelProvider = (providerId, direction) => {
-    setEditingModelDraft(prev => {
-      const arr = Array.isArray(prev.providers) ? [...prev.providers] : []
-      const from = arr.indexOf(providerId)
-      if (from < 0) return prev
-      const to = direction === 'up' ? from - 1 : from + 1
-      if (to < 0 || to >= arr.length) return prev
-      const [item] = arr.splice(from, 1)
-      arr.splice(to, 0, item)
-      return { ...prev, providers: arr }
-    })
-  }
   const reorderEditingModelProviders = (fromId, toId) => {
     if (!fromId || !toId || fromId === toId) return
     setEditingModelDraft(prev => {
@@ -476,33 +438,13 @@ export default function AdminPage() {
       return arr.includes(providerId) ? { ...prev, providers: arr.filter(i => i !== providerId) } : { ...prev, providers: [...arr, providerId] }
     })
   }
-  const handleCopySelectedGenRow = () => {
-    if (!selectedGenRow) { dialog.alert('请先选择一行'); return }
-    if (selectedGenRow.startsWith('m:')) {
-      const id = selectedGenRow.slice(2)
-      const src = genModelsObj[id]
-      if (!src) return
-      const nid = `${id}-copy-${Date.now()}`
-      const next = { ...genModelsObj, [nid]: { ...src, label: `${src.label || id} 副本` } }
-      setGenModelsObj(next); syncGenJsonFromForm(next, genProvidersObj); setSelectedGenRow(`m:${nid}`)
-      return
-    }
-    if (selectedGenRow.startsWith('p:')) {
-      const id = selectedGenRow.slice(2)
-      const src = genProvidersObj[id]
-      if (!src) return
-      const nid = `${id}-copy-${Date.now()}`
-      const next = { ...genProvidersObj, [nid]: { ...src } }
-      setGenProvidersObj(next); syncGenJsonFromForm(genModelsObj, next); setSelectedGenRow(`p:${nid}`)
-    }
-  }
   const handleApplyAdvanced = () => {
     try {
       const m = JSON.parse(generationModelsText || '{}')
       const p = JSON.parse(generationProvidersText || '{}')
       if (!m || typeof m !== 'object' || Array.isArray(m)) throw new Error('generation_models 不是对象')
       if (!p || typeof p !== 'object' || Array.isArray(p)) throw new Error('generation_providers 不是对象')
-      setGenModelsObj(m); setGenProvidersObj(p); dialog.alert('已应用高级JSON到表单')
+      setGenModelsObj(m); setGenProvidersObj(p); setJsonDirty(false); dialog.alert('已应用高级JSON到表单')
     } catch (e) { dialog.alert(e.message || 'JSON格式错误') }
   }
 
@@ -1199,89 +1141,137 @@ export default function AdminPage() {
             ) : configSubtab === 'route' ? (
             <>
             <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
-              <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>模型与供应商路由配置</h3>
-              <div className="mb-3">
+              <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>模型路由配置</h3>
+              <div className="mb-4">
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>默认模型ID</label>
                 <input type="text" value={defaultModelId} onChange={e => setDefaultModelId(e.target.value)} placeholder="例如：image-default（必须存在于模型列表）" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
+
+              {/* 模型列表 */}
               <div className="rounded-lg border p-3 mb-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>融合路由配置表</div>
+                <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <button onClick={handleCopySelectedGenRow} className="px-2 py-1 rounded text-xs font-medium border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>复制</button>
-                    <button onClick={handleAddModel} className="px-2 py-1 rounded text-xs font-medium bg-accent text-white">新增模型</button>
-                    <button onClick={handleAddProvider} className="px-2 py-1 rounded text-xs font-medium bg-accent text-white">新增供应商</button>
+                    <span className="text-xs font-medium" style={{ color: 'var(--color-info)' }}>模型</span>
+                    <span className="text-[11px] px-1.5 py-0.5 rounded-full" style={{ background: 'var(--color-info)', color: 'white', opacity: 0.8 }}>{Object.keys(genModelsObj).length}</span>
                   </div>
+                  <button onClick={handleAddModel} className="px-2 py-1 rounded text-xs font-medium bg-accent text-white">+ 新增模型</button>
                 </div>
-                <div className="overflow-x-auto overflow-y-auto max-h-[28rem] rounded border" style={{ borderColor: 'var(--border-color)' }}>
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr style={{ background: 'var(--bg-card)' }}>
-                        <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>选择</th>
-                        <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>类别</th>
-                        <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>ID</th>
-                        <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>主要信息</th>
-                        <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--text-secondary)' }}>状态</th>
-                        <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>操作</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(genModelsObj).map(([mid, m]) => (
-                        <tr key={`m:${mid}`} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
-                          <td className="px-3 py-2 text-center"><input type="radio" name="gen-row" checked={selectedGenRow === `m:${mid}`} onChange={() => setSelectedGenRow(`m:${mid}`)} /></td>
-                          <td className="px-3 py-2" style={{ color: 'var(--color-info)' }}>模型</td>
-                          <td className="px-3 py-2 font-mono" style={{ color: 'var(--text-primary)' }}>{mid}</td>
-                          <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{`${m?.label || '-'} | ${m?.capability || 'image'} | providers: ${(Array.isArray(m?.providers) ? m.providers : []).join(',') || '-'}`}</td>
-                          <td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 rounded-full text-[11px] ${m?.enabled !== false ? 'bg-green-500/15 text-[var(--color-success)]' : 'bg-gray-500/15 text-gray-500'}`}>{m?.enabled !== false ? '启用' : '禁用'}</span></td>
-                          <td className="px-3 py-2 text-right">
-                            <div className="inline-flex items-center gap-2">
-                              <button onClick={() => openModelEditor(mid)} className="px-2 py-1 rounded text-xs border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>编辑</button>
-                              <button onClick={() => handleDeleteModel(mid)} className="px-2 py-1 rounded text-xs border text-[var(--color-error)]" style={{ borderColor: 'var(--border-color)' }}>删除</button>
+                <div className="space-y-2">
+                  {Object.entries(genModelsObj).map(([mid, m]) => {
+                    const isDefault = mid === defaultModelId
+                    const boundProviders = Array.isArray(m?.providers) ? m.providers : []
+                    return (
+                      <div key={mid} className="rounded-lg border p-3 flex items-center gap-3" style={{ borderColor: isDefault ? 'var(--color-info)' : 'var(--border-color)', background: isDefault ? 'color-mix(in srgb, var(--color-info) 5%, var(--bg-card))' : 'var(--bg-card)' }}>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{m?.label || mid}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded font-mono" style={{ background: 'var(--color-info)', color: 'white', opacity: 0.8 }}>{m?.capability || 'image'}</span>
+                            {isDefault && <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'var(--accent)', color: 'white' }}>默认</span>}
+                          </div>
+                          <div className="text-[11px] font-mono truncate mb-1" style={{ color: 'var(--text-secondary)' }}>{mid}</div>
+                          {boundProviders.length > 0 && (
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <span className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>供应商:</span>
+                              {boundProviders.map((pid, idx) => (
+                                <span key={pid} className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded font-mono" style={{ background: idx === 0 ? 'var(--color-success)' : 'var(--text-secondary)', color: 'white', opacity: idx === 0 ? 0.85 : 0.6 }}>
+                                  {idx === 0 && '▶'}{pid}
+                                </span>
+                              ))}
                             </div>
-                          </td>
-                        </tr>
-                      ))}
-                      {Object.entries(genProvidersObj).map(([pid, p]) => (
-                        <tr key={`p:${pid}`} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
-                          <td className="px-3 py-2 text-center"><input type="radio" name="gen-row" checked={selectedGenRow === `p:${pid}`} onChange={() => setSelectedGenRow(`p:${pid}`)} /></td>
-                          <td className="px-3 py-2" style={{ color: '#8B7BA8' }}>供应商</td>
-                          <td className="px-3 py-2 font-mono" style={{ color: 'var(--text-primary)' }}>{pid}</td>
-                          <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{`${p?.type || 'wuyin'} | unit:${p?.unit_name || '供应商额度'} | global_priority:${Number(p?.priority ?? 100)}`}</td>
-                          <td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 rounded-full text-[11px] ${p?.enabled !== false ? 'bg-green-500/15 text-[var(--color-success)]' : 'bg-gray-500/15 text-gray-500'}`}>{p?.enabled !== false ? '启用' : '禁用'}</span></td>
-                          <td className="px-3 py-2 text-right">
-                            <div className="inline-flex items-center gap-2">
-                              <button onClick={() => openProviderEditor(pid)} className="px-2 py-1 rounded text-xs border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>编辑</button>
-                              <button onClick={() => handleDeleteProvider(pid)} className="px-2 py-1 rounded text-xs border text-[var(--color-error)]" style={{ borderColor: 'var(--border-color)' }}>删除</button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                          )}
+                          {boundProviders.length === 0 && <div className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>未绑定供应商</div>}
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleModelField(mid, 'enabled', !m?.enabled)}
+                            className="relative inline-flex h-4 w-7 items-center rounded-full transition-colors"
+                            style={{ background: m?.enabled !== false ? 'var(--color-success)' : 'var(--border-color)' }}
+                          >
+                            <span className="inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform" style={{ transform: m?.enabled !== false ? 'translateX(14px)' : 'translateX(2px)' }} />
+                          </button>
+                          <button onClick={() => openModelEditor(mid)} className="px-2 py-1 rounded text-xs border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>编辑</button>
+                          <button onClick={() => { if (mid === defaultModelId) { dialog.alert('不能删除默认模型'); return } handleDeleteModel(mid) }} className="px-2 py-1 rounded text-xs border text-[var(--color-error)]" style={{ borderColor: 'var(--border-color)' }}>删除</button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {Object.keys(genModelsObj).length === 0 && <div className="text-center py-6 text-xs" style={{ color: 'var(--text-secondary)' }}>暂无模型，点击上方按钮新增</div>}
                 </div>
-                <div className="mt-2 text-[11px]" style={{ color: 'var(--text-secondary)' }}>提示：先“选择”某一行，再点“复制”可快速克隆该配置并二次编辑；模型行里的 providers 顺序就是该模型的真实调用优先级。</div>
               </div>
+
+              {/* 供应商列表 */}
+              <div className="rounded-lg border p-3 mb-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium" style={{ color: '#8B7BA8' }}>供应商</span>
+                    <span className="text-[11px] px-1.5 py-0.5 rounded-full" style={{ background: '#8B7BA8', color: 'white', opacity: 0.8 }}>{Object.keys(genProvidersObj).length}</span>
+                  </div>
+                  <button onClick={handleAddProvider} className="px-2 py-1 rounded text-xs font-medium bg-accent text-white">+ 新增供应商</button>
+                </div>
+                <div className="space-y-2">
+                  {Object.entries(genProvidersObj).map(([pid, p]) => (
+                    <div key={pid} className="rounded-lg border p-3 flex items-center gap-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: '#8B7BA8', color: 'white', opacity: 0.8 }}>{p?.type || 'wuyin'}</span>
+                          <span className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{pid}</span>
+                        </div>
+                        <div className="text-[11px] font-mono truncate mb-1" style={{ color: 'var(--text-secondary)' }}>
+                          {p?.api_url || '(使用全局api_url)'}
+                        </div>
+                        <div className="flex items-center gap-3 text-[10px]" style={{ color: 'var(--text-secondary)' }}>
+                          <span>优先级: {Number(p?.priority ?? 100)}</span>
+                          <span>熔断: {p?.circuit_fail_threshold ?? 3}次/{p?.circuit_cooldown_seconds ?? 60}s</span>
+                          <span>单位: {p?.unit_name || '供应商额度'}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleProviderField(pid, 'enabled', !p?.enabled)}
+                          className="relative inline-flex h-4 w-7 items-center rounded-full transition-colors"
+                          style={{ background: p?.enabled !== false ? 'var(--color-success)' : 'var(--border-color)' }}
+                        >
+                          <span className="inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform" style={{ transform: p?.enabled !== false ? 'translateX(14px)' : 'translateX(2px)' }} />
+                        </button>
+                        <button onClick={() => openProviderEditor(pid)} className="px-2 py-1 rounded text-xs border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>编辑</button>
+                        <button onClick={() => handleDeleteProvider(pid)} className="px-2 py-1 rounded text-xs border text-[var(--color-error)]" style={{ borderColor: 'var(--border-color)' }}>删除</button>
+                      </div>
+                    </div>
+                  ))}
+                  {Object.keys(genProvidersObj).length === 0 && <div className="text-center py-6 text-xs" style={{ color: 'var(--text-secondary)' }}>暂无供应商，点击上方按钮新增</div>}
+                </div>
+              </div>
+
               <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>高级模式(JSON)</div>
                   <button onClick={() => setShowAdvancedGenConfig(v => !v)} className="px-2 py-1 rounded text-xs border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>{showAdvancedGenConfig ? '收起' : '展开'}</button>
                 </div>
                 {showAdvancedGenConfig && (
+                  <>
+                  {jsonDirty && (
+                    <div className="mt-3 px-3 py-2 rounded-lg text-[11px]" style={{ background: 'var(--color-warning, #f59e0b)', color: '#000', opacity: 0.9 }}>
+                      JSON 已被修改，但尚未应用到表单。点击"应用到表单"使其生效，或直接保存配置。
+                    </div>
+                  )}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
                     <div>
                       <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>generation_models(JSON对象)</label>
-                      <textarea value={generationModelsText} onChange={e => setGenerationModelsText(e.target.value)} rows={14} className="w-full px-3 py-2 rounded-lg text-xs border resize-none outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                      <textarea value={generationModelsText} onChange={e => { setGenerationModelsText(e.target.value); setJsonDirty(true) }} rows={14} className="w-full px-3 py-2 rounded-lg text-xs border resize-none outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                       <div className="text-[11px] mt-1 text-right tabular-nums" style={{ color: 'var(--text-secondary)' }}>{generationModelsText.length} chars</div>
                     </div>
                     <div>
                       <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>generation_providers(JSON对象)</label>
-                      <textarea value={generationProvidersText} onChange={e => setGenerationProvidersText(e.target.value)} rows={14} className="w-full px-3 py-2 rounded-lg text-xs border resize-none outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                      <textarea value={generationProvidersText} onChange={e => { setGenerationProvidersText(e.target.value); setJsonDirty(true) }} rows={14} className="w-full px-3 py-2 rounded-lg text-xs border resize-none outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                       <div className="text-[11px] mt-1 text-right tabular-nums" style={{ color: 'var(--text-secondary)' }}>{generationProvidersText.length} chars</div>
                     </div>
                     <div className="md:col-span-2 flex justify-end">
                       <button onClick={handleApplyAdvanced} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-accent text-white hover:opacity-90">应用到表单</button>
                     </div>
                   </div>
+                  </>
                 )}
               </div>
             </div>
@@ -1318,13 +1308,45 @@ export default function AdminPage() {
                 <label className="inline-flex items-center gap-2 text-sm" style={{ color: 'var(--text-primary)' }}><input type="checkbox" checked={editingModelDraft.enabled !== false} onChange={e => setEditingModelDraft(prev => ({ ...prev, enabled: e.target.checked }))} />启用该模型</label>
               </div>
               <div className="md:col-span-2">
-                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>绑定供应商ID</label>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>绑定供应商（按顺序优先级从高到低）</label>
                 <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
-                  <div className="text-[11px] mb-2" style={{ color: 'var(--text-secondary)' }}>拖动当前列表可调整优先级，越靠前越优先；也可点下方渠道切换纳入/移除。</div>
-                  <div className="space-y-2 mb-3">{(Array.isArray(editingModelDraft.providers) ? editingModelDraft.providers : []).map((pid, idx, arr) => <div key={pid} draggable onDragStart={() => setDraggingModelProviderId(pid)} onDragEnd={() => setDraggingModelProviderId('')} onDragOver={e => e.preventDefault()} onDrop={() => { reorderEditingModelProviders(draggingModelProviderId, pid); setDraggingModelProviderId('') }} className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${draggingModelProviderId === pid ? 'opacity-60' : ''}`} style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}><div className="text-xs font-mono w-5 text-center" style={{ color: 'var(--text-secondary)' }}>{idx + 1}</div><div className="text-xs cursor-grab select-none" style={{ color: 'var(--text-secondary)' }}>拖动</div><div className="flex-1 font-mono text-sm">{pid}</div><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>{genProvidersObj?.[pid]?.type || 'unknown'} / {genProvidersObj?.[pid]?.unit_name || '供应商额度'}</div><div className="flex items-center gap-1"><button type="button" disabled={idx===0} onClick={() => moveEditingModelProvider(pid, 'up')} className="px-2 py-1 rounded text-[11px] border disabled:opacity-40" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>上移</button><button type="button" disabled={idx===arr.length-1} onClick={() => moveEditingModelProvider(pid, 'down')} className="px-2 py-1 rounded text-[11px] border disabled:opacity-40" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>下移</button><button type="button" onClick={() => toggleEditingModelProvider(pid)} className="px-2 py-1 rounded text-[11px] border" style={{ borderColor: 'var(--border-color)', color: 'var(--color-error)' }}>移除</button></div></div>)}{!(Array.isArray(editingModelDraft.providers) ? editingModelDraft.providers : []).length && <div className="px-3 py-6 rounded-lg border text-center text-xs" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>当前模型还没有绑定任何供应商</div>}</div>
-                  <div className="flex flex-wrap gap-2">{Object.keys(genProvidersObj || {}).map(pid => { const active = (Array.isArray(editingModelDraft.providers) ? editingModelDraft.providers : []).includes(pid); return <button key={pid} type="button" onClick={() => toggleEditingModelProvider(pid)} className={`px-2.5 py-1.5 rounded-lg text-xs border font-mono ${active ? 'text-white border-transparent' : ''}`} style={active ? { background: 'var(--accent)' } : { borderColor: 'var(--border-color)', color: 'var(--text-primary)', background: 'var(--bg-primary)' }}>{pid}</button> })}</div>
+                  <div className="text-[11px] mb-2" style={{ color: 'var(--text-secondary)' }}>拖拽调整优先级（越靠前越优先）；点击下方按钮添加/移除。</div>
+                  <div className="space-y-2 mb-3">
+                    {(Array.isArray(editingModelDraft.providers) ? editingModelDraft.providers : []).map((pid, idx) => (
+                      <div
+                        key={pid}
+                        draggable
+                        onDragStart={() => setDraggingModelProviderId(pid)}
+                        onDragEnd={() => setDraggingModelProviderId('')}
+                        onDragOver={e => e.preventDefault()}
+                        onDrop={() => { reorderEditingModelProviders(draggingModelProviderId, pid); setDraggingModelProviderId('') }}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg border"
+                        style={{ borderColor: draggingModelProviderId === pid ? 'var(--accent)' : 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)', opacity: draggingModelProviderId === pid ? 0.6 : 1 }}
+                      >
+                        <span className="text-xs font-mono w-5 text-center shrink-0" style={{ color: 'var(--text-secondary)' }}>{idx + 1}</span>
+                        <span className="text-[10px] cursor-grab select-none shrink-0" style={{ color: 'var(--text-secondary)' }}>⣿</span>
+                        <span className="flex-1 font-mono text-sm truncate">{pid}</span>
+                        <span className="text-[10px] shrink-0" style={{ color: 'var(--text-secondary)' }}>{genProvidersObj?.[pid]?.type || '?'}</span>
+                        <button type="button" onClick={() => toggleEditingModelProvider(pid)} className="px-2 py-1 rounded text-[11px] border shrink-0" style={{ borderColor: 'var(--border-color)', color: 'var(--color-error)' }}>移除</button>
+                      </div>
+                    ))}
+                    {!(Array.isArray(editingModelDraft.providers) ? editingModelDraft.providers : []).length && (
+                      <div className="px-3 py-6 rounded-lg border text-center text-xs" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>未绑定任何供应商</div>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.keys(genProvidersObj || {}).map(pid => {
+                      const active = (Array.isArray(editingModelDraft.providers) ? editingModelDraft.providers : []).includes(pid)
+                      return (
+                        <button key={pid} type="button" onClick={() => toggleEditingModelProvider(pid)}
+                          className={`px-2.5 py-1.5 rounded-lg text-xs border font-mono ${active ? 'text-white border-transparent' : ''}`}
+                          style={active ? { background: 'var(--accent)' } : { borderColor: 'var(--border-color)', color: 'var(--text-primary)', background: 'var(--bg-primary)' }}>
+                          {pid}
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
-                <input type="text" value={(Array.isArray(editingModelDraft.providers) ? editingModelDraft.providers : []).join(',')} onChange={e => setEditingModelDraft(prev => ({ ...prev, providers: (e.target.value || '').split(',').map(s => s.trim()).filter(Boolean) }))} placeholder="也可直接手填，如 wuyin-main,wuyin-backup" className="w-full mt-2 px-3 py-2 rounded-lg text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
             </div>
             <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--border-color)' }}>

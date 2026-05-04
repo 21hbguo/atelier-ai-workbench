@@ -129,6 +129,24 @@ def _request_token(credentials: Optional[HTTPAuthorizationCredentials], request:
     if request:
         return request.cookies.get(ACCESS_COOKIE_NAME)
     return None
+def _optional_user_from_refresh(request: Optional[Request]) -> Optional[dict]:
+    if not request:
+        return None
+    refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
+    if not refresh_token:
+        return None
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT rt.user_id,u.username,u.nickname,u.is_admin,u.is_frozen,u.points,rt.expires_at FROM auth_refresh_tokens rt JOIN users u ON rt.user_id=u.id WHERE rt.token_hash=%s AND rt.revoked_at IS NULL",
+            (_hash_refresh_token(refresh_token),),
+        ).fetchone()
+        if not row:
+            return None
+        item = dict(row)
+        if item["is_frozen"] or str(item["expires_at"]) < now:
+            return None
+        return {"user_id": item["user_id"], "username": item["username"], "nickname": item["nickname"], "is_admin": bool(item["is_admin"]), "points": item["points"]}
 
 
 def get_current_user(request: Request, credentials: Optional[HTTPAuthorizationCredentials] = Security(security)) -> dict:
@@ -150,11 +168,11 @@ def get_current_user(request: Request, credentials: Optional[HTTPAuthorizationCr
 def get_optional_user(request: Request, credentials: Optional[HTTPAuthorizationCredentials] = Security(security)) -> Optional[dict]:
     token = _request_token(credentials, request)
     if not token:
-        return None
+        return _optional_user_from_refresh(request)
     try:
         return get_current_user(request, credentials)
     except HTTPException:
-        return None
+        return _optional_user_from_refresh(request)
 
 
 def require_admin(user: dict = Depends(get_current_user)) -> dict:
