@@ -177,7 +177,6 @@ async def proxy_thumbnail(url: str = Query(...), size: int = Query(400, ge=50, l
         raise HTTPException(status_code=400, detail="无法解析域名")
 
     url_hash = hashlib.md5(url.encode()).hexdigest()[:12]
-    ext = url.split('.')[-1].split('?')[0][:4]
     thumb_name = f"{size}_{url_hash}.webp"
     thumb_path = THUMBS_DIR / thumb_name
 
