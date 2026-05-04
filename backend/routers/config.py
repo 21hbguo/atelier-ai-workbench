@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
-from backend.config import get_config, update_config, get_generation_models, get_generation_providers, get_default_model_id, get_recharge_packages
+from backend.config import get_config, update_config, get_generation_models, get_generation_providers, get_default_model_id, get_recharge_packages, get_llm_config
 from backend.auth import get_current_user, get_optional_user, require_admin
 from backend.services.gen_gateway import GenGateway
 
@@ -40,6 +40,12 @@ class ConfigUpdate(BaseModel):
     smtp_password: Optional[str] = None
     smtp_sender: Optional[str] = None
     smtp_sender_name: Optional[str] = None
+    llm_base_url: Optional[str] = None
+    llm_api_key: Optional[str] = None
+    llm_model: Optional[str] = None
+    llm_max_tokens: Optional[int] = Field(None, ge=100, le=10000)
+    llm_timeout_seconds: Optional[int] = Field(None, ge=5, le=120)
+    prompt_optimize_enabled: Optional[bool] = None
 
 
 @router.get("")
@@ -49,6 +55,7 @@ async def get_runtime_config(user=Depends(get_optional_user)):
         cfg["api_key"] = "***" if cfg.get("api_key") else ""
         cfg["github_hosting_token"] = "***" if cfg.get("github_hosting_token") else ""
         cfg["smtp_password"] = "***" if cfg.get("smtp_password") else ""
+        cfg["llm_api_key"] = "***" if cfg.get("llm_api_key") else ""
         return cfg
     return {
         "register_enabled": bool(cfg.get("register_enabled", True)),
@@ -66,6 +73,7 @@ async def get_runtime_config_admin(admin=Depends(require_admin)):
     cfg["api_key"] = "***" if cfg.get("api_key") else ""
     cfg["github_hosting_token"] = "***" if cfg.get("github_hosting_token") else ""
     cfg["smtp_password"] = "***" if cfg.get("smtp_password") else ""
+    cfg["llm_api_key"] = "***" if cfg.get("llm_api_key") else ""
     cfg["recharge_packages"] = get_recharge_packages()
     return cfg
 
@@ -77,6 +85,8 @@ async def update_runtime_config(body: ConfigUpdate, admin=Depends(require_admin)
         del updates["github_hosting_token"]
     if updates.get("smtp_password") == "***":
         del updates["smtp_password"]
+    if updates.get("llm_api_key") == "***":
+        del updates["llm_api_key"]
     update_config(updates)
     return {"status": "ok"}
 

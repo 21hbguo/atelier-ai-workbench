@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
-import { Paperclip, X, Settings, Send, Maximize2, Share2, Loader2 } from 'lucide-react'
+import { Paperclip, X, Settings, Send, Maximize2, Share2, Loader2, Sparkles } from 'lucide-react'
 import ParamPanel from './ParamPanel'
+import { promptOptimizeAPI } from '../api'
 import { getCachedImages, setCachedImages, getPendingImage, clearPendingImage } from '../utils/imageDB'
 
 function getImageExt(type, name = '') {
@@ -25,6 +26,9 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const [params, setParams] = useState({ size: 'auto', model_id: 'image-default', roll_count: 5 })
   const [shareToSquare, setShareToSquare] = useState(true)
   const [lightbox, setLightbox] = useState(null)
+  const [optimizeLoading, setOptimizeLoading] = useState(false)
+  const [optimizeResults, setOptimizeResults] = useState(null)
+  const [showOptimizeOverlay, setShowOptimizeOverlay] = useState(false)
   const fileRef = useRef(null)
   const textareaRef = useRef(null)
   const paramsStatePushedRef = useRef(false)
@@ -267,6 +271,31 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     input.click()
   }, [])
 
+  const handleOptimize = useCallback(async () => {
+    if (!prompt.trim() || optimizeLoading) return
+    setOptimizeLoading(true)
+    try {
+      const { data } = await promptOptimizeAPI.optimize(prompt.trim())
+      setOptimizeResults(data)
+      setShowOptimizeOverlay(true)
+    } catch (e) {
+      alert(e.message || '优化失败，请重试')
+    } finally {
+      setOptimizeLoading(false)
+    }
+  }, [prompt, optimizeLoading])
+
+  const handleSelectOptimized = useCallback((text) => {
+    setPrompt(text)
+    setShowOptimizeOverlay(false)
+    setOptimizeResults(null)
+  }, [])
+
+  const handleDismissOptimize = useCallback(() => {
+    setShowOptimizeOverlay(false)
+    setOptimizeResults(null)
+  }, [])
+
   useImperativeHandle(ref, () => ({
     addFiles(files) { handleFiles(files) },
     setPrompt(text) { setPrompt(text) },
@@ -308,7 +337,23 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
 
   return (
     <>
-      <div className="w-full px-4 pt-2 pb-2">
+      <div className="w-full px-4 pt-2 pb-2 relative">
+        {showOptimizeOverlay && optimizeResults && (
+          <div className="absolute bottom-full left-0 right-0 mb-2 mx-2 rounded-xl border p-3 z-30" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-lg)' }}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>AI 优化结果（点击选择）</span>
+              <button onClick={handleDismissOptimize} className="p-0.5 rounded hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}><X size={14} /></button>
+            </div>
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {optimizeResults.versions.map((v, i) => (
+                <button key={i} onClick={() => handleSelectOptimized(v)} className="w-full text-left p-2.5 rounded-lg border transition-colors hover:border-[var(--accent)]" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
+                  <span className="text-[10px] font-medium block mb-1" style={{ color: 'var(--accent)' }}>版本 {i + 1}</span>
+                  <span className="text-xs leading-relaxed" style={{ color: 'var(--text-primary)' }}>{v}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div
           className="rounded-2xl border transition-all duration-300"
           style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-md)', position: 'relative' }}
@@ -338,6 +383,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
                 <button type="button" onClick={openFilePicker} title="上传参考图" className="inline-flex items-center gap-1 px-1.5 py-2 rounded-lg hover:bg-bg-hover transition-colors text-xs font-medium" style={{ color: 'var(--text-secondary)' }}><Paperclip size={16} /><span>参考图</span></button>
                 <button onClick={toggleParams} title="参数设置" className="inline-flex items-center gap-1 px-1.5 py-2 rounded-lg hover:bg-bg-hover transition-colors text-xs font-medium" style={{ color: showParams ? 'var(--accent)' : 'var(--text-secondary)' }}><Settings size={15} /><span>参数</span></button>
                 <button onClick={() => setShareToSquare(!shareToSquare)} className="inline-flex items-center gap-1 px-1.5 py-2 rounded-lg hover:bg-bg-hover transition-colors relative text-xs font-medium" style={{ color: shareToSquare ? 'var(--color-success)' : 'var(--text-secondary)' }} title={shareToSquare ? '已开启分享到广场' : '已关闭分享到广场'}><Share2 size={15} /><span>分享</span><span className="absolute -right-0.5 -top-0.5 w-1.5 h-1.5 rounded-full" style={{ background: shareToSquare ? 'var(--color-success)' : 'var(--border-color)' }} /></button>
+                <button onClick={handleOptimize} disabled={!prompt.trim() || loading || optimizeLoading} title="AI 优化提示词" className="inline-flex items-center gap-1 px-1.5 py-2 rounded-lg hover:bg-bg-hover transition-colors text-xs font-medium disabled:opacity-40" style={{ color: 'var(--accent)' }}>{optimizeLoading ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}<span>优化</span></button>
               </div>
               <div className="min-w-0 flex items-center justify-end gap-1 flex-1">
                 {loading && <span className="inline-flex items-center gap-1 text-[10px] flex-shrink-0" style={{ color: 'var(--accent)' }}><Loader2 size={11} className="animate-spin" /><span>{images.length > 0 ? '上传并提交中' : '提交中'}</span></span>}

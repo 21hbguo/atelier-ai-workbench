@@ -69,6 +69,10 @@ export const promptAPI = {
 
 export const statsAPI = { get: () => api.get('/stats'), system: () => api.get('/stats/system'), daily: () => api.get('/stats/daily'), users: () => api.get('/stats/users') }
 
+export const promptOptimizeAPI = {
+  optimize: prompt => api.post('/prompt/optimize', { prompt }, { timeout: 60000 }),
+}
+
 export const authAPI = {
   register: data => api.post('/auth/register', data),
   login: data => api.post('/auth/login', data),

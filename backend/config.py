@@ -82,6 +82,12 @@ _runtime_config = {
     "smtp_password": os.getenv("SMTP_PASSWORD", ""),
     "smtp_sender": os.getenv("SMTP_SENDER", ""),
     "smtp_sender_name": os.getenv("SMTP_SENDER_NAME", "Atelier·AI造梦工坊"),
+    "llm_base_url": os.getenv("LLM_BASE_URL", "https://token-plan-cn.xiaomimimo.com/anthropic"),
+    "llm_api_key": os.getenv("LLM_API_KEY", "REDACTED_API_KEY"),
+    "llm_model": os.getenv("LLM_MODEL", "mimo-v2.5"),
+    "llm_max_tokens": int(os.getenv("LLM_MAX_TOKENS", "2000")),
+    "llm_timeout_seconds": int(os.getenv("LLM_TIMEOUT_SECONDS", "30")),
+    "prompt_optimize_enabled": os.getenv("PROMPT_OPTIMIZE_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
 }
 _runtime_config_defaults = dict(_runtime_config)
 if not _runtime_config["generation_models"]:
@@ -217,6 +223,17 @@ def get_smtp_config():
         "password": _runtime_config.get("smtp_password", ""),
         "sender": _runtime_config.get("smtp_sender", ""),
         "sender_name": _runtime_config.get("smtp_sender_name", "Atelier·AI造梦工坊"),
+    }
+
+
+def get_llm_config():
+    return {
+        "base_url": _runtime_config.get("llm_base_url", "https://token-plan-cn.xiaomimimo.com/anthropic"),
+        "api_key": _runtime_config.get("llm_api_key", ""),
+        "model": _runtime_config.get("llm_model", "mimo-v2.5"),
+        "max_tokens": int(_runtime_config.get("llm_max_tokens", 2000)),
+        "timeout_seconds": int(_runtime_config.get("llm_timeout_seconds", 30)),
+        "enabled": bool(_runtime_config.get("prompt_optimize_enabled", True)),
     }
 
 

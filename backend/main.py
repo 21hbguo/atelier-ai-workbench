@@ -5,8 +5,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from backend.routers import generate, upload, tasks, images, prompts, stats, config, auth, square, admin, points, announcements, notifications, account, shares, favorites
+from backend.routers import generate, upload, tasks, images, prompts, stats, config, auth, square, admin, points, announcements, notifications, account, shares, favorites, prompt_optimize
 from backend.services.image_gen import close_http_client
+from backend.services.prompt_optimizer import PromptOptimizer
 from backend.services.task_manager import TaskManager
 from backend.services.image_expiry import expiry_cleanup_loop
 
@@ -26,6 +27,7 @@ async def lifespan(app: FastAPI):
         except BaseException:
             pass
     await close_http_client()
+    await PromptOptimizer.close()
 
 
 app = FastAPI(title="AI Image Generator", version="1.0.0", lifespan=lifespan)
@@ -70,6 +72,7 @@ app.include_router(account.router)
 app.include_router(shares.api_router)
 app.include_router(shares.router)
 app.include_router(favorites.router)
+app.include_router(prompt_optimize.router)
 
 
 @app.get("/api/health")
