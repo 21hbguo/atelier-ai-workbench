@@ -18,6 +18,7 @@ import { readUser } from '../auth'
 import { useAppDialog } from '../components/AppDialogProvider'
 
 const nowFinanceTime=()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');return`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`}
+const defaultRechargePackages=[{amount:9.9,points:120,label:'体验包'},{amount:29.9,points:400,label:'进阶包'},{amount:59.9,points:900,label:'超值包'}]
 
 export default function AdminPage() {
   const dialog = useAppDialog()
@@ -92,7 +93,7 @@ export default function AdminPage() {
   const [newTitle, setNewTitle] = useState('')
   const [newContent, setNewContent] = useState('')
   const [creatingAnnouncement, setCreatingAnnouncement] = useState(false)
-  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', register_enabled: true, image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', recharge_packages_text: '[\n  {\n    \"amount\": 9.9,\n    \"points\": 120,\n    \"label\": \"体验包\"\n  }\n]', generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3, github_hosting_enabled: false, github_hosting_repo: '', github_hosting_token: '', github_hosting_branch: 'main' })
+  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', register_enabled: true, image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', recharge_packages: defaultRechargePackages, generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3, github_hosting_enabled: false, github_hosting_repo: '', github_hosting_token: '', github_hosting_branch: 'main' })
   const [configSaving, setConfigSaving] = useState(false)
   const [defaultModelId, setDefaultModelId] = useState('image-default')
   const [generationModelsText, setGenerationModelsText] = useState('{}')
@@ -198,7 +199,7 @@ export default function AdminPage() {
         wechat_pay_qr_url: data.wechat_pay_qr_url || '',
         alipay_pay_qr_url: data.alipay_pay_qr_url || '',
         manual_recharge_notice: data.manual_recharge_notice || '',
-        recharge_packages_text: JSON.stringify(Array.isArray(data.recharge_packages) && data.recharge_packages.length ? data.recharge_packages : [{ amount: 9.9, points: 120, label: '体验包' }, { amount: 29.9, points: 400, label: '进阶包' }, { amount: 59.9, points: 900, label: '超值包' }], null, 2),
+        recharge_packages: Array.isArray(data.recharge_packages) && data.recharge_packages.length ? data.recharge_packages.map(item => ({ amount: item.amount, points: item.points, label: item.label })) : defaultRechargePackages.map(item => ({ ...item })),
         generate_concurrent_limit_per_user: Number(data.generate_concurrent_limit_per_user || 10),
         points_cost_per_generation: Number(data.points_cost_per_generation || 10),
         points_checkin_reward: Number(data.points_checkin_reward || 10),
@@ -315,6 +316,9 @@ export default function AdminPage() {
   const handleEditFinanceRule = (rule) => setFinanceRuleDraft({ id: rule.id, provider_id: rule.provider_id, model_id: rule.model_id, quota_per_success: String(rule.quota_per_success ?? ''), enabled: rule.enabled !== false, remark: rule.remark || '' })
   const onConfigInput = (k, v) => setRuntimeConfig(prev => ({ ...prev, [k]: v }))
   const onConfigToggle = (k, v) => setRuntimeConfig(prev => ({ ...prev, [k]: v }))
+  const handleRechargePackageField = (idx, key, value) => setRuntimeConfig(prev => ({ ...prev, recharge_packages: (Array.isArray(prev.recharge_packages) ? prev.recharge_packages : []).map((item, i) => i === idx ? { ...item, [key]: value } : item) }))
+  const handleAddRechargePackage = () => setRuntimeConfig(prev => { const list = Array.isArray(prev.recharge_packages) ? prev.recharge_packages : []; return { ...prev, recharge_packages: [...list, { amount: '', points: '', label: `套餐${list.length + 1}` }] } })
+  const handleDeleteRechargePackage = (idx) => setRuntimeConfig(prev => { const list = Array.isArray(prev.recharge_packages) ? prev.recharge_packages : []; return { ...prev, recharge_packages: list.length <= 1 ? list : list.filter((_, i) => i !== idx) } })
   const handleSaveConfig = async () => {
     const n = ['generate_concurrent_limit_per_user', 'points_cost_per_generation', 'points_checkin_reward', 'points_register_bonus', 'points_migration_amount', 'login_rate_limit_per_minute_per_ip', 'register_rate_limit_per_minute_per_ip']
     const payload = { ...runtimeConfig }
@@ -323,7 +327,7 @@ export default function AdminPage() {
     for (const k of n) payload[k] = Number(payload[k])
     if (payload.generate_concurrent_limit_per_user < 1 || payload.points_cost_per_generation < 1 || payload.login_rate_limit_per_minute_per_ip < 1 || payload.register_rate_limit_per_minute_per_ip < 1 || payload.points_checkin_reward < 0 || payload.points_register_bonus < 0 || payload.points_migration_amount < 0) { dialog.alert('限制配置不合法'); return }
     try {
-      recharge_packages = JSON.parse(payload.recharge_packages_text || '[]')
+      recharge_packages = Array.isArray(payload.recharge_packages) ? payload.recharge_packages : []
       if (!Array.isArray(recharge_packages) || !recharge_packages.length) throw new Error('充值套餐需要 JSON 数组且至少保留一项')
       recharge_packages = recharge_packages.map((item, idx) => {
         if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error(`充值套餐第 ${idx + 1} 项不是对象`)
@@ -349,7 +353,6 @@ export default function AdminPage() {
       }
     }
     payload.recharge_packages = recharge_packages
-    delete payload.recharge_packages_text
     payload.generation_models = generation_models
     payload.generation_providers = generation_providers
     setConfigSaving(true)
@@ -1152,9 +1155,21 @@ export default function AdminPage() {
                 <textarea value={runtimeConfig.manual_recharge_notice} onChange={e => onConfigInput('manual_recharge_notice', e.target.value)} rows={3} className="w-full px-3 py-2 rounded-lg text-sm border resize-none outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
               <div className="mt-3">
-                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>充值套餐(JSON数组)</label>
-                <textarea value={runtimeConfig.recharge_packages_text} onChange={e => onConfigInput('recharge_packages_text', e.target.value)} rows={10} className="w-full px-3 py-2 rounded-lg text-xs border resize-none outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
-                <div className="text-[11px] mt-1" style={{ color: 'var(--text-secondary)' }}>{'[{"amount":9.9,"points":120,"label":"体验包"}]'}</div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs" style={{ color: 'var(--text-secondary)' }}>充值套餐</label>
+                  <button type="button" onClick={handleAddRechargePackage} className="px-2 py-1 rounded text-xs font-medium border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>新增套餐</button>
+                </div>
+                <div className="space-y-2">
+                  {(Array.isArray(runtimeConfig.recharge_packages) ? runtimeConfig.recharge_packages : []).map((item, idx) => (
+                    <div key={`pkg:${idx}`} className="grid grid-cols-12 gap-2 items-center">
+                      <input type="text" value={item.label ?? ''} onChange={e => handleRechargePackageField(idx, 'label', e.target.value)} placeholder="套餐标题" className="col-span-4 px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                      <input type="number" min="0" step="0.01" value={item.amount ?? ''} onChange={e => handleRechargePackageField(idx, 'amount', e.target.value)} placeholder="金额" className="col-span-3 px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                      <input type="number" min="0" step="1" value={item.points ?? ''} onChange={e => handleRechargePackageField(idx, 'points', e.target.value)} placeholder="积分" className="col-span-4 px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                      <button type="button" onClick={() => handleDeleteRechargePackage(idx)} disabled={(Array.isArray(runtimeConfig.recharge_packages) ? runtimeConfig.recharge_packages.length : 0) <= 1} className="col-span-1 inline-flex items-center justify-center h-10 rounded-lg border disabled:opacity-40" style={{ borderColor: 'var(--border-color)', color: 'var(--color-error)' }}><Trash2 size={14} /></button>
+                    </div>
+                  ))}
+                </div>
+                <div className="text-[11px] mt-1" style={{ color: 'var(--text-secondary)' }}>每项填写：套餐标题、支付金额、到账积分。</div>
               </div>
             </div>
             <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
