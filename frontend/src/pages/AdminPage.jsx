@@ -143,6 +143,18 @@ export default function AdminPage() {
   useEffect(() => { if (tab === 'recharge') fetchRechargeRequests() }, [tab, codesPage, codesSort, codesOrder, rechargeStatusFilter])
   useEffect(() => { if (tab === 'announcements') fetchAnnouncements() }, [tab, announcementPage])
   useEffect(() => { if (tab === 'config' || tab === 'finance') fetchRuntimeConfig() }, [tab])
+  useEffect(() => {
+    if (!editingModelId) return
+    const m = genModelsObj[editingModelId]
+    if (!m) { setEditingModelId(''); return }
+    setEditingModelDraft(prev => ({ ...prev, enabled: m.enabled !== false }))
+  }, [editingModelId, genModelsObj])
+  useEffect(() => {
+    if (!editingProviderId) return
+    const p = genProvidersObj[editingProviderId]
+    if (!p) { setEditingProviderId(''); return }
+    setEditingProviderDraft(prev => ({ ...prev, enabled: p.enabled !== false }))
+  }, [editingProviderId, genProvidersObj])
   useEffect(() => { if (tab === 'finance') fetchFinanceOverview() }, [tab, financeRange])
   useEffect(() => { if (tab === 'finance') fetchFinanceProviders() }, [tab, financeRange])
   useEffect(() => { if (tab === 'finance') fetchFinancePurchases() }, [tab, financePurchasePage, financeProviderFilter])
