@@ -9,7 +9,7 @@ import UnifiedDetailModal from '../components/UnifiedDetailModal'
 import CategoryFilter from '../components/CategoryFilter'
 import { useCardData } from '../hooks/useCardData'
 import { useLayoutMode } from '../LayoutModeContext'
-import { normalizeList, normalizePrompt } from '../utils/cardAdapter'
+import { normalizeList, normalizePrompt, normalizeImage } from '../utils/cardAdapter'
 import { readUser } from '../auth'
 import { useAppDialog } from '../components/AppDialogProvider'
 
@@ -554,6 +554,10 @@ function SharedTab({ refreshTrigger, layoutMode }) {
   const [detailIdx, setDetailIdx] = useState(null)
   const { handleUsePrompt, handleUseImage } = useImageActions()
   const dialog = useAppDialog()
+  const normalizeMixedItems = useCallback(items => (items || []).map(raw => {
+    const base = raw?._mix_type === 'prompt' ? normalizePrompt(raw) : normalizeImage(raw)
+    return { ...base, _isMyShare: !!raw?.is_my_share, _mixCreatedAt: raw?.mix_created_at || raw?.favorite_created_at || raw?.created_at || '', _raw: { ...base._raw, is_my_share: !!raw?.is_my_share, mix_created_at: raw?.mix_created_at || raw?.favorite_created_at || raw?.created_at || '' } }
+  }), [])
 
   const deps = useMemo(() => [subTab, refreshTrigger], [subTab, refreshTrigger])
   const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike, handleFavorite } = useCardData({
@@ -561,7 +565,8 @@ function SharedTab({ refreshTrigger, layoutMode }) {
     pageSize: 20,
     apiFn: async (p, s) => {
       if (subTab === 'my-shares') {
-        return squareAPI.my(p, s)
+        const { data } = await squareAPI.my(p, s)
+        return { data: { images: normalizeList(data.images || [], 'image').map(x => ({ ...x, _isMyShare: true, _mixCreatedAt: x.createdAt || '', _raw: { ...x._raw, is_my_share: true, mix_created_at: x.createdAt || '' } })), total: data.total || 0 } }
       }
       if (subTab === 'prompt') {
         const { data } = await favoriteAPI.list('prompt', p, s)
@@ -571,18 +576,15 @@ function SharedTab({ refreshTrigger, layoutMode }) {
         const { data } = await favoriteAPI.list('image', p, s)
         return { data: { images: normalizeList(data.images || [], 'image'), total: data.total || 0 } }
       }
-      const { data } = await favoriteAPI.list('all', p, s)
-      const images = normalizeList(data.images || [], 'image').map(x => ({ ...x, _favCreatedAt: x._raw.favorite_created_at || '' }))
-      const prompts = normalizeList(data.prompts || [], 'prompt').map(x => ({ ...x, _favCreatedAt: x._raw.favorite_created_at || '' }))
-      const mixed = [...images, ...prompts].sort((a, b) => String(b._favCreatedAt).localeCompare(String(a._favCreatedAt)))
-      return { data: { images: mixed, total: data.total || 0 } }
+      const { data } = await squareAPI.shared(p, s)
+      return { data: { images: normalizeMixedItems(data.images || []), total: data.total || 0 } }
     },
     deps,
     atomicPaging: true,
     preloadCount: 12,
     preloadTimeoutMs: 900,
     mapCards: items => items,
-    removeOnUnfavorite: subTab !== 'my-shares',
+    removeOnUnfavorite: subTab === 'all' ? card => !card._isMyShare : subTab !== 'my-shares',
   })
   const totalPages = Math.ceil(total / 20)
 
@@ -608,7 +610,7 @@ function SharedTab({ refreshTrigger, layoutMode }) {
       {detailIdx !== null && cards[detailIdx] && (
         <UnifiedDetailModal card={cards[detailIdx]} cards={cards} currentIndex={detailIdx} onNavigate={setDetailIdx} onClose={() => setDetailIdx(null)}
           onFavorite={subTab === 'my-shares' ? undefined : async (id) => { const targetId = cards[detailIdx]?.id; setDetailIdx(null); const ok = await handleFavorite(id); if (!ok && targetId) { const idx = cards.findIndex(c => c.id === targetId); if (idx >= 0) setDetailIdx(idx) } }}
-          onUnshare={subTab === 'my-shares' || (subTab === 'all' && cards[detailIdx]?._raw?.user_id) ? handleUnshare : undefined}
+          onUnshare={cards[detailIdx]?._isMyShare ? handleUnshare : undefined}
           onUsePrompt={handleUsePrompt} onUseImage={handleUseImage}
           title={subTab === 'my-shares' ? '我的作品' : '收藏详情'} hideDownload />
       )}

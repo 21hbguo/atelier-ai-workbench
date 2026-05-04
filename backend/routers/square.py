@@ -5,7 +5,7 @@ from backend.database import get_db
 from backend.auth import get_current_user, get_optional_user
 from backend.services.image_expiry import mark_image_permanent
 from backend.services.favorite_service import FavoriteService
-from backend.config import GENERATED_IMAGES_DIR
+from backend.config import GENERATED_IMAGES_DIR, EVO_IMAGES_DIR
 from backend.services.image_dimensions import get_image_dimensions
 
 router = APIRouter(prefix="/api/square", tags=["square"])
@@ -118,6 +118,119 @@ async def list_square_images(
         return {"images": images, "total": total, "page": page, "size": size}
 
 
+@router.get("/shared")
+async def list_shared_items(
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    user=Depends(get_current_user),
+):
+    with get_db() as conn:
+        uid = user["user_id"]
+        offset = (page - 1) * size
+        total = conn.execute(
+            """
+            SELECT COUNT(*) AS cnt FROM (
+                SELECT target_type, target_id FROM favorites WHERE user_id = %s
+                UNION
+                SELECT 'image' AS target_type, id::text AS target_id FROM square_images WHERE user_id = %s
+            ) t
+            """,
+            (uid, uid),
+        ).fetchone()["cnt"]
+        refs = conn.execute(
+            """
+            SELECT target_type, target_id, sort_at, is_my_share, is_favorited FROM (
+                SELECT target_type, target_id, MAX(sort_at) AS sort_at, BOOL_OR(is_my_share) AS is_my_share, BOOL_OR(is_favorited) AS is_favorited
+                FROM (
+                    SELECT f.target_type, f.target_id, f.created_at AS sort_at, FALSE AS is_my_share, TRUE AS is_favorited
+                    FROM favorites f
+                    WHERE f.user_id = %s
+                    UNION ALL
+                    SELECT 'image' AS target_type, si.id::text AS target_id, si.created_at AS sort_at, TRUE AS is_my_share,
+                           EXISTS(SELECT 1 FROM favorites f WHERE f.user_id = %s AND f.target_type = 'image' AND f.target_id = si.id::text) AS is_favorited
+                    FROM square_images si
+                    WHERE si.user_id = %s
+                ) s
+                GROUP BY target_type, target_id
+            ) t
+            ORDER BY sort_at DESC, target_type DESC, target_id DESC
+            LIMIT %s OFFSET %s
+            """,
+            (uid, uid, uid, size, offset),
+        ).fetchall()
+        image_ids = [int(r["target_id"]) for r in refs if r["target_type"] == "image" and str(r["target_id"]).isdigit()]
+        prompt_ids = [str(r["target_id"]) for r in refs if r["target_type"] == "prompt"]
+        favorited_image_ids = [str(r["target_id"]) for r in refs if r["target_type"] == "image" and r["is_favorited"]]
+        favorited_prompt_ids = [str(r["target_id"]) for r in refs if r["target_type"] == "prompt" and r["is_favorited"]]
+        image_fixed_ids = FavoriteService.ensure_like_links(uid, "image", favorited_image_ids, conn=conn) if favorited_image_ids else set()
+        prompt_fixed_ids = FavoriteService.ensure_like_links(uid, "prompt", favorited_prompt_ids, conn=conn) if favorited_prompt_ids else set()
+        image_liked_ids = set()
+        prompt_liked_ids = set()
+        if image_ids:
+            placeholders = ",".join("%s" for _ in image_ids)
+            image_liked_ids = {str(r["image_id"]) for r in conn.execute(f"SELECT image_id FROM square_likes WHERE user_id = %s AND image_id IN ({placeholders})", [uid, *image_ids]).fetchall()} | image_fixed_ids
+        if prompt_ids:
+            placeholders = ",".join("%s" for _ in prompt_ids)
+            prompt_liked_ids = {str(r["prompt_id"]) for r in conn.execute(f"SELECT prompt_id FROM prompt_likes WHERE user_id = %s AND prompt_id IN ({placeholders})", [uid, *prompt_ids]).fetchall()} | prompt_fixed_ids
+        image_map = {}
+        prompt_map = {}
+        if image_ids:
+            placeholders = ",".join("%s" for _ in image_ids)
+            rows = conn.execute(
+                f"""
+                SELECT si.*, u.username, u.nickname, u.avatar
+                FROM square_images si
+                JOIN users u ON si.user_id = u.id
+                WHERE si.id IN ({placeholders}) AND (si.user_id = %s OR COALESCE(si.is_frozen, FALSE) = FALSE)
+                """,
+                [*image_ids, uid],
+            ).fetchall()
+            for row in rows:
+                import json
+                item = dict(row)
+                if isinstance(item["metadata"], str):
+                    item["metadata"] = json.loads(item["metadata"]) if item["metadata"] else None
+                if str(item["id"]) in image_fixed_ids:item["likes_count"]=(item.get("likes_count") or 0)+1
+                item["is_liked"] = str(item["id"]) in image_liked_ids
+                width,height=get_image_dimensions(str(GENERATED_IMAGES_DIR / item["filename"]))
+                item["width"]=width
+                item["height"]=height
+                image_map[str(item["id"])] = item
+        if prompt_ids:
+            placeholders = ",".join("%s" for _ in prompt_ids)
+            rows = conn.execute(
+                f"""
+                SELECT p.*, u.username, u.nickname, cat.label AS category_label
+                FROM prompts p
+                LEFT JOIN users u ON p.user_id = u.id
+                LEFT JOIN categories cat ON p.category = cat.slug
+                WHERE p.id IN ({placeholders}) AND COALESCE(p.is_frozen, FALSE) = FALSE
+                """,
+                prompt_ids,
+            ).fetchall()
+            for row in rows:
+                item = dict(row)
+                if str(item["id"]) in prompt_fixed_ids:item["likes_count"]=(item.get("likes_count") or 0)+1
+                item["is_liked"] = str(item["id"]) in prompt_liked_ids
+                if item.get("image_path"):
+                    width,height=get_image_dimensions(str(EVO_IMAGES_DIR / item["image_path"]))
+                    item["width"]=width
+                    item["height"]=height
+                prompt_map[str(item["id"])] = item
+        items = []
+        for ref in refs:
+            tid = str(ref["target_id"])
+            item = image_map.get(tid) if ref["target_type"] == "image" else prompt_map.get(tid)
+            if not item:
+                continue
+            item["is_favorited"] = bool(ref["is_favorited"])
+            item["is_my_share"] = bool(ref["is_my_share"])
+            item["mix_created_at"] = ref["sort_at"]
+            item["_mix_type"] = ref["target_type"]
+            items.append(item)
+        return {"images": items, "total": total, "page": page, "size": size}
+
+
 @router.post("/like")
 async def toggle_like(image_id: int, user=Depends(get_current_user)):
     with get_db() as conn:
@@ -163,7 +276,7 @@ async def my_shares(
         ).fetchone()["cnt"]
 
         rows = conn.execute(
-            "SELECT * FROM square_images WHERE user_id = %s ORDER BY created_at DESC LIMIT %s OFFSET %s",
+            "SELECT si.*, u.username, u.nickname, u.avatar FROM square_images si JOIN users u ON si.user_id = u.id WHERE si.user_id = %s ORDER BY si.created_at DESC LIMIT %s OFFSET %s",
             (user["user_id"], size, offset),
         ).fetchall()
 

@@ -96,16 +96,17 @@ export function useCardData({ type, apiFn, pageSize = 20, deps = [], atomicPagin
     const cardIndex = cards.findIndex(c => c.id === id)
     const card = cardIndex >= 0 ? cards[cardIndex] : null
     if (!card) return
+    const shouldRemoveOnUnfavorite = typeof removeOnUnfavorite === 'function' ? removeOnUnfavorite(card) : !!removeOnUnfavorite
     const nextFavorited = !card.isFavorited
     const nextLiked = nextFavorited ? true : card.isLiked
     const nextLikesCount = nextFavorited && !card.isLiked ? card.likesCount + 1 : card.likesCount
-    if (!removeOnUnfavorite || nextFavorited) setCards(prev => prev.map(c => c.id === id ? { ...c, isFavorited: nextFavorited, isLiked: nextLiked, likesCount: nextLikesCount } : c))
+    if (!shouldRemoveOnUnfavorite || nextFavorited) setCards(prev => prev.map(c => c.id === id ? { ...c, isFavorited: nextFavorited, isLiked: nextLiked, likesCount: nextLikesCount } : c))
     try {
       await favoriteAPI.toggle(card._type === 'image' ? 'image' : 'prompt', id)
-      if (removeOnUnfavorite && !nextFavorited) { setCards(prev => prev.filter(c => c.id !== id)); setTotal(prev => Math.max(0, prev - 1)) }
+      if (shouldRemoveOnUnfavorite && !nextFavorited) { setCards(prev => prev.filter(c => c.id !== id)); setTotal(prev => Math.max(0, prev - 1)) }
       return true
     } catch {
-      if (!removeOnUnfavorite || nextFavorited) setCards(prev => prev.map(c => c.id === id ? { ...c, isFavorited: card.isFavorited, isLiked: card.isLiked, likesCount: card.likesCount } : c))
+      if (!shouldRemoveOnUnfavorite || nextFavorited) setCards(prev => prev.map(c => c.id === id ? { ...c, isFavorited: card.isFavorited, isLiked: card.isLiked, likesCount: card.likesCount } : c))
       return false
     }
   }, [cards, removeOnUnfavorite])
