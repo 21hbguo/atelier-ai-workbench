@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Depends, Query
 from backend.database import get_db
-from backend.auth import require_admin, hash_password, validate_account
+from backend.auth import require_admin, hash_password, validate_account, build_user_payload
 from backend.services.task_manager import TaskManager
 from backend.services.banned_words import BannedWordsService
 from backend.services.image_mapping import ImageUrlMapping
@@ -98,7 +98,7 @@ async def finance_tasks(time_range: str = Query("30d", alias="range"), provider_
 
 @router.post("/users")
 async def create_user(body: dict, admin=Depends(require_admin)):
-    username = validate_account(body.get("username"))
+    username = validate_account(body.get("account"))
     password = (body.get("password") or "").strip()
     nickname = (body.get("nickname") or "").strip() or username
     if len(password) < 6 or len(password) > 50:
@@ -120,7 +120,7 @@ async def create_user(body: dict, admin=Depends(require_admin)):
         user["is_admin"] = bool(user.get("is_admin"))
         user["is_frozen"] = bool(user.get("is_frozen"))
         logger.info(f"[audit.admin_create_user] admin={admin['user_id']} user={user['id']} username={username}")
-        return {"message": "创建成功", "user": user}
+        return {"message": "创建成功", "user": build_user_payload({"id": user["id"], "account": user["username"], "nickname": user["nickname"], "is_admin": user["is_admin"], "points": user["points"]})}
 
 
 @router.get("/users")
@@ -178,6 +178,7 @@ async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
         users = []
         for row in rows:
             user = dict(row)
+            user["account"] = user.get("username", "")
             user["is_admin"] = bool(user.get("is_admin"))
             user["is_frozen"] = bool(user.get("is_frozen"))
             # 获取最近一次请求时间

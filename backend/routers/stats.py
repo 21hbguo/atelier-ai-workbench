@@ -99,6 +99,7 @@ async def get_user_stats(user=Depends(get_current_user)):
         users = []
         for row in rows:
             item = dict(row)
+            item["account"] = item.get("username", "")
             item["is_admin"] = bool(item.get("is_admin"))
             item["is_frozen"] = bool(item.get("is_frozen"))
             users.append(item)

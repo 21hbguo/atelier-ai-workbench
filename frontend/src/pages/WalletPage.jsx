@@ -54,7 +54,7 @@ setLoading(false)
 }
 useEffect(()=>{fetchData(page)},[page])
 useEffect(()=>{
-api.get('/config').then(({data})=>{const packages=Array.isArray(data.recharge_packages)&&data.recharge_packages.length?data.recharge_packages:defaultRechargePackages;setPayConfig({wechat_pay_qr_url:data.wechat_pay_qr_url||'',alipay_pay_qr_url:data.alipay_pay_qr_url||'',manual_recharge_notice:data.manual_recharge_notice||'请备注用户名并在下方提交支付凭证，审核通过后自动发放兑换码'});setRechargePackages(packages);setPackageIdx(0);setRechargeAmount(Number(packages[0]?.amount||defaultRechargePackages[0].amount));setRechargePoints(Number(packages[0]?.points||defaultRechargePackages[0].points))}).catch(()=>{})
+api.get('/config').then(({data})=>{const packages=Array.isArray(data.recharge_packages)&&data.recharge_packages.length?data.recharge_packages:defaultRechargePackages;setPayConfig({wechat_pay_qr_url:data.wechat_pay_qr_url||'',alipay_pay_qr_url:data.alipay_pay_qr_url||'',manual_recharge_notice:data.manual_recharge_notice||'请备注账号并在下方提交支付凭证，审核通过后自动发放兑换码'});setRechargePackages(packages);setPackageIdx(0);setRechargeAmount(Number(packages[0]?.amount||defaultRechargePackages[0].amount));setRechargePoints(Number(packages[0]?.points||defaultRechargePackages[0].points))}).catch(()=>{})
 },[])
 useEffect(()=>{
 pointsAPI.checkinStatus().then(({data})=>{setCheckedInToday(data.checked_in_today)}).catch(()=>{})
@@ -158,8 +158,8 @@ return(
 <div className="flex items-center gap-3 mb-4">
 <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{background:'var(--accent)',color:'#fff'}}><User size={24} /></div>
 <div>
-<h2 className="text-lg font-semibold" style={{color:'var(--text-primary)'}}>{user?.nickname||user?.username}</h2>
-<div className="flex items-center gap-1.5 text-xs" style={{color:'var(--text-secondary)'}}><Mail size={12} /><span>{user?.username}</span></div>
+<h2 className="text-lg font-semibold" style={{color:'var(--text-primary)'}}>{user?.nickname||user?.account||user?.username}</h2>
+<div className="flex items-center gap-1.5 text-xs" style={{color:'var(--text-secondary)'}}><Mail size={12} /><span>{user?.account||user?.username}</span></div>
 </div>
 </div>
 <div className="flex items-center gap-2 p-4 rounded-lg" style={{background:'var(--bg-primary)'}}>
@@ -195,7 +195,7 @@ return(
 <div className="grid grid-cols-1 mb-6">
 <div className="p-4 rounded-xl border" style={{background:'var(--bg-ai-bubble)',borderColor:'var(--border-color)'}}>
 <div className="flex items-center gap-2 mb-3"><Wallet size={16} style={{color:'var(--accent)'}} /><span className="text-sm font-medium" style={{color:'var(--text-primary)'}}>人工充值</span></div>
-<p className="text-xs mb-3" style={{color:'var(--text-secondary)'}}>{payConfig.manual_recharge_notice||'请备注用户名并在下方提交支付凭证，审核通过后自动发放兑换码'}</p>
+<p className="text-xs mb-3" style={{color:'var(--text-secondary)'}}>{payConfig.manual_recharge_notice||'请备注账号并在下方提交支付凭证，审核通过后自动发放兑换码'}</p>
 <div className="flex gap-2 mb-3">{['wechat','alipay'].map(c=><button key={c} onClick={()=>setRechargeChannel(c)} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${rechargeChannel===c?'text-white':'hover:bg-bg-hover'}`} style={{background:rechargeChannel===c?'var(--accent)':'var(--bg-primary)',color:rechargeChannel===c?'#fff':'var(--text-primary)',border:'1px solid var(--border-color)'}}>{channelLabel[c]}</button>)}</div>
 <div className="mb-3 p-3 rounded-lg border flex items-center justify-center" style={{background:'var(--bg-primary)',borderColor:'var(--border-color)'}}>{activeQr?<img src={activeQr} alt="收款码" className="w-44 h-44 object-contain rounded-lg" />:<span className="text-xs" style={{color:'var(--text-secondary)'}}>管理员暂未配置{channelLabel[rechargeChannel]}收款码</span>}</div>
 <div className="grid grid-cols-3 gap-2 mb-3">{rechargePackages.map((pkg,idx)=><button key={pkg.label} onClick={()=>handlePickPackage(idx)} className={`px-2 py-2 rounded-lg text-xs font-medium ${packageIdx===idx?'text-white':'hover:bg-bg-hover'}`} style={{background:packageIdx===idx?'var(--accent)':'var(--bg-primary)',color:packageIdx===idx?'#fff':'var(--text-primary)',border:'1px solid var(--border-color)'}}><div>{pkg.label}</div><div className="mt-0.5">¥{pkg.amount} / {pkg.points}积分</div></button>)}</div>

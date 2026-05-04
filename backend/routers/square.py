@@ -105,6 +105,7 @@ async def list_square_images(
         for row in rows:
             import json
             item = dict(row)
+            item["account"] = item.get("username", "")
             if isinstance(item["metadata"], str):
                 item["metadata"] = json.loads(item["metadata"]) if item["metadata"] else None
             item["is_liked"] = str(item["id"]) in liked_ids if user else False
@@ -183,6 +184,7 @@ async def list_shared_items(
             for row in rows:
                 import json
                 item = dict(row)
+                item["account"] = item.get("username", "")
                 if isinstance(item["metadata"], str):
                     item["metadata"] = json.loads(item["metadata"]) if item["metadata"] else None
                 item["is_liked"] = str(item["id"]) in image_liked_ids
@@ -204,6 +206,7 @@ async def list_shared_items(
             ).fetchall()
             for row in rows:
                 item = dict(row)
+                item["account"] = item.get("username", "")
                 item["is_liked"] = str(item["id"]) in prompt_liked_ids
                 if item.get("image_path"):
                     width,height=get_image_dimensions(str((EVO_IMAGES_DIR if "/" in str(item["image_path"]) else UPLOAD_DIR) / item["image_path"]))
@@ -286,6 +289,7 @@ async def my_shares(
         images = []
         for row in rows:
             item = dict(row)
+            item["account"] = item.get("username", "")
             if isinstance(item["metadata"], str):
                 item["metadata"] = json.loads(item["metadata"]) if item["metadata"] else None
             item["is_liked"] = str(item["id"]) in liked_ids

@@ -270,6 +270,13 @@ export default function UnifiedDetailModal({
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }
+  const actionBaseClass = 'inline-flex h-14 w-full min-w-0 flex-col items-center justify-center gap-1 rounded-[1.15rem] border px-1.5 text-[10px] font-medium leading-none whitespace-nowrap transition-all'
+  const actionNeutralStyle = { background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }
+  const actionPrimaryStyle = { background: 'var(--accent)', borderColor: 'var(--accent)', color: '#fff' }
+  const actionDangerStyle = { background: 'color-mix(in srgb, var(--color-error) 10%, var(--bg-primary))', borderColor: 'color-mix(in srgb, var(--color-error) 22%, var(--border-color))', color: 'var(--color-error)' }
+  const actionWarnStyle = { background: 'color-mix(in srgb, var(--color-warning) 12%, var(--bg-primary))', borderColor: 'color-mix(in srgb, var(--color-warning) 28%, var(--border-color))', color: 'var(--color-warning)' }
+  const actionLikedStyle = { background: 'color-mix(in srgb, var(--color-error) 10%, var(--bg-primary))', borderColor: 'color-mix(in srgb, var(--color-error) 24%, var(--border-color))', color: 'var(--color-error)' }
+  const actionFavoritedStyle = { background: 'color-mix(in srgb, #facc15 14%, var(--bg-primary))', borderColor: 'color-mix(in srgb, #eab308 26%, var(--border-color))', color: '#a16207' }
 
   const renderLeftPanel = () => {
     const editImageUrl = editing && editForm?.image_path ? (editForm.image_path.includes('/') ? `/api/prompts/evo-thumb/${editForm.image_path}` : `/api/prompts/image/${editForm.image_path}`) : null
@@ -453,70 +460,72 @@ export default function UnifiedDetailModal({
     const actions = []
     if (isImage && fullUrl && !hideDownload) {
       actions.push(
-        <a key="dl" href={fullUrl} download className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ background: 'var(--accent)' }}>
-          <Download size={14} /> 下载
+        <a key="dl" href={fullUrl} download className={actionBaseClass} style={actionPrimaryStyle} title="下载">
+          <Download size={15} /><span>下载</span>
         </a>
       )
     }
     if (onUsePrompt) {
       actions.push(
-        <button key="use-prompt" onClick={() => { onUsePrompt(card.prompt); requestCloseModal() }} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-primary)' }}>
-          <Plus size={14} /> 使用提示词
+        <button key="use-prompt" onClick={() => { onUsePrompt(card.prompt); requestCloseModal() }} className={actionBaseClass} style={actionNeutralStyle} title="使用提示词">
+          <Plus size={15} /><span>用提示词</span>
         </button>
       )
     }
     if (fullUrl && onUseImage) {
       actions.push(
-        <button key="use-image" onClick={() => { onUseImage(card); requestCloseModal() }} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-primary)' }}>
-          <ImageIcon size={14} /> 参考图
+        <button key="use-image" onClick={() => { onUseImage(card); requestCloseModal() }} className={actionBaseClass} style={actionNeutralStyle} title="设为参考图">
+          <ImageIcon size={15} /><span>参考图</span>
         </button>
       )
     }
     if (onLike) {
+      const likeText = card.isLiked ? `${Math.max(1, card.likesCount || 0)}赞` : card.likesCount > 0 ? `${card.likesCount}赞` : '点赞'
       actions.push(
-        <button key="like" onClick={() => onLike(card.id)} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium ${card.isLiked ? 'bg-[var(--color-error)]/10' : 'hover:bg-bg-hover'}`} style={{ color: card.isLiked ? 'var(--color-error)' : 'var(--text-primary)' }}>
-          <Heart size={14} className={card.isLiked ? 'fill-current' : ''} /> {(card.likesCount > 0 || card.isLiked) ? card.likesCount : ''}
+        <button key="like" onClick={() => onLike(card.id)} className={actionBaseClass} style={card.isLiked ? actionLikedStyle : actionNeutralStyle} title={card.isLiked ? '取消点赞' : '点赞'}>
+          <Heart size={15} className={card.isLiked ? 'fill-current' : ''} /><span>{likeText}</span>
         </button>
       )
     }
     if (onFavorite) {
       actions.push(
-        <button key="favorite" onClick={() => onFavorite(card.id)} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium ${card.isFavorited ? 'bg-yellow-400/15' : 'hover:bg-bg-hover'}`} style={{ color: card.isFavorited ? '#ca8a04' : 'var(--text-primary)' }}>
-          <Star size={14} className={card.isFavorited ? 'fill-current' : ''} /> {card.isFavorited ? '已收藏' : '收藏'}
+        <button key="favorite" onClick={() => onFavorite(card.id)} className={actionBaseClass} style={card.isFavorited ? actionFavoritedStyle : actionNeutralStyle} title={card.isFavorited ? '取消收藏' : '收藏'}>
+          <Star size={15} className={card.isFavorited ? 'fill-current' : ''} /><span>{card.isFavorited ? '已收藏' : '收藏'}</span>
         </button>
       )
     }
-    if (onDelete && isImage && raw.filename) {
+    if (onDelete && (isImage ? raw.filename : card.id)) {
       actions.push(
-        <button key="delete" onClick={() => onDelete(raw.filename)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-[var(--color-error)] hover:bg-[var(--color-error)]/10">
-          <Trash2 size={14} /> 删除
+        <button key="delete" onClick={() => onDelete(isImage ? raw.filename : card.id)} className={actionBaseClass} style={actionDangerStyle} title="删除">
+          <Trash2 size={15} /><span>删除</span>
         </button>
       )
     }
     if (onShare && isImage && raw.filename) {
       actions.push(
-        <button key="share" onClick={() => onShare(card)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-primary)' }}>
-          <Share2 size={14} /> 分享广场
+        <button key="share" onClick={() => onShare(card)} className={actionBaseClass} style={actionNeutralStyle} title="分享广场">
+          <Share2 size={15} /><span>分享</span>
         </button>
       )
     }
     if (onUnshare) {
       actions.push(
-        <button key="unshare" onClick={() => onUnshare(card)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-[var(--color-warning)] hover:bg-[var(--color-warning)]/10">
-          撤回分享
+        <button key="unshare" onClick={() => onUnshare(card)} className={actionBaseClass} style={actionWarnStyle} title="撤回分享">
+          <Share2 size={15} /><span>撤回</span>
         </button>
       )
     }
     if (onExtend && isImage && raw.filename && !card.is_permanent) {
       actions.push(
-        <button key="extend" onClick={() => onExtend(card)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-primary)' }}>
-          延长3天(-2积分)
+        <button key="extend" onClick={() => onExtend(card)} className={actionBaseClass} style={actionNeutralStyle} title="延长3天(-2积分)">
+          <Plus size={15} /><span>延3天</span>
         </button>
       )
     }
     return actions
   }
 
+  const actions = renderActions()
   return (
     <>
       <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 md:p-4" onClick={requestCloseModal}>
@@ -553,8 +562,10 @@ export default function UnifiedDetailModal({
 
             {detailExtra || (isImage ? renderImageDetail() : renderPromptDetail())}
 
-            <div className="flex flex-wrap gap-1.5 mt-auto pt-1.5">
-              {renderActions()}
+            <div className="mt-auto pt-2">
+              <div className="grid items-stretch gap-1.5 rounded-[1.5rem] border p-1.5" style={{ background: 'color-mix(in srgb, var(--bg-primary) 88%, transparent)', borderColor: 'var(--border-color)', gridTemplateColumns: `repeat(${Math.max(actions.length, 1)},minmax(0,1fr))` }}>
+              {actions}
+              </div>
             </div>
           </div>
         </div>

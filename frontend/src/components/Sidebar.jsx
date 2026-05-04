@@ -104,7 +104,7 @@ export default function Sidebar({ open, onClose }) {
           {user && (
             <div className="sidebar-user-row">
               <User size={16} className="sidebar-nav-icon" style={{ color: 'var(--text-secondary)' }} />
-              <span className="sidebar-nav-text text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{user.nickname || user.username}</span>
+              <span className="sidebar-nav-text text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{user.nickname || user.account || user.username}</span>
             </div>
           )}
           <button onClick={toggle} className="sidebar-control-btn hover:bg-bg-hover"

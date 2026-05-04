@@ -59,7 +59,7 @@ _runtime_config = {
     "image_hosting_referer": os.getenv("IMAGE_HOSTING_REFERER", "https://img.heliar.top/"),
     "wechat_pay_qr_url": os.getenv("WECHAT_PAY_QR_URL", ""),
     "alipay_pay_qr_url": os.getenv("ALIPAY_PAY_QR_URL", ""),
-    "manual_recharge_notice": os.getenv("MANUAL_RECHARGE_NOTICE", "请备注用户名并在下方提交支付凭证，审核通过后自动发放兑换码"),
+    "manual_recharge_notice": os.getenv("MANUAL_RECHARGE_NOTICE", "请备注账号并在下方提交支付凭证，审核通过后自动发放兑换码"),
     "recharge_packages": _safe_json_list(os.getenv("RECHARGE_PACKAGES_JSON", ""), [{"amount": 9.9, "points": 120, "label": "体验包"}, {"amount": 29.9, "points": 400, "label": "进阶包"}, {"amount": 59.9, "points": 900, "label": "超值包"}]),
     "generate_concurrent_limit_per_user": int(os.getenv("GENERATE_CONCURRENT_LIMIT_PER_USER", "10")),
     "points_cost_per_generation": int(os.getenv("POINTS_COST_PER_GENERATION", "10")),

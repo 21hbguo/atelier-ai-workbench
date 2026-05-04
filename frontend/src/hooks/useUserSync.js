@@ -10,7 +10,7 @@ export function useUserSync() {
         const { data } = await authAPI.me()
         const local = readUser()
         if (local) {
-          const normalized = { ...data, ...(Object.prototype.hasOwnProperty.call(data, 'is_admin') ? { is_admin: Boolean(data.is_admin) } : {}), ...(Object.prototype.hasOwnProperty.call(data, 'is_frozen') ? { is_frozen: Boolean(data.is_frozen) } : {}) }
+          const normalized = { ...data, account: data?.account || data?.username || '', ...(Object.prototype.hasOwnProperty.call(data, 'is_admin') ? { is_admin: Boolean(data.is_admin) } : {}), ...(Object.prototype.hasOwnProperty.call(data, 'is_frozen') ? { is_frozen: Boolean(data.is_frozen) } : {}) }
           writeUser({ ...local, ...normalized })
           window.dispatchEvent(new Event('points-updated'))
         }

@@ -1,4 +1,5 @@
 import os
+import re
 import asyncio
 import secrets
 import hashlib
@@ -22,6 +23,7 @@ COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax")
 TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "false").lower() in {"1", "true", "yes", "on"}
 TRUSTED_PROXY_IPS = {i.strip() for i in os.getenv("TRUSTED_PROXY_IPS", "127.0.0.1,::1").split(",") if i.strip()}
 security = HTTPBearer(auto_error=False)
+ACCOUNT_RE = re.compile(r"^[A-Za-z0-9_]{5,16}$")
 
 
 def _save_jwt_secret(secret):
@@ -60,6 +62,22 @@ async def hash_password(password: str) -> str:
 
 async def verify_password(password: str, password_hash: str) -> bool:
     return await asyncio.to_thread(lambda: bcrypt.checkpw(password.encode(), password_hash.encode()))
+
+
+def normalize_account(account: str) -> str:
+    return (account or "").strip()
+
+
+def validate_account(account: str) -> str:
+    account = normalize_account(account)
+    if not ACCOUNT_RE.fullmatch(account):
+        raise HTTPException(status_code=400, detail="账号需为5到16位字母、数字或下划线")
+    return account
+
+
+def build_user_payload(user: dict) -> dict:
+    account = user.get("account") or user.get("username") or ""
+    return {"id": user.get("id") or user.get("user_id"), "account": account, "username": account, "nickname": user.get("nickname"), "is_admin": bool(user.get("is_admin")), "points": user.get("points")}
 
 
 def create_token(user_id: int, username: str, is_admin: bool = False) -> str:
@@ -120,7 +138,7 @@ def rotate_refresh_token(token: str, ip: str = "", user_agent: str = "") -> Opti
             return None
         conn.execute("UPDATE auth_refresh_tokens SET revoked_at = %s WHERE id = %s AND revoked_at IS NULL", (now, item["id"]))
         new_token = create_refresh_token(item["user_id"], ip=ip, user_agent=user_agent)
-        return {"refresh_token": new_token, "access_token": create_token(item["user_id"], item["username"], bool(item["is_admin"])), "user": {"id": item["user_id"], "username": item["username"], "nickname": item["nickname"], "is_admin": bool(item["is_admin"]), "points": item["points"]}}
+        return {"refresh_token": new_token, "access_token": create_token(item["user_id"], item["username"], bool(item["is_admin"])), "user": build_user_payload({"id": item["user_id"], "account": item["username"], "nickname": item["nickname"], "is_admin": item["is_admin"], "points": item["points"]})}
 
 
 def _request_token(credentials: Optional[HTTPAuthorizationCredentials], request: Optional[Request]) -> Optional[str]:
@@ -146,7 +164,7 @@ def _optional_user_from_refresh(request: Optional[Request]) -> Optional[dict]:
         item = dict(row)
         if item["is_frozen"] or str(item["expires_at"]) < now:
             return None
-        return {"user_id": item["user_id"], "username": item["username"], "nickname": item["nickname"], "is_admin": bool(item["is_admin"]), "points": item["points"]}
+        return {"user_id": item["user_id"], "account": item["username"], "username": item["username"], "nickname": item["nickname"], "is_admin": bool(item["is_admin"]), "points": item["points"]}
 
 
 def get_current_user(request: Request, credentials: Optional[HTTPAuthorizationCredentials] = Security(security)) -> dict:
@@ -162,7 +180,7 @@ def get_current_user(request: Request, credentials: Optional[HTTPAuthorizationCr
         data = dict(user)
         if data["is_frozen"]:
             raise HTTPException(status_code=403, detail="账号已被冻结")
-    return {"user_id": data["id"], "username": data["username"], "nickname": data["nickname"], "is_admin": bool(data["is_admin"]), "points": data["points"]}
+    return {"user_id": data["id"], "account": data["username"], "username": data["username"], "nickname": data["nickname"], "is_admin": bool(data["is_admin"]), "points": data["points"]}
 
 
 def get_optional_user(request: Request, credentials: Optional[HTTPAuthorizationCredentials] = Security(security)) -> Optional[dict]:

@@ -129,7 +129,7 @@ async def list_images(page: int = Query(1, ge=1), page_size: int = Query(20, ge=
             stat = f.stat()
             created_at = row["created_at"] or _format_timestamp(stat.st_mtime)
             metadata = _parse_metadata(row["metadata"])
-            username = (row["nickname"] or row["username"] or "") if is_admin else ""
+            account = (row["nickname"] or row["username"] or "") if is_admin else ""
             expiry = get_expiry_data({"created_at": row["created_at"], "expires_at": row["expires_at"], "is_permanent": row["is_permanent"]})
             width,height=get_image_dimensions(str(f))
             images.append({
@@ -138,7 +138,8 @@ async def list_images(page: int = Query(1, ge=1), page_size: int = Query(20, ge=
                 "url": f"/api/images/file/{filename}",
                 "created_at": created_at,
                 "metadata": metadata,
-                "username": username,
+                "username": account,
+                "account": account,
                 "square_image_id": row["square_image_id"],
                 "expires_at": expiry["expires_at"],
                 "is_permanent": expiry["is_permanent"],

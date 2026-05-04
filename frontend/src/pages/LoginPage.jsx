@@ -4,10 +4,10 @@ import { authAPI, configAPI } from '../api'
 import { writeUser } from '../auth'
 
 export default function LoginPage() {
-  const accountRe = /^\d{5,11}$/
+  const accountRe = /^[A-Za-z0-9_]{5,16}$/
   const [isRegister, setIsRegister] = useState(false)
   const [registerEnabled, setRegisterEnabled] = useState(true)
-  const [username, setUsername] = useState('')
+  const [account, setAccount] = useState('')
   const [password, setPassword] = useState('')
   const [nickname, setNickname] = useState('')
   const [email, setEmail] = useState('')
@@ -50,13 +50,13 @@ export default function LoginPage() {
     e.preventDefault()
     setError('')
     if (isRegister && !registerEnabled) { setError('当前已关闭注册'); return }
-    if (isRegister && !accountRe.test((username || '').trim())) { setError('账号需为5到11位数字'); return }
+    if (isRegister && !accountRe.test((account || '').trim())) { setError('账号需为5到16位字母、数字或下划线'); return }
     setLoading(true)
 
     try {
       const data = isRegister
-        ? (await authAPI.register({ username, password, nickname: nickname || username, email, code })).data
-        : (await authAPI.login({ username, password })).data
+        ? (await authAPI.register({ account, password, nickname: nickname || account, email, code })).data
+        : (await authAPI.login({ account, password })).data
       writeUser(data.user)
       navigate('/')
     } catch (err) {
@@ -85,14 +85,14 @@ export default function LoginPage() {
               <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>账号</label>
               <input
                 type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                value={account}
+                onChange={(e) => setAccount(e.target.value)}
                 className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
                 style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent)' }}
-                placeholder="5-11 位数字"
+                placeholder="5-16 位字母、数字或下划线"
                 required
                 minLength={5}
-                maxLength={11}
+                maxLength={16}
               />
             </div>
 

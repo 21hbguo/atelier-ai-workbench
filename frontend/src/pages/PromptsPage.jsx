@@ -5,6 +5,7 @@ import { promptAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 import SearchInput from '../components/SearchInput'
 import CardGrid from '../components/CardGrid'
+import UnifiedDetailModal from '../components/UnifiedDetailModal'
 import { useCardData } from '../hooks/useCardData'
 import { useAppDialog } from '../components/AppDialogProvider'
 
@@ -13,7 +14,7 @@ export default function PromptsPage() {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState(new Set())
-  const [detail, setDetail] = useState(null)
+  const [detailIdx, setDetailIdx] = useState(null)
   const [form, setForm] = useState({ name: '', prompt: '', tags: '', category: '' })
   const deps = useMemo(() => [query], [query])
   const [showNewForm, setShowNewForm] = useState(false)
@@ -35,22 +36,6 @@ export default function PromptsPage() {
     navigate('/')
   }
 
-  const openDetail = (card) => {
-    const p = card._raw
-    setForm({ name: p.name, prompt: p.prompt, tags: (p.tags || []).join(', '), category: p.category || '' })
-    setDetail(p)
-  }
-
-  const handleSave = async () => {
-    if (!form.name || !form.prompt) return
-    const payload = { name: form.name, prompt: form.prompt, negative_prompt: '', tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [], category: form.category || null }
-    try {
-      await promptAPI.update(detail.id, payload)
-      setDetail(null)
-      refresh()
-    } catch (e) { dialog.alert('失败: ' + e.message) }
-  }
-
   const handleCreate = async () => {
     if (!form.name || !form.prompt) return
     const payload = { name: form.name, prompt: form.prompt, negative_prompt: '', tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [], category: form.category || null }
@@ -64,7 +49,7 @@ export default function PromptsPage() {
 
   const handleDelete = async (id) => {
     if (!await dialog.confirm('确定删除？')) return
-    try { await promptAPI.delete(id); if (detail?.id === id) setDetail(null); refresh() } catch (e) { dialog.alert(e.message || '删除失败') }
+    try { await promptAPI.delete(id); setDetailIdx(null); refresh() } catch (e) { dialog.alert(e.message || '删除失败') }
   }
 
   const handleBatchDelete = async () => {
@@ -98,7 +83,10 @@ export default function PromptsPage() {
   const handleDeselectAll = useCallback(() => {
     setSelected(new Set())
   }, [])
-  const detailCard = detail ? cards.find(c => c.id === String(detail.id)) : null
+  const handlePromptSave = useCallback(async (id, payload) => {
+    await promptAPI.update(id, payload)
+    refresh()
+  }, [refresh])
 
   return (
     <MainLayout>
@@ -157,7 +145,7 @@ export default function PromptsPage() {
           page={page}
           totalPages={Math.ceil(total / 20)}
           onPageChange={setPage}
-          onCardClick={(card) => openDetail(card)}
+          onCardClick={(_, idx) => setDetailIdx(idx)}
           onFavorite={handleFavorite}
           onUsePrompt={handleUsePrompt}
           selectable
@@ -167,44 +155,7 @@ export default function PromptsPage() {
         />
       </div>
 
-      {detail && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setDetail(null)}>
-          <div className="bg-[var(--bg-card)] rounded-2xl overflow-hidden max-w-2xl w-full max-h-[85vh] flex flex-col" style={{ boxShadow: 'var(--shadow-lg)' }} onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
-              <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="标题"
-                className="font-semibold text-lg flex-1 bg-transparent outline-none" style={{ color: 'var(--text-primary)' }} />
-              <button onClick={() => setDetail(null)} className="p-1 rounded hover:bg-bg-hover ml-2"><X size={18} style={{ color: 'var(--text-secondary)' }} /></button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4">
-              <div>
-                <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>提示词内容</label>
-                <textarea value={form.prompt} onChange={e => setForm(f => ({ ...f, prompt: e.target.value }))} rows={6}
-                  className="w-full text-sm p-3 rounded-lg outline-none resize-none border focus:ring-1 focus:ring-accent/50" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
-              </div>
-              <div>
-                <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>标签</label>
-                <input value={form.tags} onChange={e => setForm(f => ({ ...f, tags: e.target.value }))} placeholder="逗号分隔"
-                  className="w-full text-sm p-3 rounded-lg outline-none border focus:ring-1 focus:ring-accent/50" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
-              </div>
-              <div>
-                <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>分类</label>
-                <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-                  className="w-full text-sm p-3 rounded-lg outline-none border focus:ring-1 focus:ring-accent/50" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
-                  <option value="">无分类</option>
-                  {categories.map(c => <option key={c.slug} value={c.slug}>{c.label}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="flex gap-2 px-5 py-4 border-t overflow-x-auto scrollbar-hide" style={{ borderColor: 'var(--border-color)', scrollbarWidth: 'none' }}>
-              <button onClick={() => { localStorage.setItem('pending_prompt', form.prompt); navigate('/') }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}><Send size={14} /> 使用</button>
-              <button onClick={() => navigator.clipboard.writeText(form.prompt)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-primary)' }}>复制</button>
-              <button onClick={() => handleFavorite(detail.id)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-primary)' }}>{detailCard?.isFavorited ? '取消收藏' : '收藏'}</button>
-              <button onClick={handleSave} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}>保存</button>
-              <button onClick={() => handleDelete(detail.id)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-[var(--color-error)] hover:bg-[var(--color-error)]/10 ml-auto"><Trash2 size={14} /> 删除</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {detailIdx !== null && cards[detailIdx] && <UnifiedDetailModal card={cards[detailIdx]} cards={cards} currentIndex={detailIdx} onNavigate={setDetailIdx} onClose={() => setDetailIdx(null)} onFavorite={handleFavorite} onUsePrompt={handleUsePrompt} onDelete={handleDelete} title="提示词详情" hideDownload allowPromptEdit onPromptSave={handlePromptSave} />}
     </MainLayout>
   )
 }

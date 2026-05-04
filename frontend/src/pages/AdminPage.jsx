@@ -662,13 +662,13 @@ export default function AdminPage() {
     } catch (e) { dialog.alert(e.message || '删除失败') }
   }
   const handleCreateUser = async () => {
-    const payload = { username: (createUserDraft.username || '').trim(), password: (createUserDraft.password || '').trim(), nickname: (createUserDraft.nickname || '').trim() }
-    if (!/^\d{5,11}$/.test(payload.username)) { dialog.alert('账号需为5到11位数字'); return }
+    const payload = { account: (createUserDraft.username || '').trim(), password: (createUserDraft.password || '').trim(), nickname: (createUserDraft.nickname || '').trim() }
+    if (!/^[A-Za-z0-9_]{5,16}$/.test(payload.account)) { dialog.alert('账号需为5到16位字母、数字或下划线'); return }
     if (payload.password.length < 6 || payload.password.length > 50) { dialog.alert('密码长度需在6到50位之间'); return }
     setCreatingUser(true)
     try {
       const { data } = await adminAPI.createUser(payload)
-      dialog.alert(`账号 ${data?.user?.username || payload.username} 已创建`)
+      dialog.alert(`账号 ${data?.user?.account || payload.account} 已创建`)
       setCreateUserDraft({ username: '', password: '', nickname: '' })
       fetchUsers()
     } catch (e) { dialog.alert(e.message || '创建失败') } finally { setCreatingUser(false) }
@@ -805,13 +805,13 @@ export default function AdminPage() {
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>{{all:'总计',today:'今日','7d':'近7天','30d':'近30天'}[statsRange] || '近7天'}生成Top用户</div>
                     <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
-                      {(overviewStats?.leaderboards?.success_top || []).slice(0, 8).map((i, idx) => <div key={`s-${i.user_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.nickname || i.username}`} style={{ color: 'var(--text-primary)' }}>{idx + 1}. {i.nickname || i.username}</span><span className="shrink-0" style={{ color: 'var(--color-success)' }}>{i.success_count}</span></div>)}
+                      {(overviewStats?.leaderboards?.success_top || []).slice(0, 8).map((i, idx) => <div key={`s-${i.user_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.nickname || i.account || i.username}`} style={{ color: 'var(--text-primary)' }}>{idx + 1}. {i.nickname || i.account || i.username}</span><span className="shrink-0" style={{ color: 'var(--color-success)' }}>{i.success_count}</span></div>)}
                     </div>
                   </div>
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>{{all:'总计',today:'今日','7d':'近7天','30d':'近30天'}[statsRange] || '近7天'}充值Top用户</div>
                     <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
-                      {(overviewStats?.leaderboards?.recharge_top || []).slice(0, 8).map((i, idx) => <div key={`r-${i.user_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.nickname || i.username}`} style={{ color: 'var(--text-primary)' }}>{idx + 1}. {i.nickname || i.username}</span><span className="shrink-0" style={{ color: 'var(--color-warning)' }}>¥{i.amount}</span></div>)}
+                      {(overviewStats?.leaderboards?.recharge_top || []).slice(0, 8).map((i, idx) => <div key={`r-${i.user_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.nickname || i.account || i.username}`} style={{ color: 'var(--text-primary)' }}>{idx + 1}. {i.nickname || i.account || i.username}</span><span className="shrink-0" style={{ color: 'var(--color-warning)' }}>¥{i.amount}</span></div>)}
                     </div>
                   </div>
                 </div>
@@ -1063,8 +1063,8 @@ export default function AdminPage() {
                         {codes.map(c => (
                           <tr key={c.id} className="border-t transition-colors hover:bg-bg-hover" style={{ borderColor: 'var(--border-color)' }}>
                             <td className="px-4 py-3">
-                              <div style={{ color: 'var(--text-primary)' }}>{c.nickname || c.username}</div>
-                              <div className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>@{c.username}</div>
+                              <div style={{ color: 'var(--text-primary)' }}>{c.nickname || c.account || c.username}</div>
+                              <div className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>账号 {c.account || c.username}</div>
                             </td>
                             <td className="px-4 py-3 text-center text-[11px]" style={{ color: 'var(--text-secondary)' }}>
                               {c.channel === 'wechat' ? '微信' : '支付宝'}
@@ -1672,7 +1672,7 @@ export default function AdminPage() {
                 {reviewModal.action === 'approve' ? '审核通过' : '拒绝申请'}
               </h3>
               <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
-                {reviewModal.username || reviewModal.code} - ¥{reviewModal.recharge_amount}
+                {reviewModal.account || reviewModal.username || reviewModal.code} - ¥{reviewModal.recharge_amount}
               </p>
             </div>
             <div className="p-4 space-y-3">

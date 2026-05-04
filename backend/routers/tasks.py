@@ -24,7 +24,9 @@ def _enrich_tasks_with_username(tasks: list) -> list:
         user_map = {r["id"]: (r["nickname"] or r["username"]) for r in rows}
     for t in tasks:
         uid = t.get("user_id")
-        t["username"] = user_map.get(uid, "") if uid else ""
+        account = user_map.get(uid, "") if uid else ""
+        t["username"] = account
+        t["account"] = account
     return tasks
 
 
