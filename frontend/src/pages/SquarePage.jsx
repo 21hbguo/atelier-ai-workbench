@@ -458,18 +458,21 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
   const newCardRef = useRef(null)
   const [initialEditing, setInitialEditing] = useState(false)
 
-  const handleCreate = useCallback(async () => {
-    try {
-      const { data } = await promptAPI.createPublic({})
-      const card = normalizePrompt(data)
-      setNewCard(card)
-      newCardRef.current = card
-      setInitialEditing(true)
-      refresh()
-    } catch (e) {
-      dialog.alert(e?.response?.data?.detail || e.message || '创建失败')
-    }
-  }, [refresh, dialog])
+  const handleCreate = useCallback(() => {
+    const card = normalizePrompt({ id: '', name: '', prompt: '', negative_prompt: '', tags: [], category: null })
+    setNewCard(card)
+    newCardRef.current = card
+    setInitialEditing(true)
+  }, [])
+
+  const handlePromptCreate = useCallback(async (payload) => {
+    const { data } = await promptAPI.createPublic(payload)
+    const card = normalizePrompt(data)
+    setNewCard(card)
+    newCardRef.current = card
+    setInitialEditing(false)
+    refresh()
+  }, [refresh])
 
   const handlePromptSave = useCallback(async (id, payload) => {
     await promptAPI.update(id, payload)
@@ -611,6 +614,7 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
           hideDownload
           allowPromptEdit={isAdmin}
           onPromptSave={handlePromptSave}
+          onPromptCreate={handlePromptCreate}
           initialEditing={initialEditing && !!newCard}
         />
       )}

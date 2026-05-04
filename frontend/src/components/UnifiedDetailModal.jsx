@@ -33,6 +33,7 @@ export default function UnifiedDetailModal({
   allowMetadataEdit = false,
   allowPromptEdit = false,
   onPromptSave,
+  onPromptCreate,
   initialEditing = false,
 }) {
   const dialog = useAppDialog()
@@ -225,6 +226,10 @@ export default function UnifiedDetailModal({
 
   const handleSavePrompt = async () => {
     if (!editForm || saving) return
+    if (!card.id && onPromptCreate && (!editForm.name || !editForm.prompt)) {
+      dialog.alert('请填写标题和提示词内容')
+      return
+    }
     setSaving(true)
     try {
       const payload = {
@@ -235,7 +240,11 @@ export default function UnifiedDetailModal({
         category: editForm.category || null,
         image_path: editForm.image_path || null,
       }
-      await onPromptSave(card.id, payload)
+      if (!card.id && onPromptCreate) {
+        await onPromptCreate(payload)
+      } else {
+        await onPromptSave(card.id, payload)
+      }
       setEditing(false)
       setEditForm(null)
     } catch (e) {
