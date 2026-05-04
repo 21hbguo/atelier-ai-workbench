@@ -4,6 +4,7 @@ import { authAPI, configAPI } from '../api'
 import { writeUser } from '../auth'
 
 export default function LoginPage() {
+  const accountRe = /^\d{5,11}$/
   const [isRegister, setIsRegister] = useState(false)
   const [registerEnabled, setRegisterEnabled] = useState(true)
   const [username, setUsername] = useState('')
@@ -49,6 +50,7 @@ export default function LoginPage() {
     e.preventDefault()
     setError('')
     if (isRegister && !registerEnabled) { setError('当前已关闭注册'); return }
+    if (isRegister && !accountRe.test((username || '').trim())) { setError('账号需为5到11位数字'); return }
     setLoading(true)
 
     try {
@@ -80,17 +82,17 @@ export default function LoginPage() {
         <div className="login-card rounded-2xl p-6" style={{ background: 'var(--bg-ai-bubble)', boxShadow: 'var(--shadow-lg)' }}>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>用户名</label>
+              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>账号</label>
               <input
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
                 style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent)' }}
-                placeholder="3-20 个字符"
+                placeholder="5-11 位数字"
                 required
-                minLength={3}
-                maxLength={20}
+                minLength={5}
+                maxLength={11}
               />
             </div>
 
@@ -103,7 +105,7 @@ export default function LoginPage() {
                   onChange={(e) => setNickname(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
                   style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
-                  placeholder="可选，默认为用户名"
+                  placeholder="可选，默认为账号"
                 />
               </div>
             )}

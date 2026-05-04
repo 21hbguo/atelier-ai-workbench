@@ -93,7 +93,7 @@ export default function AdminPage() {
   const [newTitle, setNewTitle] = useState('')
   const [newContent, setNewContent] = useState('')
   const [creatingAnnouncement, setCreatingAnnouncement] = useState(false)
-  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', register_enabled: true, image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', recharge_packages: defaultRechargePackages, generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3, github_hosting_enabled: false, github_hosting_repo: '', github_hosting_token: '', github_hosting_branch: 'main', smtp_server: 'smtp.qq.com', smtp_port: 465, smtp_password: '', smtp_sender: '' })
+  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', register_enabled: true, image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', recharge_packages: defaultRechargePackages, generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3, github_hosting_enabled: false, github_hosting_repo: '', github_hosting_token: '', github_hosting_branch: 'main', smtp_server: 'smtp.qq.com', smtp_port: 465, smtp_password: '', smtp_sender: '', smtp_sender_name: 'Atelier·AI造梦工坊' })
   const [configSaving, setConfigSaving] = useState(false)
   const [defaultModelId, setDefaultModelId] = useState('image-default')
   const [generationModelsText, setGenerationModelsText] = useState('{}')
@@ -242,6 +242,7 @@ export default function AdminPage() {
         smtp_port: Number(data.smtp_port || 465),
         smtp_password: data.smtp_password || '',
         smtp_sender: data.smtp_sender || '',
+        smtp_sender_name: data.smtp_sender_name || 'Atelier·AI造梦工坊',
       })
       setDefaultModelId(gen.default_model_id || 'image-default')
       const modelsObj = gen.generation_models || {}
@@ -662,12 +663,12 @@ export default function AdminPage() {
   }
   const handleCreateUser = async () => {
     const payload = { username: (createUserDraft.username || '').trim(), password: (createUserDraft.password || '').trim(), nickname: (createUserDraft.nickname || '').trim() }
-    if (payload.username.length < 3 || payload.username.length > 20) { dialog.alert('用户名长度需在3到20位之间'); return }
+    if (!/^\d{5,11}$/.test(payload.username)) { dialog.alert('账号需为5到11位数字'); return }
     if (payload.password.length < 6 || payload.password.length > 50) { dialog.alert('密码长度需在6到50位之间'); return }
     setCreatingUser(true)
     try {
       const { data } = await adminAPI.createUser(payload)
-      dialog.alert(`用户 ${data?.user?.username || payload.username} 已创建`)
+      dialog.alert(`账号 ${data?.user?.username || payload.username} 已创建`)
       setCreateUserDraft({ username: '', password: '', nickname: '' })
       fetchUsers()
     } catch (e) { dialog.alert(e.message || '创建失败') } finally { setCreatingUser(false) }
@@ -1222,6 +1223,10 @@ export default function AdminPage() {
                 <div>
                   <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>发件人邮箱</label>
                   <input type="email" value={runtimeConfig.smtp_sender} onChange={e => onConfigInput('smtp_sender', e.target.value)} placeholder="your@qq.com" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                </div>
+                <div>
+                  <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>发件人名称</label>
+                  <input type="text" value={runtimeConfig.smtp_sender_name} onChange={e => onConfigInput('smtp_sender_name', e.target.value)} placeholder="Atelier·AI造梦工坊" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
                   <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>授权码</label>

@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Depends, Query
 from backend.database import get_db
-from backend.auth import require_admin, hash_password
+from backend.auth import require_admin, hash_password, validate_account
 from backend.services.task_manager import TaskManager
 from backend.services.banned_words import BannedWordsService
 from backend.services.image_mapping import ImageUrlMapping
@@ -13,6 +13,7 @@ from backend.services.points_service import PointsService
 from backend.services.notification_service import NotificationService
 from backend.services.image_expiry import refresh_permanent_flags_by_filenames
 from backend.services.finance_service import FinanceService
+from backend.services.favorite_service import FavoriteService
 from backend.config import get_generation_providers, get_generation_models, get_config
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -97,17 +98,18 @@ async def finance_tasks(time_range: str = Query("30d", alias="range"), provider_
 
 @router.post("/users")
 async def create_user(body: dict, admin=Depends(require_admin)):
-    username = (body.get("username") or "").strip()
+    username = validate_account(body.get("username"))
     password = (body.get("password") or "").strip()
     nickname = (body.get("nickname") or "").strip() or username
-    if len(username) < 3 or len(username) > 20:
-        raise HTTPException(status_code=400, detail="用户名长度需在3到20位之间")
     if len(password) < 6 or len(password) > 50:
         raise HTTPException(status_code=400, detail="密码长度需在6到50位之间")
     with get_db() as conn:
         existing = conn.execute("SELECT id FROM users WHERE username = %s", (username,)).fetchone()
         if existing:
-            raise HTTPException(status_code=400, detail="用户名已存在")
+            raise HTTPException(status_code=400, detail="账号已存在")
+        nickname_existing = conn.execute("SELECT id FROM users WHERE nickname = %s", (nickname,)).fetchone()
+        if nickname_existing:
+            raise HTTPException(status_code=400, detail="昵称已存在")
         password_hash = await hash_password(password)
         cursor = conn.execute("INSERT INTO users (username, password_hash, nickname) VALUES (%s, %s, %s) RETURNING id, username, nickname, is_admin, is_frozen, points, created_at", (username, password_hash, nickname))
         user = dict(cursor.fetchone())
@@ -282,12 +284,22 @@ async def list_all_square(page: int = Query(1, ge=1), size: int = Query(20, ge=1
             """,
             params + [size, offset],
         ).fetchall()
+        image_ids = [str(r["id"]) for r in rows]
+        liked_ids = set()
+        favorited_ids = set()
+        if image_ids:
+            favorited_ids = FavoriteService.get_flags(admin["user_id"], "image", image_ids, conn=conn)
+            placeholders = ",".join("%s" for _ in image_ids)
+            liked_rows = conn.execute(f"SELECT image_id FROM square_likes WHERE user_id = %s AND image_id IN ({placeholders})", [admin["user_id"], *image_ids]).fetchall()
+            liked_ids = {str(r["image_id"]) for r in liked_rows}
         images = []
         for row in rows:
             item = dict(row)
             meta = item["metadata"]
             item["metadata"] = json.loads(meta) if isinstance(meta, str) else meta
             item["is_frozen"] = bool(item.get("is_frozen"))
+            item["is_liked"] = str(item["id"]) in liked_ids
+            item["is_favorited"] = str(item["id"]) in favorited_ids
             images.append(item)
         return {"images": images, "total": total}
 
@@ -633,6 +645,14 @@ async def list_all_prompts(page: int = Query(1, ge=1), size: int = Query(20, ge=
             """,
             params + [size, offset],
         ).fetchall()
+        prompt_ids = [str(r["id"]) for r in rows]
+        liked_ids = set()
+        favorited_ids = set()
+        if prompt_ids:
+            favorited_ids = FavoriteService.get_flags(admin["user_id"], "prompt", prompt_ids, conn=conn)
+            placeholders = ",".join("%s" for _ in prompt_ids)
+            liked_rows = conn.execute(f"SELECT prompt_id FROM prompt_likes WHERE user_id = %s AND prompt_id IN ({placeholders})", [admin["user_id"], *prompt_ids]).fetchall()
+            liked_ids = {str(r["prompt_id"]) for r in liked_rows}
         items = []
         for row in rows:
             d = dict(row)
@@ -641,6 +661,8 @@ async def list_all_prompts(page: int = Query(1, ge=1), size: int = Query(20, ge=
             except (json.JSONDecodeError, TypeError):
                 d["tags"] = []
             d["is_frozen"] = bool(d.get("is_frozen"))
+            d["is_liked"] = str(d["id"]) in liked_ids
+            d["is_favorited"] = str(d["id"]) in favorited_ids
             items.append(d)
         return {"items": items, "total": total}
 

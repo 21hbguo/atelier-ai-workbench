@@ -81,6 +81,7 @@ _runtime_config = {
     "smtp_port": int(os.getenv("SMTP_PORT", "465")),
     "smtp_password": os.getenv("SMTP_PASSWORD", ""),
     "smtp_sender": os.getenv("SMTP_SENDER", ""),
+    "smtp_sender_name": os.getenv("SMTP_SENDER_NAME", "Atelier·AI造梦工坊"),
 }
 _runtime_config_defaults = dict(_runtime_config)
 if not _runtime_config["generation_models"]:
@@ -215,6 +216,7 @@ def get_smtp_config():
         "port": int(_runtime_config.get("smtp_port", 465)),
         "password": _runtime_config.get("smtp_password", ""),
         "sender": _runtime_config.get("smtp_sender", ""),
+        "sender_name": _runtime_config.get("smtp_sender_name", "Atelier·AI造梦工坊"),
     }
 
 

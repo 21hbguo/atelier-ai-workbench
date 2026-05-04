@@ -5,7 +5,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Request, Response, Depends
 from pydantic import BaseModel, Field
 from backend.database import get_db
-from backend.auth import hash_password, verify_password, create_token, create_refresh_token, rotate_refresh_token, revoke_refresh_token, get_current_user, update_user_ip, get_client_ip, set_auth_cookies, clear_auth_cookies, REFRESH_COOKIE_NAME
+from backend.auth import hash_password, verify_password, create_token, create_refresh_token, rotate_refresh_token, revoke_refresh_token, get_current_user, update_user_ip, get_client_ip, set_auth_cookies, clear_auth_cookies, REFRESH_COOKIE_NAME, validate_account, normalize_account
 from backend.services.points_service import PointsService
 from backend.config import get_limit_config, is_register_enabled
 
@@ -46,7 +46,7 @@ def get_rate_limit_stats():
 
 
 class RegisterRequest(BaseModel):
-    username: str = Field(..., min_length=3, max_length=20)
+    username: str = Field(..., min_length=5, max_length=11)
     password: str = Field(..., min_length=6, max_length=50)
     nickname: str = None
     email: str = Field(..., min_length=5, max_length=255)
@@ -83,37 +83,43 @@ async def send_code(req: SendCodeRequest, request: Request):
 async def register(req: RegisterRequest, request: Request, response: Response):
     if not is_register_enabled():
         raise HTTPException(status_code=403, detail="当前已关闭注册")
+    account = validate_account(req.username)
+    nickname = (req.nickname or "").strip() or account
     ip = get_client_ip(request)
     _check_register_rate(ip)
     from backend.services.email_service import verify_code, mark_registered
     verify_code(req.email, req.code)
     with get_db() as conn:
-        existing = conn.execute("SELECT id FROM users WHERE username = %s", (req.username,)).fetchone()
+        existing = conn.execute("SELECT id FROM users WHERE username = %s", (account,)).fetchone()
         if existing:
-            raise HTTPException(status_code=400, detail="用户名已存在")
+            raise HTTPException(status_code=400, detail="账号已存在")
+        nickname_existing = conn.execute("SELECT id FROM users WHERE nickname = %s", (nickname,)).fetchone()
+        if nickname_existing:
+            raise HTTPException(status_code=400, detail="昵称已存在")
         email_existing = conn.execute("SELECT id FROM users WHERE email = %s", (req.email,)).fetchone()
         if email_existing:
             raise HTTPException(status_code=400, detail="邮箱已被注册")
         password_hash = await hash_password(req.password)
-        cursor = conn.execute("INSERT INTO users (username, password_hash, nickname, email) VALUES (%s, %s, %s, %s) RETURNING id", (req.username, password_hash, req.nickname or req.username, req.email))
+        cursor = conn.execute("INSERT INTO users (username, password_hash, nickname, email) VALUES (%s, %s, %s, %s) RETURNING id", (account, password_hash, nickname, req.email))
         user_id = cursor.fetchone()["id"]
         update_user_ip(user_id, ip, conn=conn)
         register_bonus = PointsService.register_bonus()
         PointsService.add_points(user_id, register_bonus, "register_bonus", "注册赠送", conn=conn)
         mark_registered(req.email)
-    access_token = _issue_session(response, user_id, req.username, False, ip, request.headers.get("user-agent", ""))
-    logger.info(f"[audit.register] user={user_id} username={req.username} ip={ip}")
-    return {"token": access_token, "user": {"id": user_id, "username": req.username, "nickname": req.nickname or req.username, "is_admin": False, "points": register_bonus}}
+    access_token = _issue_session(response, user_id, account, False, ip, request.headers.get("user-agent", ""))
+    logger.info(f"[audit.register] user={user_id} username={account} ip={ip}")
+    return {"token": access_token, "user": {"id": user_id, "username": account, "nickname": nickname, "is_admin": False, "points": register_bonus}}
 
 
 @router.post("/login")
 async def login(req: LoginRequest, request: Request, response: Response):
     ip = get_client_ip(request)
+    account = normalize_account(req.username)
     _check_login_rate(ip)
     with get_db() as conn:
-        user = conn.execute("SELECT * FROM users WHERE username = %s", (req.username,)).fetchone()
+        user = conn.execute("SELECT * FROM users WHERE username = %s", (account,)).fetchone()
         if not user or not await verify_password(req.password, user["password_hash"]):
-            raise HTTPException(status_code=401, detail="用户名或密码错误")
+            raise HTTPException(status_code=401, detail="账号或密码错误")
         update_user_ip(user["id"], ip, conn=conn)
         conn.execute("UPDATE users SET last_active = %s WHERE id = %s", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user["id"]))
         payload = {"id": user["id"], "username": user["username"], "nickname": user["nickname"], "is_admin": bool(user["is_admin"]), "points": user["points"]}

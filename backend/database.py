@@ -408,6 +408,9 @@ def init_db():
             conn.execute("UPDATE image_metadata SET expires_at = COALESCE(created_at, NOW()) + interval '3 day' WHERE is_permanent = FALSE AND expires_at IS NULL")
             if not _column_exists(conn, "users", "email"):
                 conn.execute("ALTER TABLE users ADD COLUMN email VARCHAR(255) DEFAULT ''")
+            dup_nickname = conn.execute("SELECT nickname,COUNT(*) cnt FROM users WHERE nickname IS NOT NULL AND nickname<>'' GROUP BY nickname HAVING COUNT(*)>1 LIMIT 1").fetchone()
+            if not dup_nickname:
+                conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_nickname_unique ON users(nickname) WHERE nickname IS NOT NULL AND nickname<>''")
 
         # 初始化默认分类
             count = conn.execute("SELECT COUNT(*) AS cnt FROM categories").fetchone()["cnt"]
@@ -457,6 +460,9 @@ def create_admin_if_not_exists():
     admin_password = os.getenv("ADMIN_PASSWORD")
     if not admin_username or not admin_password:
         print("[WARNING] ADMIN_USERNAME 或 ADMIN_PASSWORD 未设置，跳过管理员创建")
+        return
+    if not admin_username.isdigit() or len(admin_username) < 5 or len(admin_username) > 11:
+        print("[WARNING] ADMIN_USERNAME 需为5到11位数字，跳过管理员创建")
         return
     with get_db() as conn:
         admin = conn.execute(

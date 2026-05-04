@@ -39,6 +39,7 @@ class ConfigUpdate(BaseModel):
     smtp_port: Optional[int] = Field(None, ge=1, le=65535)
     smtp_password: Optional[str] = None
     smtp_sender: Optional[str] = None
+    smtp_sender_name: Optional[str] = None
 
 
 @router.get("")

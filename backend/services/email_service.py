@@ -3,9 +3,35 @@ import secrets
 import smtplib
 import asyncio
 from email.mime.text import MIMEText
+from email.header import Header
+from email.utils import formataddr
 from fastapi import HTTPException
 from backend.config import get_smtp_config
 from backend.db.session import get_db
+
+
+VERIFICATION_EMAIL_HTML = """\
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Atelier·AI造梦工坊 邮箱验证</title></head>
+<body style="margin:0;padding:0;background-color:#F9FBF8;font-family:Arial,sans-serif;">
+<div style="width:90%;max-width:600px;margin:20px auto;background-color:#FFFFFF;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(176,209,187,0.15);">
+  <div style="background-color:#B0D1BB;color:#FFFFFF;padding:24px 20px;">
+    <h1 style="margin:0;font-size:26px;font-weight:600;">Atelier<span style="font-size:16px;margin-left:8px;opacity:0.9;">AI 造梦工坊</span></h1>
+    <p style="margin:6px 0 0;font-size:13px;opacity:0.8;">开启你的AI创作之旅 · 一键生图</p>
+  </div>
+  <div style="padding:35px 30px;color:#5A7063;">
+    <p style="font-size:16px;line-height:1.7;">你好，<span style="color:#8CB39E;font-weight:500;">{email}</span>：</p>
+    <p style="font-size:16px;line-height:1.7;margin:16px 0;">感谢使用 <strong style="color:#7AA88F;">Atelier·AI造梦工坊</strong>，你的验证码为：</p>
+    <div style="background-color:#F2F7F4;padding:18px;border-radius:8px;text-align:center;margin:20px 0;">
+      <strong style="font-size:24px;color:#6B947D;letter-spacing:4px;">{code}</strong>
+    </div>
+    <p style="font-size:15px;line-height:1.7;color:#708579;">该验证码用于账号身份验证，3分钟内有效<br>请勿泄露或转发给他人，如非本人操作请忽略本邮件</p>
+    <p style="font-size:16px;line-height:1.7;margin-top:30px;text-align:right;color:#8CB39E;">Atelier · AI 造梦工坊</p>
+  </div>
+</div>
+</body>
+</html>"""
 
 
 def generate_verification_code():
@@ -18,9 +44,14 @@ def _send_email_sync(to_email, code):
     if not cfg["sender"] or not cfg["password"]:
         raise HTTPException(status_code=500, detail="SMTP 未配置，请联系管理员")
 
-    msg = MIMEText(f"您的验证码是：{code}\n验证码 3 分钟内有效，请勿泄露给他人。", "plain", "utf-8")
-    msg["Subject"] = "邮箱验证码"
-    msg["From"] = cfg["sender"]
+    html = VERIFICATION_EMAIL_HTML.format(email=to_email, code=code)
+    msg = MIMEText(html, "html", "utf-8")
+    msg["Subject"] = "Atelier·AI造梦工坊 邮箱验证码"
+    sender_name = cfg.get('sender_name', '')
+    if sender_name:
+        msg["From"] = formataddr((str(Header(sender_name, 'utf-8')), cfg['sender']))
+    else:
+        msg["From"] = cfg['sender']
     msg["To"] = to_email
 
     try:
@@ -56,7 +87,13 @@ def create_and_send_code(email, ip):
             (email, code, ip),
         )
 
-    asyncio.get_event_loop().create_task(send_verification_email(email, code))
+    async def _send():
+        try:
+            await send_verification_email(email, code)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"发送验证码邮件失败: {e}")
+    asyncio.ensure_future(_send())
 
 
 def verify_code(email, code):
