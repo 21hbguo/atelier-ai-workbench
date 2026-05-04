@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
 import { Paperclip, X, Settings, Send, Maximize2, Share2, Loader2 } from 'lucide-react'
 import ParamPanel from './ParamPanel'
-import { getCachedImage, setCachedImage, clearAllCachedImages } from '../utils/imageDB'
+import { getCachedImages, setCachedImages, getPendingImage, clearPendingImage } from '../utils/imageDB'
 
 const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost = 10 }, ref) {
   const [prompt, setPrompt] = useState('')
@@ -19,8 +19,24 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const lightboxPushedRef = useRef(false)
   const lightboxClosingByPopRef = useRef(false)
   const imagesRef = useRef([])
-  const restoredRef = useRef(false)
-  const pendingConsumedRef = useRef(false)
+  const pendingImageConsumedRef = useRef(false)
+  const persistVersionRef = useRef(0)
+  const persistImages = useCallback(async (list) => {
+    try {
+      const version = ++persistVersionRef.current
+      const cached = await Promise.all((list || []).map(async (img, i) => {
+        let blob = null
+        if (img.file) blob = img.file
+        else if (img.url) {
+          const res = await fetch(img.url)
+          blob = await res.blob()
+        }
+        return blob ? { blob, name: img.file?.name || img.name || `cached-${i}.png`, type: blob.type || img.file?.type || 'image/png' } : null
+      }))
+      if (version !== persistVersionRef.current) return
+      await setCachedImages(cached.filter(Boolean))
+    } catch {}
+  }, [])
   const appendImages = useCallback((items) => {
     if (!items?.length) return
     setImages(prev => {
@@ -31,37 +47,58 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
       }
       if (items.length > remaining) {
         alert(`最多只能上传 ${MAX_IMAGES} 张参考图，已自动截取前 ${remaining} 张`)
-        return [...prev, ...items.slice(0, remaining)]
+        const next = [...prev, ...items.slice(0, remaining)]
+        void persistImages(next)
+        return next
       }
-      return [...prev, ...items]
+      const next = [...prev, ...items]
+      void persistImages(next)
+      return next
     })
-  }, [])
+  }, [persistImages])
 
   const consumePending = useCallback(async () => {
     const pendingPrompt = localStorage.getItem('pending_prompt')
     const pendingImg = localStorage.getItem('pending_image')
 
     if (pendingPrompt) {
-      pendingConsumedRef.current = true
       localStorage.removeItem('pending_prompt')
       setPrompt(pendingPrompt)
-      return
     }
 
-    if (pendingImg) {
-      pendingConsumedRef.current = true
-      localStorage.removeItem('pending_image')
+    if (pendingImg || localStorage.getItem('pending_image_token')) {
+      pendingImageConsumedRef.current = true
       try {
-        const { dataUrl, name } = JSON.parse(pendingImg)
-        const res = await fetch(dataUrl)
-        const blob = await res.blob()
-        const file = new File([blob], name || `ref-${Date.now()}.png`, { type: blob.type })
-        restoredRef.current = true
-        await clearAllCachedImages()
-        setImages([{ file, preview: URL.createObjectURL(file) }])
+        let blob = null
+        let name = `ref-${Date.now()}.png`
+        let type = 'image/png'
+        const pending = await getPendingImage()
+        if (pending?.blob) {
+          blob = pending.blob
+          name = pending.name || name
+          type = pending.type || pending.blob.type || type
+        } else if (pendingImg) {
+          const parsed = JSON.parse(pendingImg)
+          const res = await fetch(parsed.dataUrl)
+          blob = await res.blob()
+          name = parsed.name || name
+          type = blob.type || type
+        }
+        if (blob) {
+          const file = new File([blob], name, { type })
+          const next = [{ file, preview: URL.createObjectURL(file), name }]
+          setImages(prev => {
+            const merged = [...prev, ...next].slice(0, MAX_IMAGES)
+            void persistImages(merged)
+            return merged
+          })
+        }
       } catch {}
+      localStorage.removeItem('pending_image')
+      localStorage.removeItem('pending_image_token')
+      await clearPendingImage().catch(() => {})
     }
-  }, [])
+  }, [persistImages])
 
   // 从缓存恢复提示词和参考图
   useEffect(() => {
@@ -70,21 +107,10 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
 
     ;(async () => {
       try {
-        const count = await getCachedImage('_count')
-        if (!count) { restoredRef.current = true; return }
-        const n = Number(await count.text())
-        if (!n) { restoredRef.current = true; return }
-        const items = []
-        for (let i = 0; i < n; i++) {
-          const blob = await getCachedImage(`img_${i}`)
-          if (blob) {
-            const file = new File([blob], `cached-${i}.png`, { type: blob.type })
-            items.push({ file, preview: URL.createObjectURL(file) })
-          }
-        }
-        if (items.length > 0 && !pendingConsumedRef.current) setImages(items)
+        const cachedImages = await getCachedImages()
+        const items = cachedImages.map((item, i) => item?.blob ? { file: new File([item.blob], item.name || `cached-${i}.png`, { type: item.type || item.blob.type || 'image/png' }), preview: URL.createObjectURL(item.blob), name: item.name || `cached-${i}.png` } : null).filter(Boolean)
+        if (items.length > 0 && !pendingImageConsumedRef.current) setImages(items)
       } catch {}
-      restoredRef.current = true
     })()
   }, [])
 
@@ -105,33 +131,11 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
 
   useEffect(() => { imagesRef.current = images }, [images])
 
-  // 参考图变化时同步到 IndexedDB（初始恢复完成前跳过，防止清空缓存）
-  useEffect(() => {
-    if (!restoredRef.current) return
-    ;(async () => {
-      try {
-        await clearAllCachedImages()
-        if (images.length === 0) return
-        for (let i = 0; i < images.length; i++) {
-          const img = images[i]
-          let blob
-          if (img.file) {
-            blob = img.file
-          } else if (img.url) {
-            const res = await fetch(img.url)
-            blob = await res.blob()
-          }
-          if (blob) await setCachedImage(`img_${i}`, blob)
-        }
-        await setCachedImage('_count', new Blob([String(images.length)]))
-      } catch {}
-    })()
-  }, [images])
-
   useEffect(() => {
     consumePending()
     window.addEventListener('pending-prompt-updated', consumePending)
-    return () => window.removeEventListener('pending-prompt-updated', consumePending)
+    window.addEventListener('pending-image-updated', consumePending)
+    return () => { window.removeEventListener('pending-prompt-updated', consumePending); window.removeEventListener('pending-image-updated', consumePending) }
   }, [consumePending])
 
   useEffect(() => {
@@ -255,12 +259,11 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     const ok = await onSubmit({ prompt: prompt.trim(), images, params, shareToSquare, rollCount: batch ? Math.min(5, Math.max(2, Number(params.roll_count) || 5)) : 1 })
     if (ok === false) return
     setPrompt('')
-    setImages([])
   }
   const batchCount = Math.min(5, Math.max(2, Number(params.roll_count) || 5))
 
   const removeImage = (idx) => {
-    setImages(prev => { const next = [...prev]; if (next[idx].file) URL.revokeObjectURL(next[idx].preview); next.splice(idx, 1); return next })
+    setImages(prev => { const next = [...prev]; if (next[idx].file) URL.revokeObjectURL(next[idx].preview); next.splice(idx, 1); void persistImages(next); return next })
   }
 
   return (

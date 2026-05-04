@@ -1,6 +1,8 @@
 const DB_NAME = 'image_cache_db'
 const DB_VERSION = 1
 const STORE_NAME = 'images'
+const CACHED_IMAGES_KEY = '__cached_images__'
+const PENDING_IMAGE_KEY = '__pending_image__'
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -49,4 +51,37 @@ export async function clearAllCachedImages() {
     tx.oncomplete = () => resolve()
     tx.onerror = () => reject(tx.error)
   })
+}
+
+export async function getCachedImages() {
+  const list = await getCachedImage(CACHED_IMAGES_KEY)
+  return Array.isArray(list) ? list : []
+}
+
+export async function setCachedImages(items) {
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite')
+    tx.objectStore(STORE_NAME).put(Array.isArray(items) ? items : [], CACHED_IMAGES_KEY)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
+export async function getPendingImage() {
+  return await getCachedImage(PENDING_IMAGE_KEY)
+}
+
+export async function setPendingImage(item) {
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite')
+    tx.objectStore(STORE_NAME).put(item || null, PENDING_IMAGE_KEY)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
+export async function clearPendingImage() {
+  await clearCachedImage(PENDING_IMAGE_KEY)
 }

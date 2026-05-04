@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Image, BookOpen, Share2, Trash2, Snowflake, Sun, RefreshCw, Star, X } from 'lucide-react'
-import { squareAPI, promptAPI, adminAPI, favoriteAPI } from '../api'
+import { squareAPI, promptAPI, adminAPI, favoriteAPI, imageAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 import SearchInput from '../components/SearchInput'
 import CardGrid from '../components/CardGrid'
@@ -12,6 +12,7 @@ import { useLayoutMode } from '../LayoutModeContext'
 import { normalizeList } from '../utils/cardAdapter'
 import { readUser } from '../auth'
 import { useAppDialog } from '../components/AppDialogProvider'
+import { setPendingImage } from '../utils/imageDB'
 
 function useImageActions() {
   const navigate = useNavigate()
@@ -27,15 +28,13 @@ function useImageActions() {
 
   const handleUseImage = async (card) => {
     try {
-      const res = await fetch(card.fullUrl)
-      const blob = await res.blob()
-      const reader = new FileReader()
-      reader.onload = () => {
-        localStorage.setItem('pending_image', JSON.stringify({ dataUrl: reader.result, name: card.filename || card.title || 'image' }))
-        navigate('/')
-      }
-      reader.readAsDataURL(blob)
-    } catch {}
+      const { data } = await imageAPI.getBlobByUrl(card.fullUrl)
+      const blob = data
+      await setPendingImage({ blob, name: card.filename || card.title || 'image', type: blob.type || 'image/png' })
+      localStorage.setItem('pending_image_token', String(Date.now()))
+      window.dispatchEvent(new Event('pending-image-updated'))
+      navigate('/')
+    } catch { alert('添加参考图失败') }
   }
 
   return { handleUsePrompt, handleUseImage }
@@ -56,15 +55,13 @@ function usePromptActions() {
   const handleUseImage = async (card) => {
     if (!card.fullUrl) return
     try {
-      const res = await fetch(card.fullUrl)
-      const blob = await res.blob()
-      const reader = new FileReader()
-      reader.onload = () => {
-        localStorage.setItem('pending_image', JSON.stringify({ dataUrl: reader.result, name: (card.name || 'prompt') + '.jpg' }))
-        navigate('/')
-      }
-      reader.readAsDataURL(blob)
-    } catch {}
+      const { data } = await imageAPI.getBlobByUrl(card.fullUrl)
+      const blob = data
+      await setPendingImage({ blob, name: (card.name || 'prompt') + '.jpg', type: blob.type || 'image/jpeg' })
+      localStorage.setItem('pending_image_token', String(Date.now()))
+      window.dispatchEvent(new Event('pending-image-updated'))
+      navigate('/')
+    } catch { alert('添加参考图失败') }
   }
 
   return { handleUsePrompt, handleUseImage }

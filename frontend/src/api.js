@@ -46,6 +46,7 @@ export const taskAPI = {
 export const imageAPI = {
   list: (page = 1, pageSize = 20, userId) => { const params = { page, page_size: pageSize }; if (userId) params.user_id = userId; return api.get('/images', { params }) },
   get: filename => api.get(`/images/${filename}`),
+  getBlobByUrl: url => api.get((url || '').startsWith('/api/') ? (url || '').slice(4) : (url || ''), { responseType: 'blob' }),
   delete: filename => api.post(`/images/${filename}/delete`),
   saveMetadata: (filename, metadata) => api.post(`/images/${filename}/metadata`, metadata),
   extend: filenames => api.post('/images/extend', { filenames }),
