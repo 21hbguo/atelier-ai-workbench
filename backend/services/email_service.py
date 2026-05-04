@@ -3,7 +3,6 @@ import secrets
 import smtplib
 import asyncio
 from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from fastapi import HTTPException
 from backend.config import get_smtp_config
 from backend.db.session import get_db
@@ -16,25 +15,18 @@ def generate_verification_code():
 
 def _send_email_sync(to_email, code):
     cfg = get_smtp_config()
-    if not cfg["host"] or not cfg["sender"]:
+    if not cfg["sender"] or not cfg["password"]:
         raise HTTPException(status_code=500, detail="SMTP 未配置，请联系管理员")
 
-    msg = MIMEMultipart()
+    msg = MIMEText(f"您的验证码是：{code}\n验证码 3 分钟内有效，请勿泄露给他人。", "plain", "utf-8")
+    msg["Subject"] = "邮箱验证码"
     msg["From"] = cfg["sender"]
     msg["To"] = to_email
-    msg["Subject"] = "邮箱验证码"
-    msg.attach(MIMEText(f"您的验证码是：{code}\n验证码 3 分钟内有效，请勿泄露给他人。", "plain", "utf-8"))
 
-    port = cfg["port"]
     try:
-        if port == 465:
-            server = smtplib.SMTP_SSL(cfg["host"], port, timeout=10)
-        else:
-            server = smtplib.SMTP(cfg["host"], port, timeout=10)
-            server.starttls()
-        server.login(cfg["username"], cfg["password"])
-        server.sendmail(cfg["sender"], to_email, msg.as_string())
-        server.quit()
+        with smtplib.SMTP_SSL(cfg["server"], cfg["port"], timeout=30) as server:
+            server.login(cfg["sender"], cfg["password"])
+            server.sendmail(cfg["sender"], to_email, msg.as_string())
     except HTTPException:
         raise
     except Exception as e:

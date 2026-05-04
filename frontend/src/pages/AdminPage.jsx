@@ -93,7 +93,7 @@ export default function AdminPage() {
   const [newTitle, setNewTitle] = useState('')
   const [newContent, setNewContent] = useState('')
   const [creatingAnnouncement, setCreatingAnnouncement] = useState(false)
-  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', register_enabled: true, image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', recharge_packages: defaultRechargePackages, generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3, github_hosting_enabled: false, github_hosting_repo: '', github_hosting_token: '', github_hosting_branch: 'main', smtp_host: '', smtp_port: 465, smtp_username: '', smtp_password: '', smtp_sender: '' })
+  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', register_enabled: true, image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', recharge_packages: defaultRechargePackages, generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3, github_hosting_enabled: false, github_hosting_repo: '', github_hosting_token: '', github_hosting_branch: 'main', smtp_server: 'smtp.qq.com', smtp_port: 465, smtp_password: '', smtp_sender: '' })
   const [configSaving, setConfigSaving] = useState(false)
   const [defaultModelId, setDefaultModelId] = useState('image-default')
   const [generationModelsText, setGenerationModelsText] = useState('{}')
@@ -238,9 +238,8 @@ export default function AdminPage() {
         github_hosting_repo: data.github_hosting_repo || '',
         github_hosting_token: data.github_hosting_token || '',
         github_hosting_branch: data.github_hosting_branch || 'main',
-        smtp_host: data.smtp_host || '',
+        smtp_server: data.smtp_server || 'smtp.qq.com',
         smtp_port: Number(data.smtp_port || 465),
-        smtp_username: data.smtp_username || '',
         smtp_password: data.smtp_password || '',
         smtp_sender: data.smtp_sender || '',
       })
@@ -1221,27 +1220,23 @@ export default function AdminPage() {
               <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>SMTP 邮件配置</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>SMTP 主机</label>
-                  <input type="text" value={runtimeConfig.smtp_host} onChange={e => onConfigInput('smtp_host', e.target.value)} placeholder="smtp.qq.com" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                  <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>发件人邮箱</label>
+                  <input type="email" value={runtimeConfig.smtp_sender} onChange={e => onConfigInput('smtp_sender', e.target.value)} placeholder="your@qq.com" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                </div>
+                <div>
+                  <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>授权码</label>
+                  <input type="password" value={runtimeConfig.smtp_password} onChange={e => onConfigInput('smtp_password', e.target.value)} placeholder="邮箱授权码" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                </div>
+                <div>
+                  <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>SMTP 服务器</label>
+                  <input type="text" value={runtimeConfig.smtp_server} onChange={e => onConfigInput('smtp_server', e.target.value)} placeholder="smtp.qq.com" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
                   <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>端口</label>
                   <input type="number" min={1} max={65535} value={runtimeConfig.smtp_port} onChange={e => onConfigInput('smtp_port', e.target.value)} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
-                <div>
-                  <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>用户名</label>
-                  <input type="text" value={runtimeConfig.smtp_username} onChange={e => onConfigInput('smtp_username', e.target.value)} placeholder="SMTP 登录用户名" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
-                </div>
-                <div>
-                  <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>密码/授权码</label>
-                  <input type="password" value={runtimeConfig.smtp_password} onChange={e => onConfigInput('smtp_password', e.target.value)} placeholder="邮箱授权码" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
-                </div>
-                <div>
-                  <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>发件人邮箱</label>
-                  <input type="email" value={runtimeConfig.smtp_sender} onChange={e => onConfigInput('smtp_sender', e.target.value)} placeholder="noreply@example.com" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
-                </div>
               </div>
-              <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>配置后注册时将发送邮箱验证码。密码字段为邮箱授权码，非登录密码。</p>
+              <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>填写发件人邮箱和授权码即可，服务器默认 smtp.qq.com:465。QQ 邮箱请在设置中开启 SMTP 并获取授权码。</p>
             </div>
             </>
             ) : configSubtab === 'route' ? (

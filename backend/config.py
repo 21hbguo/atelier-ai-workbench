@@ -77,9 +77,8 @@ _runtime_config = {
     "github_hosting_repo": os.getenv("GITHUB_HOSTING_REPO", ""),
     "github_hosting_token": os.getenv("GITHUB_HOSTING_TOKEN", ""),
     "github_hosting_branch": os.getenv("GITHUB_HOSTING_BRANCH", "main"),
-    "smtp_host": os.getenv("SMTP_HOST", ""),
+    "smtp_server": os.getenv("SMTP_SERVER", "smtp.qq.com"),
     "smtp_port": int(os.getenv("SMTP_PORT", "465")),
-    "smtp_username": os.getenv("SMTP_USERNAME", ""),
     "smtp_password": os.getenv("SMTP_PASSWORD", ""),
     "smtp_sender": os.getenv("SMTP_SENDER", ""),
 }
@@ -212,9 +211,8 @@ def get_recharge_packages():
 
 def get_smtp_config():
     return {
-        "host": _runtime_config.get("smtp_host", ""),
+        "server": _runtime_config.get("smtp_server", "smtp.qq.com"),
         "port": int(_runtime_config.get("smtp_port", 465)),
-        "username": _runtime_config.get("smtp_username", ""),
         "password": _runtime_config.get("smtp_password", ""),
         "sender": _runtime_config.get("smtp_sender", ""),
     }

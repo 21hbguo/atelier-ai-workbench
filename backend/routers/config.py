@@ -35,9 +35,8 @@ class ConfigUpdate(BaseModel):
     github_hosting_repo: Optional[str] = None
     github_hosting_token: Optional[str] = None
     github_hosting_branch: Optional[str] = None
-    smtp_host: Optional[str] = None
+    smtp_server: Optional[str] = None
     smtp_port: Optional[int] = Field(None, ge=1, le=65535)
-    smtp_username: Optional[str] = None
     smtp_password: Optional[str] = None
     smtp_sender: Optional[str] = None
 
