@@ -9,6 +9,10 @@ export default function LoginPage() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [nickname, setNickname] = useState('')
+  const [email, setEmail] = useState('')
+  const [code, setCode] = useState('')
+  const [sendingCode, setSendingCode] = useState(false)
+  const [cooldown, setCooldown] = useState(0)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
@@ -21,6 +25,26 @@ export default function LoginPage() {
     }).catch(() => {})
   }, [])
 
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const timer = setInterval(() => setCooldown(c => c - 1), 1000)
+    return () => clearInterval(timer)
+  }, [cooldown])
+
+  const handleSendCode = async () => {
+    if (!email || cooldown > 0) return
+    setSendingCode(true)
+    setError('')
+    try {
+      await authAPI.sendCode(email)
+      setCooldown(60)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSendingCode(false)
+    }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
@@ -29,7 +53,7 @@ export default function LoginPage() {
 
     try {
       const data = isRegister
-        ? (await authAPI.register({ username, password, nickname: nickname || username })).data
+        ? (await authAPI.register({ username, password, nickname: nickname || username, email, code })).data
         : (await authAPI.login({ username, password })).data
       writeUser(data.user)
       navigate('/')
@@ -81,6 +105,48 @@ export default function LoginPage() {
                   style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
                   placeholder="可选，默认为用户名"
                 />
+              </div>
+            )}
+
+            {isRegister && (
+              <div>
+                <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>邮箱</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
+                  style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                  placeholder="用于接收验证码"
+                  required
+                />
+              </div>
+            )}
+
+            {isRegister && (
+              <div>
+                <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>验证码</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    className="flex-1 px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
+                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                    placeholder="6 位验证码"
+                    required
+                    maxLength={6}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSendCode}
+                    disabled={sendingCode || cooldown > 0 || !email}
+                    className="px-3 py-2.5 rounded-lg text-xs font-medium border whitespace-nowrap disabled:opacity-50"
+                    style={{ borderColor: 'var(--border-color)', color: cooldown > 0 ? 'var(--text-secondary)' : 'var(--accent)', background: 'var(--bg-primary)' }}
+                  >
+                    {cooldown > 0 ? `${cooldown}s` : sendingCode ? '发送中...' : '发送验证码'}
+                  </button>
+                </div>
               </div>
             )}
 

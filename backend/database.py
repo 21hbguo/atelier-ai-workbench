@@ -350,6 +350,18 @@ def init_db():
             )""",
             "CREATE INDEX IF NOT EXISTS idx_auth_refresh_tokens_user_id ON auth_refresh_tokens(user_id)",
             "CREATE INDEX IF NOT EXISTS idx_auth_refresh_tokens_expires_at ON auth_refresh_tokens(expires_at)",
+            """CREATE TABLE IF NOT EXISTS email_verification_codes (
+                id SERIAL PRIMARY KEY,
+                email VARCHAR(255) NOT NULL,
+                code VARCHAR(10) NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                used BOOLEAN DEFAULT FALSE,
+                registered BOOLEAN DEFAULT FALSE,
+                ip VARCHAR(45) DEFAULT '',
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_ev_codes_email ON email_verification_codes(email)",
+            "CREATE INDEX IF NOT EXISTS idx_ev_codes_created_at ON email_verification_codes(created_at DESC)",
         ]
             for sql in statements:
                 conn.execute(sql)
@@ -394,6 +406,8 @@ def init_db():
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_favorites_user_target ON favorites(user_id,target_type,target_id)")
             conn.execute("UPDATE image_metadata m SET is_permanent = TRUE, expires_at = NULL WHERE EXISTS (SELECT 1 FROM square_images s WHERE s.filename = m.filename)")
             conn.execute("UPDATE image_metadata SET expires_at = COALESCE(created_at, NOW()) + interval '3 day' WHERE is_permanent = FALSE AND expires_at IS NULL")
+            if not _column_exists(conn, "users", "email"):
+                conn.execute("ALTER TABLE users ADD COLUMN email VARCHAR(255) DEFAULT ''")
 
         # 初始化默认分类
             count = conn.execute("SELECT COUNT(*) AS cnt FROM categories").fetchone()["cnt"]

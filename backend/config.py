@@ -77,6 +77,11 @@ _runtime_config = {
     "github_hosting_repo": os.getenv("GITHUB_HOSTING_REPO", ""),
     "github_hosting_token": os.getenv("GITHUB_HOSTING_TOKEN", ""),
     "github_hosting_branch": os.getenv("GITHUB_HOSTING_BRANCH", "main"),
+    "smtp_host": os.getenv("SMTP_HOST", ""),
+    "smtp_port": int(os.getenv("SMTP_PORT", "465")),
+    "smtp_username": os.getenv("SMTP_USERNAME", ""),
+    "smtp_password": os.getenv("SMTP_PASSWORD", ""),
+    "smtp_sender": os.getenv("SMTP_SENDER", ""),
 }
 _runtime_config_defaults = dict(_runtime_config)
 if not _runtime_config["generation_models"]:
@@ -203,6 +208,16 @@ def normalize_recharge_packages(items):
     return [{"amount":9.9,"points":120,"label":"体验包"},{"amount":29.9,"points":400,"label":"进阶包"},{"amount":59.9,"points":900,"label":"超值包"}]
 def get_recharge_packages():
     return normalize_recharge_packages(_runtime_config.get("recharge_packages"))
+
+
+def get_smtp_config():
+    return {
+        "host": _runtime_config.get("smtp_host", ""),
+        "port": int(_runtime_config.get("smtp_port", 465)),
+        "username": _runtime_config.get("smtp_username", ""),
+        "password": _runtime_config.get("smtp_password", ""),
+        "sender": _runtime_config.get("smtp_sender", ""),
+    }
 
 
 _load_runtime_config()

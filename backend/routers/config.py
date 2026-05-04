@@ -35,6 +35,11 @@ class ConfigUpdate(BaseModel):
     github_hosting_repo: Optional[str] = None
     github_hosting_token: Optional[str] = None
     github_hosting_branch: Optional[str] = None
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = Field(None, ge=1, le=65535)
+    smtp_username: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_sender: Optional[str] = None
 
 
 @router.get("")
@@ -43,6 +48,7 @@ async def get_runtime_config(user=Depends(get_optional_user)):
     if user and user.get("is_admin"):
         cfg["api_key"] = "***" if cfg.get("api_key") else ""
         cfg["github_hosting_token"] = "***" if cfg.get("github_hosting_token") else ""
+        cfg["smtp_password"] = "***" if cfg.get("smtp_password") else ""
         return cfg
     return {
         "register_enabled": bool(cfg.get("register_enabled", True)),
@@ -59,6 +65,7 @@ async def get_runtime_config_admin(admin=Depends(require_admin)):
     cfg = get_config()
     cfg["api_key"] = "***" if cfg.get("api_key") else ""
     cfg["github_hosting_token"] = "***" if cfg.get("github_hosting_token") else ""
+    cfg["smtp_password"] = "***" if cfg.get("smtp_password") else ""
     cfg["recharge_packages"] = get_recharge_packages()
     return cfg
 
@@ -68,6 +75,8 @@ async def update_runtime_config(body: ConfigUpdate, admin=Depends(require_admin)
     updates = {k: v for k, v in body.dict().items() if v is not None}
     if updates.get("github_hosting_token") == "***":
         del updates["github_hosting_token"]
+    if updates.get("smtp_password") == "***":
+        del updates["smtp_password"]
     update_config(updates)
     return {"status": "ok"}
 
