@@ -70,7 +70,7 @@ _runtime_config_defaults = dict(_runtime_config)
 if not _runtime_config["generation_models"]:
     _runtime_config["generation_models"]={"image-default":{"label":"默认模型","capability":"image","enabled":True,"providers":["wuyin-main"]}}
 if not _runtime_config["generation_providers"]:
-    _runtime_config["generation_providers"]={"wuyin-main":{"type":"wuyin","enabled":True,"priority":100,"api_url":"","api_key":"","circuit_fail_threshold":3,"circuit_cooldown_seconds":60}}
+    _runtime_config["generation_providers"]={"wuyin-main":{"type":"wuyin","enabled":True,"priority":100,"api_url":"","api_key":"","circuit_fail_threshold":3,"circuit_cooldown_seconds":60,"unit_name":"供应商积分","unit_code":"vendor_points"}}
 
 
 def _load_runtime_config():
@@ -146,7 +146,12 @@ def get_generation_models():
 
 def get_generation_providers():
     providers = _runtime_config.get("generation_providers") or {}
-    return providers if isinstance(providers, dict) else {}
+    if not isinstance(providers, dict): return {}
+    out={}
+    for pid,p in providers.items():
+        if isinstance(p,dict):
+            out[pid]={**p,"unit_name":p.get("unit_name") or "供应商额度","unit_code":p.get("unit_code") or "vendor_quota"}
+    return out
 
 
 _load_runtime_config()

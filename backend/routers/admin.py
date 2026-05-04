@@ -12,6 +12,7 @@ from backend.services.image_mapping import ImageUrlMapping
 from backend.services.points_service import PointsService
 from backend.services.notification_service import NotificationService
 from backend.services.image_expiry import refresh_permanent_flags_by_filenames
+from backend.services.finance_service import FinanceService
 from backend.config import get_generation_providers, get_generation_models, get_config
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -32,6 +33,66 @@ def _safe_int(v, default=0):
 
 def _normalize_banned_word(word: str) -> str:
     return " ".join((word or "").replace("\u3000", " ").strip().split())
+
+@router.get("/finance/overview")
+async def finance_overview(time_range: str = Query("30d", alias="range"), admin=Depends(require_admin)):
+    return FinanceService.finance_overview(time_range)
+
+@router.get("/finance/providers")
+async def finance_providers(time_range: str = Query("30d", alias="range"), admin=Depends(require_admin)):
+    return FinanceService.finance_providers(time_range)
+
+@router.get("/finance/purchases")
+async def finance_purchases(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), provider_id: str = Query(""), admin=Depends(require_admin)):
+    return FinanceService.list_purchase_batches(page, size, provider_id)
+
+@router.post("/finance/purchases")
+async def finance_create_purchase(body: dict, admin=Depends(require_admin)):
+    try:
+        row=FinanceService.create_purchase_batch(body.get("provider_id"),body.get("purchase_date"),body.get("amount_rmb"),body.get("quota_amount"),body.get("remark"),admin["user_id"])
+        return {"message":"已创建采购批次","item":dict(row) if row else None}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/finance/purchases/{batch_id}")
+async def finance_update_purchase(batch_id: int, body: dict, admin=Depends(require_admin)):
+    try:
+        row=FinanceService.update_purchase_batch(batch_id,body.get("provider_id"),body.get("purchase_date"),body.get("amount_rmb"),body.get("quota_amount"),body.get("remark"),admin["user_id"])
+        return {"message":"已更新采购批次","item":dict(row) if row else None}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.delete("/finance/purchases/{batch_id}")
+@router.post("/finance/purchases/{batch_id}/delete")
+async def finance_delete_purchase(batch_id: int, admin=Depends(require_admin)):
+    try:
+        FinanceService.delete_purchase_batch(batch_id)
+        return {"message":"已删除采购批次","id":batch_id}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/finance/quota-rules")
+async def finance_quota_rules(page: int = Query(1, ge=1), size: int = Query(50, ge=1, le=200), provider_id: str = Query(""), admin=Depends(require_admin)):
+    return FinanceService.list_quota_rules(page, size, provider_id)
+
+@router.post("/finance/quota-rules")
+async def finance_upsert_quota_rule(body: dict, admin=Depends(require_admin)):
+    try:
+        row=FinanceService.upsert_quota_rule(body.get("provider_id"),body.get("model_id"),body.get("quota_per_success"),body.get("enabled",True),body.get("remark",""),body.get("id"))
+        return {"message":"已保存消耗规则","item":dict(row) if row else None}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.delete("/finance/quota-rules/{rule_id}")
+@router.post("/finance/quota-rules/{rule_id}/delete")
+async def finance_delete_quota_rule(rule_id: int, admin=Depends(require_admin)):
+    if not FinanceService.delete_quota_rule(rule_id):
+        raise HTTPException(status_code=404, detail="规则不存在")
+    return {"message":"已删除规则","id":rule_id}
+
+@router.get("/finance/tasks")
+async def finance_tasks(time_range: str = Query("30d", alias="range"), provider_id: str = Query(""), model_id: str = Query(""), status: str = Query(""), page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), admin=Depends(require_admin)):
+    return FinanceService.list_task_entries(time_range, provider_id, model_id, status, page, size)
 
 
 @router.get("/users")

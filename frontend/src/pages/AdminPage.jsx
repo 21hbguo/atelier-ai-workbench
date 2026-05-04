@@ -13,8 +13,11 @@ import AdminHistoryTab from './admin-tabs/AdminHistoryTab'
 import AdminAnnouncementsTab from './admin-tabs/AdminAnnouncementsTab'
 import AdminBannedTab from './admin-tabs/AdminBannedTab'
 import AdminHostingTab from './admin-tabs/AdminHostingTab'
+import AdminFinanceTab from './admin-tabs/AdminFinanceTab'
 import { readUser } from '../auth'
 import { useAppDialog } from '../components/AppDialogProvider'
+
+const nowFinanceTime=()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');return`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`}
 
 export default function AdminPage() {
   const dialog = useAppDialog()
@@ -95,35 +98,51 @@ export default function AdminPage() {
   const [genModelsObj, setGenModelsObj] = useState({})
   const [genProvidersObj, setGenProvidersObj] = useState({})
   const [configSubtab, setConfigSubtab] = useState('basic')
-  const [costProfitRange, setCostProfitRange] = useState('30d')
-  const [costProfitStats, setCostProfitStats] = useState(null)
-  const [costProfitLoading, setCostProfitLoading] = useState(false)
-  const [costProfitConfigText, setCostProfitConfigText] = useState('{}')
-  const [costProfitConfigObj, setCostProfitConfigObj] = useState({})
-  const [costProfitLaunchAt, setCostProfitLaunchAt] = useState('')
-  const [editingQuotaProviderId, setEditingQuotaProviderId] = useState('')
-  const [editingQuotaDraft, setEditingQuotaDraft] = useState({ total_quota: 0, unit_quota_cost: 1, current_balance: 0, enabled: true })
-  const [editingCostKey, setEditingCostKey] = useState('')
-  const [editingCostValue, setEditingCostValue] = useState('')
   const [selectedGenRow, setSelectedGenRow] = useState('')
   const [editingProviderId, setEditingProviderId] = useState('')
-  const [editingProviderDraft, setEditingProviderDraft] = useState({ type: 'wuyin', enabled: true, priority: 100, api_url: '', api_key: '', circuit_fail_threshold: 3, circuit_cooldown_seconds: 60 })
+  const [editingProviderDraft, setEditingProviderDraft] = useState({ type: 'wuyin', enabled: true, priority: 100, api_url: '', api_key: '', circuit_fail_threshold: 3, circuit_cooldown_seconds: 60, unit_name: '供应商额度', unit_code: 'vendor_quota' })
   const [editingModelId, setEditingModelId] = useState('')
   const [editingModelDraft, setEditingModelDraft] = useState({ label: '', capability: 'image', enabled: true, providers: [] })
   const [modelLabelMap, setModelLabelMap] = useState({})
+  const [financeRange, setFinanceRange] = useState('30d')
+  const [financeOverview, setFinanceOverview] = useState(null)
+  const [financeProviders, setFinanceProviders] = useState([])
+  const [financePurchasePage, setFinancePurchasePage] = useState(1)
+  const [financePurchaseTotal, setFinancePurchaseTotal] = useState(0)
+  const [financePurchases, setFinancePurchases] = useState([])
+  const [financeProviderFilter, setFinanceProviderFilter] = useState('')
+  const [financeTaskProviderFilter, setFinanceTaskProviderFilter] = useState('')
+  const [financeModelFilter, setFinanceModelFilter] = useState('')
+  const [financeStatusFilter, setFinanceStatusFilter] = useState('')
+  const [financeTaskPage, setFinanceTaskPage] = useState(1)
+  const [financeTaskTotal, setFinanceTaskTotal] = useState(0)
+  const [financeTasks, setFinanceTasks] = useState([])
+  const [financeLoading, setFinanceLoading] = useState(false)
+  const [financeCreatingPurchase, setFinanceCreatingPurchase] = useState(false)
+  const [financePurchaseDraft, setFinancePurchaseDraft] = useState({ id: null, provider_id: '', amount_rmb: '', quota_amount: '', purchase_date: nowFinanceTime(), remark: '', can_edit_core: true })
+  const [financeRules, setFinanceRules] = useState([])
+  const [financeRuleSaving, setFinanceRuleSaving] = useState(false)
+  const [financeRuleDraft, setFinanceRuleDraft] = useState({ id: null, provider_id: '', model_id: '', quota_per_success: '', enabled: true, remark: '' })
 
   useEffect(() => { setUserPage(1) }, [userQuery])
   useEffect(() => { setHistoryPage(1) }, [historyQuery])
   useEffect(() => { setBannedWordsPage(1) }, [bannedWordsQuery])
+  useEffect(() => { setFinancePurchasePage(1) }, [financeProviderFilter])
+  useEffect(() => { setFinanceTaskPage(1) }, [financeTaskProviderFilter, financeModelFilter, financeStatusFilter, financeRange])
 
   useEffect(() => { if (tab === 'users') fetchUsers() }, [tab, userPage, userQuery])
   useEffect(() => { if (tab === 'history') fetchHistory() }, [tab, historyPage, historyQuery])
-  useEffect(() => { if (tab === 'stats') { fetchSystemStats(statsRange); fetchCostProfitStats(costProfitRange) } }, [tab, statsRange, costProfitRange])
+  useEffect(() => { if (tab === 'stats') fetchSystemStats(statsRange) }, [tab, statsRange])
   useEffect(() => { if (tab === 'hosting') { fetchHostingImages(); fetchHostingStats() } }, [tab, hostingPage])
   useEffect(() => { if (tab === 'banned') fetchBannedWords() }, [tab, bannedWordsPage, bannedWordsQuery])
   useEffect(() => { if (tab === 'recharge') fetchRechargeRequests() }, [tab, codesPage, codesSort, codesOrder, rechargeStatusFilter])
   useEffect(() => { if (tab === 'announcements') fetchAnnouncements() }, [tab, announcementPage])
-  useEffect(() => { if (tab === 'config') fetchRuntimeConfig() }, [tab])
+  useEffect(() => { if (tab === 'config' || tab === 'finance') fetchRuntimeConfig() }, [tab])
+  useEffect(() => { if (tab === 'finance') fetchFinanceOverview() }, [tab, financeRange])
+  useEffect(() => { if (tab === 'finance') fetchFinanceProviders() }, [tab, financeRange])
+  useEffect(() => { if (tab === 'finance') fetchFinancePurchases() }, [tab, financePurchasePage, financeProviderFilter])
+  useEffect(() => { if (tab === 'finance') fetchFinanceRules() }, [tab, financeProviderFilter])
+  useEffect(() => { if (tab === 'finance') fetchFinanceTasks() }, [tab, financeRange, financeTaskPage, financeTaskProviderFilter, financeModelFilter, financeStatusFilter])
   useEffect(() => { configAPI.models().then(({ data }) => { const rows = data?.models || []; const m = {}; for (const r of rows) m[r.model_id] = r.label || r.model_id; setModelLabelMap(m) }).catch(() => {}) }, [])
 
   const fetchUsers = async () => {
@@ -182,10 +201,6 @@ export default function AdminPage() {
         login_rate_limit_per_minute_per_ip: Number(data.login_rate_limit_per_minute_per_ip || 5),
         register_rate_limit_per_minute_per_ip: Number(data.register_rate_limit_per_minute_per_ip || 3),
       })
-      const cp = data.cost_profit_config || {}
-      setCostProfitConfigObj(cp)
-      setCostProfitConfigText(JSON.stringify(cp, null, 2))
-      setCostProfitLaunchAt(data.cost_profit_launch_at || '')
       setDefaultModelId(gen.default_model_id || 'image-default')
       const modelsObj = gen.generation_models || {}
       const providersObj = gen.generation_providers || {}
@@ -195,25 +210,99 @@ export default function AdminPage() {
       setGenerationProvidersText(JSON.stringify(providersObj, null, 2))
     } catch (e) { dialog.alert(e.message || '加载配置失败') } finally { setLoading(false) }
   }
-  const fetchCostProfitStats = async (rangeValue = costProfitRange) => {
-    setCostProfitLoading(true)
+  const fetchFinanceOverview = async (rangeValue = financeRange) => {
+    setFinanceLoading(true)
     try {
-      const { data } = await adminAPI.statsCostProfit(rangeValue)
-      setCostProfitStats(data || null)
-    } catch (e) { dialog.alert(e.message || '成本利润统计加载失败') } finally { setCostProfitLoading(false) }
+      const { data } = await adminAPI.financeOverview(rangeValue)
+      setFinanceOverview(data || null)
+    } catch (e) { dialog.alert(e.message || '财务总览加载失败') } finally { setFinanceLoading(false) }
   }
-  const parseCostProfitConfigText = () => {
+  const fetchFinanceProviders = async (rangeValue = financeRange) => {
     try {
-      const v = JSON.parse(costProfitConfigText || '{}')
-      return v && typeof v === 'object' && !Array.isArray(v) ? v : (costProfitConfigObj || {})
-    } catch {
-      return costProfitConfigObj || {}
-    }
+      const { data } = await adminAPI.financeProviders(rangeValue)
+      setFinanceProviders(data?.providers || [])
+    } catch (e) { dialog.alert(e.message || '供应商财务统计加载失败') }
   }
-  const applyCostProfitConfigObj = (nextObj) => {
-    setCostProfitConfigObj(nextObj)
-    setCostProfitConfigText(JSON.stringify(nextObj || {}, null, 2))
+  const fetchFinancePurchases = async () => {
+    try {
+      const { data } = await adminAPI.financePurchases(financePurchasePage, 20, financeProviderFilter || undefined)
+      setFinancePurchases(data?.items || [])
+      setFinancePurchaseTotal(data?.total || 0)
+    } catch (e) { dialog.alert(e.message || '采购批次加载失败') }
   }
+  const fetchFinanceRules = async () => {
+    try {
+      const { data } = await adminAPI.financeQuotaRules(1, 200, financeProviderFilter || undefined)
+      setFinanceRules(data?.items || [])
+    } catch (e) { dialog.alert(e.message || '消耗规则加载失败') }
+  }
+  const fetchFinanceTasks = async () => {
+    try {
+      const { data } = await adminAPI.financeTasks(financeRange, financeTaskPage, 20, financeTaskProviderFilter || undefined, financeModelFilter || undefined, financeStatusFilter || undefined)
+      setFinanceTasks(data?.items || [])
+      setFinanceTaskTotal(data?.total || 0)
+    } catch (e) { dialog.alert(e.message || '调用明细加载失败') }
+  }
+  const handleCreateFinancePurchase = async () => {
+    const payload = { ...financePurchaseDraft, amount_rmb: Number(financePurchaseDraft.amount_rmb || 0), quota_amount: Number(financePurchaseDraft.quota_amount || 0) }
+    if (!payload.provider_id) { dialog.alert('请选择供应商'); return }
+    if (payload.amount_rmb < 0 || payload.quota_amount <= 0) { dialog.alert('采购金额不能小于0，供应商单位数量必须大于0'); return }
+    setFinanceCreatingPurchase(true)
+    try {
+      if (payload.id) {
+        await adminAPI.updateFinancePurchase(payload.id, payload)
+        dialog.alert('采购批次已更新')
+      } else {
+        await adminAPI.createFinancePurchase(payload)
+        dialog.alert('采购批次已记录')
+      }
+      setFinancePurchaseDraft({ id: null, provider_id: payload.provider_id, amount_rmb: '', quota_amount: '', purchase_date: nowFinanceTime(), remark: '', can_edit_core: true })
+      fetchFinanceOverview(financeRange)
+      fetchFinanceProviders(financeRange)
+      fetchFinancePurchases()
+      fetchFinanceTasks()
+    } catch (e) { dialog.alert(e.message || (payload.id ? '更新采购失败' : '新增采购失败')) } finally { setFinanceCreatingPurchase(false) }
+  }
+  const handleEditFinancePurchase = row => setFinancePurchaseDraft({ id: row.id, provider_id: row.provider_id, amount_rmb: String(row.amount_rmb ?? ''), quota_amount: String(row.quota_amount ?? ''), purchase_date: row.purchase_date || nowFinanceTime(), remark: row.remark || '', can_edit_core: row.can_edit_core !== false })
+  const handleCancelFinancePurchaseEdit = () => setFinancePurchaseDraft({ id: null, provider_id: financeProviderFilter || '', amount_rmb: '', quota_amount: '', purchase_date: nowFinanceTime(), remark: '', can_edit_core: true })
+  const handleDeleteFinancePurchase = async row => {
+    if (!await dialog.confirm(`确定删除采购批次 #${row.id}？`)) return
+    try {
+      await adminAPI.deleteFinancePurchase(row.id)
+      if (financePurchaseDraft.id === row.id) handleCancelFinancePurchaseEdit()
+      fetchFinanceOverview(financeRange)
+      fetchFinanceProviders(financeRange)
+      fetchFinancePurchases()
+      fetchFinanceTasks()
+    } catch (e) { dialog.alert(e.message || '删除采购失败') }
+  }
+  const handleSaveFinanceRule = async () => {
+    const payload = { ...financeRuleDraft, quota_per_success: Number(financeRuleDraft.quota_per_success || 0) }
+    if (!payload.provider_id) { dialog.alert('请选择渠道'); return }
+    if (!payload.model_id) { dialog.alert('请选择模型'); return }
+    if (payload.quota_per_success <= 0) { dialog.alert('单次消耗必须大于0'); return }
+    setFinanceRuleSaving(true)
+    try {
+      await adminAPI.saveFinanceQuotaRule(payload)
+      dialog.alert('消耗规则已保存')
+      setFinanceRuleDraft({ id: null, provider_id: payload.provider_id, model_id: '', quota_per_success: '', enabled: true, remark: '' })
+      fetchFinanceRules()
+      fetchFinanceOverview(financeRange)
+      fetchFinanceProviders(financeRange)
+      fetchFinanceTasks()
+    } catch (e) { dialog.alert(e.message || '保存规则失败') } finally { setFinanceRuleSaving(false) }
+  }
+  const handleDeleteFinanceRule = async (ruleId) => {
+    if (!await dialog.confirm('确定删除这条消耗规则？')) return
+    try {
+      await adminAPI.deleteFinanceQuotaRule(ruleId)
+      if (financeRuleDraft.id === ruleId) setFinanceRuleDraft({ id: null, provider_id: '', model_id: '', quota_per_success: '', enabled: true, remark: '' })
+      fetchFinanceRules()
+      fetchFinanceOverview(financeRange)
+      fetchFinanceProviders(financeRange)
+    } catch (e) { dialog.alert(e.message || '删除规则失败') }
+  }
+  const handleEditFinanceRule = (rule) => setFinanceRuleDraft({ id: rule.id, provider_id: rule.provider_id, model_id: rule.model_id, quota_per_success: String(rule.quota_per_success ?? ''), enabled: rule.enabled !== false, remark: rule.remark || '' })
   const onConfigInput = (k, v) => setRuntimeConfig(prev => ({ ...prev, [k]: v }))
   const handleSaveConfig = async () => {
     const n = ['generate_concurrent_limit_per_user', 'points_cost_per_generation', 'points_checkin_reward', 'points_register_bonus', 'points_migration_amount', 'login_rate_limit_per_minute_per_ip', 'register_rate_limit_per_minute_per_ip']
@@ -245,65 +334,9 @@ export default function AdminPage() {
       fetchRuntimeConfig()
     } catch (e) { dialog.alert(e.message || '保存失败') } finally { setConfigSaving(false) }
   }
-  const handleSaveCostProfitConfig = async () => {
-    let next = {}
-    try {
-      next = JSON.parse(costProfitConfigText || '{}')
-      if (!next || typeof next !== 'object' || Array.isArray(next)) throw new Error('cost_profit_config 需要 JSON 对象')
-    } catch (e) { dialog.alert(e.message || '成本利润配置JSON格式错误'); return }
-    setConfigSaving(true)
-    try {
-      await configAPI.update({ cost_profit_config: next, cost_profit_launch_at: (costProfitLaunchAt || '').trim() })
-      dialog.alert('保存成功')
-      fetchRuntimeConfig()
-      fetchCostProfitStats(costProfitRange)
-    } catch (e) { dialog.alert(e.message || '保存失败') } finally { setConfigSaving(false) }
-  }
   const syncGenJsonFromForm = (modelsObj, providersObj) => {
     setGenerationModelsText(JSON.stringify(modelsObj, null, 2))
     setGenerationProvidersText(JSON.stringify(providersObj, null, 2))
-  }
-  const openQuotaEditor = (pid) => {
-    const q = (((parseCostProfitConfigText() || {}).provider_quotas || {})[pid]) || {}
-    setEditingQuotaProviderId(pid)
-    setEditingQuotaDraft({ total_quota: Number(q.total_quota || 0), unit_quota_cost: Number(q.unit_quota_cost || 1), current_balance: Number(q.current_balance || 0), enabled: q.enabled !== false })
-  }
-  const applyQuotaEditor = () => {
-    if (!editingQuotaProviderId) return
-    const cp = { ...(parseCostProfitConfigText() || {}) }
-    cp.provider_quotas = { ...(cp.provider_quotas || {}), [editingQuotaProviderId]: { total_quota: Number(editingQuotaDraft.total_quota || 0), unit_quota_cost: Number(editingQuotaDraft.unit_quota_cost || 0), current_balance: Number(editingQuotaDraft.current_balance || 0), enabled: editingQuotaDraft.enabled !== false } }
-    applyCostProfitConfigObj(cp)
-    setEditingQuotaProviderId('')
-  }
-  const addQuotaLedger = () => {
-    if (!editingQuotaProviderId) return
-    const delta = Number(window.prompt('输入额度变更值（可正可负）', '0') || 0)
-    if (!delta) return
-    const note = (window.prompt('备注', '手动调整额度') || '').trim()
-    const cp = { ...(parseCostProfitConfigText() || {}) }
-    cp.provider_quotas = { ...(cp.provider_quotas || {}) }
-    const cur = cp.provider_quotas[editingQuotaProviderId] || { total_quota: 0, unit_quota_cost: 1, current_balance: 0, enabled: true }
-    cur.current_balance = Number((Number(cur.current_balance || 0) + delta).toFixed(6))
-    cp.provider_quotas[editingQuotaProviderId] = cur
-    cp.quota_ledger = [...(Array.isArray(cp.quota_ledger) ? cp.quota_ledger : []), { provider_id: editingQuotaProviderId, change_amount: delta, note, operator: readUser()?.username || 'admin', created_at: new Date().toLocaleString('zh-CN') }]
-    applyCostProfitConfigObj(cp)
-    setEditingQuotaDraft(prev => ({ ...prev, current_balance: cur.current_balance }))
-  }
-  const openCostEditor = (modelId, providerId) => {
-    const key = `${modelId}__${providerId}`
-    const val = (((parseCostProfitConfigText() || {}).model_provider_costs || {})[key])
-    setEditingCostKey(key)
-    setEditingCostValue(val === undefined ? '' : String(val))
-  }
-  const applyCostEditor = () => {
-    if (!editingCostKey) return
-    const n = Number(editingCostValue)
-    if (Number.isNaN(n) || n < 0) { dialog.alert('成本必须是>=0的数字'); return }
-    const cp = { ...(parseCostProfitConfigText() || {}) }
-    cp.model_provider_costs = { ...(cp.model_provider_costs || {}), [editingCostKey]: n }
-    applyCostProfitConfigObj(cp)
-    setEditingCostKey('')
-    setEditingCostValue('')
   }
   const handleAddModel = () => {
     const id = `image-model-${Date.now()}`
@@ -339,7 +372,7 @@ export default function AdminPage() {
   }
   const handleAddProvider = () => {
     const id = `provider-${Date.now()}`
-    const next = { ...genProvidersObj, [id]: { type: 'wuyin', enabled: true, priority: 100, api_url: '', api_key: '', circuit_fail_threshold: 3, circuit_cooldown_seconds: 60 } }
+    const next = { ...genProvidersObj, [id]: { type: 'wuyin', enabled: true, priority: 100, api_url: '', api_key: '', circuit_fail_threshold: 3, circuit_cooldown_seconds: 60, unit_name: '供应商额度', unit_code: 'vendor_quota' } }
     setGenProvidersObj(next); syncGenJsonFromForm(genModelsObj, next)
   }
   const handleDeleteProvider = (id) => {
@@ -367,7 +400,7 @@ export default function AdminPage() {
   const openProviderEditor = (id) => {
     const p = genProvidersObj[id] || {}
     setEditingProviderId(id)
-    setEditingProviderDraft({ type: p.type || 'wuyin', enabled: p.enabled !== false, priority: Number(p.priority ?? 100), api_url: p.api_url || '', api_key: p.api_key || '', circuit_fail_threshold: Number(p.circuit_fail_threshold ?? 3), circuit_cooldown_seconds: Number(p.circuit_cooldown_seconds ?? 60) })
+    setEditingProviderDraft({ type: p.type || 'wuyin', enabled: p.enabled !== false, priority: Number(p.priority ?? 100), api_url: p.api_url || '', api_key: p.api_key || '', circuit_fail_threshold: Number(p.circuit_fail_threshold ?? 3), circuit_cooldown_seconds: Number(p.circuit_cooldown_seconds ?? 60), unit_name: p.unit_name || '供应商额度', unit_code: p.unit_code || 'vendor_quota' })
   }
   const openModelEditor = (id) => {
     const m = genModelsObj[id] || {}
@@ -627,6 +660,8 @@ export default function AdminPage() {
   }, [])
 
   const user = readUser()
+  const financeProviderOptions = Object.keys(genProvidersObj || {}).map(id => ({ id, label: `${id}${genProvidersObj?.[id]?.unit_name ? ` (${genProvidersObj[id].unit_name})` : ''}` }))
+  const financeModelOptions = Object.keys({ ...(genModelsObj || {}), ...(modelLabelMap || {}) }).map(id => ({ id, label: modelLabelMap[id] || genModelsObj?.[id]?.label || id }))
   if (!user?.is_admin) {
     return (
       <PageLayout className="p-4 sm:p-6">
@@ -643,7 +678,7 @@ export default function AdminPage() {
     <MainLayout>
       <div className="admin-dense flex-1 overflow-y-auto p-3 sm:p-4">
         <div className="flex gap-1 p-0.5 rounded-lg mb-4 overflow-x-auto scrollbar-hide" style={{ background: 'var(--border-color)', scrollbarWidth: 'none' }}>
-          {[{ k: 'stats', l: '系统统计', i: BarChart3 }, { k: 'users', l: '用户管理', i: Users }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'recharge', l: '充值审核', i: Wallet }, { k: 'announcements', l: '公告管理', i: Megaphone }, { k: 'config', l: '配置中心', i: SlidersHorizontal }].map(({ k, l, i: Icon }) => (
+          {[{ k: 'stats', l: '系统统计', i: BarChart3 }, { k: 'finance', l: '财务中心', i: Wallet }, { k: 'users', l: '用户管理', i: Users }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'recharge', l: '充值审核', i: Ticket }, { k: 'announcements', l: '公告管理', i: Megaphone }, { k: 'config', l: '配置中心', i: SlidersHorizontal }].map(({ k, l, i: Icon }) => (
             <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
               <Icon size={14} />{l}{k === 'recharge' && rechargePendingCount > 0 && <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] text-white" style={{ background: 'var(--color-error)' }}>{rechargePendingCount}</span>}
@@ -814,45 +849,11 @@ export default function AdminPage() {
                     </div>
                   </div>
                 )}
-                <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>成本利润</div>
-                    {['today', '7d', '30d', 'all'].map(v => <button key={v} onClick={() => setCostProfitRange(v)} className={`px-2 py-1 rounded text-[11px] border ${costProfitRange === v ? 'text-white border-transparent' : ''}`} style={costProfitRange === v ? { background: 'var(--accent)' } : { borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>{v}</button>)}
-                    <button onClick={handleSaveCostProfitConfig} disabled={configSaving} className="ml-auto px-3 py-1.5 rounded-lg text-xs font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50">{configSaving ? '保存中...' : '保存成本配置'}</button>
-                  </div>
-                  {costProfitLoading ? <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>加载中...</div> : (
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                        <div><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>总收入</div><div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>¥{costProfitStats?.summary?.revenue_amount ?? 0}</div></div>
-                        <div><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>总成本</div><div className="text-sm font-semibold" style={{ color: 'var(--color-error)' }}>¥{costProfitStats?.summary?.cost_amount ?? 0}</div></div>
-                        <div><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>利润</div><div className="text-sm font-semibold" style={{ color: 'var(--color-success)' }}>¥{costProfitStats?.summary?.profit_amount ?? 0}</div></div>
-                        <div><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>利润率</div><div className="text-sm font-semibold" style={{ color: 'var(--color-success)' }}>{costProfitStats?.summary?.profit_rate ?? 0}%</div></div>
-                        <div><div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>未定价调用</div><div className="text-sm font-semibold" style={{ color: 'var(--color-warning)' }}>{costProfitStats?.summary?.unpriced_calls ?? 0}</div></div>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>统计起始时间(cost_profit_launch_at)</label>
-                          <input type="text" value={costProfitLaunchAt} onChange={e => setCostProfitLaunchAt(e.target.value)} placeholder="2026-05-04 00:00:00" className="w-full px-3 py-2 rounded-lg text-xs border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
-                        </div>
-                        <div>
-                          <label className="block text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>cost_profit_config(JSON对象)</label>
-                          <textarea value={costProfitConfigText} onChange={e => setCostProfitConfigText(e.target.value)} rows={4} className="w-full px-3 py-2 rounded-lg text-xs border resize-none outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
-                        </div>
-                      </div>
-                      <div className="overflow-x-auto">
-                        <div className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>渠道额度与成本</div>
-                        <table className="w-full text-xs"><thead><tr><th className="px-2 py-1.5 text-left" style={{ color: 'var(--text-secondary)' }}>渠道</th><th className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>调用</th><th className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>成本</th><th className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>当前额度</th><th className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>单次额度</th><th className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>剩余次数</th><th className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>操作</th></tr></thead><tbody>{(costProfitStats?.providers || []).map(p => <tr key={p.provider_id} className="border-t" style={{ borderColor: 'var(--border-color)' }}><td className="px-2 py-1.5" style={{ color: 'var(--text-primary)' }}>{p.provider_id}</td><td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>{p.calls}</td><td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>¥{p.cost_amount}</td><td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>{p.current_balance}</td><td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>{p.unit_quota_cost}</td><td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>{p.remaining_times}</td><td className="px-2 py-1.5 text-right"><button onClick={() => openQuotaEditor(p.provider_id)} className="px-2 py-1 rounded text-[11px] border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>编辑</button></td></tr>)}</tbody></table>
-                      </div>
-                      <div className="overflow-x-auto">
-                        <div className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>模型×渠道成本</div>
-                        <table className="w-full text-xs"><thead><tr><th className="px-2 py-1.5 text-left" style={{ color: 'var(--text-secondary)' }}>模型</th><th className="px-2 py-1.5 text-left" style={{ color: 'var(--text-secondary)' }}>渠道</th><th className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>调用</th><th className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>单次成本</th><th className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>成本汇总</th><th className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>操作</th></tr></thead><tbody>{(costProfitStats?.matrix || []).map(i => <tr key={`${i.model_id}-${i.provider_id}`} className="border-t" style={{ borderColor: 'var(--border-color)' }}><td className="px-2 py-1.5" style={{ color: 'var(--text-primary)' }}>{modelLabelMap[i.model_id] || i.model_id}</td><td className="px-2 py-1.5" style={{ color: 'var(--text-primary)' }}>{i.provider_id}</td><td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>{i.calls}</td><td className="px-2 py-1.5 text-right" style={{ color: i.priced ? 'var(--text-secondary)' : 'var(--color-warning)' }}>{i.priced ? i.unit_cost : '未定价'}</td><td className="px-2 py-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>¥{i.cost_amount}</td><td className="px-2 py-1.5 text-right"><button onClick={() => openCostEditor(i.model_id, i.provider_id)} className="px-2 py-1 rounded text-[11px] border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>定价</button></td></tr>)}</tbody></table>
-                      </div>
-                    </div>
-                  )}
-                </div>
               </div>
             )}
           </div>
+        ) : tab === 'finance' ? (
+          <AdminFinanceTab financeRange={financeRange} setFinanceRange={setFinanceRange} financeOverview={financeOverview} financeProviders={financeProviders} financePurchases={financePurchases} financePurchaseTotal={financePurchaseTotal} financePurchasePage={financePurchasePage} setFinancePurchasePage={setFinancePurchasePage} financeTasks={financeTasks} financeTaskTotal={financeTaskTotal} financeTaskPage={financeTaskPage} setFinanceTaskPage={setFinanceTaskPage} financeProviderFilter={financeProviderFilter} setFinanceProviderFilter={setFinanceProviderFilter} financeTaskProviderFilter={financeTaskProviderFilter} setFinanceTaskProviderFilter={setFinanceTaskProviderFilter} financeModelFilter={financeModelFilter} setFinanceModelFilter={setFinanceModelFilter} financeStatusFilter={financeStatusFilter} setFinanceStatusFilter={setFinanceStatusFilter} financeLoading={financeLoading} financeCreatingPurchase={financeCreatingPurchase} financePurchaseDraft={financePurchaseDraft} setFinancePurchaseDraft={setFinancePurchaseDraft} handleCreatePurchase={handleCreateFinancePurchase} handleEditPurchase={handleEditFinancePurchase} handleDeletePurchase={handleDeleteFinancePurchase} handleCancelPurchaseEdit={handleCancelFinancePurchaseEdit} providerOptions={financeProviderOptions} modelOptions={financeModelOptions} financeRules={financeRules} financeRuleDraft={financeRuleDraft} setFinanceRuleDraft={setFinanceRuleDraft} financeRuleSaving={financeRuleSaving} handleSaveFinanceRule={handleSaveFinanceRule} handleEditFinanceRule={handleEditFinanceRule} handleDeleteFinanceRule={handleDeleteFinanceRule} />
         ) : tab === 'users' ? (
           <AdminUsersTab userTotal={userTotal} userQuery={userQuery} setUserQuery={setUserQuery} handleMigratePoints={handleMigratePoints} loading={loading} users={users} setAdjustUserId={setAdjustUserId} setAdjustAmount={setAdjustAmount} setAdjustDesc={setAdjustDesc} resetPwdUserId={resetPwdUserId} setResetPwdUserId={setResetPwdUserId} resetPwdValue={resetPwdValue} setResetPwdValue={setResetPwdValue} handleToggleFreeze={handleToggleFreeze} handleDeleteUser={handleDeleteUser} handleResetPassword={handleResetPassword} userPage={userPage} setUserPage={setUserPage} />
         ) : tab === 'announcements' ? (
@@ -1125,7 +1126,7 @@ export default function AdminPage() {
                           <td className="px-3 py-2 text-center"><input type="radio" name="gen-row" checked={selectedGenRow === `p:${pid}`} onChange={() => setSelectedGenRow(`p:${pid}`)} /></td>
                           <td className="px-3 py-2" style={{ color: '#8B7BA8' }}>供应商</td>
                           <td className="px-3 py-2 font-mono" style={{ color: 'var(--text-primary)' }}>{pid}</td>
-                          <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{`${p?.type || 'wuyin'} | priority:${Number(p?.priority ?? 100)} | ${p?.api_url || '全局api_url'}`}</td>
+                          <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{`${p?.type || 'wuyin'} | unit:${p?.unit_name || '供应商额度'} | priority:${Number(p?.priority ?? 100)}`}</td>
                           <td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 rounded-full text-[11px] ${p?.enabled !== false ? 'bg-green-500/15 text-[var(--color-success)]' : 'bg-gray-500/15 text-gray-500'}`}>{p?.enabled !== false ? '启用' : '禁用'}</span></td>
                           <td className="px-3 py-2 text-right">
                             <div className="inline-flex items-center gap-2">
@@ -1230,6 +1231,14 @@ export default function AdminPage() {
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>优先级</label>
                 <input type="number" value={Number(editingProviderDraft.priority ?? 100)} onChange={e => setEditingProviderDraft(prev => ({ ...prev, priority: Number(e.target.value || 0) }))} placeholder="越大越优先" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>单位名称</label>
+                <input type="text" value={editingProviderDraft.unit_name || ''} onChange={e => setEditingProviderDraft(prev => ({ ...prev, unit_name: e.target.value }))} placeholder="如 供应商积分 / 点数" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>单位编码</label>
+                <input type="text" value={editingProviderDraft.unit_code || ''} onChange={e => setEditingProviderDraft(prev => ({ ...prev, unit_code: e.target.value }))} placeholder="如 vendor_points / credits" className="w-full px-3 py-2 rounded-lg text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>连续失败阈值</label>
@@ -1400,34 +1409,6 @@ export default function AdminPage() {
           </div>
         </div>
       )}
-      {editingQuotaProviderId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setEditingQuotaProviderId('')}>
-          <div className="absolute inset-0 bg-black/50" />
-          <div className="relative w-full max-w-md rounded-2xl overflow-hidden" style={{ background: 'var(--bg-primary)' }} onClick={e => e.stopPropagation()}>
-            <div className="p-4 border-b" style={{ borderColor: 'var(--border-color)' }}><h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>编辑渠道额度</h3><div className="text-xs mt-1 font-mono" style={{ color: 'var(--text-secondary)' }}>{editingQuotaProviderId}</div></div>
-            <div className="p-4 grid grid-cols-1 gap-3">
-              <div><label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>总额度</label><input type="number" value={editingQuotaDraft.total_quota} onChange={e => setEditingQuotaDraft(prev => ({ ...prev, total_quota: Number(e.target.value || 0) }))} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)', color: 'var(--text-primary)' }} /></div>
-              <div><label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>当前余额</label><input type="number" value={editingQuotaDraft.current_balance} onChange={e => setEditingQuotaDraft(prev => ({ ...prev, current_balance: Number(e.target.value || 0) }))} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)', color: 'var(--text-primary)' }} /></div>
-              <div><label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>单次额度消耗</label><input type="number" value={editingQuotaDraft.unit_quota_cost} onChange={e => setEditingQuotaDraft(prev => ({ ...prev, unit_quota_cost: Number(e.target.value || 0) }))} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)', color: 'var(--text-primary)' }} /></div>
-            </div>
-            <div className="flex justify-between p-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
-              <button onClick={addQuotaLedger} className="px-4 py-2 rounded-lg text-sm font-medium border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>补充/扣减额度</button>
-              <div className="flex gap-2"><button onClick={() => setEditingQuotaProviderId('')} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button><button onClick={applyQuotaEditor} className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:opacity-90">保存</button></div>
-            </div>
-          </div>
-        </div>
-      )}
-      {editingCostKey && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setEditingCostKey('')}>
-          <div className="absolute inset-0 bg-black/50" />
-          <div className="relative w-full max-w-md rounded-2xl overflow-hidden" style={{ background: 'var(--bg-primary)' }} onClick={e => e.stopPropagation()}>
-            <div className="p-4 border-b" style={{ borderColor: 'var(--border-color)' }}><h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>设置单次成本</h3><div className="text-xs mt-1 font-mono" style={{ color: 'var(--text-secondary)' }}>{editingCostKey}</div></div>
-            <div className="p-4"><input type="number" value={editingCostValue} onChange={e => setEditingCostValue(e.target.value)} placeholder="输入>=0成本金额" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)', color: 'var(--text-primary)' }} /></div>
-            <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--border-color)' }}><button onClick={() => setEditingCostKey('')} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button><button onClick={applyCostEditor} className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:opacity-90">保存</button></div>
-          </div>
-        </div>
-      )}
-
       {/* 审核弹窗 */}
       {reviewModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setReviewModal(null)}>

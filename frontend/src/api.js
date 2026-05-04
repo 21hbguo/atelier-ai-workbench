@@ -121,6 +121,16 @@ export const adminAPI = {
   rejectRecharge: (id, data) => api.post(`/admin/recharge-requests/${id}/reject`, data || {}),
   statsOverview: (range = '7d') => api.get('/admin/stats/overview', { params: { range } }),
   statsCostProfit: (range = '30d') => api.get('/admin/stats/cost-profit', { params: { range } }),
+  financeOverview: (range = '30d') => api.get('/admin/finance/overview', { params: { range } }),
+  financeProviders: (range = '30d') => api.get('/admin/finance/providers', { params: { range } }),
+  financePurchases: (page = 1, size = 20, provider_id) => { const params = { page, size }; if (provider_id) params.provider_id = provider_id; return api.get('/admin/finance/purchases', { params }) },
+  createFinancePurchase: data => api.post('/admin/finance/purchases', data),
+  updateFinancePurchase: (batchId, data) => api.post(`/admin/finance/purchases/${batchId}`, data),
+  deleteFinancePurchase: batchId => api.post(`/admin/finance/purchases/${batchId}/delete`),
+  financeQuotaRules: (page = 1, size = 50, provider_id) => { const params = { page, size }; if (provider_id) params.provider_id = provider_id; return api.get('/admin/finance/quota-rules', { params }) },
+  saveFinanceQuotaRule: data => api.post('/admin/finance/quota-rules', data),
+  deleteFinanceQuotaRule: ruleId => api.post(`/admin/finance/quota-rules/${ruleId}/delete`),
+  financeTasks: (range = '30d', page = 1, size = 20, provider_id, model_id, status) => { const params = { range, page, size }; if (provider_id) params.provider_id = provider_id; if (model_id) params.model_id = model_id; if (status) params.status = status; return api.get('/admin/finance/tasks', { params }) },
 }
 export const configAPI = { get: () => api.get('/config'), admin: () => api.get('/config/admin'), update: data => api.post('/config', data), generationAdmin: () => api.get('/config/generation/admin'), models: () => api.get('/config/models') }
 

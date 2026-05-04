@@ -221,6 +221,64 @@ def init_db():
             )""",
             "CREATE INDEX IF NOT EXISTS idx_point_tx_user_id ON point_transactions(user_id)",
             "CREATE INDEX IF NOT EXISTS idx_point_tx_created_at ON point_transactions(created_at DESC)",
+            """CREATE TABLE IF NOT EXISTS provider_purchase_batches (
+                id SERIAL PRIMARY KEY,
+                provider_id VARCHAR(64) NOT NULL,
+                purchase_date TIMESTAMP NOT NULL,
+                amount_rmb NUMERIC(18,6) NOT NULL,
+                quota_amount NUMERIC(18,6) NOT NULL,
+                remaining_quota NUMERIC(18,6) NOT NULL,
+                unit_cost NUMERIC(18,8) NOT NULL,
+                remark TEXT DEFAULT '',
+                operator_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_provider_purchase_batches_provider_date ON provider_purchase_batches(provider_id,purchase_date DESC,id DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_provider_purchase_batches_remaining ON provider_purchase_batches(provider_id,remaining_quota)",
+            """CREATE TABLE IF NOT EXISTS generation_finance_entries (
+                id SERIAL PRIMARY KEY,
+                task_id VARCHAR(64) NOT NULL UNIQUE REFERENCES tasks(task_id) ON DELETE CASCADE,
+                user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                model_id VARCHAR(64) NOT NULL,
+                provider_id VARCHAR(64) NOT NULL,
+                status VARCHAR(32) NOT NULL,
+                charged_points INTEGER DEFAULT 0,
+                revenue_rmb NUMERIC(18,6) DEFAULT 0,
+                cost_rmb NUMERIC(18,6),
+                pricing_source VARCHAR(64) DEFAULT '',
+                cost_source VARCHAR(64) DEFAULT '',
+                purchase_batch_id INTEGER REFERENCES provider_purchase_batches(id) ON DELETE SET NULL,
+                quota_used NUMERIC(18,6) DEFAULT 0,
+                quota_shortage NUMERIC(18,6) DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_generation_finance_entries_created ON generation_finance_entries(created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_generation_finance_entries_provider_created ON generation_finance_entries(provider_id,created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_generation_finance_entries_model_provider ON generation_finance_entries(model_id,provider_id)",
+            """CREATE TABLE IF NOT EXISTS provider_model_quota_rules (
+                id SERIAL PRIMARY KEY,
+                provider_id VARCHAR(64) NOT NULL,
+                model_id VARCHAR(64) NOT NULL,
+                quota_per_success NUMERIC(18,6) NOT NULL,
+                enabled BOOLEAN DEFAULT TRUE,
+                remark TEXT DEFAULT '',
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(provider_id, model_id)
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_provider_model_quota_rules_provider_model ON provider_model_quota_rules(provider_id,model_id)",
+            """CREATE TABLE IF NOT EXISTS generation_finance_allocations (
+                id SERIAL PRIMARY KEY,
+                finance_entry_id INTEGER NOT NULL REFERENCES generation_finance_entries(id) ON DELETE CASCADE,
+                purchase_batch_id INTEGER NOT NULL REFERENCES provider_purchase_batches(id) ON DELETE CASCADE,
+                quota_used NUMERIC(18,6) NOT NULL,
+                cost_rmb NUMERIC(18,6) NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_generation_finance_allocations_entry ON generation_finance_allocations(finance_entry_id)",
+            "CREATE INDEX IF NOT EXISTS idx_generation_finance_allocations_batch ON generation_finance_allocations(purchase_batch_id)",
             """CREATE TABLE IF NOT EXISTS daily_checkins (
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL,
@@ -326,6 +384,8 @@ def init_db():
                 conn.execute("ALTER TABLE recharge_requests ADD COLUMN risk_level VARCHAR(16) DEFAULT 'low'")
             if not _column_exists(conn, "recharge_requests", "risk_flags"):
                 conn.execute("ALTER TABLE recharge_requests ADD COLUMN risk_flags JSONB DEFAULT '[]'::jsonb")
+            if not _column_exists(conn, "generation_finance_entries", "quota_shortage"):
+                conn.execute("ALTER TABLE generation_finance_entries ADD COLUMN quota_shortage NUMERIC(18,6) DEFAULT 0")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_image_metadata_expires_at ON image_metadata(expires_at)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_image_metadata_is_permanent ON image_metadata(is_permanent)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_is_deleted ON tasks(is_deleted)")

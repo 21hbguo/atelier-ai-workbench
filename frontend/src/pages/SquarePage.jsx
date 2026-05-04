@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Image, BookOpen, Share2, Trash2, Snowflake, Sun, RefreshCw } from 'lucide-react'
-import { squareAPI, promptAPI, adminAPI } from '../api'
+import { useNavigate, useLocation } from 'react-router-dom'
+import { Image, BookOpen, Share2, Trash2, Snowflake, Sun, RefreshCw, Star } from 'lucide-react'
+import { squareAPI, promptAPI, adminAPI, favoriteAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 import SearchInput from '../components/SearchInput'
 import CardGrid from '../components/CardGrid'
@@ -9,6 +9,7 @@ import UnifiedDetailModal from '../components/UnifiedDetailModal'
 import CategoryFilter from '../components/CategoryFilter'
 import { useCardData } from '../hooks/useCardData'
 import { useLayoutMode } from '../LayoutModeContext'
+import { normalizeList } from '../utils/cardAdapter'
 import { readUser } from '../auth'
 import { useAppDialog } from '../components/AppDialogProvider'
 
@@ -72,7 +73,8 @@ function usePromptActions() {
 export default function SquarePage() {
   const dialog = useAppDialog()
   const { layoutMode, setLayoutMode } = useLayoutMode()
-  const [tab, setTab] = useState('prompts')
+  const location = useLocation()
+  const [tab, setTab] = useState(() => location.state?.tab === 'favorites' ? 'favorites' : 'prompts')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState('likes')
   const [activeCategory, setActiveCategory] = useState(null)
@@ -94,7 +96,7 @@ export default function SquarePage() {
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="square-top-block sm:pt-4">
           <div className="square-tab-strip scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
-          {[{ k: 'prompts', l: '提示词库', i: BookOpen }, { k: 'works', l: '用户作品库', i: Image }, { k: 'my', l: '我的分享', i: Share2 }].map(({ k, l, i: Icon }) => (
+          {[{ k: 'prompts', l: '提示词库', i: BookOpen }, { k: 'works', l: '用户作品库', i: Image }, { k: 'my', l: '我的分享', i: Share2 }, { k: 'favorites', l: '收藏', i: Star }].map(({ k, l, i: Icon }) => (
             <button key={k} onClick={() => handleTabChange(k)} className={`square-tab-btn ${tab === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
               <Icon size={14} className="block shrink-0" /><span className="leading-none translate-y-[0.5px]">{l}</span>
@@ -104,7 +106,7 @@ export default function SquarePage() {
         </div>
         <div className="square-subtop-block sm:pt-3">
           <div className="square-section-row">
-            {tab !== 'my' && (
+            {tab !== 'my' && tab !== 'favorites' && (
               <div className="flex gap-1 flex-shrink-0">
                 <button onClick={() => setSort('likes')} className={`square-filter-btn ${sort === 'likes' ? 'bg-accent/10' : 'hover:bg-bg-hover'}`}
                   style={{ color: sort === 'likes' ? 'var(--accent)' : 'var(--text-secondary)' }}>最热</button>
@@ -112,7 +114,7 @@ export default function SquarePage() {
                   style={{ color: sort === 'time' ? 'var(--accent)' : 'var(--text-secondary)' }}>最新</button>
               </div>
             )}
-            {tab !== 'my' && (
+            {tab !== 'my' && tab !== 'favorites' && (
               <div className="square-search-wrap"><SearchInput value={query} onChange={setQuery} placeholder={tab === 'works' ? '搜索提示词/作者...' : '搜索提示词...'} /></div>
             )}
             <button onClick={handleRefresh} className="inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-bg-hover transition-colors flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>
@@ -130,8 +132,10 @@ export default function SquarePage() {
             <WorksTab query={query} sort={sort} isAdmin={isAdmin} dialog={dialog} refreshTrigger={refreshTrigger} layoutMode={layoutMode} />
           ) : tab === 'prompts' ? (
             <PromptsTab query={query} sort={sort} activeCategory={activeCategory} isAdmin={isAdmin} dialog={dialog} refreshTrigger={refreshTrigger} layoutMode={layoutMode} />
-          ) : (
+          ) : tab === 'my' ? (
             <MySharesTab refreshTrigger={refreshTrigger} layoutMode={layoutMode} />
+          ) : (
+            <FavoritesTab layoutMode={layoutMode} />
           )}
         </div>
       </div>
@@ -550,6 +554,43 @@ function PromptsTab({ query, sort, activeCategory, isAdmin, dialog, refreshTrigg
           hideDownload
         />
       )}
+    </>
+  )
+}
+
+function FavoritesTab({ layoutMode }) {
+  const [subTab, setSubTab] = useState('all')
+  const [detailIdx, setDetailIdx] = useState(null)
+  const { handleUsePrompt, handleUseImage } = useImageActions()
+  const deps = useMemo(() => [subTab], [subTab])
+  const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike, handleFavorite } = useCardData({
+    type: subTab === 'prompt' ? 'prompt' : 'image',
+    pageSize: 20,
+    apiFn: async (p, s) => {
+      const { data } = await favoriteAPI.list(subTab, p, s)
+      if (subTab === 'image') return { data: { images: normalizeList(data.images || [], 'image'), total: data.total || 0 } }
+      if (subTab === 'prompt') return { data: { images: normalizeList(data.prompts || [], 'prompt'), total: data.total || 0 } }
+      const images = normalizeList(data.images || [], 'image').map(x => ({ ...x, _favCreatedAt: x._raw.favorite_created_at || '' }))
+      const prompts = normalizeList(data.prompts || [], 'prompt').map(x => ({ ...x, _favCreatedAt: x._raw.favorite_created_at || '' }))
+      const mixed = [...images, ...prompts].sort((a, b) => String(b._favCreatedAt).localeCompare(String(a._favCreatedAt)))
+      return { data: { images: mixed, total: data.total || 0 } }
+    },
+    deps,
+    atomicPaging: true,
+    preloadCount: 12,
+    preloadTimeoutMs: 900,
+    mapCards: items => items,
+  })
+  const totalPages = Math.ceil(total / 20)
+  return (
+    <>
+      <div className="flex items-center gap-1 mb-3 p-0.5 rounded-lg max-w-sm" style={{ background: 'var(--bg-active)' }}>
+        {[{ k: 'all', l: '全部' }, { k: 'image', l: '图片', i: Image }, { k: 'prompt', l: '提示词', i: BookOpen }].map(({ k, l, i: Icon }) => (
+          <button key={k} onClick={() => { setSubTab(k); setDetailIdx(null) }} className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors flex items-center justify-center gap-1 ${subTab === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`} style={{ color: subTab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{Icon ? <Icon size={12} /> : null}{l}</button>
+        ))}
+      </div>
+      <CardGrid cards={cards} layoutMode={subTab === 'image' ? layoutMode : 'grid'} showTotal totalUnit={subTab === 'prompt' ? '条' : '项'} loading={loading} paging={paging} refreshing={refreshing} onRefresh={refresh} hideRefresh total={total} page={page} totalPages={totalPages} onPageChange={setPage} paginationScrollTargetId="square-scroll-container" scrollAfterPaging onCardClick={(_, idx) => setDetailIdx(idx)} onFavorite={handleFavorite} onUsePrompt={handleUsePrompt} onUseImage={handleUseImage} showAuthor showLike={false} emptyText="暂无收藏" />
+      {detailIdx !== null && cards[detailIdx] && <UnifiedDetailModal card={cards[detailIdx]} cards={cards} currentIndex={detailIdx} onNavigate={setDetailIdx} onClose={() => setDetailIdx(null)} onUsePrompt={handleUsePrompt} onUseImage={handleUseImage} title="收藏详情" hideDownload />}
     </>
   )
 }

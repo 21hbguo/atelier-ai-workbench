@@ -13,6 +13,7 @@ from backend.services.task_manager import TaskManager
 from backend.services.stats_service import StatsService
 from backend.services.banned_words import BannedWordsService
 from backend.services.points_service import PointsService
+from backend.services.finance_service import FinanceService
 from backend.config import GENERATED_IMAGES_DIR, get_limit_config
 from backend.models.schemas import (
     GenerateTextRequest,
@@ -86,6 +87,8 @@ async def _run_generation(task_id: str, task_type: str, submit_payload: dict, me
                 except Exception:
                     logger.exception(f"[submit.share.fail] type={task_type} task={task_id} user={user_id}")
             TaskManager.update_task(task_id, status="completed", progress=100, result_urls=urls)
+            try:FinanceService.record_task_entry(task_id,"completed")
+            except Exception:logger.exception(f"[finance.record.fail] type={task_type} task={task_id} status=completed")
             StatsService.record_success()
             record_request(user_id, "success")
             logger.info(f"[submit.done] type={task_type} task={task_id} user={user_id} count={len(urls)}")
@@ -94,6 +97,8 @@ async def _run_generation(task_id: str, task_type: str, submit_payload: dict, me
     except Exception as e:
         logger.warning(f"[submit.fail] type={task_type} task={task_id} user={user_id} error={e}")
         TaskManager.update_task(task_id, status="failed", error=str(e))
+        try:FinanceService.record_task_entry(task_id,"failed")
+        except Exception:logger.exception(f"[finance.record.fail] type={task_type} task={task_id} status=failed")
         StatsService.record_failed()
         record_request(user_id, "failed")
         if not is_admin:

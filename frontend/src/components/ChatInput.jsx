@@ -17,6 +17,21 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const paramsPanelRef = useRef(null)
   const lightboxPushedRef = useRef(false)
   const lightboxClosingByPopRef = useRef(false)
+  const appendImages = useCallback((items) => {
+    if (!items?.length) return
+    setImages(prev => {
+      const remaining = MAX_IMAGES - prev.length
+      if (remaining <= 0) {
+        alert(`最多只能上传 ${MAX_IMAGES} 张参考图`)
+        return prev
+      }
+      if (items.length > remaining) {
+        alert(`最多只能上传 ${MAX_IMAGES} 张参考图，已自动截取前 ${remaining} 张`)
+        return [...prev, ...items.slice(0, remaining)]
+      }
+      return [...prev, ...items]
+    })
+  }, [])
 
   const consumePending = useCallback(() => {
     const pending = localStorage.getItem('pending_prompt')
@@ -134,20 +149,21 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     lightboxPushedRef.current = false
     setLightbox(null)
   }, [lightbox])
+  const openFilePicker = useCallback(() => {
+    const input = fileRef.current
+    if (!input) return
+    input.value = ''
+    if (typeof input.showPicker === 'function') {
+      try { input.showPicker(); return } catch {}
+    }
+    input.click()
+  }, [])
 
   useImperativeHandle(ref, () => ({
     addFiles(files) { handleFiles(files) },
     setPrompt(text) { setPrompt(text) },
     async addImage(url) {
-      try {
-        const res = await fetch(url)
-        const blob = await res.blob()
-        const ext = blob.type.split('/')[1] || 'png'
-        const file = new File([blob], `ref-${Date.now()}.${ext}`, { type: blob.type })
-        setImages(prev => [...prev, { file, preview: URL.createObjectURL(file) }])
-      } catch {
-        setImages(prev => [...prev, { url, preview: url }])
-      }
+      appendImages([{ url, preview: url }])
     }
   }))
 
@@ -155,19 +171,8 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
 
   const handleFiles = useCallback((files) => {
     const valid = Array.from(files).filter(f => /\.(png|jpe?g|webp)$/i.test(f.name) && f.size <= 10 * 1024 * 1024)
-    setImages(prev => {
-      const remaining = MAX_IMAGES - prev.length
-      if (remaining <= 0) {
-        alert(`最多只能上传 ${MAX_IMAGES} 张参考图`)
-        return prev
-      }
-      if (valid.length > remaining) {
-        alert(`最多只能上传 ${MAX_IMAGES} 张参考图，已自动截取前 ${remaining} 张`)
-        return [...prev, ...valid.slice(0, remaining).map(f => ({ file: f, preview: URL.createObjectURL(f) }))]
-      }
-      return [...prev, ...valid.map(f => ({ file: f, preview: URL.createObjectURL(f) }))]
-    })
-  }, [])
+    appendImages(valid.map(f => ({ file: f, preview: URL.createObjectURL(f) })))
+  }, [appendImages])
 
   const handleSend = async (batch = false) => {
     if (!prompt.trim() || loading) return
@@ -206,26 +211,26 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
           <div className="px-2 pt-2 pb-2">
             <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(false) } }}
-              placeholder="输入提示词..."
-              className="block w-full resize-none bg-transparent outline-none text-sm py-2"
-              rows={1} style={{ color: 'var(--text-primary)', minHeight: '40px', maxHeight: '120px' }} />
+              placeholder="把脑洞变成画✨"
+              className="block w-full resize-none bg-transparent outline-none py-2"
+              rows={1} style={{ color: 'var(--text-primary)', minHeight: '40px', maxHeight: '120px', fontSize: '15px', paddingLeft: '10px' }} />
             <div className="mt-2 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-0.5 flex-shrink-0 whitespace-nowrap">
-                <button onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1 px-1.5 py-1.5 rounded-md hover:bg-bg-hover transition-colors text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}><Paperclip size={14} /><span>参考图</span></button>
-                <button onClick={toggleParams} className="inline-flex items-center gap-1 px-1.5 py-1.5 rounded-md hover:bg-bg-hover transition-colors text-[11px] font-medium" style={{ color: showParams ? 'var(--accent)' : 'var(--text-secondary)' }}><Settings size={13} /><span>参数</span></button>
-                <button onClick={() => setShareToSquare(!shareToSquare)} className="inline-flex items-center gap-1 px-1.5 py-1.5 rounded-md hover:bg-bg-hover transition-colors relative text-[11px] font-medium" style={{ color: shareToSquare ? 'var(--color-success)' : 'var(--text-secondary)' }} title={shareToSquare ? '已开启分享到广场' : '已关闭分享到广场'}><Share2 size={13} /><span>分享</span><span className="absolute -right-0.5 -top-0.5 w-1.5 h-1.5 rounded-full" style={{ background: shareToSquare ? 'var(--color-success)' : 'var(--border-color)' }} /></button>
+              <div className="flex items-center flex-shrink-0 whitespace-nowrap">
+                <button type="button" onClick={openFilePicker} title="上传参考图" className="inline-flex items-center gap-1 px-1.5 py-2 rounded-lg hover:bg-bg-hover transition-colors text-xs font-medium" style={{ color: 'var(--text-secondary)' }}><Paperclip size={16} /><span>参考图</span></button>
+                <button onClick={toggleParams} title="参数设置" className="inline-flex items-center gap-1 px-1.5 py-2 rounded-lg hover:bg-bg-hover transition-colors text-xs font-medium" style={{ color: showParams ? 'var(--accent)' : 'var(--text-secondary)' }}><Settings size={15} /><span>参数</span></button>
+                <button onClick={() => setShareToSquare(!shareToSquare)} className="inline-flex items-center gap-1 px-1.5 py-2 rounded-lg hover:bg-bg-hover transition-colors relative text-xs font-medium" style={{ color: shareToSquare ? 'var(--color-success)' : 'var(--text-secondary)' }} title={shareToSquare ? '已开启分享到广场' : '已关闭分享到广场'}><Share2 size={15} /><span>分享</span><span className="absolute -right-0.5 -top-0.5 w-1.5 h-1.5 rounded-full" style={{ background: shareToSquare ? 'var(--color-success)' : 'var(--border-color)' }} /></button>
               </div>
               <div className="min-w-0 flex items-center justify-end gap-1 flex-1">
                 {loading && <span className="inline-flex items-center gap-1 text-[10px] flex-shrink-0" style={{ color: 'var(--accent)' }}><Loader2 size={11} className="animate-spin" /><span>{images.length > 0 ? '上传并提交中' : '提交中'}</span></span>}
                 {prompt.length > 0 && <span className="text-[10px] tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{prompt.length}</span>}
-                <button onClick={() => handleSend(true)} disabled={!prompt.trim() || loading} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-white disabled:opacity-40 flex-shrink-0" style={{ background: prompt.trim() && !loading ? 'var(--accent)' : 'var(--border-color)' }}>{loading ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}<span className="text-[10px] font-medium leading-none">×{batchCount}</span></button>
-                <button onClick={() => handleSend(false)} disabled={!prompt.trim() || loading} className="p-1 rounded-md transition-all duration-150 disabled:opacity-40 flex-shrink-0" style={{ background: prompt.trim() && !loading ? 'var(--accent)' : 'var(--border-color)', color: '#fff' }}>{loading ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}</button>
+                <button onClick={() => handleSend(true)} disabled={!prompt.trim() || loading} title={`批量生成 ${batchCount} 张`} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white disabled:opacity-40 flex-shrink-0" style={{ background: prompt.trim() && !loading ? 'var(--accent)' : 'var(--border-color)' }}>{loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}<span className="text-xs font-medium leading-none">×{batchCount}</span></button>
+                <button onClick={() => handleSend(false)} disabled={!prompt.trim() || loading} title="生成 1 张" className="px-2.5 py-1.5 rounded-lg transition-all duration-150 disabled:opacity-40 flex-shrink-0" style={{ background: prompt.trim() && !loading ? 'var(--accent)' : 'var(--border-color)', color: '#fff' }}>{loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}</button>
               </div>
             </div>
           </div>
         </div>
         <div className="px-1 pt-1 text-[11px]" style={{ color: 'var(--text-secondary)' }}>AI生成结果仅供参考，请勿用于违法用途；失败将退还积分。</div>
-        <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden"
+        <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" multiple className="sr-only"
           onChange={e => handleFiles(e.target.files)} />
       </div>
 
