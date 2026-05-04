@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 from backend.config import get_config, update_config, get_generation_models, get_generation_providers, get_default_model_id
-from backend.auth import get_current_user, require_admin
+from backend.auth import get_current_user, get_optional_user, require_admin
 from backend.services.gen_gateway import GenGateway
 
 router = APIRouter(prefix="/api/config", tags=["config"])
@@ -11,6 +11,7 @@ router = APIRouter(prefix="/api/config", tags=["config"])
 class ConfigUpdate(BaseModel):
     api_url: Optional[str] = None
     api_key: Optional[str] = None
+    register_enabled: Optional[bool] = None
     image_hosting_upload_url: Optional[str] = None
     image_hosting_base_url: Optional[str] = None
     image_hosting_referer: Optional[str] = None
@@ -29,15 +30,21 @@ class ConfigUpdate(BaseModel):
     generation_providers: Optional[Dict[str, Any]] = None
     cost_profit_config: Optional[Dict[str, Any]] = None
     cost_profit_launch_at: Optional[str] = None
+    github_hosting_enabled: Optional[bool] = None
+    github_hosting_repo: Optional[str] = None
+    github_hosting_token: Optional[str] = None
+    github_hosting_branch: Optional[str] = None
 
 
 @router.get("")
-async def get_runtime_config(user=Depends(get_current_user)):
+async def get_runtime_config(user=Depends(get_optional_user)):
     cfg = get_config()
-    if user.get("is_admin"):
+    if user and user.get("is_admin"):
         cfg["api_key"] = "***" if cfg.get("api_key") else ""
+        cfg["github_hosting_token"] = "***" if cfg.get("github_hosting_token") else ""
         return cfg
     return {
+        "register_enabled": bool(cfg.get("register_enabled", True)),
         "wechat_pay_qr_url": cfg.get("wechat_pay_qr_url", ""),
         "alipay_pay_qr_url": cfg.get("alipay_pay_qr_url", ""),
         "manual_recharge_notice": cfg.get("manual_recharge_notice", ""),
@@ -49,12 +56,15 @@ async def get_runtime_config(user=Depends(get_current_user)):
 async def get_runtime_config_admin(admin=Depends(require_admin)):
     cfg = get_config()
     cfg["api_key"] = "***" if cfg.get("api_key") else ""
+    cfg["github_hosting_token"] = "***" if cfg.get("github_hosting_token") else ""
     return cfg
 
 
 @router.post("")
 async def update_runtime_config(body: ConfigUpdate, admin=Depends(require_admin)):
     updates = {k: v for k, v in body.dict().items() if v is not None}
+    if updates.get("github_hosting_token") == "***":
+        del updates["github_hosting_token"]
     update_config(updates)
     return {"status": "ok"}
 

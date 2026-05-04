@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { authAPI } from '../api'
+import { authAPI, configAPI } from '../api'
 import { writeUser } from '../auth'
 
 export default function LoginPage() {
   const [isRegister, setIsRegister] = useState(false)
+  const [registerEnabled, setRegisterEnabled] = useState(true)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [nickname, setNickname] = useState('')
@@ -12,9 +13,18 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
 
+  useEffect(() => {
+    configAPI.get().then(({ data }) => {
+      const enabled = data?.register_enabled !== false
+      setRegisterEnabled(enabled)
+      if (!enabled) setIsRegister(false)
+    }).catch(() => {})
+  }, [])
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+    if (isRegister && !registerEnabled) { setError('当前已关闭注册'); return }
     setLoading(true)
 
     try {
@@ -39,7 +49,7 @@ export default function LoginPage() {
           <h1 className="login-title" style={{ fontFamily: "'Alex Brush', cursive", fontSize: '3.5rem' }}>Atelier</h1>
           <p className="text-sm mt-1 tracking-widest" style={{ color: 'var(--text-secondary)', opacity: 0.7 }}>AI 造梦工坊</p>
           <p className="text-xs mt-3" style={{ color: 'var(--text-secondary)' }}>
-            {isRegister ? '创建账号，开始你的 AI 创作之旅' : '欢迎回来，继续你的创作'}
+            {isRegister ? '创建账号，开始你的 AI 创作之旅' : registerEnabled ? '欢迎回来，继续你的创作' : '当前仅开放登录，注册已关闭'}
           </p>
         </div>
 
@@ -102,7 +112,7 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="text-center mt-4 text-sm" style={{ color: 'var(--text-secondary)' }}>
+          {registerEnabled ? <p className="text-center mt-4 text-sm" style={{ color: 'var(--text-secondary)' }}>
             {isRegister ? '已有账号？' : '没有账号？'}
             <button
               onClick={() => { setIsRegister(!isRegister); setError('') }}
@@ -111,7 +121,7 @@ export default function LoginPage() {
             >
               {isRegister ? '去登录' : '去注册'}
             </button>
-          </p>
+          </p> : <p className="text-center mt-4 text-sm" style={{ color: 'var(--text-secondary)' }}>注册入口已关闭</p>}
         </div>
 
         <p className="text-center mt-6 text-[11px]" style={{ color: 'var(--text-secondary)', opacity: 0.5 }}>

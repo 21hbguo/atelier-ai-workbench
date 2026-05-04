@@ -47,6 +47,7 @@ CONFIG_FILE = DATA_DIR / "config.json"
 _runtime_config = {
     "api_url": os.getenv("IMAGE_GEN_API_URL", "https://api.wuyinkeji.com/api/async"),
     "api_key": os.getenv("IMAGE_GEN_API_KEY", ""),
+    "register_enabled": os.getenv("REGISTER_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
     "image_hosting_upload_url": os.getenv("IMAGE_HOSTING_UPLOAD_URL", "https://img.heliar.top/upload"),
     "image_hosting_base_url": os.getenv("IMAGE_HOSTING_BASE_URL", "https://img.heliar.top"),
     "image_hosting_referer": os.getenv("IMAGE_HOSTING_REFERER", "https://img.heliar.top/"),
@@ -65,6 +66,10 @@ _runtime_config = {
     "generation_providers": _safe_json_obj(os.getenv("GENERATION_PROVIDERS_JSON", ""), {}),
     "cost_profit_config": _safe_json_obj(os.getenv("COST_PROFIT_CONFIG_JSON", ""), {}),
     "cost_profit_launch_at": os.getenv("COST_PROFIT_LAUNCH_AT", ""),
+    "github_hosting_enabled": os.getenv("GITHUB_HOSTING_ENABLED", "false").lower() in {"1", "true", "yes", "on"},
+    "github_hosting_repo": os.getenv("GITHUB_HOSTING_REPO", ""),
+    "github_hosting_token": os.getenv("GITHUB_HOSTING_TOKEN", ""),
+    "github_hosting_branch": os.getenv("GITHUB_HOSTING_BRANCH", "main"),
 }
 _runtime_config_defaults = dict(_runtime_config)
 if not _runtime_config["generation_models"]:
@@ -115,6 +120,10 @@ def get_limit_config():
     return out
 
 
+def is_register_enabled():
+    return bool(_runtime_config.get("register_enabled", True))
+
+
 def IMAGE_GEN_API_URL():
     return _runtime_config["api_url"]
 
@@ -133,6 +142,22 @@ def IMAGE_HOSTING_BASE_URL():
 
 def IMAGE_HOSTING_REFERER():
     return _runtime_config["image_hosting_referer"]
+
+
+def is_github_hosting_enabled():
+    return bool(_runtime_config.get("github_hosting_enabled"))
+
+
+def GITHUB_HOSTING_REPO():
+    return _runtime_config.get("github_hosting_repo", "")
+
+
+def GITHUB_HOSTING_TOKEN():
+    return _runtime_config.get("github_hosting_token", "")
+
+
+def GITHUB_HOSTING_BRANCH():
+    return _runtime_config.get("github_hosting_branch", "main")
 
 
 def get_default_model_id():

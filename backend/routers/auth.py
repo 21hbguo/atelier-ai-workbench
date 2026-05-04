@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from backend.database import get_db
 from backend.auth import hash_password, verify_password, create_token, create_refresh_token, rotate_refresh_token, revoke_refresh_token, get_current_user, update_user_ip, get_client_ip, set_auth_cookies, clear_auth_cookies, REFRESH_COOKIE_NAME
 from backend.services.points_service import PointsService
-from backend.config import get_limit_config
+from backend.config import get_limit_config, is_register_enabled
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
@@ -65,6 +65,8 @@ def _issue_session(response: Response, user_id: int, username: str, is_admin: bo
 
 @router.post("/register")
 async def register(req: RegisterRequest, request: Request, response: Response):
+    if not is_register_enabled():
+        raise HTTPException(status_code=403, detail="当前已关闭注册")
     ip = get_client_ip(request)
     _check_register_rate(ip)
     with get_db() as conn:
