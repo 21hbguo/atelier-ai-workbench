@@ -5,7 +5,7 @@ from pydantic import ConfigDict
 
 class GenerateTextRequest(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
-    prompt: str = Field(..., max_length=2500)
+    prompt: str = Field(..., max_length=4000)
     size: str = Field("auto", max_length=20)
     model_id: str = Field("image-default", max_length=64)
     task_id: Optional[str] = Field(None, max_length=50)
@@ -14,7 +14,7 @@ class GenerateTextRequest(BaseModel):
 
 class GenerateTextImageRequest(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
-    prompt: str = Field(..., max_length=2500)
+    prompt: str = Field(..., max_length=4000)
     image_urls: List[str] = Field(..., max_length=5)
     size: str = Field("auto", max_length=20)
     model_id: str = Field("image-default", max_length=64)
@@ -50,15 +50,15 @@ class PromptItem(BaseModel):
 
 class PromptCreateRequest(BaseModel):
     name: str = Field(..., max_length=200)
-    prompt: str = Field(..., max_length=2500)
-    negative_prompt: Optional[str] = Field(None, max_length=2500)
+    prompt: str = Field(..., max_length=4000)
+    negative_prompt: Optional[str] = Field(None, max_length=4000)
     tags: Optional[List[str]] = None
     category: Optional[str] = None
 
 class PromptUpdateRequest(BaseModel):
     name: Optional[str] = Field(None, max_length=200)
-    prompt: Optional[str] = Field(None, max_length=2500)
-    negative_prompt: Optional[str] = Field(None, max_length=2500)
+    prompt: Optional[str] = Field(None, max_length=4000)
+    negative_prompt: Optional[str] = Field(None, max_length=4000)
     tags: Optional[List[str]] = None
     category: Optional[str] = None
 

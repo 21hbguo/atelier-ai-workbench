@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react'
 import { X, Copy, Download, Trash2, Plus, Image as ImageIcon, Maximize2, Heart, ChevronLeft, ChevronRight, Edit2, Check, Share2, Star } from 'lucide-react'
-import { imageAPI } from '../api'
+import { imageAPI, promptAPI } from '../api'
 import { useAppDialog } from './AppDialogProvider'
 
 function InfoItem({ label, value }) {
@@ -31,6 +31,8 @@ export default function UnifiedDetailModal({
   title = '详情',
   hideDownload = false,
   allowMetadataEdit = false,
+  allowPromptEdit = false,
+  onPromptSave,
 }) {
   const dialog = useAppDialog()
   const [lightbox, setLightbox] = useState(false)
@@ -178,6 +180,45 @@ export default function UnifiedDetailModal({
     setEditing(true)
   }
 
+  const [categories, setCategories] = useState([])
+  useEffect(() => {
+    if (allowPromptEdit && !isImage) {
+      promptAPI.categories().then(({ data }) => setCategories(data.categories || [])).catch(() => {})
+    }
+  }, [allowPromptEdit, isImage])
+
+  const startPromptEditing = () => {
+    setEditForm({
+      name: card.name || '',
+      prompt: card.prompt || '',
+      negative_prompt: card.negativePrompt || '',
+      tags: Array.isArray(card.tags) ? card.tags.join(', ') : '',
+      category: card.category || '',
+    })
+    setEditing(true)
+  }
+
+  const handleSavePrompt = async () => {
+    if (!editForm || saving) return
+    setSaving(true)
+    try {
+      const payload = {
+        name: editForm.name,
+        prompt: editForm.prompt,
+        negative_prompt: editForm.negative_prompt || '',
+        tags: editForm.tags ? editForm.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+        category: editForm.category || null,
+      }
+      await onPromptSave(card.id, payload)
+      setEditing(false)
+      setEditForm(null)
+    } catch (e) {
+      dialog.alert('保存失败: ' + (e?.message || '未知错误'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleCopy = async (text) => {
     try {
       await navigator.clipboard.writeText(text)
@@ -274,43 +315,87 @@ export default function UnifiedDetailModal({
     )
   }
 
-  const renderPromptDetail = () => (
-    <>
-      {card.name && (
-        <div>
-          <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>标题</label>
-          <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{card.name}</p>
-        </div>
-      )}
-      {card.prompt && (
-        <div>
-          <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>提示词</label>
-          <div className="relative">
-            <p className="text-sm p-2.5 rounded-lg pr-9 max-h-36 md:max-h-56 overflow-y-auto whitespace-pre-wrap break-words leading-5" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>{card.prompt}</p>
-            <button onClick={() => handleCopy(card.prompt)} className="absolute right-2 top-2 p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
-              <Copy size={14} />
-            </button>
+  const renderPromptDetail = () => {
+    if (editing && editForm) {
+      return (
+        <div className="space-y-2.5">
+          <div>
+            <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>标题</label>
+            <input value={editForm.name || ''} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
+              className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
+              style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
           </div>
-          {copied && <span className="text-xs mt-1" style={{ color: 'var(--accent)' }}>已复制</span>}
-        </div>
-      )}
-      <div className="grid grid-cols-2 gap-2">
-        {card.author && <InfoItem label="作者" value={card.author} />}
-        {card.categoryLabel && <InfoItem label="分类" value={card.categoryLabel} />}
-        {card.createdAt && <InfoItem label="创建时间" value={card.createdAt} />}
-      </div>
-      {card.tags?.length > 0 && (
-        <div>
-          <label className="text-xs mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>标签</label>
-          <div className="flex gap-1.5 flex-wrap">
-            {card.tags.map((tag, i) => (
-              <span key={i} className="text-sm" style={{ color: 'var(--text-primary)' }}>{tag}</span>
-            ))}
+          <div>
+            <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>提示词</label>
+            <textarea value={editForm.prompt || ''} onChange={e => setEditForm(f => ({ ...f, prompt: e.target.value }))}
+              className="w-full px-3 py-2 rounded-lg text-sm border outline-none resize-none"
+              style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+              rows={4} />
+          </div>
+          <div>
+            <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>反向提示词 (可选)</label>
+            <textarea value={editForm.negative_prompt || ''} onChange={e => setEditForm(f => ({ ...f, negative_prompt: e.target.value }))}
+              className="w-full px-3 py-2 rounded-lg text-sm border outline-none resize-none"
+              style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+              rows={2} />
+          </div>
+          <div>
+            <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>标签</label>
+            <input value={editForm.tags || ''} onChange={e => setEditForm(f => ({ ...f, tags: e.target.value }))}
+              placeholder="逗号分隔"
+              className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
+              style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
+          </div>
+          <div>
+            <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>分类</label>
+            <select value={editForm.category || ''} onChange={e => setEditForm(f => ({ ...f, category: e.target.value }))}
+              className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
+              style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
+              <option value="">无分类</option>
+              {categories.map(c => <option key={c.slug} value={c.slug}>{c.label}</option>)}
+            </select>
           </div>
         </div>
-      )}
-    </>
-  )
+      )
+    }
+    return (
+      <>
+        {card.name && (
+          <div>
+            <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>标题</label>
+            <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{card.name}</p>
+          </div>
+        )}
+        {card.prompt && (
+          <div>
+            <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>提示词</label>
+            <div className="relative">
+              <p className="text-sm p-2.5 rounded-lg pr-9 max-h-36 md:max-h-56 overflow-y-auto whitespace-pre-wrap break-words leading-5" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>{card.prompt}</p>
+              <button onClick={() => handleCopy(card.prompt)} className="absolute right-2 top-2 p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
+                <Copy size={14} />
+              </button>
+            </div>
+            {copied && <span className="text-xs mt-1" style={{ color: 'var(--accent)' }}>已复制</span>}
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-2">
+          {card.author && <InfoItem label="作者" value={card.author} />}
+          {card.categoryLabel && <InfoItem label="分类" value={card.categoryLabel} />}
+          {card.createdAt && <InfoItem label="创建时间" value={card.createdAt} />}
+        </div>
+        {card.tags?.length > 0 && (
+          <div>
+            <label className="text-xs mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>标签</label>
+            <div className="flex gap-1.5 flex-wrap">
+              {card.tags.map((tag, i) => (
+                <span key={i} className="text-sm" style={{ color: 'var(--text-primary)' }}>{tag}</span>
+              ))}
+            </div>
+          </div>
+        )}
+      </>
+    )
+  }
 
   const renderActions = () => {
     const actions = []
@@ -409,6 +494,7 @@ export default function UnifiedDetailModal({
               <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{title}</span>
               <div className="flex items-center gap-2">
                 {allowMetadataEdit && isImage && raw.filename && !detailExtra && (editing ? <button onClick={handleSaveMetadata} disabled={saving} className="p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--accent)' }}><Check size={16} /></button> : <button onClick={startEditing} className="p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}><Edit2 size={16} /></button>)}
+                {allowPromptEdit && !isImage && !detailExtra && (editing ? <button onClick={handleSavePrompt} disabled={saving} className="p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--accent)' }}><Check size={16} /></button> : <button onClick={startPromptEditing} className="p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}><Edit2 size={16} /></button>)}
                 <button onClick={requestCloseModal} className="p-1 rounded hover:bg-bg-hover"><X size={18} /></button>
               </div>
             </div>
