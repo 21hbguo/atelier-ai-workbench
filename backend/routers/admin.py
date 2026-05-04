@@ -313,6 +313,7 @@ async def batch_delete_square(body: dict, admin=Depends(require_admin)):
     with get_db() as conn:
         rows = conn.execute("SELECT filename FROM square_images WHERE id = ANY(%s)", (ids,)).fetchall()
         filenames = [r["filename"] for r in rows]
+        conn.execute("DELETE FROM favorites WHERE target_type = 'image' AND target_id = ANY(%s)", ([str(i) for i in ids],))
         conn.execute("DELETE FROM square_likes WHERE image_id = ANY(%s)", (ids,))
         conn.execute("DELETE FROM square_images WHERE id = ANY(%s)", (ids,))
         if filenames:
@@ -328,6 +329,7 @@ async def delete_square_image(image_id: int, admin=Depends(require_admin)):
         if not image:
             raise HTTPException(status_code=404, detail="图片不存在")
         row = conn.execute("SELECT filename FROM square_images WHERE id = %s", (image_id,)).fetchone()
+        conn.execute("DELETE FROM favorites WHERE target_type = 'image' AND target_id = %s", (str(image_id),))
         conn.execute("DELETE FROM square_likes WHERE image_id = %s", (image_id,))
         conn.execute("DELETE FROM square_images WHERE id = %s", (image_id,))
         if row:

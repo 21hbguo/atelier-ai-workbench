@@ -50,6 +50,8 @@ async def unshare_from_square(image_id: int = Query(...), user=Depends(get_curre
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="记录不存在或无权限")
+        conn.execute("DELETE FROM favorites WHERE target_type = 'image' AND target_id = %s", (str(image_id),))
+        conn.execute("DELETE FROM square_likes WHERE image_id = %s", (image_id,))
         conn.execute("DELETE FROM square_images WHERE id = %s", (image_id,))
         from backend.services.image_expiry import refresh_permanent_flags_by_filenames
         refresh_permanent_flags_by_filenames([row["filename"]], conn=conn)
