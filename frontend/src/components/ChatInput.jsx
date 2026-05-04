@@ -3,6 +3,21 @@ import { Paperclip, X, Settings, Send, Maximize2, Share2, Loader2 } from 'lucide
 import ParamPanel from './ParamPanel'
 import { getCachedImages, setCachedImages, getPendingImage, clearPendingImage } from '../utils/imageDB'
 
+function getImageExt(type, name = '') {
+  const mime = String(type || '').split(';')[0].trim().toLowerCase()
+  if (mime === 'image/png') return 'png'
+  if (mime === 'image/jpeg') return 'jpg'
+  if (mime === 'image/webp') return 'webp'
+  const match = String(name || '').toLowerCase().match(/\.([a-z0-9]+)$/)
+  const ext = match?.[1] || ''
+  return ['png', 'jpg', 'jpeg', 'webp'].includes(ext) ? (ext === 'jpeg' ? 'jpg' : ext) : 'png'
+}
+function normalizeImageName(name, type, fallback = 'reference') {
+  const raw = String(name || '').trim()
+  const base = (raw.replace(/\.[^.]+$/, '') || fallback).replace(/[^\w.-]/g, '_').replace(/^\.+/, '') || fallback
+  return `${base}.${getImageExt(type, raw)}`
+}
+
 const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost = 10 }, ref) {
   const [prompt, setPrompt] = useState('')
   const [images, setImages] = useState([])
@@ -31,7 +46,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
           const res = await fetch(img.url)
           blob = await res.blob()
         }
-        return blob ? { blob, name: img.file?.name || img.name || `cached-${i}.png`, type: blob.type || img.file?.type || 'image/png' } : null
+        return blob ? { blob, name: normalizeImageName(img.file?.name || img.name || `cached-${i}`, blob.type || img.file?.type || 'image/png', `cached-${i}`), type: blob.type || img.file?.type || 'image/png' } : null
       }))
       if (version !== persistVersionRef.current) return
       await setCachedImages(cached.filter(Boolean))
@@ -88,8 +103,9 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
           }
         }
         if (blob) {
-          const file = new File([blob], name, { type })
-          const next = [{ file, preview: URL.createObjectURL(file), name }]
+          const filename = normalizeImageName(name, type, `ref-${Date.now()}`)
+          const file = new File([blob], filename, { type })
+          const next = [{ file, preview: URL.createObjectURL(file), name: filename }]
           setImages(prev => {
             const merged = [...prev, ...next].slice(0, MAX_IMAGES)
             void persistImages(merged)
@@ -113,13 +129,13 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     const allRefs = refUrl ? [...refImages, { url: refUrl, name: 'reference.png' }] : refImages
     const unique = allRefs.filter((v, i, a) => a.findIndex(x => x.url === v.url) === i)
     if (unique.length > 0) {
-      setImages(unique.map(r => ({ url: r.url, preview: r.url, name: r.name || 'reference.png' })))
+      setImages(unique.map((r, i) => ({ url: r.url, preview: r.url, name: normalizeImageName(r.name || `reference-${i}`, '', `reference-${i}`) })))
     } else {
       ;(async () => {
         try {
           const cachedImages = await getCachedImages()
           console.log('[ChatInput mount] IndexedDB cachedImages count:', cachedImages.length)
-          const items = cachedImages.map((item, i) => item?.blob ? { file: new File([item.blob], item.name || `cached-${i}.png`, { type: item.type || item.blob.type || 'image/png' }), preview: URL.createObjectURL(item.blob), name: item.name || `cached-${i}.png` } : null).filter(Boolean)
+          const items = cachedImages.map((item, i) => item?.blob ? (() => { const type = item.type || item.blob.type || 'image/png'; const name = normalizeImageName(item.name || `cached-${i}`, type, `cached-${i}`); return { file: new File([item.blob], name, { type }), preview: URL.createObjectURL(item.blob), name } })() : null).filter(Boolean)
           if (items.length > 0) setImages(items)
         } catch {}
       })()

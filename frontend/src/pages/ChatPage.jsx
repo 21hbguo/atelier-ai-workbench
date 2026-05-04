@@ -31,6 +31,20 @@ function parseTaskTime(value) {
   const ts = Date.parse(String(value || '').replace(' ', 'T'))
   return Number.isNaN(ts) ? 0 : ts
 }
+function getUploadExt(type, name = '') {
+  const mime = String(type || '').split(';')[0].trim().toLowerCase()
+  if (mime === 'image/png') return 'png'
+  if (mime === 'image/jpeg') return 'jpg'
+  if (mime === 'image/webp') return 'webp'
+  const match = String(name || '').toLowerCase().match(/\.([a-z0-9]+)$/)
+  const ext = match?.[1] || ''
+  return ['png', 'jpg', 'jpeg', 'webp'].includes(ext) ? (ext === 'jpeg' ? 'jpg' : ext) : 'png'
+}
+function normalizeUploadName(name, type, url = '') {
+  const raw = String(name || '').trim() || decodeURIComponent(String(url || '').split('?')[0].split('/').pop() || '')
+  const base = (raw.replace(/\.[^.]+$/, '') || 'reference').replace(/[^\w.-]/g, '_').replace(/^\.+/, '') || 'reference'
+  return `${base}.${getUploadExt(type, raw)}`
+}
 
 export default function ChatPage() {
   const dialog = useAppDialog()
@@ -325,11 +339,11 @@ export default function ChatPage() {
     setLoading(true)
     try {
       const previewImages = images?.map(i => i.preview) || []
-      const uploaded = images?.length > 0 ? await Promise.all(images.map(img => {
-        if (img.file) return uploadAPI.upload(img.file)
+      const uploaded = images?.length > 0 ? await Promise.all(images.map(async img => {
+        if (img.file) { const type = img.file.type || 'image/png'; return uploadAPI.upload(new File([img.file], normalizeUploadName(img.file.name, type), { type })) }
         if (img.url && img.url.startsWith('http')) return Promise.resolve({ data: { url: img.url } })
-        if (img.url) return fetch(img.url).then(r => { if (!r.ok) throw new Error(`fetch ${r.status}`); return r.blob() }).then(blob => uploadAPI.upload(new File([blob], img.name || 'ref.png', { type: blob.type || 'image/png' })))
-        return Promise.resolve({ data: { url: '' } })
+        if (img.url) { const r = await fetch(img.url); if (!r.ok) throw new Error(`fetch ${r.status}`); const blob = await r.blob(); const type = blob.type || r.headers.get('content-type') || 'image/png'; return uploadAPI.upload(new File([blob], normalizeUploadName(img.name, type, img.url), { type })) }
+        return { data: { url: '' } }
       })) : []
       const imageUrls = uploaded.map(r => r.data.url)
       const hasImages = imageUrls.length > 0
@@ -408,9 +422,9 @@ export default function ChatPage() {
   const handleRetry = useCallback(async (taskId) => {
     try {
       await taskAPI.retry(taskId)
-      refreshTasks()
-    } catch {}
-  }, [refreshTasks])
+      await refreshTasks()
+    } catch (e) { dialog.alert(e.message || '重试失败') }
+  }, [refreshTasks, dialog])
 
   // 刷新后自动恢复 processing 任务的轮询
   useEffect(() => {
@@ -502,9 +516,11 @@ export default function ChatPage() {
   }, [checked, visibleTasks])
 
   const handleBatchDelete = useCallback(async () => {
-      if (!await dialog.confirm(`确定删除选中的 ${checked.size} 项？`)) return
+    if (!await dialog.confirm(`确定删除选中的 ${checked.size} 项？`)) return
     let failed = 0
-    for (const taskId of checked) {
+    const deleted = new Set()
+    const ids = [...checked]
+    for (const taskId of ids) {
       try {
         if (taskId.startsWith('img-')) {
           const filename = taskId.replace('img-', '')
@@ -512,10 +528,15 @@ export default function ChatPage() {
         } else {
           await taskAPI.delete(taskId)
         }
-      } catch { failed += 1 }
+        deleted.add(taskId)
+      } catch (e) { console.error('删除失败:', taskId, e); failed += 1 }
     }
     setChecked(new Set()); setSelectMode(false)
-    refreshTasks()
+    // 乐观更新：立即从本地移除已删除的项
+    if (deleted.size > 0) {
+      setTasks(prev => prev.filter(t => !deleted.has(t.task_id)))
+    }
+    try { await refreshTasks() } catch (e) { console.error('刷新任务列表失败:', e) }
     window.dispatchEvent(new Event('gallery-updated'))
     if (failed > 0) dialog.alert(`${failed} 项删除失败`)
   }, [checked, refreshTasks, dialog])

@@ -19,7 +19,7 @@ function useActions() {
     navigate('/')
   }
   const handleUseImage = (card) => {
-    const url = card.thumbUrl2x || card.fullUrl
+    const url = card.fullUrl || card.thumbUrl2x || card.thumbUrl
     if (!url) { alert('图片地址不存在'); return }
     const stored = JSON.parse(localStorage.getItem('ref_images') || '[]')
     if (!stored.some(i => i.url === url)) { stored.push({ url, name: card.filename || card.name || 'favorite' }); localStorage.setItem('ref_images', JSON.stringify(stored)) }

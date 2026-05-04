@@ -17,6 +17,8 @@ class PromptService:
         d = dict(row)
         val = d.get("tags")
         d["tags"] = val if isinstance(val, list) else json.loads(val or "[]")
+        if d.get("created_at") is not None:
+            d["created_at"] = d["created_at"].strftime("%Y-%m-%d %H:%M:%S") if hasattr(d["created_at"], "strftime") else str(d["created_at"])
         if d.get("image_path") and "/" in d["image_path"]:
             w,h=get_image_dimensions(str(EVO_IMAGES_DIR / d["image_path"]))
             d["width"]=w
