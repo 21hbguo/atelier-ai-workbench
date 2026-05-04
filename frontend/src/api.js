@@ -91,6 +91,7 @@ export const favoriteAPI = {
 
 export const adminAPI = {
   users: (page = 1, size = 20, query) => { const params = { page, size }; if (query) params.query = query; return api.get('/admin/users', { params }) },
+  createUser: data => api.post('/admin/users', data),
   deleteUser: userId => api.post(`/admin/users/${userId}/delete`),
   toggleFreeze: userId => api.post(`/admin/users/${userId}/freeze`),
   square: (page = 1, size = 20, query, status = 'all', sort = 'likes', authorId) => { const params = { page, size, status, sort }; if (query) params.query = query; if (authorId) params.author_id = authorId; return api.get('/admin/square', { params }) },
@@ -104,7 +105,7 @@ export const adminAPI = {
   history: (page = 1, size = 20, query) => { const params = { page, size }; if (query) params.query = query; return api.get('/admin/history', { params }) },
   deleteHistory: taskId => api.post(`/admin/history/${taskId}/delete`),
   imageStats: () => api.get('/admin/hosting/stats'),
-  hostingImages: (page = 1, size = 50) => api.get('/admin/hosting', { params: { page, size } }),
+  hostingImages: (page = 1, size = 50, hostingType) => { const params = { page, size }; if (hostingType) params.hosting_type = hostingType; return api.get('/admin/hosting', { params }) },
   batchDeleteHosting: urls => api.post('/admin/hosting/batch-delete', { urls }),
   cleanDuplicates: () => api.post('/admin/hosting/clean-duplicates'),
   bannedWords: (page = 1, size = 20, query) => { const params = { page, size }; if (query) params.query = query; return api.get('/admin/banned-words', { params }) },

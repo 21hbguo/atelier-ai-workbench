@@ -49,7 +49,7 @@ export default function RedeemPage() {
 
         <div className="p-4 rounded-xl mb-6" style={{ background: 'var(--bg-card)' }}>
           <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>当前积分余额</span>
-          <div className="text-2xl font-bold" style={{ color: 'var(--accent)' }}>{user?.is_admin ? '∞' : points}</div>
+          <div className="text-2xl font-bold" style={{ color: 'var(--accent)' }}>{points}</div>
         </div>
 
         <div className="space-y-4">

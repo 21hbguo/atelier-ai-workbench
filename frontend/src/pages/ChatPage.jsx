@@ -65,7 +65,7 @@ export default function ChatPage() {
   const [userList, setUserList] = useState([])
   const [selectedUserId, setSelectedUserId] = useState(null)
   const [points, setPoints] = useState(currentUser?.points ?? 0)
-  const [requestCost, setRequestCost] = useState(isAdmin ? 0 : 10)
+  const [requestCost, setRequestCost] = useState(10)
   const [loadError, setLoadError] = useState('')
   const [selectedCardIndex, setSelectedCardIndex] = useState(null)
   const [detailCards, setDetailCards] = useState([])
@@ -142,6 +142,9 @@ export default function ChatPage() {
       } catch {}
     }
     const latestMap = {}
+    for (const img of allImages || []) {
+      if (img?.filename && img?.square_image_id) latestMap[img.filename] = img.square_image_id
+    }
     for (const s of myShares) {
       if (s?.filename && s?.id) latestMap[s.filename] = s.id
     }
@@ -150,7 +153,7 @@ export default function ChatPage() {
     for (const t of allTasks) {
       for (const u of (t.result_urls || [])) taskImageFiles.add(u.split('/').pop())
     }
-    const expiryByFilename = Object.fromEntries(allImages.map(img => [img.filename, { expires_at: img.expires_at, is_permanent: !!img.is_permanent, days_left: img.days_left, expired: !!img.expired, width: img.width || null, height: img.height || null }]))
+    const expiryByFilename = Object.fromEntries(allImages.map(img => [img.filename, { expires_at: img.expires_at, is_permanent: !!img.is_permanent, days_left: img.days_left, expired: !!img.expired, width: img.width || null, height: img.height || null, square_image_id: img.square_image_id || null }]))
     let orphans = allImages.filter(img => !taskImageFiles.has(img.filename)).map(img => ({
       task_id: 'img-' + img.filename,
       status: 'completed',
@@ -166,15 +169,16 @@ export default function ChatPage() {
       expired: !!img.expired,
       width: img.width || null,
       height: img.height || null,
+      square_image_id: img.square_image_id || null,
     }))
     if (q) {
       const lower = q.toLowerCase()
       orphans = orphans.filter(o => ((o.params?.prompt || '').toLowerCase().includes(lower)))
     }
-    const merged = [...orphans, ...allTasks.map(t => { const fn = t.result_urls?.[0]?.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, fn); return { ...t, expires_at: exp.expires_at || t.expires_at, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : t.is_permanent, days_left: typeof exp.days_left === 'number' ? exp.days_left : t.days_left, expired: typeof exp.expired === 'boolean' ? exp.expired : t.expired, width: exp.width || t.width || null, height: exp.height || t.height || null } })].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
+    const merged = [...orphans, ...allTasks.map(t => { const fn = t.result_urls?.[0]?.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, fn); return { ...t, expires_at: exp.expires_at || t.expires_at, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : t.is_permanent, days_left: typeof exp.days_left === 'number' ? exp.days_left : t.days_left, expired: typeof exp.expired === 'boolean' ? exp.expired : t.expired, width: exp.width || t.width || null, height: exp.height || t.height || null, square_image_id: exp.square_image_id || t.square_image_id || null } })].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
     setTasks(merged)
     const completedMerged = merged.filter(t => t.status === 'completed' && t.result_urls?.length)
-    setDetailCards(completedMerged.flatMap(task => { const prompt = task.params?.prompt || task.prompt || ''; return task.result_urls.map((url, idx) => { const filename = url.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, filename); return { _type: 'image', _raw: { filename, metadata: { prompt, task_id: task.task_id, created_at: task.created_at, started_at: task.started_at, completed_at: task.completed_at, type: task.params?.image_urls?.length ? 'image' : 'text', size: task.params?.size, input_urls: task.params?.image_urls } }, id: `${task.task_id}-${idx}`, prompt, fullUrl: `/api/images/file/${filename}`, filename, expiresAt: exp.expires_at || task.expires_at || null, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : !!task.is_permanent, daysLeft: typeof exp.days_left === 'number' ? exp.days_left : task.days_left, expired: typeof exp.expired === 'boolean' ? exp.expired : !!task.expired, square_image_id: squareIdMapRef.current[filename] || null } }) }))
+    setDetailCards(completedMerged.flatMap(task => { const prompt = task.params?.prompt || task.prompt || ''; return task.result_urls.map((url, idx) => { const filename = url.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, filename); return { _type: 'image', _raw: { filename, metadata: { prompt, task_id: task.task_id, created_at: task.created_at, started_at: task.started_at, completed_at: task.completed_at, type: task.params?.image_urls?.length ? 'image' : 'text', size: task.params?.size, input_urls: task.params?.image_urls } }, id: `${task.task_id}-${idx}`, prompt, fullUrl: `/api/images/file/${filename}`, filename, expiresAt: exp.expires_at || task.expires_at || null, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : !!task.is_permanent, daysLeft: typeof exp.days_left === 'number' ? exp.days_left : task.days_left, expired: typeof exp.expired === 'boolean' ? exp.expired : !!task.expired, square_image_id: exp.square_image_id || task.square_image_id || squareIdMapRef.current[filename] || null } }) }))
     saveCachedActiveTasks(merged)
     if (!loaded) setLoaded(true)
   }, [loaded, isAdmin, selectedUserId, searchQuery, loadCachedActiveTasks, saveCachedActiveTasks])
@@ -211,9 +215,8 @@ export default function ChatPage() {
     return () => window.removeEventListener('points-updated', handleUpdate)
   }, [])
   useEffect(() => {
-    if (isAdmin) { setRequestCost(0); return }
     configAPI.get().then(res => setRequestCost(Math.max(0, Number(res.data?.points_cost_per_generation) || 10))).catch(() => setRequestCost(10))
-  }, [isAdmin])
+  }, [])
 
   useEffect(() => {
     if (loaded && feedRef.current) {
@@ -267,14 +270,13 @@ export default function ChatPage() {
     } catch {}
   }, [markSquareShared])
   const refreshPointsOnFailed = useCallback(() => {
-    if (isAdmin) return
     pointsAPI.balance().then(res => {
       setPoints(res.data.points)
       const u = readUser()
       if (u) { u.points = res.data.points; localStorage.setItem('user', JSON.stringify(u)) }
       window.dispatchEvent(new Event('points-updated'))
     }).catch(() => {})
-  }, [isAdmin])
+  }, [])
 
   const pollTask = useCallback(async (taskId, startTime, shareToSquare, prompt, params, hasImages) => {
     const maxWaitMs = 15 * 60 * 1000
@@ -329,11 +331,9 @@ export default function ChatPage() {
   }, [updateTask, shareImageToSquare, refreshPointsOnFailed])
 
   const handleSubmit = useCallback(async ({ prompt, images, params, shareToSquare, rollCount = 1 }) => {
-    const latestUser = readUser()
-    const latestIsAdmin = Boolean(latestUser?.is_admin)
     const batchCount = Math.min(5, Math.max(1, Number(rollCount) || 1))
     if (batchCount > 1) {
-      const cost = latestIsAdmin ? 0 : requestCost
+      const cost = requestCost
       if (!await dialog.confirm(`本次将提交 ${batchCount} 次生成，预计消耗 ${batchCount * cost} 积分，是否继续？`)) return false
     }
     setLoading(true)
@@ -355,12 +355,10 @@ export default function ChatPage() {
         const taskId = makeTaskId()
         try {
           const data = hasImages ? (await generateAPI.submitTextImage({ prompt, image_urls: imageUrls, size: params?.size || 'auto', model_id: params?.model_id, task_id: taskId, share_to_square: !!shareToSquare })).data : (await generateAPI.submitText({ prompt, size: params?.size || 'auto', model_id: params?.model_id, task_id: taskId, share_to_square: !!shareToSquare })).data
-          if (!latestIsAdmin) {
-            setPoints(p => Math.max(0, p - requestCost))
-            const u = readUser()
-            if (u) { u.points = Math.max(0, (u.points ?? 0) - requestCost); localStorage.setItem('user', JSON.stringify(u)) }
-            window.dispatchEvent(new Event('points-updated'))
-          }
+          setPoints(p => Math.max(0, p - requestCost))
+          const u = readUser()
+          if (u) { u.points = Math.max(0, (u.points ?? 0) - requestCost); localStorage.setItem('user', JSON.stringify(u)) }
+          window.dispatchEvent(new Event('points-updated'))
           const realId = data.task_id
           setTasks(prev => { const next = prev.map(t => t.task_id === tempId ? { ...t, task_id: realId } : t); saveCachedActiveTasks(next); return next })
           if (data.status === 'completed') {
@@ -462,7 +460,11 @@ export default function ChatPage() {
     }
   }, [dialog, markSquareShared])
   const handleDetailUnshare = useCallback(async (card) => {
-    const sid = card.square_image_id || squareIdMapRef.current[card.filename]
+    let sid = card.square_image_id || squareIdMapRef.current[card.filename]
+    if (!sid) {
+      await refreshTasks()
+      sid = squareIdMapRef.current[card.filename]
+    }
     if (!sid) { dialog.alert('无法找到分享记录'); return }
     if (!await dialog.confirm('确定撤回该分享？')) return
     try {
@@ -473,13 +475,13 @@ export default function ChatPage() {
     } catch (e) {
       dialog.alert(e?.response?.data?.detail || e.message || '撤回失败')
     }
-  }, [dialog])
+  }, [dialog, refreshTasks])
   const handleExtendImages = useCallback(async (filenames) => {
     const uniq = [...new Set((filenames || []).filter(Boolean))]
     if (uniq.length === 0) { dialog.alert('没有可延长的图片'); return }
     try {
       const { data } = await imageAPI.extend(uniq)
-      if (!isAdmin && typeof data.points === 'number') {
+      if (typeof data.points === 'number') {
         setPoints(data.points)
         const u = readUser()
         if (u) { u.points = data.points; localStorage.setItem('user', JSON.stringify(u)) }
@@ -491,7 +493,7 @@ export default function ChatPage() {
     } catch (e) {
       dialog.alert(e?.message || '延长失败')
     }
-  }, [isAdmin, refreshTasks, dialog])
+  }, [refreshTasks, dialog])
   const handleDetailExtend = useCallback(async (card) => {
     if (!await dialog.confirm('确定延长3天？将扣除2积分')) return
     await handleExtendImages([card.filename])
