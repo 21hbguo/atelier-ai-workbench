@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react'
-import { X, Copy, Download, Trash2, Plus, Image as ImageIcon, Maximize2, Heart, ChevronLeft, ChevronRight, Edit2, Check, Share2, Star } from 'lucide-react'
-import { imageAPI, promptAPI } from '../api'
+import { X, Copy, Download, Trash2, Plus, Image as ImageIcon, Maximize2, Heart, ChevronLeft, ChevronRight, Edit2, Check, Share2, Star, Upload } from 'lucide-react'
+import { imageAPI, promptAPI, uploadAPI } from '../api'
 import { useAppDialog } from './AppDialogProvider'
 
 function InfoItem({ label, value }) {
@@ -41,6 +41,7 @@ export default function UnifiedDetailModal({
   const [editing, setEditing] = useState(false)
   const [editForm, setEditForm] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [contentVisible, setContentVisible] = useState(true)
   const [mediaHovered, setMediaHovered] = useState(false)
   const touchStartX = useRef(0)
@@ -54,6 +55,7 @@ export default function UnifiedDetailModal({
   const onCloseRef = useRef(onClose)
   const modalToken = useRef(`${Date.now()}_${Math.random().toString(36).slice(2)}`)
   const shouldAutoEdit = useRef(initialEditing)
+  const fileInputRef = useRef(null)
   const isTokenState = useCallback((kind) => { const s = window.history.state; return s?.__udm === kind && s?.token === modalToken.current }, [])
 
   const hasNavigation = cards.length > 1
@@ -201,8 +203,24 @@ export default function UnifiedDetailModal({
       negative_prompt: card.negativePrompt || '',
       tags: Array.isArray(card.tags) ? card.tags.join(', ') : '',
       category: card.category || '',
+      image_path: card.imagePath || '',
     })
     setEditing(true)
+  }
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const { data } = await uploadAPI.upload(file)
+      setEditForm(f => ({ ...f, image_path: data.url }))
+    } catch (err) {
+      dialog.alert('图片上传失败: ' + (err?.message || '未知错误'))
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
   }
 
   const handleSavePrompt = async () => {
@@ -215,6 +233,7 @@ export default function UnifiedDetailModal({
         negative_prompt: editForm.negative_prompt || '',
         tags: editForm.tags ? editForm.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
         category: editForm.category || null,
+        image_path: editForm.image_path || null,
       }
       await onPromptSave(card.id, payload)
       setEditing(false)
@@ -244,19 +263,36 @@ export default function UnifiedDetailModal({
   }
 
   const renderLeftPanel = () => {
-    if (!fullUrl) {
+    const editImageUrl = editing && editForm?.image_path ? editForm.image_path : null
+    const displayUrl = editImageUrl || fullUrl
+    const showUploadBtn = editing && !isImage
+    if (!displayUrl) {
       return (
         <div className={`md:w-3/5 bg-black flex items-center justify-center min-h-[260px] h-[44vh] md:h-full relative transition-opacity duration-150 ${contentVisible ? 'opacity-100' : 'opacity-0'}`} style={{ background: 'color-mix(in srgb, var(--accent) 8%, var(--bg-primary))' }}>
           <ImageIcon size={64} style={{ color: 'var(--accent)', opacity: 0.3 }} />
+          {showUploadBtn && (
+            <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
+              className="absolute bottom-4 right-4 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-white bg-black/60 hover:bg-black/80 transition-colors disabled:opacity-50">
+              <Upload size={14} />{uploading ? '上传中...' : '上传图片'}
+            </button>
+          )}
         </div>
       )
     }
     return (
-      <div className={`md:w-3/5 bg-black flex items-center justify-center min-h-[260px] h-[44vh] md:h-full relative group cursor-pointer overflow-hidden transition-opacity duration-150 ${contentVisible ? 'opacity-100' : 'opacity-0'}`} onClick={handleMediaClick} onMouseEnter={() => setMediaHovered(true)} onMouseLeave={() => setMediaHovered(false)}>
-        <img src={fullUrl} alt="" className="max-w-full max-h-full object-contain" />
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-          <Maximize2 size={24} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-        </div>
+      <div className={`md:w-3/5 bg-black flex items-center justify-center min-h-[260px] h-[44vh] md:h-full relative group cursor-pointer overflow-hidden transition-opacity duration-150 ${contentVisible ? 'opacity-100' : 'opacity-0'}`} onClick={showUploadBtn ? undefined : handleMediaClick} onMouseEnter={() => setMediaHovered(true)} onMouseLeave={() => setMediaHovered(false)}>
+        <img src={displayUrl} alt="" className="max-w-full max-h-full object-contain" />
+        {!showUploadBtn && (
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+            <Maximize2 size={24} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+          </div>
+        )}
+        {showUploadBtn && (
+          <button onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click() }} disabled={uploading}
+            className="absolute bottom-4 right-4 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-white bg-black/60 hover:bg-black/80 transition-colors disabled:opacity-50 z-10">
+            <Upload size={14} />{uploading ? '上传中...' : '更换图片'}
+          </button>
+        )}
         {hasNavigation && (
           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 px-2 py-1 rounded-full bg-black/50 text-white text-xs">
             {currentIndex + 1} / {cards.length}
@@ -520,6 +556,8 @@ export default function UnifiedDetailModal({
           <img src={fullUrl} alt="" className="max-w-full max-h-full rounded-lg" onClick={(e) => e.stopPropagation()} />
         </div>
       )}
+
+      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
     </>
   )
 }

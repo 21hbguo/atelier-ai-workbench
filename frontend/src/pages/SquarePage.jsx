@@ -474,6 +474,8 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
   const handlePromptSave = useCallback(async (id, payload) => {
     await promptAPI.update(id, payload)
     if (newCardRef.current?.id === id) {
+      const imgPath = payload.image_path
+      const isFullUrl = imgPath && imgPath.startsWith('http')
       const updated = {
         ...newCardRef.current,
         name: payload.name,
@@ -484,6 +486,10 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
         categoryLabel: payload.category,
         title: payload.name,
         subtitle: payload.name || payload.prompt,
+        imagePath: imgPath || null,
+        thumbUrl: imgPath ? (isFullUrl ? imgPath : `/api/prompts/evo-thumb/${imgPath}?size=400`) : null,
+        thumbUrl2x: imgPath ? (isFullUrl ? imgPath : `/api/prompts/evo-thumb/${imgPath}?size=800`) : null,
+        fullUrl: imgPath ? (isFullUrl ? imgPath : `/api/prompts/evo-thumb/${imgPath}?size=800`) : null,
       }
       setNewCard(updated)
       newCardRef.current = updated

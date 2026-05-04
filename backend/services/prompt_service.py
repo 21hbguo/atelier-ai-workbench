@@ -17,7 +17,7 @@ class PromptService:
         d = dict(row)
         val = d.get("tags")
         d["tags"] = val if isinstance(val, list) else json.loads(val or "[]")
-        if d.get("image_path"):
+        if d.get("image_path") and not d["image_path"].startswith("http"):
             w,h=get_image_dimensions(str(EVO_IMAGES_DIR / d["image_path"]))
             d["width"]=w
             d["height"]=h

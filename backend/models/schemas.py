@@ -47,6 +47,7 @@ class PromptItem(BaseModel):
     created_at: str
     user_id: Optional[int] = None
     category: Optional[str] = None
+    image_path: Optional[str] = None
 
 class PromptCreateRequest(BaseModel):
     name: str = Field("", max_length=200)
@@ -61,6 +62,7 @@ class PromptUpdateRequest(BaseModel):
     negative_prompt: Optional[str] = Field(None, max_length=4000)
     tags: Optional[List[str]] = None
     category: Optional[str] = None
+    image_path: Optional[str] = Field(None, max_length=1000)
 
 class BatchDeleteRequest(BaseModel):
     ids: List[str] = Field(..., max_length=100)

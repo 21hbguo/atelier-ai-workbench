@@ -214,6 +214,7 @@ async def update_prompt(prompt_id: str, request: PromptUpdateRequest, user=Depen
         negative_prompt=request.negative_prompt,
         tags=request.tags,
         category=request.category,
+        image_path=request.image_path,
     )
     if not result:
         raise HTTPException(status_code=404, detail="提示词不存在")

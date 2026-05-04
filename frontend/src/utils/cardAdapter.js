@@ -33,6 +33,7 @@ export function normalizeImage(raw) {
 
 export function normalizePrompt(raw) {
   const hasImage = !!raw.image_path
+  const isFullUrl = hasImage && raw.image_path.startsWith('http')
   return {
     _type: 'prompt',
     _raw: raw,
@@ -40,9 +41,9 @@ export function normalizePrompt(raw) {
     title: raw.name || '',
     subtitle: raw.name || raw.prompt || '',
     prompt: raw.prompt || '',
-    thumbUrl: hasImage ? `/api/prompts/evo-thumb/${raw.image_path}?size=400` : null,
-    thumbUrl2x: hasImage ? `/api/prompts/evo-thumb/${raw.image_path}?size=800` : null,
-    fullUrl: hasImage ? `/api/prompts/evo-thumb/${raw.image_path}?size=800` : null,
+    thumbUrl: hasImage ? (isFullUrl ? raw.image_path : `/api/prompts/evo-thumb/${raw.image_path}?size=400`) : null,
+    thumbUrl2x: hasImage ? (isFullUrl ? raw.image_path : `/api/prompts/evo-thumb/${raw.image_path}?size=800`) : null,
+    fullUrl: hasImage ? (isFullUrl ? raw.image_path : `/api/prompts/evo-thumb/${raw.image_path}?size=800`) : null,
     author: raw.author || raw.nickname || raw.username || '',
     authorId: raw.user_id ? String(raw.user_id) : null,
     authorName: raw.author || raw.nickname || raw.username || '',
