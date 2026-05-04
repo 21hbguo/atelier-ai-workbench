@@ -26,21 +26,17 @@ class PointsService:
     @classmethod
     def has_enough(cls, user_id: int, amount: int) -> bool:
         with get_db() as conn:
-            user = conn.execute("SELECT is_admin, points FROM users WHERE id = %s", (user_id,)).fetchone()
+            user = conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()
             if not user:
                 return False
-            if user["is_admin"]:
-                return True
             return user["points"] >= amount
 
     @classmethod
     def consume(cls, user_id: int, amount: int, description: str = "", tx_type: str = "generate_consume", request_key: str = "") -> int:
         with get_db() as conn:
-            user = conn.execute("SELECT is_admin, points FROM users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
+            user = conn.execute("SELECT points FROM users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
             if not user:
                 raise ValueError("用户不存在")
-            if user["is_admin"]:
-                return -1
             if request_key:
                 existing = conn.execute("SELECT balance_after FROM point_transactions WHERE request_key = %s", (request_key,)).fetchone()
                 if existing:
@@ -58,11 +54,9 @@ class PointsService:
     @classmethod
     def refund(cls, user_id: int, amount: int, description: str = "", request_key: str = "") -> int:
         with get_db() as conn:
-            user = conn.execute("SELECT is_admin FROM users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
+            user = conn.execute("SELECT id FROM users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
             if not user:
                 raise ValueError("用户不存在")
-            if user["is_admin"]:
-                return -1
             if request_key:
                 existing = conn.execute("SELECT balance_after FROM point_transactions WHERE request_key = %s", (request_key,)).fetchone()
                 if existing:

@@ -101,11 +101,10 @@ async def _run_generation(task_id: str, task_type: str, submit_payload: dict, me
         except Exception:logger.exception(f"[finance.record.fail] type={task_type} task={task_id} status=failed")
         StatsService.record_failed()
         record_request(user_id, "failed")
-        if not is_admin:
-            try:
-                PointsService.refund(user_id, PointsService.cost_per_generation(), "生成失败退还", request_key=f"refund:{task_id}")
-            except Exception:
-                logger.exception(f"[submit.refund.fail] type={task_type} task={task_id} user={user_id}")
+        try:
+            PointsService.refund(user_id, PointsService.cost_per_generation(), "生成失败退还", request_key=f"refund:{task_id}")
+        except Exception:
+            logger.exception(f"[submit.refund.fail] type={task_type} task={task_id} user={user_id}")
 
 
 @router.post("/text", response_model=GenerateResponse)
@@ -122,11 +121,10 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
     is_admin = user.get("is_admin")
     cost = PointsService.cost_per_generation()
     points_balance_after = None
-    if not is_admin:
-        try:
-            points_balance_after = PointsService.consume(user_id, cost, "生成消耗", request_key=f"consume:{task_id}")
-        except ValueError:
-            raise HTTPException(status_code=402, detail=f"积分不足，需要 {cost} 积分")
+    try:
+        points_balance_after = PointsService.consume(user_id, cost, "生成消耗", request_key=f"consume:{task_id}")
+    except ValueError:
+        raise HTTPException(status_code=402, detail=f"积分不足，需要 {cost} 积分")
 
     update_user_ip(user_id, get_client_ip(req))
     record_request(user_id, "processing")
@@ -139,8 +137,7 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
             TaskManager.update_task(task_id, status="failed", error="提示词包含违禁词")
             StatsService.record_failed()
             record_request(user_id, "failed")
-            if not is_admin:
-                PointsService.refund(user_id, cost, "违禁词退还", request_key=f"refund:{task_id}")
+            PointsService.refund(user_id, cost, "违禁词退还", request_key=f"refund:{task_id}")
             raise HTTPException(status_code=400, detail="提示词包含违禁词，请修改后重试")
 
         TaskManager.create_task(task_id, "text", {"prompt": request.prompt, "size": request.size, "model_id": request.model_id, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}, user_id=user_id, points_cost=cost, points_balance_after=points_balance_after)
@@ -156,8 +153,7 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
         logger.exception(f"[submit.exception] type=text task={task_id} user={user_id}")
         TaskManager.update_task(task_id, status="failed", error=str(e))
         record_request(user_id, "failed")
-        if not is_admin:
-            PointsService.refund(user_id, cost, "异常退还", request_key=f"refund:{task_id}")
+        PointsService.refund(user_id, cost, "异常退还", request_key=f"refund:{task_id}")
         logger.exception("生成失败")
         raise HTTPException(status_code=500, detail="生成失败")
 
@@ -176,11 +172,10 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
     is_admin = user.get("is_admin")
     cost = PointsService.cost_per_generation()
     points_balance_after = None
-    if not is_admin:
-        try:
-            points_balance_after = PointsService.consume(user_id, cost, "生成消耗", request_key=f"consume:{task_id}")
-        except ValueError:
-            raise HTTPException(status_code=402, detail=f"积分不足，需要 {cost} 积分")
+    try:
+        points_balance_after = PointsService.consume(user_id, cost, "生成消耗", request_key=f"consume:{task_id}")
+    except ValueError:
+        raise HTTPException(status_code=402, detail=f"积分不足，需要 {cost} 积分")
 
     update_user_ip(user_id, get_client_ip(req))
     record_request(user_id, "processing")
@@ -193,8 +188,7 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
             TaskManager.update_task(task_id, status="failed", error="提示词包含违禁词")
             StatsService.record_failed()
             record_request(user_id, "failed")
-            if not is_admin:
-                PointsService.refund(user_id, cost, "违禁词退还", request_key=f"refund:{task_id}")
+            PointsService.refund(user_id, cost, "违禁词退还", request_key=f"refund:{task_id}")
             raise HTTPException(status_code=400, detail="提示词包含违禁词，请修改后重试")
 
         TaskManager.create_task(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "model_id": request.model_id, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}, user_id=user_id, points_cost=cost, points_balance_after=points_balance_after)
@@ -210,8 +204,7 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
         logger.exception(f"[submit.exception] type=text_image task={task_id} user={user_id}")
         TaskManager.update_task(task_id, status="failed", error=str(e))
         record_request(user_id, "failed")
-        if not is_admin:
-            PointsService.refund(user_id, cost, "异常退还", request_key=f"refund:{task_id}")
+        PointsService.refund(user_id, cost, "异常退还", request_key=f"refund:{task_id}")
         logger.exception("生成失败")
         raise HTTPException(status_code=500, detail="生成失败")
 

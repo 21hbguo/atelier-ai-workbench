@@ -109,10 +109,11 @@ async def list_images(page: int = Query(1, ge=1), page_size: int = Query(20, ge=
             total = total_row["cnt"] if total_row else 0
             rows = conn.execute(
                 f"""
-                SELECT m.filename,m.metadata,m.user_id,m.created_at,u.username,u.nickname
+                SELECT m.filename,m.metadata,m.user_id,m.created_at,u.username,u.nickname,s.id AS square_image_id
                 ,m.expires_at,m.is_permanent
                 FROM image_metadata m
                 LEFT JOIN users u ON m.user_id=u.id
+                LEFT JOIN square_images s ON s.filename=m.filename AND s.user_id=m.user_id
                 {where_sql}
                 ORDER BY m.created_at DESC NULLS LAST
                 LIMIT %s OFFSET %s
@@ -138,6 +139,7 @@ async def list_images(page: int = Query(1, ge=1), page_size: int = Query(20, ge=
                 "created_at": created_at,
                 "metadata": metadata,
                 "username": username,
+                "square_image_id": row["square_image_id"],
                 "expires_at": expiry["expires_at"],
                 "is_permanent": expiry["is_permanent"],
                 "days_left": expiry["days_left"],
@@ -395,5 +397,5 @@ async def extend_image_expiry(req: ExtendImagesRequest, user=Depends(get_current
         raise HTTPException(status_code=400, detail=str(e))
     points = result.get("points")
     if points is None:
-        points = PointsService.get_balance(user["user_id"]) if not user.get("is_admin") else -1
+        points = PointsService.get_balance(user["user_id"])
     return {"message": "操作完成", "success_count": len(result["success"]), "skipped_count": len(result["skipped"]), "failed_count": len(result["failed"]), "total_cost": result["total_cost"], "points": points, "retention_days": RETENTION_DAYS, "extend_days": EXTEND_DAYS, "extend_cost_per_image": EXTEND_COST_PER_IMAGE, **result}

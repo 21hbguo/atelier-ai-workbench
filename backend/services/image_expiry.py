@@ -114,16 +114,13 @@ def extend_images(filenames: list[str], user_id: int) -> dict:
         total_cost=len(eligible)*EXTEND_COST_PER_IMAGE
         if total_cost <= 0:
             return {"success": success, "skipped": skipped, "failed": failed, "total_cost": 0, "points": None}
-        if not user["is_admin"] and user["points"] < total_cost:
+        if user["points"] < total_cost:
             raise ValueError("积分不足")
-        if not user["is_admin"]:
-            cursor=conn.execute("UPDATE users SET points = points - %s WHERE id = %s AND points >= %s", (total_cost, user_id, total_cost))
-            if cursor.rowcount <= 0:
-                raise ValueError("积分不足")
-            new_balance=conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()["points"]
-            conn.execute("INSERT INTO point_transactions (user_id, amount, balance_after, type, description) VALUES (%s, %s, %s, %s, %s)", (user_id, -total_cost, new_balance, IMAGE_EXTEND_TX_TYPE, f"延长图片有效期 {len(eligible)} 张"))
-        else:
-            new_balance=-1
+        cursor=conn.execute("UPDATE users SET points = points - %s WHERE id = %s AND points >= %s", (total_cost, user_id, total_cost))
+        if cursor.rowcount <= 0:
+            raise ValueError("积分不足")
+        new_balance=conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()["points"]
+        conn.execute("INSERT INTO point_transactions (user_id, amount, balance_after, type, description) VALUES (%s, %s, %s, %s, %s)", (user_id, -total_cost, new_balance, IMAGE_EXTEND_TX_TYPE, f"延长图片有效期 {len(eligible)} 张"))
         for filename in eligible:
             row=row_map[filename]
             base=_parse_dt(row["expires_at"]) or _now()
