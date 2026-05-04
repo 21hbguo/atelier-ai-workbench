@@ -33,6 +33,7 @@ export default function UnifiedDetailModal({
   allowMetadataEdit = false,
   allowPromptEdit = false,
   onPromptSave,
+  initialEditing = false,
 }) {
   const dialog = useAppDialog()
   const [lightbox, setLightbox] = useState(false)
@@ -52,6 +53,7 @@ export default function UnifiedDetailModal({
   const lightboxRef = useRef(false)
   const onCloseRef = useRef(onClose)
   const modalToken = useRef(`${Date.now()}_${Math.random().toString(36).slice(2)}`)
+  const shouldAutoEdit = useRef(initialEditing)
   const isTokenState = useCallback((kind) => { const s = window.history.state; return s?.__udm === kind && s?.token === modalToken.current }, [])
 
   const hasNavigation = cards.length > 1
@@ -77,8 +79,13 @@ export default function UnifiedDetailModal({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [hasNavigation, handlePrev, handleNext])
   useEffect(() => {
-    setEditing(false)
-    setEditForm(null)
+    if (shouldAutoEdit.current) {
+      shouldAutoEdit.current = false
+      startPromptEditing()
+    } else {
+      setEditing(false)
+      setEditForm(null)
+    }
   }, [card?.id, currentIndex])
   useLayoutEffect(() => {
     if (!modalStatePushed.current) {

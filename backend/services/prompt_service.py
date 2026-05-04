@@ -93,9 +93,10 @@ class PromptService:
     def create(cls, name: str, prompt: str, negative_prompt: Optional[str] = None,
                tags: Optional[List[str]] = None, user_id: int = None, category: Optional[str] = None) -> Dict[str, Any]:
         with get_db() as conn:
-            existing = conn.execute("SELECT id FROM prompts WHERE prompt = %s AND user_id IS NOT DISTINCT FROM %s", (prompt, user_id)).fetchone()
-            if existing:
-                raise ValueError("相同内容的提示词已存在")
+            if prompt:
+                existing = conn.execute("SELECT id FROM prompts WHERE prompt = %s AND user_id IS NOT DISTINCT FROM %s", (prompt, user_id)).fetchone()
+                if existing:
+                    raise ValueError("相同内容的提示词已存在")
         item = {
             "id": str(uuid4()),
             "name": name,

@@ -49,8 +49,8 @@ class PromptItem(BaseModel):
     category: Optional[str] = None
 
 class PromptCreateRequest(BaseModel):
-    name: str = Field(..., max_length=200)
-    prompt: str = Field(..., max_length=4000)
+    name: str = Field("", max_length=200)
+    prompt: str = Field("", max_length=4000)
     negative_prompt: Optional[str] = Field(None, max_length=4000)
     tags: Optional[List[str]] = None
     category: Optional[str] = None
