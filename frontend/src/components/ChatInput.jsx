@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
-import { Paperclip, X, Settings, Send, Maximize2, Share2 } from 'lucide-react'
+import { Paperclip, X, Settings, Send, Maximize2, Share2, Loader2 } from 'lucide-react'
 import ParamPanel from './ParamPanel'
 
 const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost = 10 }, ref) {
@@ -14,6 +14,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const paramsStatePushedRef = useRef(false)
   const paramsStateTokenRef = useRef(`chatinput_params_${Date.now()}_${Math.random().toString(36).slice(2)}`)
   const paramsClosingByPopRef = useRef(false)
+  const paramsPanelRef = useRef(null)
   const lightboxPushedRef = useRef(false)
   const lightboxClosingByPopRef = useRef(false)
 
@@ -92,9 +93,19 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
       setShowParams(false)
       setTimeout(() => { paramsClosingByPopRef.current = false }, 0)
     }
+    const onKeyDown = (e) => { if (e.key === 'Escape') closeParams() }
+    const onClickOutside = (e) => {
+      if (paramsPanelRef.current && !paramsPanelRef.current.contains(e.target)) closeParams()
+    }
     window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
-  }, [showParams])
+    window.addEventListener('keydown', onKeyDown)
+    setTimeout(() => document.addEventListener('mousedown', onClickOutside), 0)
+    return () => {
+      window.removeEventListener('popstate', onPopState)
+      window.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('mousedown', onClickOutside)
+    }
+  }, [showParams, closeParams])
 
   useEffect(() => {
     if (!lightbox) return
@@ -178,7 +189,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
           className="rounded-2xl border transition-all duration-300"
           style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-md)', position: 'relative' }}
         >
-          {showParams && <div className="p-3 border-b" style={{ borderColor: 'var(--border-color)' }}><ParamPanel params={params} onChange={setParams} /></div>}
+          {showParams && <div ref={paramsPanelRef} className="p-3 border-b" style={{ borderColor: 'var(--border-color)' }}><ParamPanel params={params} onChange={setParams} /></div>}
           {images.length > 0 && (
             <div className="flex gap-2 p-3 pb-0 overflow-x-auto">
               {images.map((img, i) => (
@@ -205,9 +216,10 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
                 <button onClick={() => setShareToSquare(!shareToSquare)} className="inline-flex items-center gap-1 px-1.5 py-1.5 rounded-md hover:bg-bg-hover transition-colors relative text-[11px] font-medium" style={{ color: shareToSquare ? 'var(--color-success)' : 'var(--text-secondary)' }} title={shareToSquare ? '已开启分享到广场' : '已关闭分享到广场'}><Share2 size={13} /><span>分享</span><span className="absolute -right-0.5 -top-0.5 w-1.5 h-1.5 rounded-full" style={{ background: shareToSquare ? 'var(--color-success)' : 'var(--border-color)' }} /></button>
               </div>
               <div className="min-w-0 flex items-center justify-end gap-1 flex-1">
+                {loading && <span className="inline-flex items-center gap-1 text-[10px] flex-shrink-0" style={{ color: 'var(--accent)' }}><Loader2 size={11} className="animate-spin" /><span>{images.length > 0 ? '上传并提交中' : '提交中'}</span></span>}
                 {prompt.length > 0 && <span className="text-[10px] tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{prompt.length}</span>}
-                <button onClick={() => handleSend(true)} disabled={!prompt.trim() || loading} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-white disabled:opacity-40 flex-shrink-0" style={{ background: prompt.trim() && !loading ? 'var(--accent)' : 'var(--border-color)' }}><Send size={13} /><span className="text-[10px] font-medium leading-none">×{batchCount}</span></button>
-                <button onClick={() => handleSend(false)} disabled={!prompt.trim() || loading} className="p-1 rounded-md transition-all duration-150 disabled:opacity-40 flex-shrink-0" style={{ background: prompt.trim() && !loading ? 'var(--accent)' : 'var(--border-color)', color: '#fff' }}><Send size={13} /></button>
+                <button onClick={() => handleSend(true)} disabled={!prompt.trim() || loading} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-white disabled:opacity-40 flex-shrink-0" style={{ background: prompt.trim() && !loading ? 'var(--accent)' : 'var(--border-color)' }}>{loading ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}<span className="text-[10px] font-medium leading-none">×{batchCount}</span></button>
+                <button onClick={() => handleSend(false)} disabled={!prompt.trim() || loading} className="p-1 rounded-md transition-all duration-150 disabled:opacity-40 flex-shrink-0" style={{ background: prompt.trim() && !loading ? 'var(--accent)' : 'var(--border-color)', color: '#fff' }}>{loading ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}</button>
               </div>
             </div>
           </div>

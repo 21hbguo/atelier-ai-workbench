@@ -683,7 +683,7 @@ export default function AdminPage() {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
                   <div className="p-3 rounded-xl border lg:col-span-2" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="flex items-center gap-2 mb-2">
-                      <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>{{all:'总计',today:'今日',7d:'7天',30d:'30天'}[statsRange] || '7天'}趋势</div>
+                      <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>{{all:'总计',today:'今日','7d':'7天','30d':'30天'}[statsRange] || '7天'}趋势</div>
                       {[
                         { v: 'requests', l: '请求' },
                         { v: 'success', l: '成功' },
@@ -723,13 +723,13 @@ export default function AdminPage() {
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
-                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>{{all:'总计',today:'今日',7d:'近7天',30d:'近30天'}[statsRange] || '近7天'}生成Top用户</div>
+                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>{{all:'总计',today:'今日','7d':'近7天','30d':'近30天'}[statsRange] || '近7天'}生成Top用户</div>
                     <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
                       {(overviewStats?.leaderboards?.success_top || []).slice(0, 8).map((i, idx) => <div key={`s-${i.user_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.nickname || i.username}`} style={{ color: 'var(--text-primary)' }}>{idx + 1}. {i.nickname || i.username}</span><span className="shrink-0" style={{ color: 'var(--color-success)' }}>{i.success_count}</span></div>)}
                     </div>
                   </div>
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
-                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>{{all:'总计',today:'今日',7d:'近7天',30d:'近30天'}[statsRange] || '近7天'}充值Top用户</div>
+                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>{{all:'总计',today:'今日','7d':'近7天','30d':'近30天'}[statsRange] || '近7天'}充值Top用户</div>
                     <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
                       {(overviewStats?.leaderboards?.recharge_top || []).slice(0, 8).map((i, idx) => <div key={`r-${i.user_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.nickname || i.username}`} style={{ color: 'var(--text-primary)' }}>{idx + 1}. {i.nickname || i.username}</span><span className="shrink-0" style={{ color: 'var(--color-warning)' }}>¥{i.amount}</span></div>)}
                     </div>
