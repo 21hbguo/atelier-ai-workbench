@@ -1155,3 +1155,34 @@ async def admin_stats_cost_profit(time_range: str = Query("30d", alias="range"),
     profit = round(total_revenue - total_cost, 6)
     profit_rate = round((profit / total_revenue) * 100, 2) if total_revenue > 0 else 0.0
     return {"range": time_range, "start_date": start_dt.strftime("%Y-%m-%d"), "end_date": now.strftime("%Y-%m-%d"), "launch_at": launch_at, "summary": {"revenue_amount": total_revenue, "revenue_orders": int((rev or {}).get("cnt") or 0), "cost_amount": total_cost, "profit_amount": profit, "profit_rate": profit_rate, "unpriced_calls": int(unpriced_calls)}, "providers": provider_stats, "matrix": matrix}
+
+
+@router.get("/email-verifications")
+async def list_email_verifications(
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    query: str = Query(None),
+    admin=Depends(require_admin),
+):
+    offset = (page - 1) * size
+    with get_db() as conn:
+        if query:
+            q = f"%{query}%"
+            total = conn.execute(
+                "SELECT COUNT(*) as cnt FROM email_verification_codes WHERE email LIKE %s OR ip LIKE %s",
+                (q, q),
+            ).fetchone()["cnt"]
+            rows = conn.execute(
+                """SELECT * FROM email_verification_codes
+                   WHERE email LIKE %s OR ip LIKE %s
+                   ORDER BY created_at DESC LIMIT %s OFFSET %s""",
+                (q, q, size, offset),
+            ).fetchall()
+        else:
+            total = conn.execute("SELECT COUNT(*) as cnt FROM email_verification_codes").fetchone()["cnt"]
+            rows = conn.execute(
+                """SELECT * FROM email_verification_codes
+                   ORDER BY created_at DESC LIMIT %s OFFSET %s""",
+                (size, offset),
+            ).fetchall()
+        return {"items": [dict(r) for r in rows], "total": total, "page": page, "size": size}

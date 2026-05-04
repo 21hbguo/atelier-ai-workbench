@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Trash2, Users, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket, Megaphone, Wallet, Key, SlidersHorizontal, BarChart3 } from 'lucide-react'
+import { Trash2, Users, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket, Megaphone, Wallet, Key, SlidersHorizontal, BarChart3, Mail } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { adminAPI, announcementAPI, configAPI, statsAPI } from '../api'
 import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts'
@@ -93,11 +93,15 @@ export default function AdminPage() {
   const [newTitle, setNewTitle] = useState('')
   const [newContent, setNewContent] = useState('')
   const [creatingAnnouncement, setCreatingAnnouncement] = useState(false)
-  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', register_enabled: true, image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', recharge_packages: defaultRechargePackages, generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3, github_hosting_enabled: false, github_hosting_repo: '', github_hosting_token: '', github_hosting_branch: 'main' })
+  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', register_enabled: true, image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', recharge_packages: defaultRechargePackages, generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3, github_hosting_enabled: false, github_hosting_repo: '', github_hosting_token: '', github_hosting_branch: 'main', smtp_host: '', smtp_port: 465, smtp_username: '', smtp_password: '', smtp_sender: '' })
   const [configSaving, setConfigSaving] = useState(false)
   const [defaultModelId, setDefaultModelId] = useState('image-default')
   const [generationModelsText, setGenerationModelsText] = useState('{}')
   const [generationProvidersText, setGenerationProvidersText] = useState('{}')
+  const [evLogs, setEvLogs] = useState([])
+  const [evTotal, setEvTotal] = useState(0)
+  const [evPage, setEvPage] = useState(1)
+  const [evQuery, setEvQuery] = useState('')
   const [showAdvancedGenConfig, setShowAdvancedGenConfig] = useState(false)
   const [jsonDirty, setJsonDirty] = useState(false)
   const [genModelsObj, setGenModelsObj] = useState({})
@@ -161,6 +165,8 @@ export default function AdminPage() {
   useEffect(() => { if (tab === 'finance') fetchFinanceRules() }, [tab, financeProviderFilter])
   useEffect(() => { if (tab === 'finance') fetchFinanceTasks() }, [tab, financeRange, financeTaskPage, financeTaskProviderFilter, financeModelFilter, financeStatusFilter])
   useEffect(() => { configAPI.models().then(({ data }) => { const rows = data?.models || []; const m = {}; for (const r of rows) m[r.model_id] = r.label || r.model_id; setModelLabelMap(m) }).catch(() => {}) }, [])
+  useEffect(() => { if (tab === 'evlogs') fetchEvLogs() }, [tab, evPage, evQuery])
+  useEffect(() => { setEvPage(1) }, [evQuery])
 
   const fetchUsers = async () => {
     setLoading(true)
@@ -179,6 +185,15 @@ export default function AdminPage() {
       setHistoryTotal(data.total)
       setHistorySummary(data.summary || { total: data.total || 0, pending: 0, queued: 0, processing: 0, running: 0, generating: 0, completed: 0, failed: 0 })
     } catch {} finally { setLoading(false) }
+  }
+
+  const fetchEvLogs = async () => {
+    setLoading(true)
+    try {
+      const { data } = await adminAPI.emailVerifications(evPage, 20, evQuery || undefined)
+      setEvLogs(data?.items || [])
+      setEvTotal(data?.total || 0)
+    } catch (e) { dialog.alert(e.message || '加载失败') } finally { setLoading(false) }
   }
   const fetchSystemStats = async (rangeValue = statsRange) => {
     setLoading(true)
@@ -223,6 +238,11 @@ export default function AdminPage() {
         github_hosting_repo: data.github_hosting_repo || '',
         github_hosting_token: data.github_hosting_token || '',
         github_hosting_branch: data.github_hosting_branch || 'main',
+        smtp_host: data.smtp_host || '',
+        smtp_port: Number(data.smtp_port || 465),
+        smtp_username: data.smtp_username || '',
+        smtp_password: data.smtp_password || '',
+        smtp_sender: data.smtp_sender || '',
       })
       setDefaultModelId(gen.default_model_id || 'image-default')
       const modelsObj = gen.generation_models || {}
@@ -332,7 +352,7 @@ export default function AdminPage() {
   const handleAddRechargePackage = () => setRuntimeConfig(prev => { const list = Array.isArray(prev.recharge_packages) ? prev.recharge_packages : []; return { ...prev, recharge_packages: [...list, { amount: '', points: '', label: `套餐${list.length + 1}` }] } })
   const handleDeleteRechargePackage = (idx) => setRuntimeConfig(prev => { const list = Array.isArray(prev.recharge_packages) ? prev.recharge_packages : []; return { ...prev, recharge_packages: list.length <= 1 ? list : list.filter((_, i) => i !== idx) } })
   const handleSaveConfig = async () => {
-    const n = ['generate_concurrent_limit_per_user', 'points_cost_per_generation', 'points_checkin_reward', 'points_register_bonus', 'points_migration_amount', 'login_rate_limit_per_minute_per_ip', 'register_rate_limit_per_minute_per_ip']
+    const n = ['generate_concurrent_limit_per_user', 'points_cost_per_generation', 'points_checkin_reward', 'points_register_bonus', 'points_migration_amount', 'login_rate_limit_per_minute_per_ip', 'register_rate_limit_per_minute_per_ip', 'smtp_port']
     const payload = { ...runtimeConfig }
     payload.default_model_id = (defaultModelId || '').trim() || 'image-default'
     let recharge_packages = []
@@ -703,7 +723,7 @@ export default function AdminPage() {
     <MainLayout>
       <div className="admin-dense flex-1 overflow-y-auto p-3 sm:p-4">
         <div className="flex gap-1 p-0.5 rounded-lg mb-4 overflow-x-auto scrollbar-hide" style={{ background: 'var(--border-color)', scrollbarWidth: 'none' }}>
-          {[{ k: 'stats', l: '系统统计', i: BarChart3 }, { k: 'finance', l: '财务中心', i: Wallet }, { k: 'users', l: '用户管理', i: Users }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'recharge', l: '充值审核', i: Ticket }, { k: 'announcements', l: '公告管理', i: Megaphone }, { k: 'config', l: '配置中心', i: SlidersHorizontal }].map(({ k, l, i: Icon }) => (
+          {[{ k: 'stats', l: '系统统计', i: BarChart3 }, { k: 'finance', l: '财务中心', i: Wallet }, { k: 'users', l: '用户管理', i: Users }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'recharge', l: '充值审核', i: Ticket }, { k: 'announcements', l: '公告管理', i: Megaphone }, { k: 'evlogs', l: '邮件验证', i: Mail }, { k: 'config', l: '配置中心', i: SlidersHorizontal }].map(({ k, l, i: Icon }) => (
             <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
               <Icon size={14} />{l}{k === 'recharge' && rechargePendingCount > 0 && <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] text-white" style={{ background: 'var(--color-error)' }}>{rechargePendingCount}</span>}
@@ -883,6 +903,54 @@ export default function AdminPage() {
           <AdminUsersTab userTotal={userTotal} userQuery={userQuery} setUserQuery={setUserQuery} handleMigratePoints={handleMigratePoints} loading={loading} users={users} setAdjustUserId={setAdjustUserId} setAdjustAmount={setAdjustAmount} setAdjustDesc={setAdjustDesc} resetPwdUserId={resetPwdUserId} setResetPwdUserId={setResetPwdUserId} resetPwdValue={resetPwdValue} setResetPwdValue={setResetPwdValue} handleToggleFreeze={handleToggleFreeze} handleDeleteUser={handleDeleteUser} handleResetPassword={handleResetPassword} userPage={userPage} setUserPage={setUserPage} createUserDraft={createUserDraft} setCreateUserDraft={setCreateUserDraft} creatingUser={creatingUser} handleCreateUser={handleCreateUser} />
         ) : tab === 'announcements' ? (
           <AdminAnnouncementsTab newTitle={newTitle} setNewTitle={setNewTitle} newContent={newContent} setNewContent={setNewContent} handleCreateAnnouncement={handleCreateAnnouncement} creatingAnnouncement={creatingAnnouncement} announcementTotal={announcementTotal} loading={loading} announcements={announcements} handleDeleteAnnouncement={handleDeleteAnnouncement} announcementPage={announcementPage} setAnnouncementPage={setAnnouncementPage} />
+        ) : tab === 'evlogs' ? (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="flex-1"><SearchInput value={evQuery} onChange={setEvQuery} placeholder="搜索邮箱或 IP" /></div>
+            </div>
+            {loading ? (
+              <div className="flex justify-center py-20"><div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} /></div>
+            ) : (
+              <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead><tr style={{ background: 'var(--bg-card)' }}>
+                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>ID</th>
+                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>邮箱</th>
+                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>验证码</th>
+                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>IP</th>
+                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>使用状态</th>
+                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>注册状态</th>
+                      <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>创建时间</th>
+                    </tr></thead>
+                    <tbody>
+                      {evLogs.map(item => (
+                        <tr key={item.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
+                          <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{item.id}</td>
+                          <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{item.email}</td>
+                          <td className="px-3 py-2 font-mono" style={{ color: 'var(--text-primary)' }}>{item.code}</td>
+                          <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{item.ip}</td>
+                          <td className="px-3 py-2">
+                            <span className="px-2 py-0.5 rounded-full" style={{ color: item.used ? 'var(--color-success)' : 'var(--text-secondary)', background: item.used ? 'color-mix(in srgb, var(--color-success) 15%, transparent)' : 'color-mix(in srgb, var(--text-secondary) 10%, transparent)' }}>
+                              {item.used ? '已使用' : '未使用'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className="px-2 py-0.5 rounded-full" style={{ color: item.registered ? 'var(--color-success)' : 'var(--text-secondary)', background: item.registered ? 'color-mix(in srgb, var(--color-success) 15%, transparent)' : 'color-mix(in srgb, var(--text-secondary) 10%, transparent)' }}>
+                              {item.registered ? '已注册' : '未注册'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : '-'}</td>
+                        </tr>
+                      ))}
+                      {evLogs.length === 0 && <tr><td colSpan={7} className="px-3 py-8 text-center" style={{ color: 'var(--text-secondary)' }}>暂无数据</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            <Pagination page={evPage} totalPages={Math.ceil(evTotal / 20)} onPageChange={setEvPage} />
+          </div>
         ) : tab === 'hosting' ? (
           <AdminHostingTab hostingStats={hostingStats} handleCleanDuplicates={handleCleanDuplicates} hostingTotal={hostingTotal} hostingSelectMode={hostingSelectMode} hostingChecked={hostingChecked} hostingImages={hostingImages} setHostingChecked={setHostingChecked} handleHostingBatchDelete={handleHostingBatchDelete} setHostingSelectMode={setHostingSelectMode} loading={loading} toggleHostingCheck={toggleHostingCheck} setHostingDetail={setHostingDetail} hostingPage={hostingPage} setHostingPage={setHostingPage} hostingTypeFilter={hostingTypeFilter} setHostingTypeFilter={setHostingTypeFilter} />
         ) : tab === 'banned' ? (
@@ -1148,6 +1216,32 @@ export default function AdminPage() {
                 </div>
               </div>
               <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>启用后参考图上传将通过 GitHub 仓库 + jsdelivr CDN 提供。Token 需要 contents:write 权限。</p>
+            </div>
+            <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+              <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>SMTP 邮件配置</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>SMTP 主机</label>
+                  <input type="text" value={runtimeConfig.smtp_host} onChange={e => onConfigInput('smtp_host', e.target.value)} placeholder="smtp.qq.com" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                </div>
+                <div>
+                  <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>端口</label>
+                  <input type="number" min={1} max={65535} value={runtimeConfig.smtp_port} onChange={e => onConfigInput('smtp_port', e.target.value)} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                </div>
+                <div>
+                  <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>用户名</label>
+                  <input type="text" value={runtimeConfig.smtp_username} onChange={e => onConfigInput('smtp_username', e.target.value)} placeholder="SMTP 登录用户名" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                </div>
+                <div>
+                  <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>密码/授权码</label>
+                  <input type="password" value={runtimeConfig.smtp_password} onChange={e => onConfigInput('smtp_password', e.target.value)} placeholder="邮箱授权码" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                </div>
+                <div>
+                  <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>发件人邮箱</label>
+                  <input type="email" value={runtimeConfig.smtp_sender} onChange={e => onConfigInput('smtp_sender', e.target.value)} placeholder="noreply@example.com" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                </div>
+              </div>
+              <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>配置后注册时将发送邮箱验证码。密码字段为邮箱授权码，非登录密码。</p>
             </div>
             </>
             ) : configSubtab === 'route' ? (

@@ -49,6 +49,12 @@ class RegisterRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=20)
     password: str = Field(..., min_length=6, max_length=50)
     nickname: str = None
+    email: str = Field(..., min_length=5, max_length=255)
+    code: str = Field(..., min_length=6, max_length=6)
+
+
+class SendCodeRequest(BaseModel):
+    email: str = Field(..., min_length=5, max_length=255)
 
 
 class LoginRequest(BaseModel):
@@ -63,22 +69,38 @@ def _issue_session(response: Response, user_id: int, username: str, is_admin: bo
     return access_token
 
 
+@router.post("/send-code")
+async def send_code(req: SendCodeRequest, request: Request):
+    if not is_register_enabled():
+        raise HTTPException(status_code=403, detail="当前已关闭注册")
+    ip = get_client_ip(request)
+    from backend.services.email_service import create_and_send_code
+    create_and_send_code(req.email, ip)
+    return {"status": "ok", "message": "验证码已发送"}
+
+
 @router.post("/register")
 async def register(req: RegisterRequest, request: Request, response: Response):
     if not is_register_enabled():
         raise HTTPException(status_code=403, detail="当前已关闭注册")
     ip = get_client_ip(request)
     _check_register_rate(ip)
+    from backend.services.email_service import verify_code, mark_registered
+    verify_code(req.email, req.code)
     with get_db() as conn:
         existing = conn.execute("SELECT id FROM users WHERE username = %s", (req.username,)).fetchone()
         if existing:
             raise HTTPException(status_code=400, detail="用户名已存在")
+        email_existing = conn.execute("SELECT id FROM users WHERE email = %s", (req.email,)).fetchone()
+        if email_existing:
+            raise HTTPException(status_code=400, detail="邮箱已被注册")
         password_hash = await hash_password(req.password)
-        cursor = conn.execute("INSERT INTO users (username, password_hash, nickname) VALUES (%s, %s, %s) RETURNING id", (req.username, password_hash, req.nickname or req.username))
+        cursor = conn.execute("INSERT INTO users (username, password_hash, nickname, email) VALUES (%s, %s, %s, %s) RETURNING id", (req.username, password_hash, req.nickname or req.username, req.email))
         user_id = cursor.fetchone()["id"]
         update_user_ip(user_id, ip, conn=conn)
         register_bonus = PointsService.register_bonus()
         PointsService.add_points(user_id, register_bonus, "register_bonus", "注册赠送", conn=conn)
+        mark_registered(req.email)
     access_token = _issue_session(response, user_id, req.username, False, ip, request.headers.get("user-agent", ""))
     logger.info(f"[audit.register] user={user_id} username={req.username} ip={ip}")
     return {"token": access_token, "user": {"id": user_id, "username": req.username, "nickname": req.nickname or req.username, "is_admin": False, "points": register_bonus}}

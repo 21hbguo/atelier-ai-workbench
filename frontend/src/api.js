@@ -10,7 +10,7 @@ api.interceptors.response.use(
   async err => {
     const cfg = err.config || {}
     const url = cfg.url || ''
-    const canRefresh = err.response?.status === 401 && !cfg._retry && !url.includes('/auth/login') && !url.includes('/auth/register') && !url.includes('/auth/refresh') && !url.includes('/auth/logout')
+    const canRefresh = err.response?.status === 401 && !cfg._retry && !url.includes('/auth/login') && !url.includes('/auth/register') && !url.includes('/auth/refresh') && !url.includes('/auth/logout') && !url.includes('/auth/send-code')
     if (canRefresh) {
       cfg._retry = true
       try {
@@ -75,6 +75,7 @@ export const authAPI = {
   me: () => api.get('/auth/me'),
   refresh: () => api.post('/auth/refresh'),
   logout: () => api.post('/auth/logout'),
+  sendCode: email => api.post('/auth/send-code', { email }),
 }
 
 export const squareAPI = {
@@ -134,6 +135,7 @@ export const adminAPI = {
   saveFinanceQuotaRule: data => api.post('/admin/finance/quota-rules', data),
   deleteFinanceQuotaRule: ruleId => api.post(`/admin/finance/quota-rules/${ruleId}/delete`),
   financeTasks: (range = '30d', page = 1, size = 20, provider_id, model_id, status) => { const params = { range, page, size }; if (provider_id) params.provider_id = provider_id; if (model_id) params.model_id = model_id; if (status) params.status = status; return api.get('/admin/finance/tasks', { params }) },
+  emailVerifications: (page = 1, size = 20, query) => { const params = { page, size }; if (query) params.query = query; return api.get('/admin/email-verifications', { params }) },
 }
 export const configAPI = { get: () => api.get('/config'), admin: () => api.get('/config/admin'), update: data => api.post('/config', data), generationAdmin: () => api.get('/config/generation/admin'), models: () => api.get('/config/models') }
 
