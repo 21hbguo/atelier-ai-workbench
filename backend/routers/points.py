@@ -8,6 +8,7 @@ from backend.services.points_service import PointsService
 from backend.services.upload_file_service import UploadFileService
 from backend.services.notification_service import NotificationService
 from backend.database import get_db
+from backend.config import get_recharge_packages
 
 router = APIRouter(prefix="/api/points", tags=["points"])
 logger = logging.getLogger(__name__)
@@ -105,6 +106,8 @@ async def create_recharge_request(body: RechargeCreateRequest, request: Request,
         raise HTTPException(status_code=400, detail="充值金额必须大于0")
     if body.points <= 0:
         raise HTTPException(status_code=400, detail="兑换积分必须大于0")
+    if not any(abs(float(pkg["amount"]) - float(body.amount)) < 1e-6 and int(pkg["points"]) == int(body.points) for pkg in get_recharge_packages()):
+        raise HTTPException(status_code=400, detail="充值套餐已变更，请刷新页面后重试")
     payer_name = (body.payer_name or "").strip()[:64]
     from datetime import datetime
     tx_no = f"RCH{datetime.now().strftime('%Y%m%d%H%M%S')}{user['user_id']}{secrets.token_hex(4).upper()}"

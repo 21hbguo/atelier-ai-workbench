@@ -11,6 +11,12 @@ def _safe_json_obj(s: str, default: dict):
         return v if isinstance(v, dict) else dict(default)
     except Exception:
         return dict(default)
+def _safe_json_list(s: str, default: list):
+    try:
+        v = json.loads((s or "").strip() or "[]")
+        return v if isinstance(v, list) else list(default)
+    except Exception:
+        return list(default)
 
 # 服务器配置
 HOST = os.getenv("HOST", "127.0.0.1")
@@ -54,6 +60,7 @@ _runtime_config = {
     "wechat_pay_qr_url": os.getenv("WECHAT_PAY_QR_URL", ""),
     "alipay_pay_qr_url": os.getenv("ALIPAY_PAY_QR_URL", ""),
     "manual_recharge_notice": os.getenv("MANUAL_RECHARGE_NOTICE", "请备注用户名并在下方提交支付凭证，审核通过后自动发放兑换码"),
+    "recharge_packages": _safe_json_list(os.getenv("RECHARGE_PACKAGES_JSON", ""), [{"amount": 9.9, "points": 120, "label": "体验包"}, {"amount": 29.9, "points": 400, "label": "进阶包"}, {"amount": 59.9, "points": 900, "label": "超值包"}]),
     "generate_concurrent_limit_per_user": int(os.getenv("GENERATE_CONCURRENT_LIMIT_PER_USER", "10")),
     "points_cost_per_generation": int(os.getenv("POINTS_COST_PER_GENERATION", "10")),
     "points_checkin_reward": int(os.getenv("POINTS_CHECKIN_REWARD", "10")),
@@ -99,6 +106,8 @@ def get_config():
 
 
 def update_config(new_values: dict):
+    if "recharge_packages" in new_values:
+        new_values["recharge_packages"] = normalize_recharge_packages(new_values.get("recharge_packages"))
     _runtime_config.update(new_values)
     _save_runtime_config()
 def get_limit_config():
@@ -177,6 +186,23 @@ def get_generation_providers():
         if isinstance(p,dict):
             out[pid]={**p,"unit_name":p.get("unit_name") or "供应商额度","unit_code":p.get("unit_code") or "vendor_quota"}
     return out
+def normalize_recharge_packages(items):
+    raw=items if isinstance(items,list) else _runtime_config_defaults.get("recharge_packages") or []
+    out=[]
+    for i,item in enumerate(raw):
+        if not isinstance(item,dict): continue
+        try:
+            amount=round(float(item.get("amount") or 0),2)
+            points=int(item.get("points") or 0)
+        except Exception:
+            continue
+        if amount<=0 or points<=0: continue
+        label=str(item.get("label") or f"套餐{i+1}").strip()[:32] or f"套餐{i+1}"
+        out.append({"amount":amount,"points":points,"label":label})
+    if out: return out
+    return [{"amount":9.9,"points":120,"label":"体验包"},{"amount":29.9,"points":400,"label":"进阶包"},{"amount":59.9,"points":900,"label":"超值包"}]
+def get_recharge_packages():
+    return normalize_recharge_packages(_runtime_config.get("recharge_packages"))
 
 
 _load_runtime_config()

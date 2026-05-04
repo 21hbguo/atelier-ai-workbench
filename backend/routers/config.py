@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
-from backend.config import get_config, update_config, get_generation_models, get_generation_providers, get_default_model_id
+from typing import Optional, Dict, Any, List
+from backend.config import get_config, update_config, get_generation_models, get_generation_providers, get_default_model_id, get_recharge_packages
 from backend.auth import get_current_user, get_optional_user, require_admin
 from backend.services.gen_gateway import GenGateway
 
@@ -18,6 +18,7 @@ class ConfigUpdate(BaseModel):
     wechat_pay_qr_url: Optional[str] = None
     alipay_pay_qr_url: Optional[str] = None
     manual_recharge_notice: Optional[str] = None
+    recharge_packages: Optional[List[Dict[str, Any]]] = None
     generate_concurrent_limit_per_user: Optional[int] = Field(None, ge=1)
     points_cost_per_generation: Optional[int] = Field(None, ge=1)
     points_checkin_reward: Optional[int] = Field(None, ge=0)
@@ -48,6 +49,7 @@ async def get_runtime_config(user=Depends(get_optional_user)):
         "wechat_pay_qr_url": cfg.get("wechat_pay_qr_url", ""),
         "alipay_pay_qr_url": cfg.get("alipay_pay_qr_url", ""),
         "manual_recharge_notice": cfg.get("manual_recharge_notice", ""),
+        "recharge_packages": get_recharge_packages(),
         "points_cost_per_generation": cfg.get("points_cost_per_generation", 10),
     }
 
@@ -57,6 +59,7 @@ async def get_runtime_config_admin(admin=Depends(require_admin)):
     cfg = get_config()
     cfg["api_key"] = "***" if cfg.get("api_key") else ""
     cfg["github_hosting_token"] = "***" if cfg.get("github_hosting_token") else ""
+    cfg["recharge_packages"] = get_recharge_packages()
     return cfg
 
 

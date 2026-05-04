@@ -6,7 +6,7 @@ import { useAppDialog } from '../components/AppDialogProvider'
 import api, { pointsAPI, uploadAPI, accountAPI, configAPI } from '../api'
 import { readUser } from '../auth'
 const typeMap={register_bonus:{label:'注册赠送',color:'var(--accent)'},daily_checkin:{label:'每日签到',color:'var(--accent)'},generate_consume:{label:'生成消耗',color:'var(--color-error)'},image_expire_extend:{label:'延长有效期',color:'var(--color-error)'},generate_refund:{label:'生成退款',color:'var(--color-success)'},redeem_code:{label:'兑换码兑换',color:'var(--accent)'},admin_grant:{label:'管理员调整',color:'#8B7BA8'},migration:{label:'历史补偿',color:'var(--accent)'},migration_bonus:{label:'历史补偿',color:'var(--accent)'},recharge_pending:{label:'充值待审核',color:'var(--color-warning)'}}
-const rechargePackages=[{amount:9.9,points:120,label:'体验包'},{amount:29.9,points:400,label:'进阶包'},{amount:59.9,points:900,label:'超值包'}]
+const defaultRechargePackages=[{amount:9.9,points:120,label:'体验包'},{amount:29.9,points:400,label:'进阶包'},{amount:59.9,points:900,label:'超值包'}]
 const channelLabel={wechat:'微信',alipay:'支付宝'}
 const statusMap={pending:{label:'待审核',color:'var(--color-warning)'},approved:{label:'已通过',color:'var(--color-success)'},rejected:{label:'已拒绝',color:'var(--color-error)'}}
 export default function WalletPage(){
@@ -22,10 +22,11 @@ const [redeemCode,setRedeemCode]=useState('')
 const [redeemLoading,setRedeemLoading]=useState(false)
 const [redeemMsg,setRedeemMsg]=useState(null)
 const [payConfig,setPayConfig]=useState({wechat_pay_qr_url:'',alipay_pay_qr_url:'',manual_recharge_notice:''})
+const [rechargePackages,setRechargePackages]=useState(defaultRechargePackages)
 const [rechargeChannel,setRechargeChannel]=useState('wechat')
 const [packageIdx,setPackageIdx]=useState(0)
-const [rechargeAmount,setRechargeAmount]=useState(rechargePackages[0].amount)
-const [rechargePoints,setRechargePoints]=useState(rechargePackages[0].points)
+const [rechargeAmount,setRechargeAmount]=useState(defaultRechargePackages[0].amount)
+const [rechargePoints,setRechargePoints]=useState(defaultRechargePackages[0].points)
 const [payerName,setPayerName]=useState('')
 const [proofUrl,setProofUrl]=useState('')
 const [remark,setRemark]=useState('')
@@ -53,7 +54,7 @@ setLoading(false)
 }
 useEffect(()=>{fetchData(page)},[page])
 useEffect(()=>{
-api.get('/config').then(({data})=>{setPayConfig({wechat_pay_qr_url:data.wechat_pay_qr_url||'',alipay_pay_qr_url:data.alipay_pay_qr_url||'',manual_recharge_notice:data.manual_recharge_notice||'请备注用户名并在下方提交支付凭证，审核通过后自动发放兑换码'})}).catch(()=>{})
+api.get('/config').then(({data})=>{const packages=Array.isArray(data.recharge_packages)&&data.recharge_packages.length?data.recharge_packages:defaultRechargePackages;setPayConfig({wechat_pay_qr_url:data.wechat_pay_qr_url||'',alipay_pay_qr_url:data.alipay_pay_qr_url||'',manual_recharge_notice:data.manual_recharge_notice||'请备注用户名并在下方提交支付凭证，审核通过后自动发放兑换码'});setRechargePackages(packages);setPackageIdx(0);setRechargeAmount(Number(packages[0]?.amount||defaultRechargePackages[0].amount));setRechargePoints(Number(packages[0]?.points||defaultRechargePackages[0].points))}).catch(()=>{})
 },[])
 useEffect(()=>{
 pointsAPI.checkinStatus().then(({data})=>{setCheckedInToday(data.checked_in_today)}).catch(()=>{})
@@ -102,7 +103,7 @@ dialog.alert(e.message||'签到失败')
 setCheckinLoading(false)
 }
 }
-const handlePickPackage=(idx)=>{setPackageIdx(idx);setRechargeAmount(rechargePackages[idx].amount);setRechargePoints(rechargePackages[idx].points)}
+const handlePickPackage=(idx)=>{const pkg=rechargePackages[idx];if(!pkg)return;setPackageIdx(idx);setRechargeAmount(Number(pkg.amount||0));setRechargePoints(Number(pkg.points||0))}
 const handleUploadProof=async(e)=>{
 const file=e.target.files?.[0]
 if(!file)return

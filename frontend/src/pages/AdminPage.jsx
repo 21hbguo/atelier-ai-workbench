@@ -92,7 +92,7 @@ export default function AdminPage() {
   const [newTitle, setNewTitle] = useState('')
   const [newContent, setNewContent] = useState('')
   const [creatingAnnouncement, setCreatingAnnouncement] = useState(false)
-  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', register_enabled: true, image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3, github_hosting_enabled: false, github_hosting_repo: '', github_hosting_token: '', github_hosting_branch: 'main' })
+  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', register_enabled: true, image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', recharge_packages_text: '[\n  {\n    \"amount\": 9.9,\n    \"points\": 120,\n    \"label\": \"体验包\"\n  }\n]', generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3, github_hosting_enabled: false, github_hosting_repo: '', github_hosting_token: '', github_hosting_branch: 'main' })
   const [configSaving, setConfigSaving] = useState(false)
   const [defaultModelId, setDefaultModelId] = useState('image-default')
   const [generationModelsText, setGenerationModelsText] = useState('{}')
@@ -198,6 +198,7 @@ export default function AdminPage() {
         wechat_pay_qr_url: data.wechat_pay_qr_url || '',
         alipay_pay_qr_url: data.alipay_pay_qr_url || '',
         manual_recharge_notice: data.manual_recharge_notice || '',
+        recharge_packages_text: JSON.stringify(Array.isArray(data.recharge_packages) && data.recharge_packages.length ? data.recharge_packages : [{ amount: 9.9, points: 120, label: '体验包' }, { amount: 29.9, points: 400, label: '进阶包' }, { amount: 59.9, points: 900, label: '超值包' }], null, 2),
         generate_concurrent_limit_per_user: Number(data.generate_concurrent_limit_per_user || 10),
         points_cost_per_generation: Number(data.points_cost_per_generation || 10),
         points_checkin_reward: Number(data.points_checkin_reward || 10),
@@ -318,8 +319,20 @@ export default function AdminPage() {
     const n = ['generate_concurrent_limit_per_user', 'points_cost_per_generation', 'points_checkin_reward', 'points_register_bonus', 'points_migration_amount', 'login_rate_limit_per_minute_per_ip', 'register_rate_limit_per_minute_per_ip']
     const payload = { ...runtimeConfig }
     payload.default_model_id = (defaultModelId || '').trim() || 'image-default'
+    let recharge_packages = []
     for (const k of n) payload[k] = Number(payload[k])
     if (payload.generate_concurrent_limit_per_user < 1 || payload.points_cost_per_generation < 1 || payload.login_rate_limit_per_minute_per_ip < 1 || payload.register_rate_limit_per_minute_per_ip < 1 || payload.points_checkin_reward < 0 || payload.points_register_bonus < 0 || payload.points_migration_amount < 0) { dialog.alert('限制配置不合法'); return }
+    try {
+      recharge_packages = JSON.parse(payload.recharge_packages_text || '[]')
+      if (!Array.isArray(recharge_packages) || !recharge_packages.length) throw new Error('充值套餐需要 JSON 数组且至少保留一项')
+      recharge_packages = recharge_packages.map((item, idx) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error(`充值套餐第 ${idx + 1} 项不是对象`)
+        const amount = Number(item.amount), points = Number(item.points), label = String(item.label || `套餐${idx + 1}`).trim()
+        if (!(amount > 0) || !(points > 0) || !Number.isFinite(amount) || !Number.isFinite(points)) throw new Error(`充值套餐第 ${idx + 1} 项金额或积分不合法`)
+        if (!label) throw new Error(`充值套餐第 ${idx + 1} 项标题不能为空`)
+        return { amount: Math.round(amount * 100) / 100, points: Math.round(points), label }
+      })
+    } catch (e) { dialog.alert(e.message || '充值套餐 JSON 格式错误'); return }
     let generation_models = {}
     let generation_providers = {}
     try {
@@ -335,6 +348,8 @@ export default function AdminPage() {
         if (!generation_providers[pid]) { dialog.alert(`模型 ${modelId} 引用了不存在的供应商 ${pid}`); return }
       }
     }
+    payload.recharge_packages = recharge_packages
+    delete payload.recharge_packages_text
     payload.generation_models = generation_models
     payload.generation_providers = generation_providers
     setConfigSaving(true)
@@ -1135,6 +1150,11 @@ export default function AdminPage() {
               <div className="mt-3">
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>手动充值提示文案</label>
                 <textarea value={runtimeConfig.manual_recharge_notice} onChange={e => onConfigInput('manual_recharge_notice', e.target.value)} rows={3} className="w-full px-3 py-2 rounded-lg text-sm border resize-none outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              <div className="mt-3">
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>充值套餐(JSON数组)</label>
+                <textarea value={runtimeConfig.recharge_packages_text} onChange={e => onConfigInput('recharge_packages_text', e.target.value)} rows={10} className="w-full px-3 py-2 rounded-lg text-xs border resize-none outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                <div className="text-[11px] mt-1" style={{ color: 'var(--text-secondary)' }}>{'[{"amount":9.9,"points":120,"label":"体验包"}]'}</div>
               </div>
             </div>
             <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
