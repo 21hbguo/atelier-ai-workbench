@@ -41,20 +41,13 @@ def create_and_send_code(email, ip):
     email = email.strip().lower()
     with get_db() as conn:
         row = conn.execute(
-            "SELECT created_at FROM email_verification_codes WHERE email = %s ORDER BY id DESC LIMIT 1",
+            "SELECT EXTRACT(EPOCH FROM NOW() - created_at)::int AS age_seconds FROM email_verification_codes WHERE email = %s ORDER BY id DESC LIMIT 1",
             (email,),
         ).fetchone()
-        if row:
-            from datetime import datetime
-            created = row["created_at"]
-            if isinstance(created, str):
-                created = datetime.fromisoformat(created)
-            now = datetime.utcnow()
-            if hasattr(now, 'timestamp') and hasattr(created, 'timestamp'):
-                diff = (now - created).total_seconds()
-                if diff < 60:
-                    wait = int(60 - diff)
-                    raise HTTPException(status_code=429, detail=f"请等待 {wait} 秒后再试")
+        if row and row["age_seconds"] is not None:
+            age = int(row["age_seconds"])
+            if age < 60:
+                raise HTTPException(status_code=429, detail=f"请等待 {60 - age} 秒后再试")
 
         code = generate_verification_code()
         conn.execute(
