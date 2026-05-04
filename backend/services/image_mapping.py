@@ -50,6 +50,11 @@ class ImageUrlMapping:
             return {row["url"]: row["delete_token"] for row in rows}
 
     @classmethod
+    def get_all(cls):
+        with get_db() as conn:
+            return conn.execute("SELECT local_path, url as hosting_url, content_hash, delete_token as delete_url FROM image_mappings").fetchall()
+
+    @classmethod
     def delete_urls(cls, urls: list) -> int:
         with get_db() as conn:
             placeholders = ",".join("%s" for _ in urls)
