@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Image, BookOpen, Share2, Trash2, Snowflake, Sun, RefreshCw, Star, X } from 'lucide-react'
+import { Image, BookOpen, Share2, Trash2, Snowflake, Sun, RefreshCw, Star, X, Plus } from 'lucide-react'
 import { squareAPI, promptAPI, adminAPI, favoriteAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 import SearchInput from '../components/SearchInput'
@@ -454,6 +454,38 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
     catch (e) { dialog.alert(e?.response?.data?.detail || e.message || '操作失败') }
   }, [refresh, dialog])
 
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [createForm, setCreateForm] = useState({ name: '', prompt: '', negative_prompt: '', tags: '', category: '' })
+  const [categories, setCategories] = useState([])
+
+  useEffect(() => {
+    promptAPI.categories().then(({ data }) => setCategories(data.categories || [])).catch(() => {})
+  }, [])
+
+  const handleCreate = useCallback(async () => {
+    if (!createForm.name || !createForm.prompt) return
+    const payload = {
+      name: createForm.name,
+      prompt: createForm.prompt,
+      negative_prompt: createForm.negative_prompt || '',
+      tags: createForm.tags ? createForm.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+      category: createForm.category || null,
+    }
+    try {
+      await promptAPI.createPublic(payload)
+      setShowCreateModal(false)
+      setCreateForm({ name: '', prompt: '', negative_prompt: '', tags: '', category: '' })
+      refresh()
+    } catch (e) {
+      dialog.alert(e?.response?.data?.detail || e.message || '创建失败')
+    }
+  }, [createForm, refresh, dialog])
+
+  const handlePromptSave = useCallback(async (id, payload) => {
+    await promptAPI.update(id, payload)
+    refresh()
+  }, [refresh])
+
   return (
     <>
       {isAdmin && (
@@ -489,7 +521,14 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
               {selectMode ? (
                 <button onClick={() => { setSelectMode(false); setChecked(new Set()) }} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
               ) : (
-                <button onClick={() => setSelectMode(true)} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>选择</button>
+                <>
+                  <button onClick={() => { setCreateForm({ name: '', prompt: '', negative_prompt: '', tags: '', category: '' }); setShowCreateModal(true) }}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-white"
+                    style={{ background: 'var(--accent)' }}>
+                    <Plus size={14} /> 新增
+                  </button>
+                  <button onClick={() => setSelectMode(true)} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>选择</button>
+                </>
               )}
             </div>
           </div>
@@ -558,7 +597,66 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
           onUseImage={handleUseImage}
           title="提示词详情"
           hideDownload
+          allowPromptEdit={isAdmin}
+          onPromptSave={handlePromptSave}
         />
+      )}
+
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowCreateModal(false)}>
+          <div className="rounded-2xl overflow-hidden max-w-lg w-full max-h-[85vh] flex flex-col"
+            style={{ background: 'var(--bg-card)', boxShadow: 'var(--shadow-lg)' }}
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
+              <span className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>新增系统提示词</span>
+              <button onClick={() => setShowCreateModal(false)} className="p-1 rounded hover:bg-bg-hover"><X size={18} style={{ color: 'var(--text-secondary)' }} /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4">
+              <input value={createForm.name} onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))}
+                placeholder="标题" autoFocus
+                className="px-3 py-2 rounded-lg text-sm border outline-none focus:ring-1 focus:ring-accent/50"
+                style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
+              <div>
+                <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>提示词内容</label>
+                <textarea value={createForm.prompt} onChange={e => setCreateForm(f => ({ ...f, prompt: e.target.value }))}
+                  placeholder="提示词内容" rows={5}
+                  className="w-full text-sm p-3 rounded-lg outline-none resize-none border focus:ring-1 focus:ring-accent/50"
+                  style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
+              </div>
+              <div>
+                <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>反向提示词 (可选)</label>
+                <textarea value={createForm.negative_prompt} onChange={e => setCreateForm(f => ({ ...f, negative_prompt: e.target.value }))}
+                  placeholder="反向提示词，可选" rows={3}
+                  className="w-full text-sm p-3 rounded-lg outline-none resize-none border focus:ring-1 focus:ring-accent/50"
+                  style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
+              </div>
+              <div>
+                <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>标签</label>
+                <input value={createForm.tags} onChange={e => setCreateForm(f => ({ ...f, tags: e.target.value }))}
+                  placeholder="逗号分隔"
+                  className="w-full text-sm p-3 rounded-lg outline-none border focus:ring-1 focus:ring-accent/50"
+                  style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
+              </div>
+              <div>
+                <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-secondary)' }}>分类</label>
+                <select value={createForm.category} onChange={e => setCreateForm(f => ({ ...f, category: e.target.value }))}
+                  className="w-full text-sm p-3 rounded-lg outline-none border focus:ring-1 focus:ring-accent/50"
+                  style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
+                  <option value="">无分类</option>
+                  {categories.map(c => <option key={c.slug} value={c.slug}>{c.label}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
+              <button onClick={() => setShowCreateModal(false)}
+                className="px-4 py-2 rounded-lg text-sm font-medium"
+                style={{ color: 'var(--text-secondary)' }}>取消</button>
+              <button onClick={handleCreate}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-white"
+                style={{ background: 'var(--accent)' }}>保存</button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   )
