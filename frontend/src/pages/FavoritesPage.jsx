@@ -21,8 +21,8 @@ function useActions() {
   const handleUseImage = (card) => {
     const url = card.thumbUrl2x || card.fullUrl
     if (!url) { alert('图片地址不存在'); return }
-    localStorage.setItem('pending_image_url', url)
-    localStorage.setItem('pending_image_name', card.filename || card.name || 'favorite')
+    const stored = JSON.parse(localStorage.getItem('ref_images') || '[]')
+    if (!stored.some(i => i.url === url)) { stored.push({ url, name: card.filename || card.name || 'favorite' }); localStorage.setItem('ref_images', JSON.stringify(stored)) }
     window.dispatchEvent(new Event('pending-image-updated'))
     navigate('/')
   }

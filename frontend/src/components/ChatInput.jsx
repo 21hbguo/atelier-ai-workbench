@@ -59,26 +59,11 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
 
   const consumePending = useCallback(async () => {
     const pendingPrompt = localStorage.getItem('pending_prompt')
-    const pendingImgUrl = localStorage.getItem('pending_image_url')
-    const pendingImgName = localStorage.getItem('pending_image_name')
     const pendingImg = localStorage.getItem('pending_image')
 
     if (pendingPrompt) {
       localStorage.removeItem('pending_prompt')
       setPrompt(pendingPrompt)
-    }
-
-    // URL-based pending image (from square/favorites)
-    if (pendingImgUrl) {
-      pendingImageConsumedRef.current = true
-      const name = pendingImgName || 'reference.png'
-      const entry = { url: pendingImgUrl, preview: pendingImgUrl, name }
-      setImages(prev => [...prev, entry].slice(0, MAX_IMAGES))
-      localStorage.setItem('ref_image_url', pendingImgUrl)
-      localStorage.setItem('ref_image_name', name)
-      localStorage.removeItem('pending_image_url')
-      localStorage.removeItem('pending_image_name')
-      return
     }
 
     // Legacy blob-based pending image (from IndexedDB)
@@ -123,20 +108,22 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     const cached = localStorage.getItem('cached_prompt')
     if (cached) setPrompt(cached)
 
-    // 恢复 localStorage 中的参考图 URL
+    const refImages = JSON.parse(localStorage.getItem('ref_images') || '[]')
     const refUrl = localStorage.getItem('ref_image_url')
-    const refName = localStorage.getItem('ref_image_name')
-    if (refUrl && !pendingImageConsumedRef.current) {
-      setImages([{ url: refUrl, preview: refUrl, name: refName || 'reference.png' }])
+    const allRefs = refUrl ? [...refImages, { url: refUrl, name: 'reference.png' }] : refImages
+    const unique = allRefs.filter((v, i, a) => a.findIndex(x => x.url === v.url) === i)
+    if (unique.length > 0) {
+      setImages(unique.map(r => ({ url: r.url, preview: r.url, name: r.name || 'reference.png' })))
+    } else {
+      ;(async () => {
+        try {
+          const cachedImages = await getCachedImages()
+          console.log('[ChatInput mount] IndexedDB cachedImages count:', cachedImages.length)
+          const items = cachedImages.map((item, i) => item?.blob ? { file: new File([item.blob], item.name || `cached-${i}.png`, { type: item.type || item.blob.type || 'image/png' }), preview: URL.createObjectURL(item.blob), name: item.name || `cached-${i}.png` } : null).filter(Boolean)
+          if (items.length > 0) setImages(items)
+        } catch {}
+      })()
     }
-
-    ;(async () => {
-      try {
-        const cachedImages = await getCachedImages()
-        const items = cachedImages.map((item, i) => item?.blob ? { file: new File([item.blob], item.name || `cached-${i}.png`, { type: item.type || item.blob.type || 'image/png' }), preview: URL.createObjectURL(item.blob), name: item.name || `cached-${i}.png` } : null).filter(Boolean)
-        if (items.length > 0 && !pendingImageConsumedRef.current && !refUrl) setImages(items)
-      } catch {}
-    })()
   }, [])
 
   // 组件卸载时释放 object URL
@@ -268,7 +255,10 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     addFiles(files) { handleFiles(files) },
     setPrompt(text) { setPrompt(text) },
     async addImage(url) {
+      if (!url) return
       appendImages([{ url, preview: url }])
+      const stored = JSON.parse(localStorage.getItem('ref_images') || '[]')
+      if (!stored.some(i => i.url === url)) { stored.push({ url, name: 'reference.png' }); localStorage.setItem('ref_images', JSON.stringify(stored)) }
     }
   }))
 
@@ -285,6 +275,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     if (ok === false) return
     setPrompt('')
     setImages([])
+    localStorage.removeItem('ref_images')
     localStorage.removeItem('ref_image_url')
     localStorage.removeItem('ref_image_name')
   }
@@ -293,7 +284,8 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const removeImage = (idx) => {
     setImages(prev => {
       const next = [...prev]; if (next[idx].file) URL.revokeObjectURL(next[idx].preview); next.splice(idx, 1)
-      if (next.length === 0) { localStorage.removeItem('ref_image_url'); localStorage.removeItem('ref_image_name') }
+      const refUrls = next.filter(i => i.url && !i.file).map(i => ({ url: i.url, name: i.name }))
+      if (refUrls.length > 0) localStorage.setItem('ref_images', JSON.stringify(refUrls)); else localStorage.removeItem('ref_images')
       void persistImages(next); return next
     })
   }
