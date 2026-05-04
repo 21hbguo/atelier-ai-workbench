@@ -22,7 +22,7 @@ export default function AnnouncementModal({ announcement, onRead, onClose }) {
         <div className="p-4 border-b flex items-center gap-2" style={{ borderColor: 'var(--border-color)' }}>
           <Megaphone size={16} style={{ color: 'var(--accent)' }} />
           <h3 className="text-sm font-semibold flex-1" style={{ color: 'var(--text-primary)' }}>{announcement.title}</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-black/5">
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-bg-hover">
             <X size={16} style={{ color: 'var(--text-secondary)' }} />
           </button>
         </div>

@@ -107,17 +107,17 @@ export default function PromptsPage() {
           <button onClick={() => { setForm({ name: '', prompt: '', tags: '', category: '' }); setShowNewForm(true) }}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}><Plus size={16} /> 新增</button>
           <button onClick={handleExport} disabled={selected.size === 0}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium hover:bg-black/5 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
             style={{ color: 'var(--text-primary)' }}><Download size={16} /> 导出{selected.size > 0 ? ` (${selected.size})` : ''}</button>
-          <button onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}><Upload size={16} /> 导入</button>
+          <button onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-primary)' }}><Upload size={16} /> 导入</button>
           <input ref={fileRef} type="file" accept=".json,.csv" className="hidden" onChange={handleImport} />
-          {selected.size > 0 && <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-red-500"><Trash2 size={16} /> 删除 ({selected.size})</button>}
+          {selected.size > 0 && <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-[var(--color-error)]"><Trash2 size={16} /> 删除 ({selected.size})</button>}
           {cards.length > 0 && (
             <>
               {selected.size === cards.length ? (
-                <button onClick={handleDeselectAll} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}><CheckSquare size={16} /> 取消全选</button>
+                <button onClick={handleDeselectAll} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-primary)' }}><CheckSquare size={16} /> 取消全选</button>
               ) : (
-                <button onClick={handleSelectAll} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}><Square size={16} /> 全选</button>
+                <button onClick={handleSelectAll} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-primary)' }}><Square size={16} /> 全选</button>
               )}
             </>
           )}
@@ -169,11 +169,11 @@ export default function PromptsPage() {
 
       {detail && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setDetail(null)}>
-          <div className="bg-white dark:bg-gray-900 rounded-2xl overflow-hidden max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="bg-[var(--bg-card)] rounded-2xl overflow-hidden max-w-2xl w-full max-h-[85vh] flex flex-col" style={{ boxShadow: 'var(--shadow-lg)' }} onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
               <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="标题"
                 className="font-semibold text-lg flex-1 bg-transparent outline-none" style={{ color: 'var(--text-primary)' }} />
-              <button onClick={() => setDetail(null)} className="p-1 rounded hover:bg-black/5 ml-2"><X size={18} style={{ color: 'var(--text-secondary)' }} /></button>
+              <button onClick={() => setDetail(null)} className="p-1 rounded hover:bg-bg-hover ml-2"><X size={18} style={{ color: 'var(--text-secondary)' }} /></button>
             </div>
             <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4">
               <div>
@@ -197,10 +197,10 @@ export default function PromptsPage() {
             </div>
             <div className="flex gap-2 px-5 py-4 border-t overflow-x-auto scrollbar-hide" style={{ borderColor: 'var(--border-color)', scrollbarWidth: 'none' }}>
               <button onClick={() => { localStorage.setItem('pending_prompt', form.prompt); navigate('/') }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}><Send size={14} /> 使用</button>
-              <button onClick={() => navigator.clipboard.writeText(form.prompt)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>复制</button>
-              <button onClick={() => handleFavorite(detail.id)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-black/5" style={{ color: 'var(--text-primary)' }}>{detailCard?.isFavorited ? '取消收藏' : '收藏'}</button>
+              <button onClick={() => navigator.clipboard.writeText(form.prompt)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-primary)' }}>复制</button>
+              <button onClick={() => handleFavorite(detail.id)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-primary)' }}>{detailCard?.isFavorited ? '取消收藏' : '收藏'}</button>
               <button onClick={handleSave} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}>保存</button>
-              <button onClick={() => handleDelete(detail.id)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 ml-auto"><Trash2 size={14} /> 删除</button>
+              <button onClick={() => handleDelete(detail.id)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-[var(--color-error)] hover:bg-[var(--color-error)]/10 ml-auto"><Trash2 size={14} /> 删除</button>
             </div>
           </div>
         </div>

@@ -55,7 +55,7 @@ export default function AnnouncementsPage() {
                 <div className="flex items-center gap-2">
                   <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{item.title}</p>
                   {item.is_read ? (
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-500/20 text-gray-500 flex-shrink-0">已读</span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[var(--text-secondary)]/10 text-[var(--text-secondary)] flex-shrink-0">已读</span>
                   ) : (
                     <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-accent/20 text-accent flex-shrink-0">未读</span>
                   )}
@@ -66,7 +66,7 @@ export default function AnnouncementsPage() {
                 </div>
               </div>
               {item.is_read ? (
-                <Check size={16} className="flex-shrink-0 ml-3" style={{ color: '#22c55e' }} />
+                <Check size={16} className="flex-shrink-0 ml-3" style={{ color: 'var(--color-success)' }} />
               ) : (
                 <Megaphone size={16} className="flex-shrink-0 ml-3" style={{ color: 'var(--accent)' }} />
               )}

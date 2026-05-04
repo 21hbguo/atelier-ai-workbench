@@ -47,7 +47,7 @@ export default function RedeemPage() {
           </div>
         </div>
 
-        <div className="p-4 rounded-xl mb-6" style={{ background: 'var(--bg-secondary)' }}>
+        <div className="p-4 rounded-xl mb-6" style={{ background: 'var(--bg-card)' }}>
           <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>当前积分余额</span>
           <div className="text-2xl font-bold" style={{ color: 'var(--accent)' }}>{user?.is_admin ? '∞' : points}</div>
         </div>
@@ -61,7 +61,7 @@ export default function RedeemPage() {
               onKeyDown={e => e.key === 'Enter' && handleRedeem()}
               placeholder="请输入兑换码"
               className="w-full px-4 py-3 rounded-xl text-sm font-mono outline-none transition-colors"
-              style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
+              style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
             />
           </div>
           <button
@@ -73,7 +73,7 @@ export default function RedeemPage() {
         </div>
 
         {message && (
-          <div className={`mt-4 p-3 rounded-xl text-sm ${message.type === 'success' ? 'text-green-600' : 'text-red-500'}`}
+          <div className={`mt-4 p-3 rounded-xl text-sm ${message.type === 'success' ? 'text-[var(--color-success)]' : 'text-[var(--color-error)]'}`}
             style={{ background: message.type === 'success' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)' }}>
             {message.text}
           </div>

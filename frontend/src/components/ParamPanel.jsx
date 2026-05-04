@@ -49,8 +49,8 @@ export default function ParamPanel({ params, onChange }) {
         <label key={key} className="flex flex-col gap-1">
           <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{cfg.label || key}</span>
           <select value={params[key] ?? cfg.default ?? ''} onChange={e => onChange(p => ({ ...p, [key]: e.target.value }))}
-            className="px-2 py-1.5 rounded-lg text-sm border outline-none focus:ring-1 focus:ring-accent/50"
-            style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
+            className="px-2 py-1.5 rounded-xl text-sm border outline-none focus:ring-1 focus:ring-accent/50"
+            style={{ background: 'var(--bg-input)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
             {(cfg.options || []).map(opt => typeof opt === 'string'
               ? <option key={opt} value={opt}>{opt}</option>
               : <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -65,8 +65,8 @@ export default function ParamPanel({ params, onChange }) {
           <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{cfg.label || key}</span>
           <input type="text" value={params[key] ?? cfg.default ?? ''} onChange={e => onChange(p => ({ ...p, [key]: e.target.value }))}
             placeholder={cfg.placeholder || ''}
-            className="px-2 py-1.5 rounded-lg text-sm border outline-none focus:ring-1 focus:ring-accent/50"
-            style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
+            className="px-2 py-1.5 rounded-xl text-sm border outline-none focus:ring-1 focus:ring-accent/50"
+            style={{ background: 'var(--bg-input)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
         </label>
       )
     }
@@ -79,7 +79,7 @@ export default function ParamPanel({ params, onChange }) {
         <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Roll次数</span>
         <select value={params.roll_count ?? 5} onChange={e => onChange(p => ({ ...p, roll_count: Math.min(5, Math.max(2, Number(e.target.value) || 5)) }))}
           className="px-2 py-1.5 rounded-lg text-sm border outline-none focus:ring-1 focus:ring-accent/50"
-          style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
+          style={{ background: 'var(--bg-input)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
           <option value={2}>2次</option>
           <option value={3}>3次</option>
           <option value={4}>4次</option>
@@ -91,7 +91,7 @@ export default function ParamPanel({ params, onChange }) {
           <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>模型</span>
           <select value={currentModel?.model_id ?? ''} onChange={e => handleModelChange(e.target.value)}
             className="px-2 py-1.5 rounded-lg text-sm border outline-none focus:ring-1 focus:ring-accent/50"
-            style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
+            style={{ background: 'var(--bg-input)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
             {models.map(m => <option key={m.model_id} value={m.model_id}>{m.label}</option>)}
           </select>
         </label>
