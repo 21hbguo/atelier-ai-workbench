@@ -10,6 +10,16 @@ echo -e "${GREEN}   打包增量包（更新用）${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
+# 参数解析
+INCLUDE_DATA=true
+if [[ "$1" == "--no-data" ]]; then
+    INCLUDE_DATA=false
+    echo -e "${YELLOW}模式: 仅代码（不含数据）${NC}"
+else
+    echo -e "${YELLOW}模式: 代码+数据${NC}"
+fi
+echo ""
+
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_NAME=$(basename "$PROJECT_DIR")
 PARENT_DIR=$(dirname "$PROJECT_DIR")
@@ -35,13 +45,15 @@ echo -e "${YELLOW}上次打包时间: $(date -d @$LAST_PACKAGE '+%Y-%m-%d %H:%M:
 echo ""
 
 # 导出数据库
-echo -e "${YELLOW}[1/2] 导出数据库...${NC}"
-cd "$PROJECT_DIR"
-if docker compose ps db 2>/dev/null | grep -q "Up"; then
-    docker compose exec -T db pg_dump -U app_user --clean --if-exists app_db > data/db_snapshot.sql
-    echo -e "  ${GREEN}数据库已导出到 data/db_snapshot.sql${NC}"
-else
-    echo -e "  ${YELLOW}数据库未运行，跳过导出（将使用已有的快照）${NC}"
+if [ "$INCLUDE_DATA" = true ]; then
+    echo -e "${YELLOW}[1/2] 导出数据库...${NC}"
+    cd "$PROJECT_DIR"
+    if docker compose ps db 2>/dev/null | grep -q "Up"; then
+        docker compose exec -T db pg_dump -U app_user --clean --if-exists app_db > data/db_snapshot.sql
+        echo -e "  ${GREEN}数据库已导出到 data/db_snapshot.sql${NC}"
+    else
+        echo -e "  ${YELLOW}数据库未运行，跳过导出（将使用已有的快照）${NC}"
+    fi
 fi
 
 echo -e "${YELLOW}[2/2] 正在打包增量文件...${NC}"
@@ -67,17 +79,24 @@ fi
 
 # 打包增量文件
 cd "$PARENT_DIR"
-tar czf "$OUTPUT" \
-    --exclude='__pycache__' \
-    --exclude='*.pyc' \
-    --exclude='.git' \
-    --exclude='node_modules' \
-    --exclude='frontend/node_modules' \
-    --exclude='*.tar.gz' \
-    --exclude='.claude' \
-    --exclude='markdown' \
-    --newer-mtime="$LAST_PACKAGE_FILE" \
-    "$PROJECT_NAME"
+
+EXCLUDES=(
+    --exclude='__pycache__'
+    --exclude='*.pyc'
+    --exclude='.git'
+    --exclude='node_modules'
+    --exclude='frontend/node_modules'
+    --exclude='*.tar.gz'
+    --exclude='.claude'
+    --exclude='markdown'
+    --newer-mtime="$LAST_PACKAGE_FILE"
+)
+
+if [ "$INCLUDE_DATA" = false ]; then
+    EXCLUDES+=(--exclude='data')
+fi
+
+tar czf "$OUTPUT" "${EXCLUDES[@]}" "$PROJECT_NAME"
 
 SIZE=$(du -h "$OUTPUT" | cut -f1)
 FILE_COUNT=$(tar tzf "$OUTPUT" | wc -l)

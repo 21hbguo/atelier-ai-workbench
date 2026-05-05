@@ -54,6 +54,9 @@ docker compose build --progress=plain
 echo ""
 echo -e "${YELLOW}[4/5] 迁移现有数据...${NC}"
 
+# 停止旧容器
+docker compose down 2>/dev/null || true
+
 # 启动数据库容器
 docker compose up -d db
 sleep 3
@@ -77,42 +80,6 @@ elif [ -f "data/app.db" ]; then
     echo -e "  ${YELLOW}SQLite 迁移暂不支持，请手动导出数据${NC}"
 else
     echo "  未发现现有数据库，将使用空数据库"
-fi
-
-# 迁移文件数据
-echo "  迁移上传文件..."
-if [ -d "data/uploads" ] && [ "$(ls -A data/uploads 2>/dev/null)" ]; then
-    docker compose exec -T app mkdir -p /app/data/uploads 2>/dev/null || true
-    docker cp data/uploads/. $(docker compose ps -q app):/app/data/uploads/
-    echo -e "  ${GREEN}上传文件迁移完成${NC}"
-else
-    echo "  无上传文件需要迁移"
-fi
-
-if [ -d "data/images" ] && [ "$(ls -A data/images 2>/dev/null)" ]; then
-    docker compose exec -T app mkdir -p /app/data/images 2>/dev/null || true
-    docker cp data/images/. $(docker compose ps -q app):/app/data/images/
-    echo -e "  ${GREEN}图片文件迁移完成${NC}"
-else
-    echo "  无图片文件需要迁移"
-fi
-
-if [ -d "data/thumbs" ] && [ "$(ls -A data/thumbs 2>/dev/null)" ]; then
-    docker compose exec -T app mkdir -p /app/data/thumbs 2>/dev/null || true
-    docker cp data/thumbs/. $(docker compose ps -q app):/app/data/thumbs/
-    echo -e "  ${GREEN}缩略图迁移完成${NC}"
-fi
-
-if [ -d "data/evo_images" ] && [ "$(ls -A data/evo_images 2>/dev/null)" ]; then
-    docker compose exec -T app mkdir -p /app/data/evo_images 2>/dev/null || true
-    docker cp data/evo_images/. $(docker compose ps -q app):/app/data/evo_images/
-    echo -e "  ${GREEN}evo 图片迁移完成${NC}"
-fi
-
-if [ -d "data/evo_thumbs" ] && [ "$(ls -A data/evo_thumbs 2>/dev/null)" ]; then
-    docker compose exec -T app mkdir -p /app/data/evo_thumbs 2>/dev/null || true
-    docker cp data/evo_thumbs/. $(docker compose ps -q app):/app/data/evo_thumbs/
-    echo -e "  ${GREEN}evo 缩略图迁移完成${NC}"
 fi
 
 # Step 5: 启动所有服务

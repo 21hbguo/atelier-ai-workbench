@@ -40,7 +40,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"
 GENERATED_IMAGES_DIR = DATA_DIR / "images"
 THUMBS_DIR = DATA_DIR / "thumbs"
-EVO_IMAGES_DIR = Path(os.getenv("EVO_IMAGES_DIR", str(PROJECT_ROOT.parent / "evo" / "images")))
+EVO_IMAGES_DIR = Path(os.getenv("EVO_IMAGES_DIR", str(DATA_DIR / "evo_images")))
 EVO_THUMBS_DIR = DATA_DIR / "evo_thumbs"
 EVO_IMPORTED_DIR = DATA_DIR / "evo_images"
 
