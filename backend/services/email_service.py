@@ -2,12 +2,14 @@ import string
 import secrets
 import smtplib
 import asyncio
+import logging
 from email.mime.text import MIMEText
 from email.header import Header
 from email.utils import formataddr
 from fastapi import HTTPException
 from backend.config import get_smtp_config
 from backend.db.session import get_db
+logger = logging.getLogger(__name__)
 
 
 VERIFICATION_EMAIL_HTML = """\
@@ -87,8 +89,14 @@ async def create_and_send_code(email, ip):
                VALUES (%s, %s, NOW() + INTERVAL '3 minutes', %s)""",
             (email, code, ip),
         )
+    asyncio.create_task(_send_code_background(email, code))
 
-    await send_verification_email(email, code)
+
+async def _send_code_background(email, code):
+    try:
+        await send_verification_email(email, code)
+    except Exception as e:
+        logger.exception("send verification email failed for %s: %s", email, e)
 
 
 def verify_code(email, code):

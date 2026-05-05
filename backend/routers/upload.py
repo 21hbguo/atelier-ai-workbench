@@ -60,7 +60,7 @@ def _verify_image(content: bytes):
             width, height = img.size
         if width <= 0 or height <= 0 or width * height > 4096 * 4096:
             raise HTTPException(status_code=400, detail="图片尺寸不合法")
-    except UnidentifiedImageError:
+    except (UnidentifiedImageError, OSError, SyntaxError, ValueError):
         raise HTTPException(status_code=400, detail="图片内容无效")
 
 
