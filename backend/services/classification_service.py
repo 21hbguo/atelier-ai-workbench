@@ -181,13 +181,16 @@ class ClassificationService:
                 results = []
                 try:
                     text = full_text.strip()
+                    cls._push_log(task_id, "debug", f"LLM 原始响应（前 500 字符）: {text[:500]}")
                     if text.startswith("```"):
                         lines = text.split("\n")
                         text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
                         text = text.strip()
                     results = json.loads(text) if text else []
+                    cls._push_log(task_id, "info", f"解析到 {len(results)} 个分类结果")
                 except json.JSONDecodeError as e:
-                    cls._push_log(task_id, "error", f"JSON 解析失败: {str(e)[:100]}")
+                    cls._push_log(task_id, "error", f"JSON 解析失败: {str(e)[:200]}")
+                    cls._push_log(task_id, "debug", f"解析失败的文本: {text[:300]}")
 
                 result_map = {r["item_id"]: r for r in results} if results else {}
                 with get_db() as conn:
