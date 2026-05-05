@@ -45,7 +45,7 @@ def _find_idempotent_task(user_id: int, client_request_id: str):
     with get_db() as conn:
         return conn.execute("SELECT task_id,status FROM tasks WHERE user_id = %s AND params->>'client_request_id' = %s ORDER BY created_at DESC LIMIT 1", (user_id, client_request_id)).fetchone()
 
-def _share_to_square(user_id: int, file_path: str, prompt: str, size: str, task_type: str):
+def _share_to_square(user_id: int, file_path: str, prompt: str, size: str, task_type: str, input_urls: list = None):
     filename = os.path.basename(str(file_path or ""))
     if not filename:
         return
@@ -53,7 +53,10 @@ def _share_to_square(user_id: int, file_path: str, prompt: str, size: str, task_
         existing = conn.execute("SELECT id FROM square_images WHERE user_id = %s AND filename = %s", (user_id, filename)).fetchone()
         if existing:
             return
-        metadata = json.dumps({"size": size, "type": "image" if task_type == "text_image" else "text"}, ensure_ascii=False)
+        meta = {"size": size, "type": "image" if task_type == "text_image" else "text"}
+        if input_urls:
+            meta["input_urls"] = input_urls
+        metadata = json.dumps(meta, ensure_ascii=False)
         conn.execute("INSERT INTO square_images (user_id, filename, prompt, metadata) VALUES (%s, %s, %s, %s)", (user_id, filename, prompt, metadata))
         mark_image_permanent(filename, conn=conn)
 
@@ -83,7 +86,7 @@ async def _run_generation(task_id: str, task_type: str, submit_payload: dict, me
         if urls:
             if submit_payload.get("share_to_square") and len(urls) > 0:
                 try:
-                    _share_to_square(user_id, urls[0], submit_payload.get("prompt") or "", submit_payload.get("size") or "auto", task_type)
+                    _share_to_square(user_id, urls[0], submit_payload.get("prompt") or "", submit_payload.get("size") or "auto", task_type, input_urls=meta.get("input_urls"))
                 except Exception:
                     logger.exception(f"[submit.share.fail] type={task_type} task={task_id} user={user_id}")
             TaskManager.update_task(task_id, status="completed", progress=100, result_urls=urls)

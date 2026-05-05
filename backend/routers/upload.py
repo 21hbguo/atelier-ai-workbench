@@ -105,8 +105,8 @@ async def _do_upload(file: UploadFile) -> UploadResponse:
     logger.info(f"上传结果: url={url}")
     existing_url = ImageUrlMapping.save_url(str(save_path), url, content_hash, delete_token or "")
     if existing_url:
-        return UploadResponse(url=existing_url, is_duplicate=True)
-    return UploadResponse(url=url, is_duplicate=False)
+        return UploadResponse(url=existing_url, is_duplicate=True, storage_name=filename)
+    return UploadResponse(url=url, is_duplicate=False, storage_name=filename)
 
 
 @router.post("/upload", response_model=UploadResponse)

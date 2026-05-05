@@ -259,12 +259,12 @@ export default function ChatPage() {
     })
   }, [saveCachedActiveTasks])
 
-  const shareImageToSquare = useCallback(async (filename, prompt, params, hasImages) => {
+  const shareImageToSquare = useCallback(async (filename, prompt, params, hasImages, imageUrls) => {
     try {
       const { data } = await squareAPI.share({
         filename,
         prompt,
-        metadata: { size: params?.size, type: hasImages ? 'image' : 'text' },
+        metadata: { size: params?.size, type: hasImages ? 'image' : 'text', input_urls: imageUrls?.length ? imageUrls : undefined },
       })
       markSquareShared(filename, data?.id)
     } catch {}
@@ -302,7 +302,7 @@ export default function ChatPage() {
             const cardPrompt = st.params?.prompt || st.prompt || prompt
             const newCards = st.result_urls.map((url, idx) => {
               const filename = url.split('/').pop()
-              return { _type: 'image', _raw: { filename, metadata: { prompt: cardPrompt, task_id: taskId, created_at: st.created_at, started_at: st.started_at, completed_at: st.completed_at, type: st.params?.image_urls?.length ? 'image' : 'text', size: st.params?.size, input_urls: st.params?.image_urls } }, id: `${taskId}-${idx}`, prompt: cardPrompt, fullUrl: `/api/images/file/${filename}`, filename }
+              return { _type: 'image', _raw: { filename, metadata: { prompt: cardPrompt, task_id: taskId, created_at: st.created_at, started_at: st.started_at, completed_at: st.completed_at, type: st.params?.image_urls?.length ? 'image' : 'text', size: st.params?.size, input_urls: st.params?.local_image_urls || st.params?.image_urls } }, id: `${taskId}-${idx}`, prompt: cardPrompt, fullUrl: `/api/images/file/${filename}`, filename }
             })
             setDetailCards(prev => {
               const existing = new Set(prev.map(c => c.id))
@@ -311,7 +311,7 @@ export default function ChatPage() {
             })
           }
           if (shareToSquare && st.result_urls?.length) {
-            shareImageToSquare(st.result_urls[0].split('/').pop(), prompt, params, hasImages)
+            shareImageToSquare(st.result_urls[0].split('/').pop(), prompt, params, hasImages, params?.local_image_urls || params?.image_urls)
           }
           return
         }
@@ -359,6 +359,7 @@ export default function ChatPage() {
         return { data: { url: '' } }
       })) : []
       const imageUrls = uploaded.map(r => r.data.url)
+      const localImageUrls = uploaded.map(r => r.data.storage_name || r.data.url).filter(Boolean)
       const hasImages = imageUrls.length > 0
       const submitOne = async (index) => {
         const tempId = `pending-${Date.now()}-${index}`
@@ -367,7 +368,7 @@ export default function ChatPage() {
         scroll()
         const taskId = makeTaskId()
         try {
-          const data = hasImages ? (await generateAPI.submitTextImage({ prompt, image_urls: imageUrls, size: params?.size || 'auto', model_id: params?.model_id, task_id: taskId, share_to_square: !!shareToSquare })).data : (await generateAPI.submitText({ prompt, size: params?.size || 'auto', model_id: params?.model_id, task_id: taskId, share_to_square: !!shareToSquare })).data
+          const data = hasImages ? (await generateAPI.submitTextImage({ prompt, image_urls: imageUrls, size: params?.size || 'auto', model_id: params?.model_id, task_id: taskId, share_to_square: !!shareToSquare, local_image_urls: localImageUrls })).data : (await generateAPI.submitText({ prompt, size: params?.size || 'auto', model_id: params?.model_id, task_id: taskId, share_to_square: !!shareToSquare })).data
           setPoints(p => Math.max(0, p - requestCost))
           const u = readUser()
           if (u) { u.points = Math.max(0, (u.points ?? 0) - requestCost); localStorage.setItem('user', JSON.stringify(u)) }
@@ -376,7 +377,7 @@ export default function ChatPage() {
           setTasks(prev => { const next = prev.map(t => t.task_id === tempId ? { ...t, task_id: realId } : t); saveCachedActiveTasks(next); return next })
           if (data.status === 'completed') {
             updateTask(realId, { status: 'completed', result_urls: data.result_urls, _active: false })
-            if (shareToSquare && data.result_urls?.length) shareImageToSquare(data.result_urls[0].split('/').pop(), prompt, params, hasImages)
+            if (shareToSquare && data.result_urls?.length) shareImageToSquare(data.result_urls[0].split('/').pop(), prompt, params, hasImages, localImageUrls)
             return { ok: true }
           }
           pollTask(realId, Date.now(), shareToSquare, prompt, params, hasImages)
@@ -392,7 +393,7 @@ export default function ChatPage() {
             setTasks(prev => { const next = prev.map(t => t.task_id === tempId ? { ...t, task_id: taskId } : t); saveCachedActiveTasks(next); return next })
             try {
               const { data: st } = await taskAPI.get(taskId)
-              if (st.status === 'completed') { updateTask(taskId, { ...st, _active: false }); if (shareToSquare && st.result_urls?.length) shareImageToSquare(st.result_urls[0].split('/').pop(), prompt, params, hasImages); return { ok: true } }
+              if (st.status === 'completed') { updateTask(taskId, { ...st, _active: false }); if (shareToSquare && st.result_urls?.length) shareImageToSquare(st.result_urls[0].split('/').pop(), prompt, params, hasImages, localImageUrls); return { ok: true } }
               if (st.status === 'failed') { updateTask(taskId, { ...st, _active: false }); refreshPointsOnFailed(); return { ok: false, message: st.error || '生成失败' } }
               updateTask(taskId, { ...st, _active: true }); pollTask(taskId, Date.now(), shareToSquare, prompt, params, hasImages); return { ok: true }
             } catch (se) {
@@ -465,7 +466,7 @@ export default function ChatPage() {
   }, [])
   const handleDetailShare = useCallback(async (card) => {
     try {
-      const { data } = await squareAPI.share({ filename: card.filename, prompt: card.prompt || '', metadata: { size: card?._raw?.metadata?.size, type: card?._raw?.metadata?.type || 'text' } })
+      const { data } = await squareAPI.share({ filename: card.filename, prompt: card.prompt || '', metadata: { size: card?._raw?.metadata?.size, type: card?._raw?.metadata?.type || 'text', input_urls: card?._raw?.metadata?.input_urls } })
       markSquareShared(card.filename, data?.id)
       window.dispatchEvent(new Event('gallery-updated'))
     } catch (e) {

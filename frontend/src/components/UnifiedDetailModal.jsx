@@ -270,13 +270,13 @@ export default function UnifiedDetailModal({
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }
-  const actionBaseClass = 'inline-flex h-14 w-full min-w-0 flex-col items-center justify-center gap-1 rounded-[1.15rem] border px-1.5 text-[10px] font-medium leading-none whitespace-nowrap transition-all'
-  const actionNeutralStyle = { background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }
-  const actionPrimaryStyle = { background: 'var(--accent)', borderColor: 'var(--accent)', color: '#fff' }
-  const actionDangerStyle = { background: 'color-mix(in srgb, var(--color-error) 10%, var(--bg-primary))', borderColor: 'color-mix(in srgb, var(--color-error) 22%, var(--border-color))', color: 'var(--color-error)' }
-  const actionWarnStyle = { background: 'color-mix(in srgb, var(--color-warning) 12%, var(--bg-primary))', borderColor: 'color-mix(in srgb, var(--color-warning) 28%, var(--border-color))', color: 'var(--color-warning)' }
-  const actionLikedStyle = { background: 'color-mix(in srgb, var(--color-error) 10%, var(--bg-primary))', borderColor: 'color-mix(in srgb, var(--color-error) 24%, var(--border-color))', color: 'var(--color-error)' }
-  const actionFavoritedStyle = { background: 'color-mix(in srgb, #facc15 14%, var(--bg-primary))', borderColor: 'color-mix(in srgb, #eab308 26%, var(--border-color))', color: '#a16207' }
+  const actionBaseClass = 'inline-flex h-11 w-full min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl border text-[10px] font-medium leading-none whitespace-nowrap transition-all hover:scale-[1.03] active:scale-95'
+  const actionNeutralStyle = { background: 'var(--bg-primary)', borderColor: 'color-mix(in srgb, var(--border-color) 60%, transparent)', color: 'var(--text-secondary)' }
+  const actionPrimaryStyle = { background: 'var(--accent)', borderColor: 'transparent', color: '#fff' }
+  const actionDangerStyle = { background: 'color-mix(in srgb, var(--color-error) 8%, transparent)', borderColor: 'color-mix(in srgb, var(--color-error) 18%, transparent)', color: 'var(--color-error)' }
+  const actionWarnStyle = { background: 'color-mix(in srgb, var(--color-warning) 10%, transparent)', borderColor: 'color-mix(in srgb, var(--color-warning) 20%, transparent)', color: 'var(--color-warning)' }
+  const actionLikedStyle = { background: 'color-mix(in srgb, #f43f5e 12%, transparent)', borderColor: 'transparent', color: '#f43f5e' }
+  const actionFavoritedStyle = { background: 'color-mix(in srgb, #f59e0b 14%, transparent)', borderColor: 'transparent', color: '#d97706' }
 
   const renderLeftPanel = () => {
     const editImageUrl = editing && editForm?.image_path ? (editForm.image_path.includes('/') ? `/api/prompts/evo-thumb/${editForm.image_path}` : `/api/prompts/image/${editForm.image_path}`) : null
@@ -284,7 +284,7 @@ export default function UnifiedDetailModal({
     const showUploadBtn = editing && !isImage
     if (!displayUrl) {
       return (
-        <div className={`md:w-3/5 bg-black flex items-center justify-center min-h-[260px] h-[44vh] md:h-full relative transition-opacity duration-150 ${contentVisible ? 'opacity-100' : 'opacity-0'}`} style={{ background: 'color-mix(in srgb, var(--accent) 8%, var(--bg-primary))' }}>
+        <div className={`md:w-3/5 bg-black flex items-center justify-center min-h-[260px] h-[49vh] md:h-full relative transition-opacity duration-150 ${contentVisible ? 'opacity-100' : 'opacity-0'}`} style={{ background: 'color-mix(in srgb, var(--accent) 8%, var(--bg-primary))' }}>
           <ImageIcon size={64} style={{ color: 'var(--accent)', opacity: 0.3 }} />
           {showUploadBtn && (
             <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
@@ -296,7 +296,7 @@ export default function UnifiedDetailModal({
       )
     }
     return (
-      <div className={`md:w-3/5 bg-black flex items-center justify-center min-h-[260px] h-[44vh] md:h-full relative group cursor-pointer overflow-hidden transition-opacity duration-150 ${contentVisible ? 'opacity-100' : 'opacity-0'}`} onClick={showUploadBtn ? undefined : handleMediaClick} onMouseEnter={() => setMediaHovered(true)} onMouseLeave={() => setMediaHovered(false)}>
+      <div className={`md:w-3/5 bg-black flex items-center justify-center min-h-[260px] h-[49vh] md:h-full relative group cursor-pointer overflow-hidden transition-opacity duration-150 ${contentVisible ? 'opacity-100' : 'opacity-0'}`} onClick={showUploadBtn ? undefined : handleMediaClick} onMouseEnter={() => setMediaHovered(true)} onMouseLeave={() => setMediaHovered(false)}>
         <img src={displayUrl} alt="" className="max-w-full max-h-full object-contain" />
         {!showUploadBtn && (
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
@@ -366,7 +366,7 @@ export default function UnifiedDetailModal({
           <div>
             <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>输入图片</label>
             <div className="flex gap-2 flex-wrap">
-              {meta.input_urls.map((url, i) => <img key={i} src={url} className="w-16 h-16 rounded-lg object-cover" />)}
+              {meta.input_urls.map((url, i) => <img key={i} src={url?.startsWith('http') ? url : `/api/prompts/image/${url}`} className="w-16 h-16 rounded-lg object-cover" />)}
             </div>
           </div>
         )}
@@ -530,7 +530,7 @@ export default function UnifiedDetailModal({
     <>
       <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 md:p-4" onClick={requestCloseModal}>
         <div
-          className="rounded-2xl overflow-hidden max-w-5xl w-full h-[88vh] md:h-[84vh] flex flex-col md:flex-row relative"
+          className="rounded-2xl overflow-hidden max-w-5xl w-full h-[70vh] md:h-[84vh] flex flex-col md:flex-row relative"
           style={{ background: 'var(--bg-card)', boxShadow: 'var(--shadow-lg)' }}
           onClick={(e) => e.stopPropagation()}
           onTouchStart={hasNavigation ? handleTouchStart : undefined}
@@ -551,7 +551,7 @@ export default function UnifiedDetailModal({
           {renderLeftPanel()}
 
           <div className={`md:w-2/5 flex-1 md:flex-none p-3.5 md:p-4 flex flex-col gap-2.5 overflow-y-auto transition-opacity duration-150 ${contentVisible ? 'opacity-100' : 'opacity-0'}`} style={{ color: 'var(--text-primary)' }}>
-            <div className="flex items-center justify-between mb-0.5">
+            <div className="flex items-center justify-between mb-0.5 shrink-0">
               <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{title}</span>
               <div className="flex items-center gap-2">
                 {allowMetadataEdit && isImage && raw.filename && !detailExtra && (editing ? <button onClick={handleSaveMetadata} disabled={saving} className="p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--accent)' }}><Check size={16} /></button> : <button onClick={startEditing} className="p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}><Edit2 size={16} /></button>)}
@@ -560,12 +560,14 @@ export default function UnifiedDetailModal({
               </div>
             </div>
 
-            {detailExtra || (isImage ? renderImageDetail() : renderPromptDetail())}
-
-            <div className="mt-auto pt-2">
-              <div className="grid items-stretch gap-1.5 rounded-[1.5rem] border p-1.5" style={{ background: 'color-mix(in srgb, var(--bg-primary) 88%, transparent)', borderColor: 'var(--border-color)', gridTemplateColumns: `repeat(${Math.max(actions.length, 1)},minmax(0,1fr))` }}>
+            <div className="shrink-0 md:order-last">
+              <div className="grid items-stretch gap-1.5 rounded-2xl p-1" style={{ background: 'color-mix(in srgb, var(--bg-primary) 50%, transparent)', gridTemplateColumns: `repeat(${Math.max(actions.length, 1)},minmax(0,1fr))` }}>
               {actions}
               </div>
+            </div>
+
+            <div className="flex-1 min-h-0 md:order-none">
+              {detailExtra || (isImage ? renderImageDetail() : renderPromptDetail())}
             </div>
           </div>
         </div>

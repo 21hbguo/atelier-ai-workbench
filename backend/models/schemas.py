@@ -21,6 +21,7 @@ class GenerateTextImageRequest(BaseModel):
     task_id: Optional[str] = Field(None, max_length=50)
     client_request_id: Optional[str] = Field(None, max_length=64)
     share_to_square: bool = False
+    local_image_urls: Optional[List[str]] = None
 
 class GenerateResponse(BaseModel):
     task_id: str
