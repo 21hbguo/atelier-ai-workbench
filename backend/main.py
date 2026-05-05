@@ -8,6 +8,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from backend.routers import generate, upload, tasks, images, prompts, stats, config, auth, square, admin, points, announcements, notifications, account, shares, favorites, prompt_optimize
 from backend.services.image_gen import close_http_client
 from backend.services.prompt_optimizer import PromptOptimizer
+from backend.services.classification_service import ClassificationService
 from backend.services.task_manager import TaskManager
 from backend.services.image_expiry import expiry_cleanup_loop
 
@@ -28,6 +29,7 @@ async def lifespan(app: FastAPI):
             pass
     await close_http_client()
     await PromptOptimizer.close()
+    await ClassificationService.close()
 
 
 app = FastAPI(title="AI Image Generator", version="1.0.0", lifespan=lifespan)

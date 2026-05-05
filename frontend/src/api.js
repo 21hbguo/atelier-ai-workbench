@@ -192,6 +192,12 @@ export const adminAPI = {
   deleteFinanceQuotaRule: ruleId => api.post(`/admin/finance/quota-rules/${ruleId}/delete`),
   financeTasks: (range = '30d', page = 1, size = 20, provider_id, model_id, status) => { const params = { range, page, size }; if (provider_id) params.provider_id = provider_id; if (model_id) params.model_id = model_id; if (status) params.status = status; return api.get('/admin/finance/tasks', { params }) },
   emailVerifications: (page = 1, size = 20, query) => { const params = { page, size }; if (query) params.query = query; return api.get('/admin/email-verifications', { params }) },
+  createClassificationTask: () => api.post('/admin/classification/tasks'),
+  listClassificationTasks: (page = 1, size = 20) => api.get('/admin/classification/tasks', { params: { page, size } }),
+  getClassificationTask: taskId => api.get(`/admin/classification/tasks/${taskId}`),
+  approveClassification: (taskId, resultIds) => api.post(`/admin/classification/tasks/${taskId}/approve`, { result_ids: resultIds }),
+  rejectClassification: (taskId, resultIds) => api.post(`/admin/classification/tasks/${taskId}/reject`, { result_ids: resultIds }),
+  updateClassificationResult: (resultId, data) => api.post(`/admin/classification/results/${resultId}`, data),
 }
 export const configAPI = { get: () => api.get('/config'), admin: () => api.get('/config/admin'), update: data => api.post('/config', data), generationAdmin: () => api.get('/config/generation/admin'), models: () => api.get('/config/models') }
 

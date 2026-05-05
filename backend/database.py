@@ -363,6 +363,35 @@ def init_db():
             )""",
             "CREATE INDEX IF NOT EXISTS idx_ev_codes_email ON email_verification_codes(email)",
             "CREATE INDEX IF NOT EXISTS idx_ev_codes_created_at ON email_verification_codes(created_at DESC)",
+            """CREATE TABLE IF NOT EXISTS classification_tasks (
+                id SERIAL PRIMARY KEY,
+                status VARCHAR(32) NOT NULL DEFAULT 'processing',
+                item_type VARCHAR(32) NOT NULL DEFAULT 'prompt',
+                total_items INTEGER NOT NULL DEFAULT 0,
+                processed_items INTEGER NOT NULL DEFAULT 0,
+                created_by INTEGER REFERENCES users(id),
+                created_at TIMESTAMP DEFAULT NOW(),
+                completed_at TIMESTAMP
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_cls_tasks_status ON classification_tasks(status)",
+            """CREATE TABLE IF NOT EXISTS classification_results (
+                id SERIAL PRIMARY KEY,
+                task_id INTEGER NOT NULL REFERENCES classification_tasks(id) ON DELETE CASCADE,
+                item_id VARCHAR(64) NOT NULL,
+                item_type VARCHAR(32) NOT NULL DEFAULT 'prompt',
+                item_name TEXT,
+                item_prompt TEXT,
+                item_category VARCHAR(64),
+                suggested_category VARCHAR(64),
+                suggested_category_label VARCHAR(128),
+                is_new_category BOOLEAN DEFAULT FALSE,
+                status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                reviewed_at TIMESTAMP,
+                applied_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_cls_results_task ON classification_results(task_id)",
+            "CREATE INDEX IF NOT EXISTS idx_cls_results_status ON classification_results(status)",
         ]
             for sql in statements:
                 conn.execute(sql)

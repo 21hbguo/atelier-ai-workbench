@@ -14,6 +14,7 @@ from backend.services.notification_service import NotificationService
 from backend.services.image_expiry import refresh_permanent_flags_by_filenames
 from backend.services.finance_service import FinanceService
 from backend.services.favorite_service import FavoriteService
+from backend.services.classification_service import ClassificationService
 from backend.config import get_generation_providers, get_generation_models, get_config
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -1209,3 +1210,58 @@ async def list_email_verifications(
                 (size, offset),
             ).fetchall()
         return {"items": [dict(r) for r in rows], "total": total, "page": page, "size": size}
+
+
+# ──────────────────────── AI 分类 ────────────────────────
+
+@router.post("/classification/tasks")
+async def create_classification_task(admin=Depends(require_admin)):
+    try:
+        task = ClassificationService.create_task(admin_id=admin["user_id"])
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    import asyncio
+    asyncio.create_task(ClassificationService.run_classification(task["id"]))
+    return task
+
+
+@router.get("/classification/tasks")
+async def list_classification_tasks(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), admin=Depends(require_admin)):
+    return ClassificationService.list_tasks(page=page, size=size)
+
+
+@router.get("/classification/tasks/{task_id}")
+async def get_classification_task(task_id: int, admin=Depends(require_admin)):
+    task = ClassificationService.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return task
+
+
+@router.post("/classification/tasks/{task_id}/approve")
+async def approve_classification(task_id: int, body: dict, admin=Depends(require_admin)):
+    result_ids = body.get("result_ids", [])
+    if not result_ids:
+        raise HTTPException(status_code=400, detail="请选择要通过的结果")
+    try:
+        return ClassificationService.approve_results(task_id, result_ids)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/classification/tasks/{task_id}/reject")
+async def reject_classification(task_id: int, body: dict, admin=Depends(require_admin)):
+    result_ids = body.get("result_ids", [])
+    if not result_ids:
+        raise HTTPException(status_code=400, detail="请选择要拒绝的结果")
+    return ClassificationService.reject_results(task_id, result_ids)
+
+
+@router.post("/classification/results/{result_id}")
+async def update_classification_result(result_id: int, body: dict, admin=Depends(require_admin)):
+    slug = body.get("suggested_category", "")
+    label = body.get("suggested_category_label", "")
+    is_new = body.get("is_new_category", False)
+    if not slug:
+        raise HTTPException(status_code=400, detail="分类标识不能为空")
+    return ClassificationService.update_result(result_id, slug, label, is_new)

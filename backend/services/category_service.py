@@ -19,6 +19,12 @@ class CategoryService:
             return [{"id": r["id"], "slug": r["slug"], "label": r["label"], "count": r["count"]} for r in rows]
 
     @classmethod
+    def get_all_as_dict(cls) -> Dict[str, str]:
+        with get_db() as conn:
+            rows = conn.execute("SELECT slug, label FROM categories ORDER BY sort_order").fetchall()
+            return {r["slug"]: r["label"] for r in rows}
+
+    @classmethod
     def get_by_slug(cls, slug: str) -> Optional[Dict[str, Any]]:
         with get_db() as conn:
             row = conn.execute("SELECT * FROM categories WHERE slug = %s", (slug,)).fetchone()
