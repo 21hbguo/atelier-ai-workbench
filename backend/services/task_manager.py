@@ -1,10 +1,13 @@
 import json
 import asyncio
+import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from backend.database import get_db
 from backend.config import GENERATED_IMAGES_DIR
 from backend.services.image_gen import ImageGenService
+
+logger = logging.getLogger(__name__)
 
 
 class TaskManager:
@@ -362,20 +365,45 @@ class TaskManager:
                     asyncio.create_task(cls._recover_task(task_id, provider_id, external_task_id, meta, task.get("user_id")))
                     recovered += 1
         if recovered:
-            logger = __import__("logging").getLogger(__name__)
             logger.info(f"[recover] 恢复了 {recovered} 个中断的任务")
 
     @classmethod
     async def _recover_task(cls, task_id, provider_id, external_task_id, meta, user_id):
         from backend.routers.generate import _poll_and_download
+        from backend.services.finance_service import FinanceService
+        from backend.services.points_service import PointsService
+        task = cls.get_task(task_id)
+        cost = (task or {}).get("points_cost") or 0
         try:
             urls = await _poll_and_download(provider_id, external_task_id, task_id, meta, user_id=user_id)
             if urls:
                 cls.update_task(task_id, status="completed", progress=100, result_urls=urls)
+                try:
+                    FinanceService.record_task_entry(task_id, "completed")
+                except Exception:
+                    logger.exception(f"[recover.finance.fail] task={task_id} status=completed")
             else:
                 cls.update_task(task_id, status="failed", error="恢复轮询未获取到结果")
+                try:
+                    FinanceService.record_task_entry(task_id, "failed")
+                except Exception:
+                    logger.exception(f"[recover.finance.fail] task={task_id} status=failed")
+                if user_id and cost > 0:
+                    try:
+                        PointsService.refund(user_id, cost, "恢复失败退还", request_key=f"refund:{task_id}")
+                    except Exception:
+                        logger.exception(f"[recover.refund.fail] task={task_id} user={user_id}")
         except Exception as e:
             cls.update_task(task_id, status="failed", error=f"恢复轮询失败: {e}")
+            try:
+                FinanceService.record_task_entry(task_id, "failed")
+            except Exception:
+                logger.exception(f"[recover.finance.fail] task={task_id} status=failed")
+            if user_id and cost > 0:
+                try:
+                    PointsService.refund(user_id, cost, "恢复失败退还", request_key=f"refund:{task_id}")
+                except Exception:
+                    logger.exception(f"[recover.refund.fail] task={task_id} user={user_id}")
 
 
 # 启动时从数据库加载

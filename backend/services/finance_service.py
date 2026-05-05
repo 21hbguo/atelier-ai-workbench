@@ -92,6 +92,13 @@ class FinanceService:
             conn.execute("DELETE FROM provider_model_quota_rules WHERE id=%s",(rule_id,))
             return True
     @classmethod
+    def _avg_price_per_point(cls,conn):
+        row=conn.execute("SELECT COALESCE(SUM(amount),0) total_rmb,COALESCE(SUM(points),0) total_points FROM recharge_requests WHERE status='approved'").fetchone()
+        if row and cls._safe_float(row["total_points"],0)>0:
+            return round(cls._safe_float(row["total_rmb"],0)/cls._safe_float(row["total_points"],0),8)
+        return 0.0
+
+    @classmethod
     def record_task_entry(cls,task_id:str,status:str):
         with get_db() as conn:
             task=conn.execute("SELECT task_id,user_id,points_cost,params,created_at FROM tasks WHERE task_id=%s FOR UPDATE",(task_id,)).fetchone()
@@ -107,6 +114,9 @@ class FinanceService:
                 return None
             existing=conn.execute("SELECT * FROM generation_finance_entries WHERE task_id=%s FOR UPDATE",(task_id,)).fetchone()
             if existing and str(existing.get("status") or "")==status:return existing
+            charged_points=int(task.get("points_cost") or 0)
+            avg_price=cls._avg_price_per_point(conn)
+            revenue_rmb=round(charged_points*avg_price,6) if avg_price>0 else 0
             quota_used=0.0;quota_shortage=0.0;cost_rmb=None;cost_source="unknown";pricing_source="rule";purchase_batch_id=None;allocations=[]
             rule=None
             if status=="completed" and provider_id:
@@ -128,7 +138,7 @@ class FinanceService:
                         if quota_shortage>0 and not allocations:cost_rmb=None
             elif status=="failed":
                 cost_source="failed_no_charge"
-            entry=conn.execute("INSERT INTO generation_finance_entries (task_id,user_id,model_id,provider_id,status,charged_points,revenue_rmb,cost_rmb,pricing_source,cost_source,purchase_batch_id,quota_used,quota_shortage,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(task_id) DO UPDATE SET user_id=EXCLUDED.user_id,model_id=EXCLUDED.model_id,provider_id=EXCLUDED.provider_id,status=EXCLUDED.status,charged_points=EXCLUDED.charged_points,revenue_rmb=EXCLUDED.revenue_rmb,cost_rmb=EXCLUDED.cost_rmb,pricing_source=EXCLUDED.pricing_source,cost_source=EXCLUDED.cost_source,purchase_batch_id=EXCLUDED.purchase_batch_id,quota_used=EXCLUDED.quota_used,quota_shortage=EXCLUDED.quota_shortage,created_at=EXCLUDED.created_at,updated_at=NOW() RETURNING *",(task_id,task.get("user_id"),model_id,provider_id,status,int(task.get("points_cost") or 0),0,cost_rmb,pricing_source,cost_source,purchase_batch_id,quota_used,quota_shortage,task.get("created_at") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"))).fetchone()
+            entry=conn.execute("INSERT INTO generation_finance_entries (task_id,user_id,model_id,provider_id,status,charged_points,revenue_rmb,cost_rmb,pricing_source,cost_source,purchase_batch_id,quota_used,quota_shortage,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(task_id) DO UPDATE SET user_id=EXCLUDED.user_id,model_id=EXCLUDED.model_id,provider_id=EXCLUDED.provider_id,status=EXCLUDED.status,charged_points=EXCLUDED.charged_points,revenue_rmb=EXCLUDED.revenue_rmb,cost_rmb=EXCLUDED.cost_rmb,pricing_source=EXCLUDED.pricing_source,cost_source=EXCLUDED.cost_source,purchase_batch_id=EXCLUDED.purchase_batch_id,quota_used=EXCLUDED.quota_used,quota_shortage=EXCLUDED.quota_shortage,created_at=EXCLUDED.created_at,updated_at=NOW() RETURNING *",(task_id,task.get("user_id"),model_id,provider_id,status,charged_points,revenue_rmb,cost_rmb,pricing_source,cost_source,purchase_batch_id,quota_used,quota_shortage,task.get("created_at") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"))).fetchone()
             if allocations and entry:
                 conn.execute("DELETE FROM generation_finance_allocations WHERE finance_entry_id=%s",(entry["id"],))
                 for a in allocations:
