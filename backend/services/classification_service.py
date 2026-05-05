@@ -165,36 +165,14 @@ class ClassificationService:
                     for r in batch
                 ]
 
-                # 流式调用 LLM
-                full_text = ""
-                token_count = 0
-                async for chunk in cls.stream_classify_batch(system_prompt, items, use_stream=True):
-                    cls._push_log(task_id, "debug", f"收到 chunk: type={chunk['type']}, content={str(chunk)[:100]}")
-                    if chunk["type"] == "token":
-                        full_text += chunk["text"]
-                        token_count += 1
-                        cls._push_log(task_id, "token", chunk["text"])
-                    elif chunk["type"] == "done":
-                        full_text = chunk.get("full_text", full_text)
-                        cls._push_log(task_id, "info", f"LLM 响应完成，共 {token_count} 个 token")
-                    elif chunk["type"] == "error":
-                        cls._push_log(task_id, "error", chunk["message"])
+                # 调用 LLM（非流式）
+                cls._push_log(task_id, "info", "正在调用 LLM...")
+                results = await cls._classify_batch(system_prompt, items)
+                cls._push_log(task_id, "info", f"LLM 返回 {len(results)} 个结果")
+                if not results:
+                    cls._push_log(task_id, "error", "LLM 返回空结果")
 
-                # 解析结果
-                results = []
-                try:
-                    text = full_text.strip()
-                    cls._push_log(task_id, "debug", f"LLM 原始响应（前 500 字符）: {text[:500]}")
-                    if text.startswith("```"):
-                        lines = text.split("\n")
-                        text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-                        text = text.strip()
-                    results = json.loads(text) if text else []
-                    cls._push_log(task_id, "info", f"解析到 {len(results)} 个分类结果")
-                except json.JSONDecodeError as e:
-                    cls._push_log(task_id, "error", f"JSON 解析失败: {str(e)[:200]}")
-                    cls._push_log(task_id, "debug", f"解析失败的文本: {text[:300]}")
-
+                # 直接使用结果
                 result_map = {r["item_id"]: r for r in results} if results else {}
                 with get_db() as conn:
                     for row in batch:
@@ -217,6 +195,7 @@ class ClassificationService:
                         "UPDATE classification_tasks SET processed_items = %s WHERE id = %s",
                         (processed, task_id),
                     )
+                continue  # 跳过后面的处理
 
             with get_db() as conn:
                 pending = conn.execute(
