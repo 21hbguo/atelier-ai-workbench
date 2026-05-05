@@ -29,6 +29,7 @@ const [rechargeChannel,setRechargeChannel]=useState('wechat')
 const [packageIdx,setPackageIdx]=useState(0)
 const [rechargeAmount,setRechargeAmount]=useState(defaultRechargePackages[0].amount)
 const [rechargePoints,setRechargePoints]=useState(defaultRechargePackages[0].points)
+const [showDonationQr,setShowDonationQr]=useState(false)
 const [payerName,setPayerName]=useState('')
 const [proofUrl,setProofUrl]=useState('')
 const [remark,setRemark]=useState('')
@@ -60,6 +61,7 @@ api.get('/config').then(({data})=>{const packages=Array.isArray(data.recharge_pa
 },[])
 useEffect(()=>{pointsAPI.checkinStatus().then(({data})=>{setCheckedInToday(data.checked_in_today)}).catch(()=>{})},[])
 useEffect(()=>{configAPI.models().then(({data})=>{const rows=data?.models||[];const m={};for(const r of rows)m[r.model_id]=r.label||r.model_id;setModelLabelMap(m)}).catch(()=>{})},[])
+useEffect(()=>{setShowDonationQr(false)},[rechargeChannel])
 useEffect(()=>{
 const handleUpdate=()=>{const u=readUser();if(u)setPoints(u.points??0)}
 window.addEventListener('points-updated',handleUpdate)
@@ -203,7 +205,7 @@ return(
 </div>
 </div>
 <div className="flex gap-2 mb-3">{['wechat','alipay'].map(c=><button key={c} onClick={()=>setRechargeChannel(c)} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${rechargeChannel===c?'text-white':'hover:bg-bg-hover'}`} style={{background:rechargeChannel===c?'var(--accent)':'var(--bg-primary)',color:rechargeChannel===c?'#fff':'var(--text-primary)',border:'1px solid var(--border-color)'}}>{channelLabel[c]}</button>)}</div>
-<div className="mb-3 p-3 rounded-lg border flex items-center justify-center" style={{background:'var(--bg-primary)',borderColor:'var(--border-color)'}}>{activeQr?<img src={activeQr} alt="收款码" className="w-44 h-44 object-contain rounded-lg" />:<span className="text-xs" style={{color:'var(--text-secondary)'}}>管理员暂未配置{channelLabel[rechargeChannel]}收款码</span>}</div>
+<div className="mb-3 p-3 rounded-lg border" style={{background:'var(--bg-primary)',borderColor:'var(--border-color)'}}>{activeQr?(showDonationQr?<div className="flex flex-col items-center gap-3"><img src={activeQr} alt="收款码" className="w-44 h-44 object-contain rounded-lg" /><button type="button" onClick={()=>setShowDonationQr(false)} className="text-xs underline" style={{color:'var(--accent)'}}>隐藏捐赠二维码</button></div>:<div className="flex justify-center"><button type="button" onClick={()=>setShowDonationQr(true)} className="px-3 py-2 rounded-lg text-sm font-medium" style={{background:'var(--accent)',color:'#fff'}}>点击显示捐赠二维码</button></div>):<div className="flex items-center justify-center"><span className="text-xs" style={{color:'var(--text-secondary)'}}>管理员暂未配置{channelLabel[rechargeChannel]}收款码</span></div>}</div>
 {payConfig.donation_contact&&<div className="mb-3 p-3 rounded-lg border" style={{background:'var(--bg-primary)',borderColor:'var(--border-color)'}}><div className="text-xs mb-1" style={{color:'var(--text-secondary)'}}>联系方式</div><div className="text-sm whitespace-pre-wrap break-words" style={{color:'var(--text-primary)'}}>{payConfig.donation_contact}</div></div>}
 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">{rechargePackages.map((pkg,idx)=><button key={`${pkg.label}-${idx}`} onClick={()=>handlePickPackage(idx)} className={`px-2 py-2 rounded-lg text-xs font-medium ${packageIdx===idx?'text-white':'hover:bg-bg-hover'}`} style={{background:packageIdx===idx?'var(--accent)':'var(--bg-primary)',color:packageIdx===idx?'#fff':'var(--text-primary)',border:'1px solid var(--border-color)'}}><div>{pkg.label}</div><div className="mt-0.5">¥{pkg.amount} / {pkg.points}积分</div></button>)}</div>
 <div className="mb-2"><input type="text" value={payerName} onChange={e=>setPayerName(e.target.value)} placeholder="付款人（选填）" className="w-full px-3 py-2 rounded-lg text-sm outline-none transition-colors" style={{background:'var(--bg-primary)',color:'var(--text-primary)',border:'1px solid var(--border-color)'}} /></div>
