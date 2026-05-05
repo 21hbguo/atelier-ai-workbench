@@ -6,8 +6,11 @@ import { TYPE_OPTIONS, STYLE_OPTIONS, MOOD_OPTIONS } from '../data/quickOptions'
 import { promptOptimizeAPI } from '../api'
 import { getCachedImages, setCachedImages, getPendingImage, clearPendingImage } from '../utils/imageDB'
 const OPTIMIZE_DRAFT_KEY='chat_optimize_draft_v1'
-function loadOptimizeDraft(){try{const raw=localStorage.getItem(OPTIMIZE_DRAFT_KEY);if(!raw)return null;const data=JSON.parse(raw);if(!data||typeof data!=='object')return null;const versions=Array.isArray(data.optimizeResults?.versions)?data.optimizeResults.versions.filter(v=>typeof v==='string'&&v.trim()):null;const streamingVersions=Array.isArray(data.streamingVersions)?data.streamingVersions.map(v=>({text:typeof v?.text==='string'?v.text:'',done:!!v?.done})).filter(v=>v.text||v.done):[];const optimizeResults=versions?.length?{versions,original:typeof data.optimizeResults.original==='string'?data.optimizeResults.original:''}:null;const showOptimizeOverlay=!!(data.showOptimizeOverlay&&(optimizeResults||streamingVersions.length));return{optimizeResults,streamingVersions,isStreaming:false,showOptimizeOverlay,restored:showOptimizeOverlay}}catch{return null}}
-function saveOptimizeDraft(data){try{if(!data?.showOptimizeOverlay||(!data.optimizeResults&&!data.streamingVersions?.length)){localStorage.removeItem(OPTIMIZE_DRAFT_KEY);return}localStorage.setItem(OPTIMIZE_DRAFT_KEY,JSON.stringify({showOptimizeOverlay:true,optimizeResults:data.optimizeResults&&Array.isArray(data.optimizeResults.versions)&&data.optimizeResults.versions.length?{versions:data.optimizeResults.versions,original:data.optimizeResults.original||''}:null,streamingVersions:Array.isArray(data.streamingVersions)?data.streamingVersions.map(v=>({text:typeof v?.text==='string'?v.text:'',done:!!v?.done})).filter(v=>v.text||v.done):[],savedAt:Date.now()}))}catch{}}
+function normalizeOptimizeResults(data,fallbackOriginal=''){const versions=Array.isArray(data?.versions)?data.versions.map(v=>typeof v==='string'?v.trim():(typeof v?.text==='string'?v.text.trim():'' )).filter(Boolean):[];return versions.length?{versions,original:typeof data?.original==='string'?data.original:fallbackOriginal}:null}
+function normalizeStreamingVersions(data){return Array.isArray(data)?data.map(v=>({text:typeof v?.text==='string'?v.text:'',done:!!v?.done})).filter(v=>v.text||v.done):[]}
+function normalizeMessage(value,fallback='操作失败'){if(Array.isArray(value))return value.map(v=>normalizeMessage(v,'')).filter(Boolean).join('；')||fallback;if(value&&typeof value==='object'){if(typeof value.message==='string'&&value.message.trim())return value.message;if(typeof value.detail==='string'&&value.detail.trim())return value.detail;if(typeof value.msg==='string'&&value.msg.trim())return value.msg;const parts=[value.loc?String(Array.isArray(value.loc)?value.loc.join('.') : value.loc):'',typeof value.msg==='string'?value.msg:''].filter(Boolean);return parts.join('：')||fallback}return typeof value==='string'&&value.trim()?value:fallback}
+function loadOptimizeDraft(){try{const raw=localStorage.getItem(OPTIMIZE_DRAFT_KEY);if(!raw)return null;const data=JSON.parse(raw);if(!data||typeof data!=='object')return null;const optimizeResults=normalizeOptimizeResults(data.optimizeResults);const streamingVersions=normalizeStreamingVersions(data.streamingVersions);const showOptimizeOverlay=!!(data.showOptimizeOverlay&&(optimizeResults||streamingVersions.length));const showOptimizeModal=!!data.showOptimizeModal;const optimizeCount=Math.min(3,Math.max(1,Number(data.optimizeCount)||2));return{optimizeResults,streamingVersions,isStreaming:false,showOptimizeOverlay,showOptimizeModal,optimizeCount,restored:showOptimizeOverlay||showOptimizeModal}}catch{return null}}
+function saveOptimizeDraft(data){try{const optimizeResults=normalizeOptimizeResults(data?.optimizeResults);const streamingVersions=normalizeStreamingVersions(data?.streamingVersions);const showOptimizeOverlay=!!data?.showOptimizeOverlay;const showOptimizeModal=!!data?.showOptimizeModal;if(!showOptimizeOverlay&&!showOptimizeModal&&!optimizeResults&&!streamingVersions.length){localStorage.removeItem(OPTIMIZE_DRAFT_KEY);return}localStorage.setItem(OPTIMIZE_DRAFT_KEY,JSON.stringify({showOptimizeOverlay,showOptimizeModal,optimizeResults,streamingVersions,optimizeCount:Math.min(3,Math.max(1,Number(data?.optimizeCount)||2)),savedAt:Date.now()}))}catch{}}
 function clearOptimizeDraft(){try{localStorage.removeItem(OPTIMIZE_DRAFT_KEY)}catch{}}
 
 function getImageExt(type, name = '') {
@@ -30,14 +33,14 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const [prompt, setPrompt] = useState('')
   const [images, setImages] = useState([])
   const [showParams, setShowParams] = useState(false)
-  const [params, setParams] = useState({ size: 'auto', model_id: 'image-default', roll_count: 5, optimize_stream: true })
+  const [params, setParams] = useState({ size: 'auto', model_id: 'image-default', roll_count: 5, optimize_stream: false })
   const [shareToSquare, setShareToSquare] = useState(false)
   const [lightbox, setLightbox] = useState(null)
   const [optimizeLoading, setOptimizeLoading] = useState(false)
   const [optimizeResults, setOptimizeResults] = useState(initialOptimizeDraft?.optimizeResults||null)
   const [showOptimizeOverlay, setShowOptimizeOverlay] = useState(initialOptimizeDraft?.showOptimizeOverlay||false)
-  const [showOptimizeModal, setShowOptimizeModal] = useState(false)
-  const [optimizeCount, setOptimizeCount] = useState(2)
+  const [showOptimizeModal, setShowOptimizeModal] = useState(initialOptimizeDraft?.showOptimizeModal||false)
+  const [optimizeCount, setOptimizeCount] = useState(initialOptimizeDraft?.optimizeCount||2)
   const [streamingVersions, setStreamingVersions] = useState(initialOptimizeDraft?.streamingVersions||[])
   const [isStreaming, setIsStreaming] = useState(initialOptimizeDraft?.isStreaming||false)
   const [toast, setToast] = useState(null)
@@ -308,11 +311,11 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     return () => clearTimeout(t)
   }, [toast])
 
-  useEffect(() => { saveOptimizeDraft({ showOptimizeOverlay, optimizeResults, streamingVersions }) }, [showOptimizeOverlay, optimizeResults, streamingVersions])
+  useEffect(() => { saveOptimizeDraft({ showOptimizeOverlay, showOptimizeModal, optimizeResults, streamingVersions, optimizeCount }) }, [showOptimizeOverlay, showOptimizeModal, optimizeResults, streamingVersions, optimizeCount])
 
   useEffect(() => {
     if (!initialOptimizeDraft?.restored) return
-    setToast({ message: '已恢复上次优化结果', type: 'success' })
+    setToast({ message: initialOptimizeDraft.showOptimizeModal ? '已恢复上次优化弹窗' : '已恢复上次优化结果', type: 'success' })
   }, [])
 
   const handleOptimize = useCallback(() => {
@@ -344,11 +347,12 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
         },
         onDone: (data) => {
           doneCalled = true
-          setOptimizeResults({ versions: data.versions, original: fullPrompt })
+          const nextResults=normalizeOptimizeResults({ versions: data.versions, original: fullPrompt }, fullPrompt)
+          setOptimizeResults(nextResults)
           setStreamingVersions([])
           setIsStreaming(false)
           setOptimizeLoading(false)
-          saveOptimizeDraft({showOptimizeOverlay:true,optimizeResults:{versions:data.versions,original:fullPrompt},streamingVersions:[]})
+          saveOptimizeDraft({showOptimizeOverlay:true,showOptimizeModal:false,optimizeResults:nextResults,streamingVersions:[],optimizeCount})
           if (data.points_balance != null) {
             const u = JSON.parse(localStorage.getItem('user') || 'null')
             if (u) { u.points = data.points_balance; localStorage.setItem('user', JSON.stringify(u)) }
@@ -361,17 +365,18 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
           setStreamingVersions([])
           try {
             const { data } = await promptOptimizeAPI.optimize(fullPrompt, optimizeCount)
-            setOptimizeResults(data)
+            const nextResults=normalizeOptimizeResults(data, fullPrompt)
+            setOptimizeResults(nextResults)
             setStreamingVersions([])
             setShowOptimizeOverlay(true)
-            saveOptimizeDraft({showOptimizeOverlay:true,optimizeResults:data,streamingVersions:[]})
+            saveOptimizeDraft({showOptimizeOverlay:true,showOptimizeModal:false,optimizeResults:nextResults,streamingVersions:[],optimizeCount})
             if (data.points_balance != null) {
               const u = JSON.parse(localStorage.getItem('user') || 'null')
               if (u) { u.points = data.points_balance; localStorage.setItem('user', JSON.stringify(u)) }
               window.dispatchEvent(new Event('points-updated'))
             }
           } catch {
-            setToast({ message: detail || '优化失败，请重试', type: 'error' })
+            setToast({ message: normalizeMessage(detail,'优化失败，请重试'), type: 'error' })
             setShowOptimizeOverlay(false)
           } finally {
             setOptimizeLoading(false)
@@ -385,17 +390,18 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     } else {
       try {
         const { data } = await promptOptimizeAPI.optimize(fullPrompt, optimizeCount)
-        setOptimizeResults(data)
+        const nextResults=normalizeOptimizeResults(data, fullPrompt)
+        setOptimizeResults(nextResults)
         setStreamingVersions([])
         setShowOptimizeOverlay(true)
-        saveOptimizeDraft({showOptimizeOverlay:true,optimizeResults:data,streamingVersions:[]})
+        saveOptimizeDraft({showOptimizeOverlay:true,showOptimizeModal:false,optimizeResults:nextResults,streamingVersions:[],optimizeCount})
         if (data.points_balance != null) {
           const u = JSON.parse(localStorage.getItem('user') || 'null')
           if (u) { u.points = data.points_balance; localStorage.setItem('user', JSON.stringify(u)) }
           window.dispatchEvent(new Event('points-updated'))
         }
       } catch (e) {
-        setToast({ message: typeof e?.message === 'string' ? e.message : '优化失败，请重试', type: 'error' })
+        setToast({ message: normalizeMessage(e?.message,'优化失败，请重试'), type: 'error' })
       } finally {
         setOptimizeLoading(false)
       }
@@ -475,7 +481,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   return (
     <>
       <div className="w-full px-4 pt-2 pb-2 relative">
-        {showOptimizeOverlay && (isStreaming || optimizeResults) && (() => {
+        {showOptimizeOverlay && (isStreaming || optimizeResults || streamingVersions.length > 0) && (() => {
           const displayVersions = optimizeResults
             ? optimizeResults.versions.map((v, i) => ({ text: v, done: true }))
             : streamingVersions
@@ -486,12 +492,12 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
                   <div className="flex items-center gap-1.5">
                     <Sparkles size={14} style={{ color: 'var(--accent)' }} />
                     <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>AI 优化结果</span>
-                    {isStreaming
+                    {(isStreaming||(!optimizeResults&&streamingVersions.some(v=>!v.done)))
                       ? <span className="text-[10px] px-1.5 py-0.5 rounded-full animate-pulse" style={{ background: 'var(--accent)', color: '#fff', opacity: 0.85 }}>生成中</span>
-                      : <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: 'var(--accent)', color: '#fff', opacity: 0.85 }}>{optimizeResults.versions.length}</span>
+                      : <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: 'var(--accent)', color: '#fff', opacity: 0.85 }}>{optimizeResults?.versions?.length||displayVersions.length}</span>
                     }
                   </div>
-                  {!isStreaming && <button onClick={handleDismissOptimize} className="p-1 rounded-lg hover:bg-bg-hover transition-colors"><X size={14} style={{ color: 'var(--text-secondary)' }} /></button>}
+                  {!(isStreaming||(!optimizeResults&&streamingVersions.some(v=>!v.done))) && <button onClick={handleDismissOptimize} className="p-1 rounded-lg hover:bg-bg-hover transition-colors"><X size={14} style={{ color: 'var(--text-secondary)' }} /></button>}
                 </div>
                 <div className="p-2 space-y-1.5 max-h-56 overflow-y-auto">
                   {displayVersions.map((v, i) => (

@@ -84,6 +84,7 @@ export default function ChatPage() {
   const [loadError, setLoadError] = useState('')
   const [selectedCardIndex, setSelectedCardIndex] = useState(null)
   const [detailCards, setDetailCards] = useState([])
+  const [downloadProgress, setDownloadProgress] = useState({ open: false, phase: 'idle', current: 0, total: 0, percent: 0, filename: '' })
   const feedRef = useRef(null)
   const cardGridRef = useRef(null)
   const { selectionRect, dragSelected, wasDraggedRef } = useDragSelection({
@@ -548,6 +549,7 @@ export default function ChatPage() {
   }, [checked.size, visibleTasks])
 
   const handleBatchDownload = useCallback(async () => {
+    if (downloadProgress.open) return
     const files = []
     for (const task of visibleTasks) {
       if (!checked.has(task.task_id)) continue
@@ -570,24 +572,43 @@ export default function ChatPage() {
     }
 
     if (asZip) {
-      const zip = new JSZip()
-      for (const file of files) {
-        const res = await fetch(file.url)
-        const blob = await res.blob()
-        zip.file(file.name, blob)
+      try {
+        const zip = new JSZip()
+        setDownloadProgress({ open: true, phase: 'download', current: 0, total: files.length, percent: 0, filename: '' })
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i]
+          setDownloadProgress(v => ({ ...v, phase: 'download', current: i, total: files.length, percent: Math.min(45, Math.round(i / files.length * 45)), filename: file.name }))
+          const { data: blob } = await imageAPI.getBlobByUrl(file.url)
+          zip.file(file.name, blob)
+          setDownloadProgress(v => ({ ...v, phase: 'download', current: i + 1, total: files.length, percent: Math.min(45, Math.round((i + 1) / files.length * 45)), filename: file.name }))
+        }
+        const content = await zip.generateAsync({ type: 'blob' }, meta => setDownloadProgress(v => ({ ...v, phase: 'zip', percent: Math.max(45, Math.min(99, 45 + Math.round((meta.percent || 0) * 0.55))) })))
+        setDownloadProgress(v => ({ ...v, phase: 'done', percent: 100, current: files.length, total: files.length }))
+        saveAs(content, `images_${Date.now()}.zip`)
+      } catch (e) {
+        dialog.alert(e?.message || '打包下载失败')
+      } finally {
+        setTimeout(() => setDownloadProgress({ open: false, phase: 'idle', current: 0, total: 0, percent: 0, filename: '' }), 400)
       }
-      const content = await zip.generateAsync({ type: 'blob' })
-      saveAs(content, `images_${Date.now()}.zip`)
     } else {
-      for (const file of files) {
-        const a = document.createElement('a')
-        a.href = file.url
-        a.download = file.name
-        a.click()
-        await new Promise(r => setTimeout(r, 300))
+      try {
+        setDownloadProgress({ open: true, phase: 'single', current: 0, total: files.length, percent: 0, filename: '' })
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i]
+          setDownloadProgress(v => ({ ...v, phase: 'single', current: i, total: files.length, percent: Math.min(85, Math.round(i / files.length * 85)), filename: file.name }))
+          const { data: blob } = await imageAPI.getBlobByUrl(file.url)
+          setDownloadProgress(v => ({ ...v, phase: 'single', current: i + 1, total: files.length, percent: Math.min(95, Math.round((i + 1) / files.length * 95)), filename: file.name }))
+          saveAs(blob, file.name)
+          await new Promise(r => setTimeout(r, 180))
+        }
+        setDownloadProgress(v => ({ ...v, phase: 'done', current: files.length, total: files.length, percent: 100 }))
+      } catch (e) {
+        dialog.alert(e?.message || '下载失败')
+      } finally {
+        setTimeout(() => setDownloadProgress({ open: false, phase: 'idle', current: 0, total: 0, percent: 0, filename: '' }), 400)
       }
     }
-  }, [checked, visibleTasks, dialog])
+  }, [checked, visibleTasks, dialog, downloadProgress.open])
 
   const handleBatchDelete = useCallback(async () => {
     if (!await dialog.confirm(`确定删除选中的 ${checked.size} 项？`)) return
@@ -678,7 +699,7 @@ export default function ChatPage() {
           </button>
           <div className="ml-auto flex items-center gap-2">
             <button onClick={handleBatchExtend} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--color-info)' }}>延长3天</button>
-            <button onClick={handleBatchDownload} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}><Download size={14} /> 下载</button>
+            <button onClick={handleBatchDownload} disabled={downloadProgress.open} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50" style={{ background: 'var(--accent)' }}><Download size={14} /> {downloadProgress.open ? '处理中' : '下载'}</button>
             <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-[var(--color-error)] hover:bg-[var(--color-error)]/10"><Trash2 size={14} /> 删除</button>
           </div>
         </div>
@@ -736,6 +757,7 @@ export default function ChatPage() {
         )}
       </div>
       {loadError && <div className="mx-4 mt-2 px-3 py-2 rounded-lg text-xs" style={{ background: 'color-mix(in srgb, var(--color-warning) 12%, transparent)', color: 'var(--color-warning)' }}>{loadError}</div>}
+      {downloadProgress.open && <div className="fixed left-4 right-4 bottom-24 sm:left-auto sm:right-4 sm:bottom-6 sm:w-80 z-40 pointer-events-none"><div className="rounded-2xl p-4 border shadow-lg" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}><div className="flex items-center justify-between gap-3"><div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{downloadProgress.phase === 'zip' ? '正在打包 ZIP' : downloadProgress.phase === 'single' ? '正在逐个下载' : downloadProgress.phase === 'done' ? '处理完成' : '正在准备下载'}</div><div className="text-xs tabular-nums" style={{ color: 'var(--accent)' }}>{downloadProgress.percent}%</div></div><div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{downloadProgress.phase === 'zip' ? `已下载 ${downloadProgress.total}/${downloadProgress.total} 张，正在压缩` : `已处理 ${downloadProgress.current}/${downloadProgress.total} 张`}</div>{downloadProgress.filename && <div className="mt-1 text-[11px] truncate" style={{ color: 'var(--text-secondary)', opacity: 0.8 }}>{downloadProgress.filename}</div>}<div className="mt-3 h-2 rounded-full overflow-hidden" style={{ background: 'var(--border-color)' }}><div className="h-full rounded-full transition-all duration-300" style={{ width: `${downloadProgress.percent}%`, background: 'var(--accent)' }} /></div></div></div>}
       <div ref={feedRef} className="flex-1 min-h-0 overflow-y-auto px-4 pb-56 lg:pb-6">
         {!loaded ? (
           <div className="flex justify-center items-center h-full"><div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} /></div>
