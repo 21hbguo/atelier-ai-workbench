@@ -45,6 +45,13 @@ tar czf "$OUTPUT" \
     --exclude='node_modules' \
     --exclude='frontend/node_modules' \
     --exclude='*.tar.gz' \
+    --exclude='.claude' \
+    --exclude='markdown' \
+    --exclude='data/uploads' \
+    --exclude='data/images' \
+    --exclude='data/thumbs' \
+    --exclude='data/config.json' \
+    --exclude='data/evo_thumbs' \
     "$PROJECT_NAME"
 
 SIZE=$(du -h "$OUTPUT" | cut -f1)
