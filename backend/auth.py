@@ -23,7 +23,7 @@ COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax")
 TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "false").lower() in {"1", "true", "yes", "on"}
 TRUSTED_PROXY_IPS = {i.strip() for i in os.getenv("TRUSTED_PROXY_IPS", "127.0.0.1,::1").split(",") if i.strip()}
 security = HTTPBearer(auto_error=False)
-ACCOUNT_RE = re.compile(r"^[A-Za-z0-9_]{5,16}$")
+ACCOUNT_RE = re.compile(r"^[A-Za-z0-9_]{4,16}$")
 
 
 def _save_jwt_secret(secret):
@@ -71,7 +71,7 @@ def normalize_account(account: str) -> str:
 def validate_account(account: str) -> str:
     account = normalize_account(account)
     if not ACCOUNT_RE.fullmatch(account):
-        raise HTTPException(status_code=400, detail="账号需为5到16位字母、数字或下划线")
+        raise HTTPException(status_code=400, detail="账号需为4到16位字母、数字或下划线")
     return account
 
 

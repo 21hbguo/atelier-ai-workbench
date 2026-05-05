@@ -669,7 +669,7 @@ export default function AdminPage() {
   }
   const handleCreateUser = async () => {
     const payload = { account: (createUserDraft.username || '').trim(), password: (createUserDraft.password || '').trim(), nickname: (createUserDraft.nickname || '').trim() }
-    if (!/^[A-Za-z0-9_]{5,16}$/.test(payload.account)) { dialog.alert('账号需为5到16位字母、数字或下划线'); return }
+    if (!/^[A-Za-z0-9_]{4,16}$/.test(payload.account)) { dialog.alert('账号需为4到16位字母、数字或下划线'); return }
     if (payload.password.length < 6 || payload.password.length > 50) { dialog.alert('密码长度需在6到50位之间'); return }
     setCreatingUser(true)
     try {

@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
-import { Paperclip, X, Settings, Send, Maximize2, Share2, Loader2, Sparkles, Palette, Wind } from 'lucide-react'
+import { Paperclip, X, Settings, Send, Maximize2, Share2, Loader2, Sparkles, Palette, Wind, Layers } from 'lucide-react'
 import ParamPanel from './ParamPanel'
 import QuickSelector from './QuickSelector'
-import { STYLE_OPTIONS, MOOD_OPTIONS } from '../data/quickOptions'
+import { TYPE_OPTIONS, STYLE_OPTIONS, MOOD_OPTIONS } from '../data/quickOptions'
 import { promptOptimizeAPI } from '../api'
 import { getCachedImages, setCachedImages, getPendingImage, clearPendingImage } from '../utils/imageDB'
 
@@ -34,6 +34,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const [showOptimizeModal, setShowOptimizeModal] = useState(false)
   const [optimizeCount, setOptimizeCount] = useState(2)
   const [toast, setToast] = useState(null)
+  const [type, setType] = useState(() => localStorage.getItem('cached_type') || '')
   const [style, setStyle] = useState(() => localStorage.getItem('cached_style') || '')
   const [mood, setMood] = useState(() => localStorage.getItem('cached_mood') || '')
   const [showSelector, setShowSelector] = useState(null)
@@ -170,6 +171,11 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   }, [prompt])
 
   useEffect(() => {
+    if (type) localStorage.setItem('cached_type', type)
+    else localStorage.removeItem('cached_type')
+  }, [type])
+
+  useEffect(() => {
     if (style) localStorage.setItem('cached_style', style)
     else localStorage.removeItem('cached_style')
   }, [style])
@@ -304,16 +310,21 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     setShowOptimizeModal(false)
     setOptimizeLoading(true)
     try {
-      const fullPrompt = `${style ? `风格为${style} ` : ''}${mood ? `氛围为${mood} ` : ''}${prompt.trim()}`.trim()
+      const fullPrompt = `${type ? `类型为${type} ` : ''}${style ? `风格为${style} ` : ''}${mood ? `氛围为${mood} ` : ''}${prompt.trim()}`.trim()
       const { data } = await promptOptimizeAPI.optimize(fullPrompt, optimizeCount)
       setOptimizeResults(data)
       setShowOptimizeOverlay(true)
+      if (data.points_balance != null) {
+        const u = JSON.parse(localStorage.getItem('user') || 'null')
+        if (u) { u.points = data.points_balance; localStorage.setItem('user', JSON.stringify(u)) }
+        window.dispatchEvent(new Event('points-updated'))
+      }
     } catch (e) {
       setToast({ message: typeof e?.message === 'string' ? e.message : '优化失败，请重试', type: 'error' })
     } finally {
       setOptimizeLoading(false)
     }
-  }, [prompt, optimizeLoading, optimizeCount])
+  }, [prompt, type, style, mood, optimizeLoading, optimizeCount])
 
   const handleSelectOptimized = useCallback((text) => {
     let cleaned = text
@@ -322,12 +333,13 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
       const re = new RegExp(`^${label}为${val}[,，\\s]*`)
       return s.replace(re, '')
     }
+    cleaned = stripPrefix(cleaned, '类型', type)
     cleaned = stripPrefix(cleaned, '风格', style)
     cleaned = stripPrefix(cleaned, '氛围', mood)
     setPrompt(cleaned)
     setShowOptimizeOverlay(false)
     setOptimizeResults(null)
-  }, [style, mood])
+  }, [type, style, mood])
 
   const handleDismissOptimize = useCallback(() => {
     setShowOptimizeOverlay(false)
@@ -352,19 +364,21 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     appendImages(valid.map(f => ({ file: f, preview: URL.createObjectURL(f) })))
   }, [appendImages])
 
-  const canSend = prompt.trim() || style || mood
+  const canSend = prompt.trim() || type || style || mood
   const handleSend = async (batch = false) => {
     if (!canSend || loading) return
-    const fullPrompt = `${style ? `风格为${style} ` : ''}${mood ? `氛围为${mood} ` : ''}${prompt.trim()}`.trim()
+    const fullPrompt = `${type ? `类型为${type} ` : ''}${style ? `风格为${style} ` : ''}${mood ? `氛围为${mood} ` : ''}${prompt.trim()}`.trim()
     const ok = await onSubmit({ prompt: fullPrompt, images, params, shareToSquare, rollCount: batch ? Math.min(5, Math.max(2, Number(params.roll_count) || 5)) : 1 })
     if (ok === false) return
     setPrompt('')
     setImages([])
+    setType('')
     setStyle('')
     setMood('')
     localStorage.removeItem('ref_images')
     localStorage.removeItem('ref_image_url')
     localStorage.removeItem('ref_image_name')
+    setCachedImages([]).catch(() => {})
   }
   const batchCount = Math.min(5, Math.max(2, Number(params.roll_count) || 5))
 
@@ -447,13 +461,25 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
         <div className="flex gap-2 mb-1.5 px-1 relative">
           {showSelector && (
             <QuickSelector
-              title={showSelector === 'style' ? '选择风格' : '选择氛围'}
-              options={showSelector === 'style' ? STYLE_OPTIONS : MOOD_OPTIONS}
-              selected={showSelector === 'style' ? style : mood}
-              onSelect={(val) => { showSelector === 'style' ? setStyle(val) : setMood(val) }}
+              title={showSelector === 'type' ? '选择类型' : showSelector === 'style' ? '选择风格' : '选择氛围'}
+              options={showSelector === 'type' ? TYPE_OPTIONS : showSelector === 'style' ? STYLE_OPTIONS : MOOD_OPTIONS}
+              selected={showSelector === 'type' ? type : showSelector === 'style' ? style : mood}
+              onSelect={(val) => { showSelector === 'type' ? setType(val) : showSelector === 'style' ? setStyle(val) : setMood(val) }}
               onClose={() => setShowSelector(null)}
             />
           )}
+          <button
+            onClick={() => setShowSelector(showSelector === 'type' ? null : 'type')}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
+            style={{
+              background: type ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'var(--bg-card)',
+              borderColor: type ? 'var(--accent)' : 'var(--border-color)',
+              color: type ? 'var(--accent)' : 'var(--text-secondary)',
+            }}
+          >
+            <Layers size={13} />
+            <span>{type || '类型'}</span>
+          </button>
           <button
             onClick={() => setShowSelector(showSelector === 'style' ? null : 'style')}
             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
@@ -498,8 +524,14 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
             </div>
           )}
           <div className="px-2 pt-2 pb-2">
-            {(style || mood) && (
+            {(type || style || mood) && (
               <div className="flex gap-1.5 mb-1 flex-wrap">
+                {type && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ background: 'color-mix(in srgb, var(--accent) 15%, transparent)', color: 'var(--accent)' }}>
+                    {type}
+                    <button onClick={() => setType('')} className="ml-0.5 hover:opacity-70"><X size={11} /></button>
+                  </span>
+                )}
                 {style && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ background: 'color-mix(in srgb, var(--accent) 15%, transparent)', color: 'var(--accent)' }}>
                     {style}

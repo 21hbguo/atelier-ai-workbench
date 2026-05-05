@@ -5,7 +5,7 @@ import Pagination from '../components/Pagination'
 import { useAppDialog } from '../components/AppDialogProvider'
 import api, { pointsAPI, uploadAPI, accountAPI, configAPI } from '../api'
 import { readUser } from '../auth'
-const typeMap={register_bonus:{label:'注册赠送',color:'var(--accent)'},daily_checkin:{label:'每日签到',color:'var(--accent)'},generate_consume:{label:'生成消耗',color:'var(--color-error)'},image_expire_extend:{label:'延长有效期',color:'var(--color-error)'},generate_refund:{label:'生成退款',color:'var(--color-success)'},redeem_code:{label:'兑换码兑换',color:'var(--accent)'},admin_grant:{label:'管理员调整',color:'#8B7BA8'},migration:{label:'历史补偿',color:'var(--accent)'},migration_bonus:{label:'历史补偿',color:'var(--accent)'},recharge_pending:{label:'充值待审核',color:'var(--color-warning)'}}
+const typeMap={register_bonus:{label:'注册赠送',color:'var(--accent)'},daily_checkin:{label:'每日签到',color:'var(--accent)'},generate_consume:{label:'生成消耗',color:'var(--color-error)'},prompt_optimize:{label:'提示词优化',color:'var(--color-error)'},image_expire_extend:{label:'延长有效期',color:'var(--color-error)'},generate_refund:{label:'生成退款',color:'var(--color-success)'},redeem_code:{label:'兑换码兑换',color:'var(--accent)'},admin_grant:{label:'管理员调整',color:'#8B7BA8'},migration:{label:'历史补偿',color:'var(--accent)'},migration_bonus:{label:'历史补偿',color:'var(--accent)'},recharge_pending:{label:'充值待审核',color:'var(--color-warning)'}}
 const defaultRechargePackages=[{amount:9.9,points:120,label:'体验包'},{amount:29.9,points:400,label:'进阶包'},{amount:59.9,points:900,label:'超值包'}]
 const channelLabel={wechat:'微信',alipay:'支付宝'}
 const statusMap={pending:{label:'待审核',color:'var(--color-warning)'},approved:{label:'已通过',color:'var(--color-success)'},rejected:{label:'已拒绝',color:'var(--color-error)'}}

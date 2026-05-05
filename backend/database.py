@@ -463,8 +463,8 @@ def create_admin_if_not_exists():
     if not admin_username or not admin_password:
         print("[WARNING] ADMIN_USERNAME 或 ADMIN_PASSWORD 未设置，跳过管理员创建")
         return
-    if not re.fullmatch(r"[A-Za-z0-9_]{5,16}", admin_username):
-        print("[WARNING] ADMIN_USERNAME 需为5到16位字母、数字或下划线，跳过管理员创建")
+    if not re.fullmatch(r"[A-Za-z0-9_]{4,16}", admin_username):
+        print("[WARNING] ADMIN_USERNAME 需为4到16位字母、数字或下划线，跳过管理员创建")
         return
     with get_db() as conn:
         admin = conn.execute(

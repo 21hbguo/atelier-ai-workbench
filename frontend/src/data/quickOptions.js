@@ -1,3 +1,44 @@
+export const TYPE_OPTIONS = [
+  // 海报设计
+  { label: '宣传海报', category: '海报设计' },
+  { label: '活动海报', category: '海报设计' },
+  { label: '电影海报', category: '海报设计' },
+  { label: '音乐海报', category: '海报设计' },
+  { label: '论文海报', category: '海报设计' },
+  { label: '商业广告', category: '海报设计' },
+  // UI/UX设计
+  { label: '手机App界面', category: 'UI/UX设计' },
+  { label: '网页设计', category: 'UI/UX设计' },
+  { label: '桌面软件界面', category: 'UI/UX设计' },
+  { label: '图标设计', category: 'UI/UX设计' },
+  { label: '仪表盘界面', category: 'UI/UX设计' },
+  // 摄影
+  { label: '人像摄影', category: '摄影' },
+  { label: '风景摄影', category: '摄影' },
+  { label: '街头摄影', category: '摄影' },
+  { label: '产品摄影', category: '摄影' },
+  { label: '微距摄影', category: '摄影' },
+  { label: '航拍摄影', category: '摄影' },
+  // 插画
+  { label: '儿童绘本', category: '插画' },
+  { label: '编辑插画', category: '插画' },
+  { label: '概念设计', category: '插画' },
+  { label: '科技插画', category: '插画' },
+  { label: '美食插画', category: '插画' },
+  // 品牌设计
+  { label: 'Logo设计', category: '品牌设计' },
+  { label: '名片设计', category: '品牌设计' },
+  { label: '包装设计', category: '品牌设计' },
+  { label: '字体设计', category: '品牌设计' },
+  { label: 'VI视觉系统', category: '品牌设计' },
+  // 建筑与空间
+  { label: '建筑外观', category: '建筑与空间' },
+  { label: '室内设计', category: '建筑与空间' },
+  { label: '景观设计', category: '建筑与空间' },
+  { label: '城市规划', category: '建筑与空间' },
+  { label: '展厅设计', category: '建筑与空间' },
+]
+
 export const STYLE_OPTIONS = [
   // 传统艺术类
   { label: '水墨风', category: '传统艺术' },

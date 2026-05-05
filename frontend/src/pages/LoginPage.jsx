@@ -4,7 +4,7 @@ import { authAPI, configAPI } from '../api'
 import { writeUser } from '../auth'
 
 export default function LoginPage() {
-  const accountRe = /^[A-Za-z0-9_]{5,16}$/
+  const accountRe = /^[A-Za-z0-9_]{4,16}$/
   const [isRegister, setIsRegister] = useState(false)
   const [registerEnabled, setRegisterEnabled] = useState(true)
   const [account, setAccount] = useState('')
@@ -34,7 +34,7 @@ export default function LoginPage() {
 
   const handleSendCode = async () => {
     if (!email || cooldown > 0) return
-    if (!accountRe.test((account || '').trim())) { setError('请先填写账号（5-16位字母、数字或下划线）'); return }
+    if (!accountRe.test((account || '').trim())) { setError('请先填写账号（4-16位字母、数字或下划线）'); return }
     if ((password || '').length < 6) { setError('请先设置密码（至少6个字符）'); return }
     setSendingCode(true)
     setError('')
@@ -52,7 +52,7 @@ export default function LoginPage() {
     e.preventDefault()
     setError('')
     if (isRegister && !registerEnabled) { setError('当前已关闭注册'); return }
-    if (isRegister && !accountRe.test((account || '').trim())) { setError('账号需为5到16位字母、数字或下划线'); return }
+    if (isRegister && !accountRe.test((account || '').trim())) { setError('账号需为4到16位字母、数字或下划线'); return }
     setLoading(true)
 
     try {
@@ -82,6 +82,9 @@ export default function LoginPage() {
           <p className="text-xs mt-3" style={{ color: 'var(--text-secondary)' }}>
             {isRegister ? '创建账号，开始你的 AI 创作之旅' : registerEnabled ? '欢迎回来，继续你的创作' : '当前仅开放登录，注册已关闭'}
           </p>
+          <p className="text-[11px] mt-2" style={{ color: 'var(--text-secondary)', opacity: 0.6 }}>
+            无需复杂配置，一句话或一张图，即刻开启灵感之旅
+          </p>
         </div>
 
         <div className="login-card rounded-2xl p-6" style={{ background: 'var(--bg-ai-bubble)', boxShadow: 'var(--shadow-lg)' }}>
@@ -94,7 +97,7 @@ export default function LoginPage() {
                 onChange={(e) => setAccount(e.target.value)}
                 className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
                 style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent)' }}
-                placeholder="5-16 位字母、数字或下划线"
+                placeholder="4-16 位字母、数字或下划线"
                 required
                 minLength={5}
                 maxLength={16}
