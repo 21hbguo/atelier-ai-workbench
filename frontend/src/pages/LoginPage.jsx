@@ -150,8 +150,8 @@ export default function LoginPage() {
                 style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent)' }}
                 placeholder={isRegister ? '4-16 位字母、数字或下划线' : '输入账号或注册邮箱'}
                 required
-                minLength={5}
-                maxLength={16}
+                minLength={isRegister ? 5 : 3}
+                maxLength={isRegister ? 16 : 255}
               />
             </div>
 
