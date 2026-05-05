@@ -15,9 +15,8 @@ export default function RefundPage() {
 
           <h2 className="text-base font-semibold mt-6" style={{ color: 'var(--text-primary)' }}>一、积分消耗规则</h2>
           <p>1. 每次 AI 图像生成消耗相应积分，具体消耗量以生成页面显示为准。</p>
-          <p>2. 提示词优化功能每次消耗 10 积分。</p>
-          <p>3. 图片有效期延长操作按图片数量扣积分，具体单价以延长页面显示为准。</p>
-          <p>4. 积分在提交生成请求时立即扣除。</p>
+          <p>2. 图片有效期延长操作按图片数量扣积分，具体单价以延长页面显示为准。</p>
+          <p>3. 积分在提交生成请求时立即扣除。</p>
 
           <h2 className="text-base font-semibold mt-6" style={{ color: 'var(--text-primary)' }}>二、自动退还</h2>
           <p>以下情况系统将自动退还已消耗的积分：</p>

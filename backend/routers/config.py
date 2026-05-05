@@ -17,6 +17,7 @@ class ConfigUpdate(BaseModel):
     image_hosting_referer: Optional[str] = None
     wechat_pay_qr_url: Optional[str] = None
     alipay_pay_qr_url: Optional[str] = None
+    donation_contact: Optional[str] = None
     manual_recharge_notice: Optional[str] = None
     recharge_packages: Optional[List[Dict[str, Any]]] = None
     generate_concurrent_limit_per_user: Optional[int] = Field(None, ge=1)
@@ -63,6 +64,7 @@ async def get_runtime_config(user=Depends(get_optional_user)):
         "register_enabled": bool(cfg.get("register_enabled", True)),
         "wechat_pay_qr_url": cfg.get("wechat_pay_qr_url", ""),
         "alipay_pay_qr_url": cfg.get("alipay_pay_qr_url", ""),
+        "donation_contact": cfg.get("donation_contact", ""),
         "manual_recharge_notice": cfg.get("manual_recharge_notice", ""),
         "recharge_packages": get_recharge_packages(),
         "points_cost_per_generation": cfg.get("points_cost_per_generation", 10),

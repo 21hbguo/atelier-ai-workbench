@@ -15,48 +15,62 @@ import { useAppDialog } from '../components/AppDialogProvider'
 
 function useImageActions() {
   const navigate = useNavigate()
+  const ensureLiked = useCallback(async (card) => {
+    if (!card?.id || card?.isLiked) return
+    try { await squareAPI.like(card.id) } catch {}
+  }, [])
 
-  const handleUsePrompt = (prompt) => {
-    const text = String(prompt || '').trim()
+  const handleUsePrompt = useCallback(async (input) => {
+    const card = input && typeof input === 'object' ? input : null
+    const text = String(card?.prompt || input || '').trim()
     if (!text) return
+    await ensureLiked(card)
     localStorage.setItem('pending_prompt', text)
     window.dispatchEvent(new Event('pending-prompt-updated'))
     navigate('/')
     setTimeout(() => { if (window.location.pathname === '/square') window.location.href = '/' }, 120)
-  }
+  }, [navigate, ensureLiked])
 
-  const handleUseImage = (card) => {
+  const handleUseImage = useCallback(async (card) => {
     const url = card.fullUrl || card.thumbUrl2x || card.thumbUrl
     if (!url) { alert('图片地址不存在'); return }
+    await ensureLiked(card)
     const stored = JSON.parse(localStorage.getItem('ref_images') || '[]')
     if (!stored.some(i => i.url === url)) { stored.push({ url, name: card.filename || card.title || 'image' }); localStorage.setItem('ref_images', JSON.stringify(stored)) }
     window.dispatchEvent(new Event('pending-image-updated'))
     navigate('/')
-  }
+  }, [navigate, ensureLiked])
 
   return { handleUsePrompt, handleUseImage }
 }
 
 function usePromptActions() {
   const navigate = useNavigate()
+  const ensureLiked = useCallback(async (card) => {
+    if (!card?.id || card?.isLiked) return
+    try { await promptAPI.like(card.id) } catch {}
+  }, [])
 
-  const handleUsePrompt = (prompt) => {
-    const text = String(prompt || '').trim()
+  const handleUsePrompt = useCallback(async (input) => {
+    const card = input && typeof input === 'object' ? input : null
+    const text = String(card?.prompt || input || '').trim()
     if (!text) return
+    await ensureLiked(card)
     localStorage.setItem('pending_prompt', text)
     window.dispatchEvent(new Event('pending-prompt-updated'))
     navigate('/')
     setTimeout(() => { if (window.location.pathname === '/square') window.location.href = '/' }, 120)
-  }
+  }, [navigate, ensureLiked])
 
-  const handleUseImage = (card) => {
+  const handleUseImage = useCallback(async (card) => {
     const url = card.fullUrl || card.thumbUrl2x || card.thumbUrl
     if (!url) { alert('图片地址不存在'); return }
+    await ensureLiked(card)
     const stored = JSON.parse(localStorage.getItem('ref_images') || '[]')
     if (!stored.some(i => i.url === url)) { stored.push({ url, name: card.filename || card.name || 'prompt' }); localStorage.setItem('ref_images', JSON.stringify(stored)) }
     window.dispatchEvent(new Event('pending-image-updated'))
     navigate('/')
-  }
+  }, [navigate, ensureLiked])
 
   return { handleUsePrompt, handleUseImage }
 }
@@ -156,7 +170,7 @@ function WorksTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, i
 
   useEffect(() => { setDetailIdx(null) }, [query, sort, status, activeCategory])
 
-  const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike, handleFavorite } = useCardData({
+  const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike, handleFavorite, updateCard } = useCardData({
     type: 'image',
     apiFn: (p, s) => isAdmin
       ? adminAPI.square(p, s, query || undefined, status, sort, authorFilter?.id || undefined, activeCategory || undefined)
@@ -168,6 +182,9 @@ function WorksTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, i
   })
 
   const totalPages = Math.ceil(total / 20)
+  const syncLiked = useCallback((card) => { if (!card?.id || card?.isLiked) return; updateCard(card.id, v => v ? { ...v, isLiked: true, likesCount: (v.likesCount || 0) + (v.isLiked ? 0 : 1) } : v) }, [updateCard])
+  const handleUsePromptWithLike = useCallback(async (card) => { syncLiked(card); await handleUsePrompt(card) }, [syncLiked, handleUsePrompt])
+  const handleUseImageWithLike = useCallback(async (card) => { syncLiked(card); await handleUseImage(card) }, [syncLiked, handleUseImage])
 
   const toggleCheck = useCallback((id) => {
     setChecked(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
@@ -263,8 +280,8 @@ function WorksTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, i
         onCardClick={(_, idx) => setDetailIdx(idx)}
         onLike={handleLike}
         onFavorite={handleFavorite}
-        onUsePrompt={handleUsePrompt}
-        onUseImage={handleUseImage}
+        onUsePrompt={handleUsePromptWithLike}
+        onUseImage={handleUseImageWithLike}
         onAuthorClick={onAuthorFilter}
         paginationScrollTargetId="square-scroll-container"
         scrollAfterPaging
@@ -308,8 +325,8 @@ function WorksTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, i
           onClose={() => setDetailIdx(null)}
           onLike={handleLike}
           onFavorite={handleFavorite}
-          onUsePrompt={handleUsePrompt}
-          onUseImage={handleUseImage}
+          onUsePrompt={handleUsePromptWithLike}
+          onUseImage={handleUseImageWithLike}
           title={`${cards[detailIdx].author} 的作品`}
           hideDownload
         />
@@ -329,7 +346,7 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
 
   useEffect(() => { setDetailIdx(null) }, [activeCategory, query, sort])
 
-  const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike, handleFavorite } = useCardData({
+  const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike, handleFavorite, updateCard } = useCardData({
     type: 'prompt',
     pageSize: 50,
     apiFn: async (p, s) => {
@@ -348,6 +365,9 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
   })
 
   const totalPages = Math.ceil(total / 50)
+  const syncLiked = useCallback((card) => { if (!card?.id || card?.isLiked) return; updateCard(card.id, v => v ? { ...v, isLiked: true, likesCount: (v.likesCount || 0) + (v.isLiked ? 0 : 1) } : v) }, [updateCard])
+  const handleUsePromptWithLike = useCallback(async (card) => { syncLiked(card); await handleUsePrompt(card) }, [syncLiked, handleUsePrompt])
+  const handleUseImageWithLike = useCallback(async (card) => { syncLiked(card); await handleUseImage(card) }, [syncLiked, handleUseImage])
 
   const toggleCheck = useCallback((id) => {
     setChecked(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
@@ -492,8 +512,8 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
         onCardClick={(_, idx) => setDetailIdx(idx)}
         onLike={handleLike}
         onFavorite={handleFavorite}
-        onUsePrompt={handleUsePrompt}
-        onUseImage={handleUseImage}
+        onUsePrompt={handleUsePromptWithLike}
+        onUseImage={handleUseImageWithLike}
         onAuthorClick={onAuthorFilter}
         paginationScrollTargetId="square-scroll-container"
         scrollAfterPaging
@@ -535,8 +555,8 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
           onClose={() => { setDetailIdx(null); setNewCard(null); newCardRef.current = null; setInitialEditing(false) }}
           onLike={handleLike}
           onFavorite={handleFavorite}
-          onUsePrompt={handleUsePrompt}
-          onUseImage={handleUseImage}
+          onUsePrompt={handleUsePromptWithLike}
+          onUseImage={handleUseImageWithLike}
           title="提示词详情"
           hideDownload
           allowPromptEdit={isAdmin}
@@ -560,7 +580,7 @@ function SharedTab({ refreshTrigger, layoutMode }) {
   }), [])
 
   const deps = useMemo(() => [subTab, refreshTrigger], [subTab, refreshTrigger])
-  const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike, handleFavorite } = useCardData({
+  const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike, handleFavorite, updateCard } = useCardData({
     type: subTab === 'prompt' ? 'prompt' : 'image',
     pageSize: 20,
     apiFn: async (p, s) => {
@@ -587,6 +607,9 @@ function SharedTab({ refreshTrigger, layoutMode }) {
     removeOnUnfavorite: subTab === 'all' ? card => !card._isMyShare : subTab !== 'my-shares',
   })
   const totalPages = Math.ceil(total / 20)
+  const syncLiked = useCallback((card) => { if (!card?.id || card?.isLiked) return; updateCard(card.id, v => v ? { ...v, isLiked: true, likesCount: (v.likesCount || 0) + (v.isLiked ? 0 : 1) } : v) }, [updateCard])
+  const handleUsePromptWithLike = useCallback(async (card) => { syncLiked(card); await handleUsePrompt(card) }, [syncLiked, handleUsePrompt])
+  const handleUseImageWithLike = useCallback(async (card) => { syncLiked(card); await handleUseImage(card) }, [syncLiked, handleUseImage])
 
   const handleUnshare = useCallback(async (card) => {
     if (!await dialog.confirm('确定撤回该分享？撤回后图片将恢复3天有效期。')) return
@@ -606,12 +629,12 @@ function SharedTab({ refreshTrigger, layoutMode }) {
           <button key={k} onClick={() => { setSubTab(k); setDetailIdx(null) }} className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors flex items-center justify-center gap-1 ${subTab === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`} style={{ color: subTab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{Icon ? <Icon size={12} /> : null}{l}</button>
         ))}
       </div>
-      <CardGrid cards={cards} layoutMode={subTab === 'prompt' ? 'grid' : layoutMode} showTotal totalUnit={subTab === 'prompt' ? '条' : '项'} loading={loading} paging={paging} refreshing={refreshing} onRefresh={refresh} hideRefresh total={total} page={page} totalPages={totalPages} onPageChange={setPage} paginationScrollTargetId="square-scroll-container" scrollAfterPaging onCardClick={(_, idx) => setDetailIdx(idx)} onFavorite={handleFavorite} onUsePrompt={handleUsePrompt} onUseImage={handleUseImage} showAuthor showLike={false} emptyText="暂无内容" />
+      <CardGrid cards={cards} layoutMode={subTab === 'prompt' ? 'grid' : layoutMode} showTotal totalUnit={subTab === 'prompt' ? '条' : '项'} loading={loading} paging={paging} refreshing={refreshing} onRefresh={refresh} hideRefresh total={total} page={page} totalPages={totalPages} onPageChange={setPage} paginationScrollTargetId="square-scroll-container" scrollAfterPaging onCardClick={(_, idx) => setDetailIdx(idx)} onFavorite={handleFavorite} onUsePrompt={handleUsePromptWithLike} onUseImage={handleUseImageWithLike} showAuthor showLike={false} emptyText="暂无内容" />
       {detailIdx !== null && cards[detailIdx] && (
         <UnifiedDetailModal card={cards[detailIdx]} cards={cards} currentIndex={detailIdx} onNavigate={setDetailIdx} onClose={() => setDetailIdx(null)}
           onFavorite={subTab === 'my-shares' ? undefined : async (id) => { const targetId = cards[detailIdx]?.id; setDetailIdx(null); const ok = await handleFavorite(id); if (!ok && targetId) { const idx = cards.findIndex(c => c.id === targetId); if (idx >= 0) setDetailIdx(idx) } }}
           onUnshare={cards[detailIdx]?._isMyShare ? handleUnshare : undefined}
-          onUsePrompt={handleUsePrompt} onUseImage={handleUseImage}
+          onUsePrompt={handleUsePromptWithLike} onUseImage={handleUseImageWithLike}
           title={subTab === 'my-shares' ? '我的作品' : '收藏详情'} hideDownload />
       )}
     </>

@@ -439,7 +439,7 @@ export default function UnifiedDetailModal({
     }
     if (onUsePrompt) {
       actions.push(
-        <button key="use-prompt" onClick={() => { onUsePrompt(card.prompt); requestCloseModal() }} className={actionBaseClass} style={actionNeutralStyle} title="使用提示词">
+        <button key="use-prompt" onClick={() => { onUsePrompt(card); requestCloseModal() }} className={actionBaseClass} style={actionNeutralStyle} title="使用提示词">
           <Plus size={15} /><span>用提示词</span>
         </button>
       )

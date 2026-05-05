@@ -31,7 +31,8 @@ export default function PromptsPage() {
     deps,
   })
 
-  const handleUsePrompt = (prompt) => {
+  const handleUsePrompt = (input) => {
+    const prompt = typeof input === 'object' ? input?.prompt : input
     localStorage.setItem('pending_prompt', prompt)
     navigate('/')
   }

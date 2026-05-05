@@ -1,28 +1,38 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { ArrowLeft } from 'lucide-react'
 import { authAPI, configAPI } from '../api'
 import { writeUser } from '../auth'
 
 export default function LoginPage() {
   const accountRe = /^[A-Za-z0-9_]{4,16}$/
-  const [isRegister, setIsRegister] = useState(false)
+  const location = useLocation()
+  const navigate = useNavigate()
+  const [isRegister, setIsRegister] = useState(() => new URLSearchParams(location.search).get('mode') === 'register')
   const [registerEnabled, setRegisterEnabled] = useState(true)
   const [account, setAccount] = useState('')
   const [password, setPassword] = useState('')
   const [nickname, setNickname] = useState('')
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
+  const [agreed, setAgreed] = useState(false)
   const [sendingCode, setSendingCode] = useState(false)
   const [cooldown, setCooldown] = useState(0)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const navigate = useNavigate()
+
+  const switchMode = (next) => {
+    setIsRegister(next)
+    setError('')
+    setAgreed(false)
+    navigate(next ? '/login?mode=register' : '/login', { replace: true })
+  }
 
   useEffect(() => {
     configAPI.get().then(({ data }) => {
       const enabled = data?.register_enabled !== false
       setRegisterEnabled(enabled)
-      if (!enabled) setIsRegister(false)
+      if (!enabled) switchMode(false)
     }).catch(() => {})
   }, [])
 
@@ -34,6 +44,7 @@ export default function LoginPage() {
 
   const handleSendCode = async () => {
     if (!email || cooldown > 0) return
+    if (!agreed) { setError('请先勾选并同意相关协议'); return }
     if (!accountRe.test((account || '').trim())) { setError('请先填写账号（4-16位字母、数字或下划线）'); return }
     if ((password || '').length < 6) { setError('请先设置密码（至少6个字符）'); return }
     setSendingCode(true)
@@ -52,6 +63,7 @@ export default function LoginPage() {
     e.preventDefault()
     setError('')
     if (isRegister && !registerEnabled) { setError('当前已关闭注册'); return }
+    if (isRegister && !agreed) { setError('请先勾选并同意相关协议'); return }
     if (isRegister && !accountRe.test((account || '').trim())) { setError('账号需为4到16位字母、数字或下划线'); return }
     setLoading(true)
 
@@ -76,6 +88,7 @@ export default function LoginPage() {
       <div className="login-glow" />
       <div className="login-glow login-glow-2" />
       <div className="w-full max-w-sm relative z-10">
+        <button onClick={() => navigate(-1)} className="flex items-center gap-1 mb-5 text-sm hover:opacity-80 transition-opacity" style={{ color: 'var(--text-secondary)' }}><ArrowLeft size={16} />返回</button>
         <div className="text-center mb-8">
           <h1 className="login-title" style={{ fontFamily: "'Alex Brush', cursive", fontSize: '3.5rem' }}>Atelier</h1>
           <p className="text-sm mt-1 tracking-widest" style={{ color: 'var(--text-secondary)', opacity: 0.7 }}>AI 造梦工坊</p>
@@ -148,6 +161,13 @@ export default function LoginPage() {
             </div>
 
             {isRegister && (
+              <label className="flex items-start gap-2 text-xs leading-6" style={{ color: 'var(--text-secondary)' }}>
+                <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} className="mt-1 h-4 w-4 rounded border" style={{ accentColor: 'var(--accent)' }} />
+                <span>我已阅读并同意 <button type="button" onClick={() => navigate('/agreement')} className="underline underline-offset-2" style={{ color: 'var(--text-primary)' }}>《用户协议》</button>、<button type="button" onClick={() => navigate('/privacy')} className="underline underline-offset-2" style={{ color: 'var(--text-primary)' }}>《隐私政策》</button>、<button type="button" onClick={() => navigate('/refund')} className="underline underline-offset-2" style={{ color: 'var(--text-primary)' }}>《捐赠说明与积分规则》</button></span>
+              </label>
+            )}
+
+            {isRegister && (
               <div>
                 <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>验证码</label>
                 <div className="flex gap-2">
@@ -164,7 +184,7 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={handleSendCode}
-                    disabled={sendingCode || cooldown > 0 || !email}
+                    disabled={sendingCode || cooldown > 0 || !email || !agreed}
                     className="px-3 py-2.5 rounded-lg text-xs font-medium border whitespace-nowrap disabled:opacity-50"
                     style={{ borderColor: 'var(--border-color)', color: cooldown > 0 ? 'var(--text-secondary)' : 'var(--accent)', background: 'var(--bg-primary)' }}
                   >
@@ -191,7 +211,7 @@ export default function LoginPage() {
           {registerEnabled ? <p className="text-center mt-4 text-sm" style={{ color: 'var(--text-secondary)' }}>
             {isRegister ? '已有账号？' : '没有账号？'}
             <button
-              onClick={() => { setIsRegister(!isRegister); setError('') }}
+              onClick={() => switchMode(!isRegister)}
               className="ml-1 font-medium"
               style={{ color: 'var(--accent)' }}
             >

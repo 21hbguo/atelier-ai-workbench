@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Trash2, Users, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket, Megaphone, Wallet, Key, SlidersHorizontal, BarChart3, Mail, Tags } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { adminAPI, announcementAPI, configAPI, statsAPI, promptAPI } from '../api'
+import { adminAPI, announcementAPI, configAPI, statsAPI, promptAPI, uploadAPI } from '../api'
 import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts'
 import MainLayout from '../components/MainLayout'
 import PageLayout from '../components/PageLayout'
@@ -94,7 +94,7 @@ export default function AdminPage() {
   const [newTitle, setNewTitle] = useState('')
   const [newContent, setNewContent] = useState('')
   const [creatingAnnouncement, setCreatingAnnouncement] = useState(false)
-  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', register_enabled: true, image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', recharge_packages: defaultRechargePackages, generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_cost_per_optimize: 10, points_cost_per_image_extend: 2, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3, github_hosting_enabled: false, github_hosting_repo: '', github_hosting_token: '', github_hosting_branch: 'main', smtp_server: 'smtp.qq.com', smtp_port: 465, smtp_password: '', smtp_sender: '', smtp_sender_name: 'Atelier·AI造梦工坊' })
+  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', register_enabled: true, image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', donation_contact: '', manual_recharge_notice: '', recharge_packages: defaultRechargePackages, generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_cost_per_optimize: 10, points_cost_per_image_extend: 2, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3, github_hosting_enabled: false, github_hosting_repo: '', github_hosting_token: '', github_hosting_branch: 'main', smtp_server: 'smtp.qq.com', smtp_port: 465, smtp_password: '', smtp_sender: '', smtp_sender_name: 'Atelier·AI造梦工坊' })
   const [configSaving, setConfigSaving] = useState(false)
   const [defaultModelId, setDefaultModelId] = useState('image-default')
   const [generationModelsText, setGenerationModelsText] = useState('{}')
@@ -133,6 +133,7 @@ export default function AdminPage() {
   const [financeRules, setFinanceRules] = useState([])
   const [financeRuleSaving, setFinanceRuleSaving] = useState(false)
   const [financeRuleDraft, setFinanceRuleDraft] = useState({ id: null, provider_id: '', model_id: '', quota_per_success: '', enabled: true, remark: '' })
+  const [qrUploading, setQrUploading] = useState('')
 
   // AI 分类
   const [clsTasks, setClsTasks] = useState([])
@@ -250,6 +251,7 @@ export default function AdminPage() {
         image_hosting_referer: data.image_hosting_referer || '',
         wechat_pay_qr_url: data.wechat_pay_qr_url || '',
         alipay_pay_qr_url: data.alipay_pay_qr_url || '',
+        donation_contact: data.donation_contact || '',
         manual_recharge_notice: data.manual_recharge_notice || '',
         recharge_packages: Array.isArray(data.recharge_packages) && data.recharge_packages.length ? data.recharge_packages.map(item => ({ amount: item.amount, points: item.points, label: item.label })) : defaultRechargePackages.map(item => ({ ...item })),
         generate_concurrent_limit_per_user: Number(data.generate_concurrent_limit_per_user || 10),
@@ -385,6 +387,15 @@ export default function AdminPage() {
   const handleEditFinanceRule = (rule) => setFinanceRuleDraft({ id: rule.id, provider_id: rule.provider_id, model_id: rule.model_id, quota_per_success: String(rule.quota_per_success ?? ''), enabled: rule.enabled !== false, remark: rule.remark || '' })
   const onConfigInput = (k, v) => setRuntimeConfig(prev => ({ ...prev, [k]: v }))
   const onConfigToggle = (k, v) => setRuntimeConfig(prev => ({ ...prev, [k]: v }))
+  const handleUploadQr = async (key, file) => {
+    if (!file) return
+    setQrUploading(key)
+    try {
+      const { data } = await uploadAPI.uploadLocal(file)
+      setRuntimeConfig(prev => ({ ...prev, [key]: data?.url || '' }))
+      dialog.alert('二维码上传成功')
+    } catch (e) { dialog.alert(e.message || '二维码上传失败') } finally { setQrUploading('') }
+  }
   const handleRechargePackageField = (idx, key, value) => setRuntimeConfig(prev => ({ ...prev, recharge_packages: (Array.isArray(prev.recharge_packages) ? prev.recharge_packages : []).map((item, i) => i === idx ? { ...item, [key]: value } : item) }))
   const handleAddRechargePackage = () => setRuntimeConfig(prev => { const list = Array.isArray(prev.recharge_packages) ? prev.recharge_packages : []; return { ...prev, recharge_packages: [...list, { amount: '', points: '', label: `套餐${list.length + 1}` }] } })
   const handleDeleteRechargePackage = (idx) => setRuntimeConfig(prev => { const list = Array.isArray(prev.recharge_packages) ? prev.recharge_packages : []; return { ...prev, recharge_packages: list.length <= 1 ? list : list.filter((_, i) => i !== idx) } })
@@ -1238,10 +1249,11 @@ export default function AdminPage() {
             <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
               <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>运行时配置</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {[{ k: 'api_url', l: '生成 API URL' }, { k: 'image_hosting_upload_url', l: '图床上传 URL' }, { k: 'image_hosting_base_url', l: '图床基础 URL' }, { k: 'image_hosting_referer', l: '图床 Referer' }, { k: 'wechat_pay_qr_url', l: '微信收款码 URL' }, { k: 'alipay_pay_qr_url', l: '支付宝收款码 URL' }].map(item => (
+                {[{ k: 'api_url', l: '生成 API URL' }, { k: 'image_hosting_upload_url', l: '图床上传 URL' }, { k: 'image_hosting_base_url', l: '图床基础 URL' }, { k: 'image_hosting_referer', l: '图床 Referer' }, { k: 'wechat_pay_qr_url', l: '微信收款码 URL' }, { k: 'alipay_pay_qr_url', l: '支付宝收款码 URL' }, { k: 'donation_contact', l: '捐赠联系方式' }].map(item => (
                   <div key={item.k}>
                     <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>{item.l}</label>
                     <input type="text" value={runtimeConfig[item.k]} onChange={e => onConfigInput(item.k, e.target.value)} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                    {(item.k === 'wechat_pay_qr_url' || item.k === 'alipay_pay_qr_url') && <label className="mt-2 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium cursor-pointer border hover:bg-bg-hover" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}><input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => { const file = e.target.files?.[0]; handleUploadQr(item.k, file); e.target.value = '' }} />{qrUploading === item.k ? '上传中...' : '上传二维码图片'}</label>}
                   </div>
                 ))}
               </div>

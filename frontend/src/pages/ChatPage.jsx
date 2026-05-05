@@ -48,6 +48,16 @@ function normalizeUploadName(name, type, url = '') {
   const base = (raw.replace(/\.[^.]+$/, '') || 'reference').replace(/[^\w.-]/g, '_').replace(/^\.+/, '') || 'reference'
   return `${base}.${getUploadExt(type, raw)}`
 }
+function formatSubmitSettings(params, shareToSquare, imageCount) {
+  const modelLabel = params?._model_label || params?.model_id || '默认模型'
+  const lines = [`模型：${modelLabel}`]
+  if (params?.size) lines.push(`尺寸：${params.size}`)
+  const extra = Object.entries(params || {}).filter(([key, value]) => !['size', 'model_id', '_model_label', '_points_cost', 'roll_count', 'optimize_stream'].includes(key) && value !== undefined && value !== null && value !== '')
+  for (const [key, value] of extra) lines.push(`${key}：${value}`)
+  lines.push(`参考图：${imageCount || 0} 张`)
+  lines.push(`分享：${shareToSquare ? '开启' : '关闭'}`)
+  return lines.join('\n')
+}
 
 export default function ChatPage() {
   const dialog = useAppDialog()
@@ -362,9 +372,8 @@ export default function ChatPage() {
   const handleSubmit = useCallback(async ({ prompt, images, params, shareToSquare, rollCount = 1 }) => {
     const batchCount = Math.min(5, Math.max(1, Number(rollCount) || 1))
     const modelCost = params?._points_cost || requestCost
-    if (batchCount > 1) {
-      if (!await dialog.confirm(`本次将提交 ${batchCount} 次生成，预计消耗 ${batchCount * modelCost} 积分，是否继续？`)) return false
-    }
+    const submitMessage = batchCount > 1 ? `本次将提交 ${batchCount} 次生成，预计消耗 ${batchCount * modelCost} 积分，是否继续？` : `本次将提交 1 次生成，预计消耗 ${modelCost} 积分，是否继续？`
+    if (!await dialog.confirm(`${submitMessage}\n\n当前设置\n${formatSubmitSettings(params, shareToSquare, images?.length || 0)}`)) return false
     setLoading(true)
     try {
       const previewImages = images?.map(i => i.preview) || []

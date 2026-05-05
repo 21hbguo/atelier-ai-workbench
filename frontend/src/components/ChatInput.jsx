@@ -5,6 +5,10 @@ import QuickSelector from './QuickSelector'
 import { TYPE_OPTIONS, STYLE_OPTIONS, MOOD_OPTIONS } from '../data/quickOptions'
 import { promptOptimizeAPI } from '../api'
 import { getCachedImages, setCachedImages, getPendingImage, clearPendingImage } from '../utils/imageDB'
+const OPTIMIZE_DRAFT_KEY='chat_optimize_draft_v1'
+function loadOptimizeDraft(){try{const raw=localStorage.getItem(OPTIMIZE_DRAFT_KEY);if(!raw)return null;const data=JSON.parse(raw);if(!data||typeof data!=='object')return null;const versions=Array.isArray(data.optimizeResults?.versions)?data.optimizeResults.versions.filter(v=>typeof v==='string'&&v.trim()):null;const streamingVersions=Array.isArray(data.streamingVersions)?data.streamingVersions.map(v=>({text:typeof v?.text==='string'?v.text:'',done:!!v?.done})).filter(v=>v.text||v.done):[];const optimizeResults=versions?.length?{versions,original:typeof data.optimizeResults.original==='string'?data.optimizeResults.original:''}:null;const showOptimizeOverlay=!!(data.showOptimizeOverlay&&(optimizeResults||streamingVersions.length));return{optimizeResults,streamingVersions,isStreaming:false,showOptimizeOverlay,restored:showOptimizeOverlay}}catch{return null}}
+function saveOptimizeDraft(data){try{if(!data?.showOptimizeOverlay||(!data.optimizeResults&&!data.streamingVersions?.length)){localStorage.removeItem(OPTIMIZE_DRAFT_KEY);return}localStorage.setItem(OPTIMIZE_DRAFT_KEY,JSON.stringify({showOptimizeOverlay:true,optimizeResults:data.optimizeResults&&Array.isArray(data.optimizeResults.versions)&&data.optimizeResults.versions.length?{versions:data.optimizeResults.versions,original:data.optimizeResults.original||''}:null,streamingVersions:Array.isArray(data.streamingVersions)?data.streamingVersions.map(v=>({text:typeof v?.text==='string'?v.text:'',done:!!v?.done})).filter(v=>v.text||v.done):[],savedAt:Date.now()}))}catch{}}
+function clearOptimizeDraft(){try{localStorage.removeItem(OPTIMIZE_DRAFT_KEY)}catch{}}
 
 function getImageExt(type, name = '') {
   const mime = String(type || '').split(';')[0].trim().toLowerCase()
@@ -22,19 +26,20 @@ function normalizeImageName(name, type, fallback = 'reference') {
 }
 
 const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost = 10, optimizeCost = 10 }, ref) {
+  const initialOptimizeDraft=loadOptimizeDraft()
   const [prompt, setPrompt] = useState('')
   const [images, setImages] = useState([])
   const [showParams, setShowParams] = useState(false)
   const [params, setParams] = useState({ size: 'auto', model_id: 'image-default', roll_count: 5, optimize_stream: true })
-  const [shareToSquare, setShareToSquare] = useState(true)
+  const [shareToSquare, setShareToSquare] = useState(false)
   const [lightbox, setLightbox] = useState(null)
   const [optimizeLoading, setOptimizeLoading] = useState(false)
-  const [optimizeResults, setOptimizeResults] = useState(null)
-  const [showOptimizeOverlay, setShowOptimizeOverlay] = useState(false)
+  const [optimizeResults, setOptimizeResults] = useState(initialOptimizeDraft?.optimizeResults||null)
+  const [showOptimizeOverlay, setShowOptimizeOverlay] = useState(initialOptimizeDraft?.showOptimizeOverlay||false)
   const [showOptimizeModal, setShowOptimizeModal] = useState(false)
   const [optimizeCount, setOptimizeCount] = useState(2)
-  const [streamingVersions, setStreamingVersions] = useState([])
-  const [isStreaming, setIsStreaming] = useState(false)
+  const [streamingVersions, setStreamingVersions] = useState(initialOptimizeDraft?.streamingVersions||[])
+  const [isStreaming, setIsStreaming] = useState(initialOptimizeDraft?.isStreaming||false)
   const [toast, setToast] = useState(null)
   const [type, setType] = useState(() => localStorage.getItem('cached_type') || '')
   const [style, setStyle] = useState(() => localStorage.getItem('cached_style') || '')
@@ -303,6 +308,13 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     return () => clearTimeout(t)
   }, [toast])
 
+  useEffect(() => { saveOptimizeDraft({ showOptimizeOverlay, optimizeResults, streamingVersions }) }, [showOptimizeOverlay, optimizeResults, streamingVersions])
+
+  useEffect(() => {
+    if (!initialOptimizeDraft?.restored) return
+    setToast({ message: '已恢复上次优化结果', type: 'success' })
+  }, [])
+
   const handleOptimize = useCallback(() => {
     if (!prompt.trim() || optimizeLoading) return
     setShowOptimizeModal(true)
@@ -326,14 +338,17 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
             const next = [...prev]
             while (next.length <= data.version_index) next.push({ text: '', done: false })
             next[data.version_index] = { text: data.text, done: !!data.done }
+            saveOptimizeDraft({showOptimizeOverlay:true,optimizeResults:null,streamingVersions:next})
             return next
           })
         },
         onDone: (data) => {
           doneCalled = true
           setOptimizeResults({ versions: data.versions, original: fullPrompt })
+          setStreamingVersions([])
           setIsStreaming(false)
           setOptimizeLoading(false)
+          saveOptimizeDraft({showOptimizeOverlay:true,optimizeResults:{versions:data.versions,original:fullPrompt},streamingVersions:[]})
           if (data.points_balance != null) {
             const u = JSON.parse(localStorage.getItem('user') || 'null')
             if (u) { u.points = data.points_balance; localStorage.setItem('user', JSON.stringify(u)) }
@@ -347,7 +362,9 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
           try {
             const { data } = await promptOptimizeAPI.optimize(fullPrompt, optimizeCount)
             setOptimizeResults(data)
+            setStreamingVersions([])
             setShowOptimizeOverlay(true)
+            saveOptimizeDraft({showOptimizeOverlay:true,optimizeResults:data,streamingVersions:[]})
             if (data.points_balance != null) {
               const u = JSON.parse(localStorage.getItem('user') || 'null')
               if (u) { u.points = data.points_balance; localStorage.setItem('user', JSON.stringify(u)) }
@@ -369,7 +386,9 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
       try {
         const { data } = await promptOptimizeAPI.optimize(fullPrompt, optimizeCount)
         setOptimizeResults(data)
+        setStreamingVersions([])
         setShowOptimizeOverlay(true)
+        saveOptimizeDraft({showOptimizeOverlay:true,optimizeResults:data,streamingVersions:[]})
         if (data.points_balance != null) {
           const u = JSON.parse(localStorage.getItem('user') || 'null')
           if (u) { u.points = data.points_balance; localStorage.setItem('user', JSON.stringify(u)) }
@@ -397,6 +416,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     setShowOptimizeOverlay(false)
     setOptimizeResults(null)
     setStreamingVersions([])
+    clearOptimizeDraft()
   }, [type, style, mood])
 
   const handleDismissOptimize = useCallback(() => {
@@ -404,6 +424,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     setShowOptimizeOverlay(false)
     setOptimizeResults(null)
     setStreamingVersions([])
+    clearOptimizeDraft()
   }, [isStreaming])
 
   useImperativeHandle(ref, () => ({
@@ -459,10 +480,8 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
             ? optimizeResults.versions.map((v, i) => ({ text: v, done: true }))
             : streamingVersions
           return (
-            <>
-              <div className="fixed inset-0 z-20" onClick={e => e.preventDefault()} onPointerDown={e => e.stopPropagation()} />
-              <div className="absolute bottom-full left-0 right-0 mb-3 z-30" onClick={e => e.stopPropagation()}>
-              <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-lg)' }}>
+            <div className="absolute bottom-full left-0 right-0 mb-3 z-30 pointer-events-none">
+              <div className="pointer-events-auto rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-lg)' }}>
                 <div className="flex items-center justify-between px-4 py-2.5 border-b" style={{ borderColor: 'var(--border-color)' }}>
                   <div className="flex items-center gap-1.5">
                     <Sparkles size={14} style={{ color: 'var(--accent)' }} />
@@ -490,7 +509,6 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
                 </div>
               </div>
             </div>
-            </>
           )
         })()}
         {showOptimizeModal && (
