@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PG_USER:-app_user}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-CHANGE_ME}
+      POSTGRES_DB: ${PG_DB:-app_db}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-app_user}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-5173}:80"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${PG_USER:-app_user}:${PG_PASSWORD:-CHANGE_ME}@db:5432/${PG_DB:-app_db}
+    volumes:
+      - appdata:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  appdata:
