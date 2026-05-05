@@ -177,7 +177,7 @@ export default function AdminPage() {
   useEffect(() => { if (tab === 'evlogs') fetchEvLogs() }, [tab, evPage, evQuery])
   useEffect(() => { setEvPage(1) }, [evQuery])
   useEffect(() => { if (tab === 'classification') fetchClsTasks() }, [tab, clsPage])
-  useEffect(() => { promptAPI.categories().then(({ data }) => setClsCategories(data || [])).catch(() => {}) }, [])
+  useEffect(() => { promptAPI.categories().then(({ data }) => setClsCategories(data?.categories || data || [])).catch(() => {}) }, [])
 
   const fetchUsers = async () => {
     setLoading(true)
