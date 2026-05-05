@@ -18,7 +18,12 @@ if [ ! -f "Dockerfile" ] || [ ! -f "docker-compose.yml" ]; then
 fi
 
 # 检查是否有新版本包
-if [ -f "../app_v1_update.tar.gz" ]; then
+if [ -f "../app_v1_incremental.tar.gz" ]; then
+    echo -e "${YELLOW}[1/4] 发现增量包，正在解压...${NC}"
+    tar xzf ../app_v1_incremental.tar.gz --strip-components=1
+    rm ../app_v1_incremental.tar.gz
+    echo -e "  ${GREEN}增量更新完成${NC}"
+elif [ -f "../app_v1_update.tar.gz" ]; then
     echo -e "${YELLOW}[1/4] 发现更新包，正在解压...${NC}"
     tar xzf ../app_v1_update.tar.gz --strip-components=1 --exclude='data' --exclude='.env' --exclude='*.db'
     rm ../app_v1_update.tar.gz
