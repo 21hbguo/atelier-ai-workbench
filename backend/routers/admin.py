@@ -1305,3 +1305,49 @@ async def update_classification_result(result_id: int, body: dict, admin=Depends
     if not slug:
         raise HTTPException(status_code=400, detail="分类标识不能为空")
     return ClassificationService.update_result(result_id, slug, label, is_new)
+
+
+@router.post("/classification/test")
+async def test_classification_stream(body: dict, admin=Depends(require_admin)):
+    """测试分类 LLM 调用，支持流式/非流式输出"""
+    from fastapi.responses import StreamingResponse
+    from backend.services.category_service import CategoryService
+    import asyncio
+
+    use_stream = body.get("stream", True)
+    item_type = body.get("item_type", "prompt")
+
+    # 获取分类列表
+    categories = CategoryService.get_all_as_dict()
+    cat_text = "\n".join(f"- {slug}: {label}" for slug, label in categories.items())
+    system_prompt = ClassificationService.SYSTEM_TEMPLATE.format(categories=cat_text)
+
+    # 获取待分类项目（取前 3 个）
+    with get_db() as conn:
+        if item_type == "image":
+            rows = conn.execute(
+                "SELECT id, filename, prompt FROM square_images WHERE (category IS NULL OR category = '') AND COALESCE(is_frozen, FALSE) = FALSE LIMIT 3"
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, name, prompt FROM prompts WHERE (category IS NULL OR category = '') AND COALESCE(is_frozen, FALSE) = FALSE LIMIT 3"
+            ).fetchall()
+
+    if not rows:
+        return {"type": "error", "message": "没有待分类的项目"}
+
+    items = [
+        {"item_id": str(r["id"]), "name": (r.get("filename") or r.get("name") or ""), "prompt": (r["prompt"] or "")[:300]}
+        for r in rows
+    ]
+
+    if use_stream:
+        async def event_stream():
+            async for chunk in ClassificationService.stream_classify_batch(system_prompt, items, use_stream=True):
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
+    else:
+        result = []
+        async for chunk in ClassificationService.stream_classify_batch(system_prompt, items, use_stream=False):
+            result.append(chunk)
+        return result[-1] if result else {"type": "error", "message": "无响应"}

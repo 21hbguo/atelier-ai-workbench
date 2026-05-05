@@ -333,3 +333,71 @@ class ClassificationService:
             )
             row = conn.execute("SELECT * FROM classification_results WHERE id = %s", (result_id,)).fetchone()
             return dict(row) if row else {}
+
+    @classmethod
+    async def stream_classify_batch(cls, system_prompt: str, items: List[Dict], use_stream: bool = True):
+        """流式分类单个批次，yield 每个 token"""
+        llm_cfg = get_llm_config()
+        if not llm_cfg["enabled"] or not llm_cfg["api_key"]:
+            yield {"type": "error", "message": "LLM 未启用或 API key 缺失"}
+            return
+
+        client = cls._get_client()
+        url = f"{llm_cfg['base_url'].rstrip('/')}/v1/messages"
+        headers = {
+            "x-api-key": llm_cfg["api_key"],
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        }
+        user_content = USER_TEMPLATE.format(
+            count=len(items),
+            items=json.dumps(items, ensure_ascii=False),
+        )
+        body = {
+            "model": llm_cfg["model"],
+            "max_tokens": max(llm_cfg["max_tokens"], 2000),
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": user_content}],
+        }
+
+        if use_stream:
+            body["stream"] = True
+            try:
+                async with client.stream("POST", url, headers=headers, json=body, timeout=60.0) as resp:
+                    resp.raise_for_status()
+                    full_text = ""
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        data_str = line[6:]
+                        if data_str.strip() == "[DONE]":
+                            break
+                        try:
+                            event = json.loads(data_str)
+                            if event.get("type") == "content_block_delta":
+                                delta = event.get("delta", {})
+                                if delta.get("type") == "text_delta":
+                                    token = delta.get("text", "")
+                                    full_text += token
+                                    yield {"type": "token", "text": token}
+                        except json.JSONDecodeError:
+                            continue
+                    yield {"type": "done", "full_text": full_text}
+            except httpx.HTTPStatusError as e:
+                yield {"type": "error", "message": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+            except Exception as e:
+                yield {"type": "error", "message": f"流式请求失败: {type(e).__name__}: {str(e)[:200]}"}
+        else:
+            try:
+                resp = await client.post(url, headers=headers, json=body, timeout=60.0)
+                resp.raise_for_status()
+                data = resp.json()
+                text = ""
+                for block in data.get("content", []):
+                    if block.get("type") == "text":
+                        text += block.get("text", "")
+                yield {"type": "done", "full_text": text.strip()}
+            except httpx.HTTPStatusError as e:
+                yield {"type": "error", "message": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
+            except Exception as e:
+                yield {"type": "error", "message": f"请求失败: {type(e).__name__}: {str(e)[:200]}"}
