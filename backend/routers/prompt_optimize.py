@@ -23,7 +23,7 @@ class PromptOptimizeResponse(BaseModel):
 
 @router.post("/optimize", response_model=PromptOptimizeResponse)
 async def optimize_prompt(body: PromptOptimizeRequest, user=Depends(get_current_user)):
-    user_id = user["id"]
+    user_id = user["user_id"]
     cost_per = PointsService.cost_per_generation()
     total_cost = cost_per * body.count
     req_id = str(uuid.uuid4())
