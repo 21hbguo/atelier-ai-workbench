@@ -86,6 +86,18 @@ export default function ParamPanel({ params, onChange }) {
           <option value={5}>5次</option>
         </select>
       </label>
+      <label className="flex items-center justify-between gap-2">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>优化流式输出</span>
+          <span className="text-[10px]" style={{ color: 'var(--text-secondary)', opacity: 0.6 }}>开启后优化结果实时逐字显示</span>
+        </div>
+        <button type="button" onClick={() => onChange(p => ({ ...p, optimize_stream: p.optimize_stream === false ? true : false }))}
+          className="relative w-9 h-5 rounded-full transition-colors flex-shrink-0"
+          style={{ background: params.optimize_stream !== false ? 'var(--accent)' : 'var(--border-color)' }}>
+          <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+            style={{ left: params.optimize_stream !== false ? '18px' : '2px' }} />
+        </button>
+      </label>
       {models.length > 0 && (
         <label className="flex flex-col gap-1">
           <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>模型</span>

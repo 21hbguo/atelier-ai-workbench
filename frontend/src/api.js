@@ -85,14 +85,14 @@ export const promptAPI = {
 export const statsAPI = { get: () => api.get('/stats'), system: () => api.get('/stats/system'), daily: () => api.get('/stats/daily'), users: () => api.get('/stats/users') }
 
 export const promptOptimizeAPI = {
-  optimize: (prompt, count = 1) => api.post('/prompt/optimize', { prompt, count }, { timeout: 60000 }),
+  optimize: (prompt, count = 1) => api.post('/prompt/optimize', { prompt, count, stream: false }, { timeout: 60000 }),
   optimizeStream: async (prompt, count, { onChunk, onDone, onError }) => {
     try {
-      const resp = await fetch('/api/prompt/optimize/stream', {
+      const resp = await fetch('/api/prompt/optimize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ prompt, count }),
+        body: JSON.stringify({ prompt, count, stream: true }),
       })
       if (!resp.ok) {
         const data = await resp.json().catch(() => ({}))

@@ -25,7 +25,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const [prompt, setPrompt] = useState('')
   const [images, setImages] = useState([])
   const [showParams, setShowParams] = useState(false)
-  const [params, setParams] = useState({ size: 'auto', model_id: 'image-default', roll_count: 5 })
+  const [params, setParams] = useState({ size: 'auto', model_id: 'image-default', roll_count: 5, optimize_stream: true })
   const [shareToSquare, setShareToSquare] = useState(true)
   const [lightbox, setLightbox] = useState(null)
   const [optimizeLoading, setOptimizeLoading] = useState(false)
@@ -311,41 +311,70 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const handleConfirmOptimize = useCallback(async () => {
     setShowOptimizeModal(false)
     setOptimizeLoading(true)
-    setStreamingVersions([{ text: '', done: false }])
-    setIsStreaming(true)
-    setShowOptimizeOverlay(true)
-    setOptimizeResults(null)
-
     const fullPrompt = `${type ? `类型为${type} ` : ''}${style ? `风格为${style} ` : ''}${mood ? `氛围为${mood} ` : ''}${prompt.trim()}`.trim()
 
-    await promptOptimizeAPI.optimizeStream(fullPrompt, optimizeCount, {
-      onChunk: (data) => {
-        setStreamingVersions(prev => {
-          const next = [...prev]
-          while (next.length <= data.version_index) next.push({ text: '', done: false })
-          next[data.version_index] = { text: data.text, done: !!data.done }
-          return next
-        })
-      },
-      onDone: (data) => {
-        setOptimizeResults({ versions: data.versions, original: fullPrompt })
-        setIsStreaming(false)
-        setOptimizeLoading(false)
+    if (params.optimize_stream !== false) {
+      setStreamingVersions([{ text: '', done: false }])
+      setIsStreaming(true)
+      setShowOptimizeOverlay(true)
+      setOptimizeResults(null)
+
+      await promptOptimizeAPI.optimizeStream(fullPrompt, optimizeCount, {
+        onChunk: (data) => {
+          setStreamingVersions(prev => {
+            const next = [...prev]
+            while (next.length <= data.version_index) next.push({ text: '', done: false })
+            next[data.version_index] = { text: data.text, done: !!data.done }
+            return next
+          })
+        },
+        onDone: (data) => {
+          setOptimizeResults({ versions: data.versions, original: fullPrompt })
+          setIsStreaming(false)
+          setOptimizeLoading(false)
+          if (data.points_balance != null) {
+            const u = JSON.parse(localStorage.getItem('user') || 'null')
+            if (u) { u.points = data.points_balance; localStorage.setItem('user', JSON.stringify(u)) }
+            window.dispatchEvent(new Event('points-updated'))
+          }
+        },
+        onError: async (detail) => {
+          setIsStreaming(false)
+          setStreamingVersions([])
+          try {
+            const { data } = await promptOptimizeAPI.optimize(fullPrompt, optimizeCount)
+            setOptimizeResults(data)
+            setShowOptimizeOverlay(true)
+            if (data.points_balance != null) {
+              const u = JSON.parse(localStorage.getItem('user') || 'null')
+              if (u) { u.points = data.points_balance; localStorage.setItem('user', JSON.stringify(u)) }
+              window.dispatchEvent(new Event('points-updated'))
+            }
+          } catch {
+            setToast({ message: detail || '优化失败，请重试', type: 'error' })
+            setShowOptimizeOverlay(false)
+          } finally {
+            setOptimizeLoading(false)
+          }
+        },
+      })
+    } else {
+      try {
+        const { data } = await promptOptimizeAPI.optimize(fullPrompt, optimizeCount)
+        setOptimizeResults(data)
+        setShowOptimizeOverlay(true)
         if (data.points_balance != null) {
           const u = JSON.parse(localStorage.getItem('user') || 'null')
           if (u) { u.points = data.points_balance; localStorage.setItem('user', JSON.stringify(u)) }
           window.dispatchEvent(new Event('points-updated'))
         }
-      },
-      onError: (detail) => {
-        setToast({ message: detail || '优化失败，请重试', type: 'error' })
-        setIsStreaming(false)
+      } catch (e) {
+        setToast({ message: typeof e?.message === 'string' ? e.message : '优化失败，请重试', type: 'error' })
+      } finally {
         setOptimizeLoading(false)
-        setShowOptimizeOverlay(false)
-        setStreamingVersions([])
-      },
-    })
-  }, [prompt, type, style, mood, optimizeCount])
+      }
+    }
+  }, [prompt, type, style, mood, optimizeCount, params.optimize_stream])
 
   const handleSelectOptimized = useCallback((text) => {
     let cleaned = text
