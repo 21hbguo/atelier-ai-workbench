@@ -126,6 +126,9 @@ if not _runtime_config["generation_providers"]:
     _runtime_config["generation_providers"]={"wuyin-main":{"type":"wuyin","enabled":True,"priority":100,"api_url":"","api_key":"","circuit_fail_threshold":3,"circuit_cooldown_seconds":60,"unit_name":"供应商积分","unit_code":"vendor_points"}}
 
 
+def _provider_env_key(provider_name: str) -> str:
+    return f"PROVIDER_{provider_name.upper().replace('-', '_')}_API_KEY"
+
 def _load_runtime_config():
     global _runtime_config
     if CONFIG_FILE.exists():
@@ -137,12 +140,21 @@ def _load_runtime_config():
                     _runtime_config[k] = v
         except Exception:
             pass
+    # 从 .env 恢复供应商 api_key
+    if "generation_providers" in _runtime_config:
+        for pk, pv in _runtime_config["generation_providers"].items():
+            env_val = os.getenv(_provider_env_key(pk))
+            if env_val:
+                pv["api_key"] = env_val
 
 
 def _save_runtime_config():
     to_save = {k: v for k, v in _runtime_config.items() if k not in _SENSITIVE_KEYS}
-    # generation_providers 中的 api_key 也属于敏感字段，保存时清除
+    # 供应商 api_key 写入 .env，config.json 中清除
     if "generation_providers" in to_save:
+        for pk, pv in to_save["generation_providers"].items():
+            if "api_key" in pv and pv["api_key"]:
+                _update_env_file(_provider_env_key(pk), pv["api_key"])
         to_save["generation_providers"] = {
             pk: {k: v for k, v in pv.items() if k != "api_key"}
             for pk, pv in to_save["generation_providers"].items()
