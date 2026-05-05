@@ -168,7 +168,7 @@ class FinanceService:
             if not row:raise ValueError("采购批次不存在")
             consumed_quota=round(max(cls._safe_float(row.get("quota_amount"),0)-cls._safe_float(row.get("remaining_quota"),0),0),6)
             locked=consumed_quota>0
-            if locked and (provider_id!=row["provider_id"] or round(cls._safe_float(row.get("amount_rmb"),0),6)!=amount_rmb or round(cls._safe_float(row.get("quota_amount"),0),6)!=quota_amount):raise ValueError("该采购批次已被消耗，仅允许修改采购时间和备注")
+            if locked and provider_id!=row["provider_id"]:raise ValueError("该采购批次已被消耗，不能修改渠道")
             if adjust_consumed is not None:
                 new_consumed=round(cls._safe_float(adjust_consumed,consumed_quota),6)
                 if new_consumed<0:raise ValueError("已消耗不能小于0")
@@ -257,7 +257,7 @@ class FinanceService:
                 ORDER BY b.purchase_date DESC,b.id DESC LIMIT %s OFFSET %s""",params+[size,offset]).fetchall()
         items=[]
         for x in rows:
-            consumed_quota=round(max(cls._safe_float(x["quota_amount"],0)-cls._safe_float(x["remaining_quota"],0),0),6);allocation_count=int(x.get("allocation_count") or 0);can_edit_core=consumed_quota<=0 and allocation_count<=0;can_delete=can_edit_core;locked_reason="" if can_edit_core else "已消耗，金额/数量/渠道不可改，且不能删除"
+            consumed_quota=round(max(cls._safe_float(x["quota_amount"],0)-cls._safe_float(x["remaining_quota"],0),0),6);allocation_count=int(x.get("allocation_count") or 0);can_edit_core=consumed_quota<=0 and allocation_count<=0;can_delete=can_edit_core;locked_reason="" if can_edit_core else "已消耗，渠道不可改，且不能删除"
             items.append({"id":x["id"],"provider_id":x["provider_id"],"provider_unit_name":(provider_cfg.get(x["provider_id"]) or {}).get("unit_name") or "供应商额度","purchase_date":x["purchase_date"],"amount_rmb":round(cls._safe_float(x["amount_rmb"],0),2),"quota_amount":round(cls._safe_float(x["quota_amount"],0),6),"remaining_quota":round(cls._safe_float(x["remaining_quota"],0),6),"consumed_quota":consumed_quota,"unit_cost":round(cls._safe_float(x["unit_cost"],0),8),"remark":x.get("remark") or "","operator_user_id":x.get("operator_user_id"),"operator_name":x.get("operator_name") or "","created_at":x.get("created_at"),"allocation_count":allocation_count,"can_edit_core":can_edit_core,"can_delete":can_delete,"locked_reason":locked_reason})
         return {"items":items,"total":int(total or 0),"page":page,"size":size}
     @classmethod
