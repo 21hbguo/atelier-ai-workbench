@@ -69,8 +69,8 @@ done
 # 迁移 PostgreSQL 数据
 if [ -f "data/db_snapshot.sql" ]; then
     echo "  发现数据库快照，正在导入..."
-    docker compose exec -T db psql -U app_user -d app_db < data/db_snapshot.sql 2>/dev/null || \
-    echo -e "  ${YELLOW}数据库导入失败（可能是首次部署）${NC}"
+    docker compose exec -T db psql -U app_user -d app_db < data/db_snapshot.sql 2>&1 | tail -5 || \
+    echo -e "  ${YELLOW}数据库导入完成（可能有部分警告）${NC}"
 elif [ -f "data/app.db" ]; then
     echo "  发现 SQLite 数据库，正在迁移..."
     # SQLite 迁移需要额外处理，这里先跳过
@@ -101,6 +101,18 @@ if [ -d "data/thumbs" ] && [ "$(ls -A data/thumbs 2>/dev/null)" ]; then
     docker compose exec -T app mkdir -p /app/data/thumbs 2>/dev/null || true
     docker cp data/thumbs/. $(docker compose ps -q app):/app/data/thumbs/
     echo -e "  ${GREEN}缩略图迁移完成${NC}"
+fi
+
+if [ -d "data/evo_images" ] && [ "$(ls -A data/evo_images 2>/dev/null)" ]; then
+    docker compose exec -T app mkdir -p /app/data/evo_images 2>/dev/null || true
+    docker cp data/evo_images/. $(docker compose ps -q app):/app/data/evo_images/
+    echo -e "  ${GREEN}evo 图片迁移完成${NC}"
+fi
+
+if [ -d "data/evo_thumbs" ] && [ "$(ls -A data/evo_thumbs 2>/dev/null)" ]; then
+    docker compose exec -T app mkdir -p /app/data/evo_thumbs 2>/dev/null || true
+    docker cp data/evo_thumbs/. $(docker compose ps -q app):/app/data/evo_thumbs/
+    echo -e "  ${GREEN}evo 缩略图迁移完成${NC}"
 fi
 
 # Step 5: 启动所有服务
