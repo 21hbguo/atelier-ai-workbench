@@ -20,6 +20,9 @@ class WuyinImageProvider:
         response=await client.post(f"{cls._base_url(conf)}/image_gpt",headers=headers,json=payload)
         if response.status_code!=200: raise RuntimeError(f"submit_http_{response.status_code}:{response.text}")
         result=response.json() or {}
+        code=result.get("code")
+        if code not in (None,0,"0",200):
+            raise RuntimeError(f"submit_biz_error:{code}:{result.get('msg','')}")
         data=result.get("data") or {}
         task_id=data.get("id")
         if not task_id: raise RuntimeError(f"submit_no_task_id:{response.text}")
@@ -68,4 +71,4 @@ class WuyinImageProvider:
     @classmethod
     def is_retryable_error(cls, exc: Exception) -> bool:
         msg=str(exc)
-        return any(x in msg for x in ["poll_transport","poll_http_5","submit_http_4","submit_http_5","429","timeout","timed out","connection","connect","refused"])
+        return any(x in msg for x in ["poll_transport","poll_http_5","submit_http_4","submit_http_5","submit_biz_error","submit_no_task_id","429","timeout","timed out","connection","connect","refused"])
