@@ -6,8 +6,10 @@ services:
       POSTGRES_USER: ${PG_USER:-app_user}
       POSTGRES_PASSWORD: ${PG_PASSWORD:-CHANGE_ME}
       POSTGRES_DB: ${PG_DB:-app_db}
+      TZ: Asia/Shanghai
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - /etc/localtime:/etc/localtime:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-app_user}"]
       interval: 5s

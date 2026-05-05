@@ -9,9 +9,11 @@ RUN npm run build
 # Stage 2: Runtime
 FROM python:3.12-slim
 WORKDIR /app
+ENV TZ=Asia/Shanghai
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    nginx curl && \
+    nginx curl tzdata && \
+    ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ >/etc/timezone && \
     rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt ./
