@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
 import { authAPI, configAPI } from '../api'
 import { writeUser } from '../auth'
 const REGISTER_DRAFT_KEY='register_form_draft_v1'
@@ -122,31 +121,30 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="login-page min-h-screen flex items-center justify-center p-4" style={{ background: 'var(--bg-primary)' }}>
+    <div className="login-page min-h-[100dvh] flex items-start sm:items-center justify-center px-4 py-3 sm:p-4" style={{ background: 'var(--bg-primary)' }}>
       <div className="login-glow" />
       <div className="login-glow login-glow-2" />
       <div className="w-full max-w-sm relative z-10">
-        <button onClick={() => navigate(-1)} className="flex items-center gap-1 mb-5 text-sm hover:opacity-80 transition-opacity" style={{ color: 'var(--text-secondary)' }}><ArrowLeft size={16} />返回</button>
-        <div className="text-center mb-8">
-          <h1 className="login-title" style={{ fontFamily: "'Alex Brush', cursive", fontSize: '3.5rem' }}>Atelier</h1>
+        <div className="text-center mb-5 sm:mb-8">
+          <h1 className="login-title leading-none" style={{ fontFamily: "'Alex Brush', cursive", fontSize: 'clamp(2.8rem,12vw,3.5rem)' }}>Atelier</h1>
           <p className="text-sm mt-1 tracking-widest" style={{ color: 'var(--text-secondary)', opacity: 0.7 }}>AI 造梦工坊</p>
-          <p className="text-xs mt-3" style={{ color: 'var(--text-secondary)' }}>
+          <p className="text-xs mt-2 sm:mt-3" style={{ color: 'var(--text-secondary)' }}>
             {isRegister ? '创建账号，开始你的 AI 创作之旅' : registerEnabled ? '欢迎回来，继续你的创作' : '当前仅开放登录，注册已关闭'}
           </p>
-          <p className="text-[11px] mt-2" style={{ color: 'var(--text-secondary)', opacity: 0.6 }}>
+          <p className="text-[11px] mt-1.5 sm:mt-2" style={{ color: 'var(--text-secondary)', opacity: 0.6 }}>
             无需复杂配置，一句话或一张图，即刻开启灵感之旅
           </p>
         </div>
 
-        <div className="login-card rounded-2xl p-6" style={{ background: 'var(--bg-ai-bubble)', boxShadow: 'var(--shadow-lg)' }}>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <div className="login-card rounded-2xl p-4 sm:p-6" style={{ background: 'var(--bg-ai-bubble)', boxShadow: 'var(--shadow-lg)' }}>
+          <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:gap-4">
             <div>
               <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>账号或邮箱</label>
               <input
                 type="text"
                 value={account}
                 onChange={(e) => setAccount(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
+                className="w-full px-3 py-2.5 sm:py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
                 style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent)' }}
                 placeholder={isRegister ? '4-16 位字母、数字或下划线' : '输入账号或注册邮箱'}
                 required
@@ -159,13 +157,13 @@ export default function LoginPage() {
               <div>
                 <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>昵称</label>
                 <input
-                  type="text"
-                  value={nickname}
-                  onChange={(e) => setNickname(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
-                  style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
-                  placeholder="可选"
-                />
+                type="text"
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+                className="w-full px-3 py-2.5 sm:py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
+                style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                placeholder="可选"
+              />
               </div>
             )}
 
@@ -176,7 +174,7 @@ export default function LoginPage() {
                   type="email"
                   value={email}
                   onChange={(e) => { setEmail(e.target.value); if (error) setError('') }}
-                  className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
+                  className="w-full px-3 py-2.5 sm:py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
                   style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
                   placeholder="仅支持常用邮箱"
                   required
@@ -190,7 +188,7 @@ export default function LoginPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
+                className="w-full px-3 py-2.5 sm:py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
                 style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
                 placeholder="至少 6 个字符"
                 required
@@ -199,7 +197,7 @@ export default function LoginPage() {
             </div>
 
             {isRegister && (
-              <label className="flex items-start gap-2 text-xs leading-6" style={{ color: 'var(--text-secondary)' }}>
+              <label className="flex items-start gap-2 text-xs leading-5 sm:leading-6" style={{ color: 'var(--text-secondary)' }}>
                 <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} className="mt-1 h-4 w-4 rounded border" style={{ accentColor: 'var(--accent)' }} />
                 <span>我已阅读并同意 <button type="button" onClick={() => navigate('/agreement')} className="underline underline-offset-2" style={{ color: 'var(--text-primary)' }}>《用户协议》</button>、<button type="button" onClick={() => navigate('/privacy')} className="underline underline-offset-2" style={{ color: 'var(--text-primary)' }}>《隐私政策》</button>、<button type="button" onClick={() => navigate('/refund')} className="underline underline-offset-2" style={{ color: 'var(--text-primary)' }}>《捐赠说明与积分规则》</button></span>
               </label>
@@ -213,7 +211,7 @@ export default function LoginPage() {
                     type="text"
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
-                    className="w-full min-w-0 px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
+                    className="w-full min-w-0 px-3 py-2.5 sm:py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
                     style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
                     placeholder="6 位验证码"
                     required
@@ -223,7 +221,7 @@ export default function LoginPage() {
                     type="button"
                     onClick={handleSendCode}
                     disabled={sendingCode || cooldown > 0 || !email || !agreed}
-                    className="w-full px-2 py-2.5 rounded-lg text-[11px] font-medium border whitespace-nowrap disabled:opacity-50"
+                    className="w-full px-2 py-2.5 sm:py-2.5 rounded-lg text-[11px] font-medium border whitespace-nowrap disabled:opacity-50"
                     style={{ borderColor: 'var(--border-color)', color: cooldown > 0 ? 'var(--text-secondary)' : 'var(--accent)', background: 'var(--bg-primary)' }}
                   >
                     {cooldown > 0 ? `${cooldown}s` : sendingCode ? '发送中...' : '发送验证码'}
@@ -246,7 +244,7 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {registerEnabled ? <p className="text-center mt-4 text-sm" style={{ color: 'var(--text-secondary)' }}>
+          {registerEnabled ? <p className="text-center mt-3 sm:mt-4 text-sm" style={{ color: 'var(--text-secondary)' }}>
             {isRegister ? '已有账号？' : '没有账号？'}
             <button
               onClick={() => switchMode(!isRegister)}
@@ -258,7 +256,7 @@ export default function LoginPage() {
           </p> : <p className="text-center mt-4 text-sm" style={{ color: 'var(--text-secondary)' }}>注册入口已关闭</p>}
         </div>
 
-        <p className="text-center mt-6 text-[11px]" style={{ color: 'var(--text-secondary)', opacity: 0.5 }}>
+        <p className="text-center mt-4 sm:mt-6 text-[11px]" style={{ color: 'var(--text-secondary)', opacity: 0.5 }}>
           Atelier · AI 造梦工坊
         </p>
       </div>
