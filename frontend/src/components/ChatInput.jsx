@@ -31,6 +31,8 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const [optimizeLoading, setOptimizeLoading] = useState(false)
   const [optimizeResults, setOptimizeResults] = useState(null)
   const [showOptimizeOverlay, setShowOptimizeOverlay] = useState(false)
+  const [showOptimizeModal, setShowOptimizeModal] = useState(false)
+  const [optimizeCount, setOptimizeCount] = useState(2)
   const [toast, setToast] = useState(null)
   const [style, setStyle] = useState(() => localStorage.getItem('cached_style') || '')
   const [mood, setMood] = useState(() => localStorage.getItem('cached_mood') || '')
@@ -293,19 +295,24 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     return () => clearTimeout(t)
   }, [toast])
 
-  const handleOptimize = useCallback(async () => {
+  const handleOptimize = useCallback(() => {
     if (!prompt.trim() || optimizeLoading) return
+    setShowOptimizeModal(true)
+  }, [prompt, optimizeLoading])
+
+  const handleConfirmOptimize = useCallback(async () => {
+    setShowOptimizeModal(false)
     setOptimizeLoading(true)
     try {
-      const { data } = await promptOptimizeAPI.optimize(prompt.trim())
+      const { data } = await promptOptimizeAPI.optimize(prompt.trim(), optimizeCount)
       setOptimizeResults(data)
       setShowOptimizeOverlay(true)
     } catch (e) {
-      setToast(typeof e?.message === 'string' ? e.message : '优化失败，请重试')
+      setToast({ message: typeof e?.message === 'string' ? e.message : '优化失败，请重试', type: 'error' })
     } finally {
       setOptimizeLoading(false)
     }
-  }, [prompt, optimizeLoading])
+  }, [prompt, optimizeLoading, optimizeCount])
 
   const handleSelectOptimized = useCallback((text) => {
     setPrompt(text)
@@ -381,7 +388,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
                     <div className="flex items-start gap-2">
                       <span className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold mt-0.5" style={{ background: 'var(--accent)', color: '#fff' }}>{i + 1}</span>
                       <p className="flex-1 text-xs leading-relaxed min-w-0" style={{ color: 'var(--text-primary)', wordBreak: 'break-word' }}>{v}</p>
-                      <button onClick={() => handleSelectOptimized(v)} className="flex-shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-medium opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: 'var(--accent)', color: '#fff' }}>使用</button>
+                      <button onClick={() => handleSelectOptimized(v)} className="flex-shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-medium opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" style={{ background: 'var(--accent)', color: '#fff' }}>使用</button>
                     </div>
                   </div>
                 ))}
@@ -389,9 +396,43 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
             </div>
           </div>
         )}
+        {showOptimizeModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowOptimizeModal(false)}>
+            <div className="absolute inset-0 bg-black/50" />
+            <div className="relative w-full max-w-xs rounded-2xl p-5" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }} onClick={e => e.stopPropagation()}>
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles size={16} style={{ color: 'var(--accent)' }} />
+                <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>AI 优化提示词</span>
+              </div>
+              <p className="text-xs mb-4" style={{ color: 'var(--text-secondary)' }}>将优化当前提示词，生成更精确的描述以获得更好的生成效果。</p>
+              <div className="mb-4">
+                <span className="text-xs mb-2 block" style={{ color: 'var(--text-secondary)' }}>生成条数</span>
+                <div className="flex gap-2">
+                  {[1, 2, 3].map(n => (
+                    <button key={n} onClick={() => setOptimizeCount(n)}
+                      className="flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors"
+                      style={{
+                        background: optimizeCount === n ? 'var(--accent)' : 'transparent',
+                        borderColor: optimizeCount === n ? 'var(--accent)' : 'var(--border-color)',
+                        color: optimizeCount === n ? '#fff' : 'var(--text-secondary)',
+                      }}>{n} 条</button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center justify-between mb-4 px-1">
+                <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>消耗积分</span>
+                <span className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>{requestCost * optimizeCount}</span>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setShowOptimizeModal(false)} className="flex-1 py-2 rounded-lg text-xs font-medium border transition-colors" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>取消</button>
+                <button onClick={handleConfirmOptimize} className="flex-1 py-2 rounded-lg text-xs font-medium text-white transition-colors" style={{ background: 'var(--accent)' }}>确认优化</button>
+              </div>
+            </div>
+          </div>
+        )}
         {toast && (
           <div className="absolute bottom-full left-0 right-0 mb-1 mx-4 flex justify-center z-40 pointer-events-none">
-            <div className="px-3 py-1.5 rounded-lg text-xs font-medium animate-fade-in-up" style={{ background: 'var(--color-error)', color: '#fff' }}>{toast}</div>
+            <div className="px-3 py-1.5 rounded-lg text-xs font-medium animate-fade-in-up" style={{ background: toast.type === 'success' ? 'var(--color-success)' : 'var(--color-error)', color: '#fff' }}>{toast.message}</div>
           </div>
         )}
         <div className="flex gap-2 mb-1.5 px-1 relative">
@@ -471,10 +512,10 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
               rows={1} style={{ color: 'var(--text-primary)', minHeight: '40px', maxHeight: '120px', fontSize: '15px', paddingLeft: '10px' }} />
             <div className="mt-2 flex items-center justify-between gap-3">
               <div className="flex items-center flex-shrink-0 whitespace-nowrap">
-                <button type="button" onClick={openFilePicker} title="上传参考图" className="inline-flex items-center gap-1 px-1.5 py-2 rounded-lg hover:bg-bg-hover transition-colors text-xs font-medium" style={{ color: 'var(--text-secondary)' }}><Paperclip size={16} /><span>参考图</span></button>
-                <button onClick={toggleParams} title="参数设置" className="inline-flex items-center gap-1 px-1.5 py-2 rounded-lg hover:bg-bg-hover transition-colors text-xs font-medium" style={{ color: showParams ? 'var(--accent)' : 'var(--text-secondary)' }}><Settings size={15} /><span>参数</span></button>
-                <button onClick={() => setShareToSquare(!shareToSquare)} className="inline-flex items-center gap-1 px-1.5 py-2 rounded-lg hover:bg-bg-hover transition-colors relative text-xs font-medium" style={{ color: shareToSquare ? 'var(--color-success)' : 'var(--text-secondary)' }} title={shareToSquare ? '已开启分享到广场' : '已关闭分享到广场'}><Share2 size={15} /><span>分享</span><span className="absolute -right-0.5 -top-0.5 w-1.5 h-1.5 rounded-full" style={{ background: shareToSquare ? 'var(--color-success)' : 'var(--border-color)' }} /></button>
-                <button onClick={handleOptimize} disabled={!prompt.trim() || loading || optimizeLoading} title="AI 优化提示词" className="inline-flex items-center gap-1 px-1.5 py-2 rounded-lg hover:bg-bg-hover transition-colors text-xs font-medium disabled:opacity-40" style={{ color: 'var(--accent)' }}>{optimizeLoading ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}<span>优化</span></button>
+                <button onClick={toggleParams} title="参数设置" className="inline-flex items-center px-1.5 py-2 rounded-lg hover:bg-bg-hover transition-colors" style={{ color: showParams ? 'var(--accent)' : 'var(--text-secondary)' }}><Settings size={15} /></button>
+                <button type="button" onClick={openFilePicker} title="上传参考图" className="inline-flex items-center px-1.5 py-2 rounded-lg hover:bg-bg-hover transition-colors" style={{ color: 'var(--text-secondary)' }}><Paperclip size={16} /></button>
+                <button onClick={() => { const next = !shareToSquare; setShareToSquare(next); setToast({ message: next ? '已开启分享到广场，作品将长久保存' : '已关闭分享到广场', type: 'success' }) }} className="inline-flex items-center px-1.5 py-2 rounded-lg hover:bg-bg-hover transition-colors relative" style={{ color: shareToSquare ? 'var(--color-success)' : 'var(--text-secondary)' }} title={shareToSquare ? '已开启分享到广场' : '已关闭分享到广场'}><Share2 size={15} /><span className="absolute -right-0.5 -top-0.5 w-2.5 h-2.5 rounded-full" style={{ background: shareToSquare ? 'var(--color-success)' : 'var(--border-color)' }} /></button>
+                <button onClick={handleOptimize} disabled={!prompt.trim() || loading || optimizeLoading} title="AI 优化提示词" className="inline-flex items-center px-1.5 py-2 rounded-lg hover:bg-bg-hover transition-colors disabled:opacity-40" style={{ color: 'var(--accent)' }}>{optimizeLoading ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}</button>
               </div>
               <div className="min-w-0 flex items-center justify-end gap-1 flex-1">
                 {loading && <span className="inline-flex items-center gap-1 text-[10px] flex-shrink-0" style={{ color: 'var(--accent)' }}><Loader2 size={11} className="animate-spin" /><span>{images.length > 0 ? '上传并提交中' : '提交中'}</span></span>}
