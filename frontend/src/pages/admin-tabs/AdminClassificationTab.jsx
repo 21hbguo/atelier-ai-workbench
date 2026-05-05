@@ -12,6 +12,11 @@ const RESULT_STATUS_MAP = {
   pending: { label: '待审核', color: 'var(--color-warning)' },
   applied: { label: '已应用', color: 'var(--color-success)' },
   rejected: { label: '已拒绝', color: 'var(--color-error)' },
+  failed: { label: '分类失败', color: 'var(--color-error)' },
+}
+const getResultDisplayStatus = (r) => {
+  if (r.status === 'pending' && r.suggested_category === '_error') return RESULT_STATUS_MAP.failed
+  return RESULT_STATUS_MAP[r.status] || { label: r.status, color: 'var(--text-secondary)' }
 }
 const CONFIDENCE_MAP = { high: '高', medium: '中', low: '低' }
 
@@ -47,12 +52,24 @@ export default function AdminClassificationTab({
 
   const handleApprove = async () => {
     if (selected.size === 0) return
-    try { await adminAPI.approveClassification(detail.id, [...selected]); setSelected(new Set()); setDetail(null) } catch {}
+    try {
+      await adminAPI.approveClassification(detail.id, [...selected])
+      setSelected(new Set())
+      const { data } = await adminAPI.getClassificationTask(detail.id)
+      setDetail(data)
+      onRefreshTasks()
+    } catch {}
   }
 
   const handleReject = async () => {
     if (selected.size === 0) return
-    try { await adminAPI.rejectClassification(detail.id, [...selected]); setSelected(new Set()); setDetail(null) } catch {}
+    try {
+      await adminAPI.rejectClassification(detail.id, [...selected])
+      setSelected(new Set())
+      const { data } = await adminAPI.getClassificationTask(detail.id)
+      setDetail(data)
+      onRefreshTasks()
+    } catch {}
   }
 
   const toggleSelect = id => {
@@ -68,6 +85,7 @@ export default function AdminClassificationTab({
   const getFilteredResults = () => {
     if (!detail?.results) return []
     if (resultFilter === 'all') return detail.results
+    if (resultFilter === 'failed') return detail.results.filter(r => r.status === 'pending' && r.suggested_category === '_error')
     return detail.results.filter(r => r.status === resultFilter)
   }
 
@@ -92,6 +110,7 @@ export default function AdminClassificationTab({
       await adminAPI.approveClassification(detail.id, [resultId])
       const { data } = await adminAPI.getClassificationTask(detail.id)
       setDetail(data)
+      onRefreshTasks()
     } catch {}
   }
 
@@ -100,6 +119,7 @@ export default function AdminClassificationTab({
       await adminAPI.rejectClassification(detail.id, [resultId])
       const { data } = await adminAPI.getClassificationTask(detail.id)
       setDetail(data)
+      onRefreshTasks()
     } catch {}
   }
 
@@ -203,15 +223,15 @@ export default function AdminClassificationTab({
       )}
 
       <div className="flex items-center gap-2 flex-wrap">
-        {['all', 'pending', 'applied', 'rejected'].map(f => (
+        {['all', 'pending', 'applied', 'rejected', 'failed'].map(f => (
           <button key={f} onClick={() => setResultFilter(f)} className="px-3 py-1 rounded-full text-xs font-medium transition-colors"
             style={{ background: resultFilter === f ? 'var(--accent)' : 'var(--bg-ai-bubble)', color: resultFilter === f ? '#fff' : 'var(--text-secondary)', border: '1px solid', borderColor: resultFilter === f ? 'var(--accent)' : 'var(--border-color)' }}>
-            {f === 'all' ? '全部' : RESULT_STATUS_MAP[f]?.label} ({f === 'all' ? detail.results?.length || 0 : (detail.results?.filter(r => r.status === f).length || 0)})
+            {f === 'all' ? '全部' : RESULT_STATUS_MAP[f]?.label} ({f === 'all' ? detail.results?.length || 0 : f === 'failed' ? (detail.results?.filter(r => r.status === 'pending' && r.suggested_category === '_error').length || 0) : (detail.results?.filter(r => r.status === f).length || 0)})
           </button>
         ))}
       </div>
 
-      {detail.status === 'pending_review' && (
+      {(detail.status === 'pending_review' || detail.status === 'processing') && (
         <div className="flex items-center gap-2">
           <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
             {selected.size === filteredResults.length ? '取消全选' : '全选'}
@@ -233,21 +253,21 @@ export default function AdminClassificationTab({
         <table className="w-full text-sm">
           <thead>
             <tr style={{ background: 'var(--bg-ai-bubble)' }}>
-              {detail.status === 'pending_review' && <th className="px-3 py-2 w-8"></th>}
+              {(detail.status === 'pending_review' || detail.status === 'processing') && <th className="px-3 py-2 w-8"></th>}
               <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>项目信息</th>
               <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>当前分类</th>
               <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>建议分类</th>
               <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>置信度</th>
               <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>状态</th>
-              {detail.status === 'pending_review' && <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>操作</th>}
+              {(detail.status === 'pending_review' || detail.status === 'processing') && <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>操作</th>}
             </tr>
           </thead>
           <tbody>
             {filteredResults.length === 0 ? (
-              <tr><td colSpan={detail.status === 'pending_review' ? 7 : 5} className="px-3 py-8 text-center" style={{ color: 'var(--text-secondary)' }}>暂无数据</td></tr>
+              <tr><td colSpan={(detail.status === 'pending_review' || detail.status === 'processing') ? 7 : 5} className="px-3 py-8 text-center" style={{ color: 'var(--text-secondary)' }}>暂无数据</td></tr>
             ) : filteredResults.map(r => (
               <tr key={r.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
-                {detail.status === 'pending_review' && (
+                {(detail.status === 'pending_review' || detail.status === 'processing') && (
                   <td className="px-3 py-2">
                     <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleSelect(r.id)} className="rounded" />
                   </td>
@@ -282,13 +302,15 @@ export default function AdminClassificationTab({
                   <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{CONFIDENCE_MAP[r.confidence] || '-'}</span>
                 </td>
                 <td className="px-3 py-2">
-                  <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: RESULT_STATUS_MAP[r.status]?.color + '20', color: RESULT_STATUS_MAP[r.status]?.color }}>
-                    {RESULT_STATUS_MAP[r.status]?.label || r.status}
-                  </span>
+                  {(() => { const s = getResultDisplayStatus(r); return (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: s.color + '20', color: s.color }}>
+                      {s.label}
+                    </span>
+                  )})()}
                 </td>
-                {detail.status === 'pending_review' && (
+                {(detail.status === 'pending_review' || detail.status === 'processing') && (
                   <td className="px-3 py-2">
-                    {r.status === 'pending' && (
+                    {r.status === 'pending' && r.suggested_category !== '_error' && (
                       <div className="flex gap-1">
                         <button onClick={() => handleApproveSingle(r.id)} className="p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--color-success)' }} title="通过">
                           <Check size={14} />
@@ -297,6 +319,11 @@ export default function AdminClassificationTab({
                           <X size={14} />
                         </button>
                       </div>
+                    )}
+                    {r.status === 'pending' && r.suggested_category === '_error' && (
+                      <button onClick={() => handleRejectSingle(r.id)} className="p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--color-error)' }} title="移除">
+                        <X size={14} />
+                      </button>
                     )}
                   </td>
                 )}

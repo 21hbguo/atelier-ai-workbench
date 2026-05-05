@@ -385,6 +385,7 @@ def init_db():
                 suggested_category VARCHAR(64),
                 suggested_category_label VARCHAR(128),
                 is_new_category BOOLEAN DEFAULT FALSE,
+                confidence VARCHAR(16),
                 status VARCHAR(32) NOT NULL DEFAULT 'pending',
                 reviewed_at TIMESTAMP,
                 applied_at TIMESTAMP,
@@ -392,6 +393,7 @@ def init_db():
             )""",
             "CREATE INDEX IF NOT EXISTS idx_cls_results_task ON classification_results(task_id)",
             "CREATE INDEX IF NOT EXISTS idx_cls_results_status ON classification_results(status)",
+            "ALTER TABLE classification_results ADD COLUMN IF NOT EXISTS confidence VARCHAR(16)",
         ]
             for sql in statements:
                 conn.execute(sql)

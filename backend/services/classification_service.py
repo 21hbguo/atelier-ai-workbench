@@ -115,12 +115,12 @@ class ClassificationService:
                         match = result_map.get(row["item_id"])
                         if match:
                             conn.execute(
-                                "UPDATE classification_results SET suggested_category = %s, suggested_category_label = %s, is_new_category = %s WHERE id = %s",
-                                (match.get("category_slug", ""), match.get("category_label", ""), match.get("is_new", False), row["id"]),
+                                "UPDATE classification_results SET suggested_category = %s, suggested_category_label = %s, is_new_category = %s, confidence = %s WHERE id = %s",
+                                (match.get("category_slug", ""), match.get("category_label", ""), match.get("is_new", False), match.get("confidence", ""), row["id"]),
                             )
                         else:
                             conn.execute(
-                                "UPDATE classification_results SET suggested_category = '_error', suggested_category_label = '分类失败', status = 'rejected' WHERE id = %s",
+                                "UPDATE classification_results SET suggested_category = '_error', suggested_category_label = '分类失败' WHERE id = %s",
                                 (row["id"],),
                             )
                         processed += 1
@@ -131,9 +131,14 @@ class ClassificationService:
                     )
 
             with get_db() as conn:
-                conn.execute(
-                    "UPDATE classification_tasks SET status = 'pending_review', processed_items = total_items, completed_at = NOW() WHERE id = %s",
+                pending = conn.execute(
+                    "SELECT COUNT(*) AS cnt FROM classification_results WHERE task_id = %s AND status = 'pending'",
                     (task_id,),
+                ).fetchone()["cnt"]
+                new_status = "pending_review" if pending > 0 else "completed"
+                conn.execute(
+                    "UPDATE classification_tasks SET status = %s, processed_items = total_items, completed_at = NOW() WHERE id = %s",
+                    (new_status, task_id),
                 )
             logger.info(f"[classification] Task {task_id} completed, {processed} items processed")
 
@@ -146,10 +151,10 @@ class ClassificationService:
                 )
 
     @classmethod
-    async def _classify_batch(cls, system_prompt: str, items: List[Dict]) -> Optional[List[Dict]]:
+    async def _classify_batch(cls, system_prompt: str, items: List[Dict]) -> List[Dict]:
         llm_cfg = get_llm_config()
         if not llm_cfg["enabled"] or not llm_cfg["api_key"]:
-            return None
+            return []
 
         try:
             client = cls._get_client()
@@ -188,13 +193,13 @@ class ClassificationService:
 
         except httpx.TimeoutException:
             logger.warning("[classification] LLM API timeout")
-            return None
+            return []
         except json.JSONDecodeError:
             logger.warning(f"[classification] Failed to parse LLM response: {text[:200]}")
-            return None
+            return []
         except Exception:
             logger.exception("[classification] LLM API call failed")
-            return None
+            return []
 
     @classmethod
     def get_task(cls, task_id: int) -> Optional[Dict[str, Any]]:
@@ -259,7 +264,7 @@ class ClassificationService:
 
             approved = 0
             for r in results:
-                if not r["suggested_category"] or r["suggested_category"] == "_error":
+                if not r["suggested_category"] or r["suggested_category"] in ("_error", "_removed"):
                     continue
                 if r["is_new_category"]:
                     existing = conn.execute("SELECT id FROM categories WHERE slug = %s", (r["suggested_category"],)).fetchone()
@@ -310,9 +315,9 @@ class ClassificationService:
                 (task_id,),
             ).fetchone()["cnt"]
             if remaining == 0:
-                task = conn.execute("SELECT id FROM classification_tasks WHERE id = %s AND status = 'pending_review'", (task_id,)).fetchone()
+                task = conn.execute("SELECT id FROM classification_tasks WHERE id = %s AND status IN ('pending_review', 'processing')", (task_id,)).fetchone()
                 if task:
-                    conn.execute("UPDATE classification_tasks SET status = 'completed' WHERE id = %s", (task_id,))
+                    conn.execute("UPDATE classification_tasks SET status = 'completed', completed_at = NOW() WHERE id = %s", (task_id,))
             return {"rejected": len(result_ids), "remaining_pending": remaining}
 
     @classmethod
