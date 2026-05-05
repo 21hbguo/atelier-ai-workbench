@@ -76,8 +76,28 @@ docker cp $(docker compose ps -q app):/app/data ./data_backup
 | 用户上传文件 | /app/data/uploads | volume `appdata` |
 | 生成的图片 | /app/data/images | volume `appdata` |
 | 缩略图 | /app/data/thumbs | volume `appdata` |
+| evo 图片 | /app/evo/images | 挂载宿主机目录（只读） |
+| evo 缩略图 | /app/data/evo_thumbs | volume `appdata` |
 
 Docker volume 独立于容器，删除容器不会丢失数据。
+
+## evo 目录配置
+
+evo 数据（提示词案例库）的图片存放在项目上级目录的 `evo/` 目录。
+
+**部署时需要确保 evo 目录存在**：
+
+```bash
+# 克隆 evo 仓库
+cd /path/to/generate_image
+git clone <evo-repo> evo
+```
+
+**自定义 evo 目录位置**（修改 `.env`）：
+
+```bash
+EVO_DIR=/path/to/your/evo
+```
 
 ## 端口配置
 

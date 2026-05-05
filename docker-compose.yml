@@ -24,6 +24,7 @@ services:
       DATABASE_URL: postgresql://${PG_USER:-app_user}:${PG_PASSWORD:-CHANGE_ME}@db:5432/${PG_DB:-app_db}
     volumes:
       - appdata:/app/data
+      - ${EVO_DIR:-../evo}:/app/evo:ro
     depends_on:
       db:
         condition: service_healthy
