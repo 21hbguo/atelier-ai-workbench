@@ -121,7 +121,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="login-page min-h-[100dvh] flex items-start sm:items-center justify-center px-4 py-3 sm:p-4" style={{ background: 'var(--bg-primary)' }}>
+    <div className="login-page min-h-[100dvh] flex items-start sm:items-center justify-center px-4 pt-[14vh] pb-6 sm:p-4" style={{ background: 'var(--bg-primary)' }}>
       <div className="login-glow" />
       <div className="login-glow login-glow-2" />
       <div className="w-full max-w-sm relative z-10">
@@ -199,7 +199,7 @@ export default function LoginPage() {
             {isRegister && (
               <label className="flex items-start gap-2 text-xs leading-5 sm:leading-6" style={{ color: 'var(--text-secondary)' }}>
                 <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} className="mt-1 h-4 w-4 rounded border" style={{ accentColor: 'var(--accent)' }} />
-                <span>我已阅读并同意 <button type="button" onClick={() => navigate('/agreement')} className="underline underline-offset-2" style={{ color: 'var(--text-primary)' }}>《用户协议》</button>、<button type="button" onClick={() => navigate('/privacy')} className="underline underline-offset-2" style={{ color: 'var(--text-primary)' }}>《隐私政策》</button>、<button type="button" onClick={() => navigate('/refund')} className="underline underline-offset-2" style={{ color: 'var(--text-primary)' }}>《捐赠说明与积分规则》</button></span>
+                <span>我已阅读并同意 <button type="button" onClick={() => navigate('/agreement')} className="underline underline-offset-2" style={{ color: 'var(--text-primary)' }}>《用户协议》</button>、<button type="button" onClick={() => navigate('/privacy')} className="underline underline-offset-2" style={{ color: 'var(--text-primary)' }}>《隐私政策》</button></span>
               </label>
             )}
 
