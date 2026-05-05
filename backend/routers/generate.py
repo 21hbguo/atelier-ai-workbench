@@ -288,6 +288,5 @@ async def _poll_and_download(provider_id: str, external_task_id: str, task_id: s
         if not local_paths and (result or {}).get("message"):
             raise Exception(((result or {}).get("message") or "").strip())
         return local_paths
-        attempt += 1
 
     raise Exception("轮询超时（已等待15分钟）")
