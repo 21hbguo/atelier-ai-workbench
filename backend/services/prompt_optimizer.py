@@ -62,7 +62,7 @@ class PromptOptimizer:
             }
             body = {
                 "model": llm_cfg["model"],
-                "max_tokens": llm_cfg["max_tokens"],
+                "max_tokens": max(llm_cfg["max_tokens"], 2000) * count,
                 "system": SYSTEM_PROMPT,
                 "messages": [{"role": "user", "content": f"请生成 {count} 个优化版本。\n用户原始提示词：\n{prompt}"}],
             }
