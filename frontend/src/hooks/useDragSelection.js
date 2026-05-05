@@ -1,5 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 
+const DRAG_THRESHOLD = 5
+
 export function useDragSelection({
   enabled = false,
   selected = new Set(),
@@ -7,17 +9,23 @@ export function useDragSelection({
   cardSelector = '[data-card-id]',
   containerRef,
 }) {
-  const [dragState, setDragState] = useState({
-    isDragging: false,
+  const selectedRef = useRef(selected)
+  selectedRef.current = selected
+
+  const dragRef = useRef({
+    active: false,
     startX: 0,
     startY: 0,
     currentX: 0,
     currentY: 0,
+    moved: false,
   })
-  const [dragSelected, setDragSelected] = useState(new Set())
   const startSelectedRef = useRef(new Set())
-  const isCtrlRef = useRef(false)
-  const isShiftRef = useRef(false)
+  const isToggleRef = useRef(false)
+
+  const [selectionRect, setSelectionRect] = useState(null)
+  const [dragSelected, setDragSelected] = useState(new Set())
+  const wasDraggedRef = useRef(false)
 
   const getCardIdsInRect = useCallback((rect) => {
     if (!containerRef?.current) return new Set()
@@ -33,119 +41,139 @@ export function useDragSelection({
     return ids
   }, [containerRef, cardSelector])
 
-  const handleMouseDown = useCallback((e) => {
+  useEffect(() => {
     if (!enabled) return
-    if (e.button !== 0) return
-    if (e.target.closest('button') || e.target.closest('input') || e.target.closest('a')) return
+    const container = containerRef?.current
+    if (!container) return
 
-    isCtrlRef.current = e.ctrlKey || e.metaKey
-    isShiftRef.current = e.shiftKey
+    const handleMouseDown = (e) => {
+      if (e.button !== 0) return
+      if (e.target.closest('button') || e.target.closest('input') || e.target.closest('a')) return
 
-    const rect = containerRef?.current?.getBoundingClientRect()
-    if (!rect) return
+      const containerRect = container.getBoundingClientRect()
+      if (!containerRect) return
+      if (e.clientX < containerRect.left || e.clientX > containerRect.right ||
+          e.clientY < containerRect.top || e.clientY > containerRect.bottom) return
 
-    startSelectedRef.current = new Set(selected)
-    setDragState({
-      isDragging: true,
-      startX: e.clientX,
-      startY: e.clientY,
-      currentX: e.clientX,
-      currentY: e.clientY,
-    })
-    setDragSelected(new Set())
-    document.body.classList.add('drag-selection-active')
-  }, [enabled, selected, containerRef])
+      isToggleRef.current = e.ctrlKey || e.metaKey || e.shiftKey
+      startSelectedRef.current = new Set(selectedRef.current)
 
-  const handleMouseMove = useCallback((e) => {
-    if (!dragState.isDragging) return
-
-    setDragState(prev => ({
-      ...prev,
-      currentX: e.clientX,
-      currentY: e.clientY,
-    }))
-
-    const rect = {
-      left: Math.min(dragState.startX, e.clientX),
-      top: Math.min(dragState.startY, e.clientY),
-      right: Math.max(dragState.startX, e.clientX),
-      bottom: Math.max(dragState.startY, e.clientY),
+      dragRef.current = {
+        active: true,
+        startX: e.clientX,
+        startY: e.clientY,
+        currentX: e.clientX,
+        currentY: e.clientY,
+        moved: false,
+      }
+      wasDraggedRef.current = false
+      setSelectionRect(null)
+      setDragSelected(new Set())
+      document.body.classList.add('drag-selection-active')
     }
 
-    const idsInRect = getCardIdsInRect(rect)
-    setDragSelected(idsInRect)
-  }, [dragState.isDragging, dragState.startX, dragState.startY, getCardIdsInRect])
+    const handleMouseMove = (e) => {
+      const d = dragRef.current
+      if (!d.active) return
 
-  const handleMouseUp = useCallback(() => {
-    if (!dragState.isDragging) return
+      d.currentX = e.clientX
+      d.currentY = e.clientY
 
-    let newSelected
-    if (isCtrlRef.current || isShiftRef.current) {
-      newSelected = new Set(startSelectedRef.current)
-      dragSelected.forEach(id => {
-        if (newSelected.has(id)) {
-          newSelected.delete(id)
-        } else {
-          newSelected.add(id)
-        }
+      const dx = d.currentX - d.startX
+      const dy = d.currentY - d.startY
+      if (!d.moved && Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return
+      d.moved = true
+      wasDraggedRef.current = true
+
+      const rect = {
+        left: Math.min(d.startX, d.currentX),
+        top: Math.min(d.startY, d.currentY),
+        right: Math.max(d.startX, d.currentX),
+        bottom: Math.max(d.startY, d.currentY),
+      }
+      setSelectionRect({
+        left: rect.left,
+        top: rect.top,
+        width: rect.right - rect.left,
+        height: rect.bottom - rect.top,
       })
-    } else {
-      newSelected = new Set(dragSelected)
+      setDragSelected(getCardIdsInRect(rect))
     }
 
-    onSelectionChange?.(newSelected)
-    setDragState({
-      isDragging: false,
-      startX: 0,
-      startY: 0,
-      currentX: 0,
-      currentY: 0,
-    })
-    setDragSelected(new Set())
-    document.body.classList.remove('drag-selection-active')
-  }, [dragState.isDragging, dragSelected, onSelectionChange])
+    const handleMouseUp = () => {
+      const d = dragRef.current
+      if (!d.active) return
+      d.active = false
 
-  useEffect(() => {
-    if (!enabled) return
-    document.addEventListener('mousedown', handleMouseDown)
-    document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleMouseUp)
-    return () => {
-      document.removeEventListener('mousedown', handleMouseDown)
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-    }
-  }, [enabled, handleMouseDown, handleMouseMove, handleMouseUp])
+      document.body.classList.remove('drag-selection-active')
 
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && dragState.isDragging) {
-        setDragState({
-          isDragging: false,
-          startX: 0,
-          startY: 0,
-          currentX: 0,
-          currentY: 0,
+      if (!d.moved) {
+        setSelectionRect(null)
+        setDragSelected(new Set())
+        return
+      }
+
+      setTimeout(() => { wasDraggedRef.current = false }, 0)
+
+      let newSelected
+      if (isToggleRef.current) {
+        newSelected = new Set(startSelectedRef.current)
+        const idsInRect = getCardIdsInRect({
+          left: Math.min(d.startX, d.currentX),
+          top: Math.min(d.startY, d.currentY),
+          right: Math.max(d.startX, d.currentX),
+          bottom: Math.max(d.startY, d.currentY),
         })
+        idsInRect.forEach(id => {
+          if (newSelected.has(id)) {
+            newSelected.delete(id)
+          } else {
+            newSelected.add(id)
+          }
+        })
+      } else {
+        const idsInRect = getCardIdsInRect({
+          left: Math.min(d.startX, d.currentX),
+          top: Math.min(d.startY, d.currentY),
+          right: Math.max(d.startX, d.currentX),
+          bottom: Math.max(d.startY, d.currentY),
+        })
+        newSelected = new Set(idsInRect)
+      }
+
+      onSelectionChange?.(newSelected)
+      setSelectionRect(null)
+      setDragSelected(new Set())
+    }
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && dragRef.current.active) {
+        dragRef.current.active = false
+        wasDraggedRef.current = false
+        setSelectionRect(null)
         setDragSelected(new Set())
         document.body.classList.remove('drag-selection-active')
       }
     }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [dragState.isDragging])
 
-  const selectionRect = dragState.isDragging ? {
-    left: Math.min(dragState.startX, dragState.currentX),
-    top: Math.min(dragState.startY, dragState.currentY),
-    width: Math.abs(dragState.currentX - dragState.startX),
-    height: Math.abs(dragState.currentY - dragState.startY),
-  } : null
+    document.addEventListener('mousedown', handleMouseDown)
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown)
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+      document.removeEventListener('keydown', handleKeyDown)
+      document.body.classList.remove('drag-selection-active')
+    }
+  }, [enabled, containerRef, getCardIdsInRect, onSelectionChange])
 
   return {
     selectionRect,
-    isDragging: dragState.isDragging,
+    isDragging: dragRef.current.active && dragRef.current.moved,
     dragSelected,
+    wasDraggedRef,
   }
 }
 
