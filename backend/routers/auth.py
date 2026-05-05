@@ -52,7 +52,7 @@ def _normalize_and_validate_email(email: str) -> str:
         raise HTTPException(status_code=400, detail="邮箱格式不正确")
     domain = value.rsplit("@", 1)[-1]
     if domain not in _ALLOWED_EMAIL_DOMAINS:
-        raise HTTPException(status_code=400, detail="暂仅支持常用邮箱：qq.com、vip.qq.com、foxmail.com、163.com、126.com、yeah.net、188.com、sina.com、sohu.com、139.com、189.cn、21cn.com、aliyun.com、gmail.com、outlook.com、hotmail.com")
+        raise HTTPException(status_code=400, detail="请使用常用邮箱地址")
     return value
 
 
@@ -128,11 +128,12 @@ async def register(req: RegisterRequest, request: Request, response: Response):
 async def login(req: LoginRequest, request: Request, response: Response):
     ip = get_client_ip(request)
     account = normalize_account(req.account)
+    account_lower = account.lower()
     _check_login_rate(ip)
     with get_db() as conn:
-        user = conn.execute("SELECT * FROM users WHERE username = %s", (account,)).fetchone()
+        user = conn.execute("SELECT * FROM users WHERE username = %s OR LOWER(email) = %s", (account, account_lower)).fetchone()
         if not user or not await verify_password(req.password, user["password_hash"]):
-            raise HTTPException(status_code=401, detail="账号或密码错误")
+            raise HTTPException(status_code=401, detail="账号/邮箱或密码错误")
         update_user_ip(user["id"], ip, conn=conn)
         conn.execute("UPDATE users SET last_active = %s WHERE id = %s", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user["id"]))
         payload = build_user_payload({"id": user["id"], "account": user["username"], "nickname": user["nickname"], "is_admin": user["is_admin"], "points": user["points"]})

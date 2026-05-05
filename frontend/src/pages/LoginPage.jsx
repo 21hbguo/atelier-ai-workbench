@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { authAPI, configAPI } from '../api'
 import { writeUser } from '../auth'
+const REGISTER_DRAFT_KEY='register_form_draft_v1'
 
 export default function LoginPage() {
   const accountRe = /^[A-Za-z0-9_]{4,16}$/
@@ -21,11 +22,33 @@ export default function LoginPage() {
   const [cooldown, setCooldown] = useState(0)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  useEffect(() => {
+    if (!isRegister) return
+    try {
+      const raw = localStorage.getItem(REGISTER_DRAFT_KEY)
+      if (!raw) return
+      const draft = JSON.parse(raw)
+      if (draft && typeof draft === 'object') {
+        setAccount(typeof draft.account === 'string' ? draft.account : '')
+        setPassword(typeof draft.password === 'string' ? draft.password : '')
+        setNickname(typeof draft.nickname === 'string' ? draft.nickname : '')
+        setEmail(typeof draft.email === 'string' ? draft.email : '')
+        setCode(typeof draft.code === 'string' ? draft.code : '')
+        setAgreed(!!draft.agreed)
+        setCooldown(Number(draft.cooldown) > 0 ? Number(draft.cooldown) : 0)
+      }
+    } catch {}
+  }, [isRegister])
+  useEffect(() => {
+    if (!isRegister) return
+    try { localStorage.setItem(REGISTER_DRAFT_KEY, JSON.stringify({ account, password, nickname, email, code, agreed, cooldown })) } catch {}
+  }, [isRegister, account, password, nickname, email, code, agreed, cooldown])
 
   const switchMode = (next) => {
     setIsRegister(next)
     setError('')
     setAgreed(false)
+    if (!next) try { localStorage.removeItem(REGISTER_DRAFT_KEY) } catch {}
     navigate(next ? '/login?mode=register' : '/login', { replace: true })
   }
 
@@ -46,7 +69,7 @@ export default function LoginPage() {
   const validateEmailDomain = (value) => {
     const normalized = String(value || '').trim().toLowerCase()
     const domain = normalized.includes('@') ? normalized.split('@').pop() : ''
-    if (!allowedEmailDomains.includes(domain)) return `暂仅支持 ${allowedEmailDomains.join('、')} 邮箱`
+    if (!allowedEmailDomains.includes(domain)) return '请使用常用邮箱地址'
     return ''
   }
 
@@ -89,6 +112,7 @@ export default function LoginPage() {
       if (isRegister && data.user?.points > 0) {
         localStorage.setItem('just_registered', JSON.stringify({ points: data.user.points }))
       }
+      if (isRegister) try { localStorage.removeItem(REGISTER_DRAFT_KEY) } catch {}
       navigate('/')
     } catch (err) {
       setError(err.message)
@@ -117,14 +141,14 @@ export default function LoginPage() {
         <div className="login-card rounded-2xl p-6" style={{ background: 'var(--bg-ai-bubble)', boxShadow: 'var(--shadow-lg)' }}>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>账号</label>
+              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>账号或邮箱</label>
               <input
                 type="text"
                 value={account}
                 onChange={(e) => setAccount(e.target.value)}
                 className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
                 style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent)' }}
-                placeholder="4-16 位字母、数字或下划线"
+                placeholder={isRegister ? '4-16 位字母、数字或下划线' : '输入账号或注册邮箱'}
                 required
                 minLength={5}
                 maxLength={16}
@@ -157,7 +181,6 @@ export default function LoginPage() {
                   placeholder="仅支持常用邮箱"
                   required
                 />
-                <p className="text-[11px] mt-1" style={{ color: 'var(--text-secondary)', opacity: 0.75 }}>支持：qq.com、vip.qq.com、foxmail.com、163.com、126.com、yeah.net、188.com、sina.com、sohu.com、139.com、189.cn、21cn.com、aliyun.com、gmail.com、outlook.com、hotmail.com</p>
               </div>
             )}
 
@@ -185,12 +208,12 @@ export default function LoginPage() {
             {isRegister && (
               <div>
                 <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>验证码</label>
-                <div className="flex flex-col gap-2 sm:flex-row">
+                <div className="grid grid-cols-[minmax(0,1fr)_6.5rem] gap-2">
                   <input
                     type="text"
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
-                    className="flex-1 min-w-0 px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
+                    className="w-full min-w-0 px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
                     style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
                     placeholder="6 位验证码"
                     required
@@ -200,7 +223,7 @@ export default function LoginPage() {
                     type="button"
                     onClick={handleSendCode}
                     disabled={sendingCode || cooldown > 0 || !email || !agreed}
-                    className="w-full sm:w-auto px-3 py-2.5 rounded-lg text-xs font-medium border whitespace-nowrap disabled:opacity-50"
+                    className="w-full px-2 py-2.5 rounded-lg text-[11px] font-medium border whitespace-nowrap disabled:opacity-50"
                     style={{ borderColor: 'var(--border-color)', color: cooldown > 0 ? 'var(--text-secondary)' : 'var(--accent)', background: 'var(--bg-primary)' }}
                   >
                     {cooldown > 0 ? `${cooldown}s` : sendingCode ? '发送中...' : '发送验证码'}
