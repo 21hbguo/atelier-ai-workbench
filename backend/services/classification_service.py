@@ -165,14 +165,11 @@ class ClassificationService:
                     for r in batch
                 ]
 
-                # 调用 LLM（非流式）
-                cls._push_log(task_id, "info", "正在调用 LLM...")
+                # 调用 LLM
+                cls._push_log(task_id, "info", f"正在调用 LLM 分类 {len(items)} 个项目...")
                 results = await cls._classify_batch(system_prompt, items)
-                cls._push_log(task_id, "info", f"LLM 返回 {len(results)} 个结果")
-                if not results:
-                    cls._push_log(task_id, "error", "LLM 返回空结果")
+                cls._push_log(task_id, "info", f"LLM 返回 {len(results)} 个分类结果")
 
-                # 直接使用结果
                 result_map = {r["item_id"]: r for r in results} if results else {}
                 with get_db() as conn:
                     for row in batch:
@@ -195,7 +192,6 @@ class ClassificationService:
                         "UPDATE classification_tasks SET processed_items = %s WHERE id = %s",
                         (processed, task_id),
                     )
-                continue  # 跳过后面的处理
 
             with get_db() as conn:
                 pending = conn.execute(
@@ -242,6 +238,7 @@ class ClassificationService:
                 "model": llm_cfg["model"],
                 "max_tokens": max(llm_cfg["max_tokens"], 2000),
                 "system": system_prompt,
+                "thinking": {"type": "disabled"},
                 "messages": [{"role": "user", "content": user_content}],
             }
             resp = await client.post(url, headers=headers, json=body)
@@ -426,6 +423,7 @@ class ClassificationService:
             "model": llm_cfg["model"],
             "max_tokens": max(llm_cfg["max_tokens"], 2000),
             "system": system_prompt,
+            "thinking": {"type": "disabled"},
             "messages": [{"role": "user", "content": user_content}],
         }
 
