@@ -7,6 +7,7 @@ services:
       POSTGRES_PASSWORD: ${PG_PASSWORD:-CHANGE_ME}
       POSTGRES_DB: ${PG_DB:-app_db}
       TZ: Asia/Shanghai
+      PGTZ: Asia/Shanghai
     volumes:
       - pgdata:/var/lib/postgresql/data
       - /etc/localtime:/etc/localtime:ro
