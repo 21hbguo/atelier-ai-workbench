@@ -4,8 +4,6 @@ from datetime import datetime
 from fastapi import HTTPException
 from backend.config import get_invite_config
 from backend.services.points_service import PointsService
-
-INVITE_POINT_RATE=10
 SAME_IP_WINDOW_SQL="NOW() - interval '30 day'"
 
 class InviteService:
@@ -117,16 +115,16 @@ class InviteService:
         cls.bind_inviter(conn,user_id,inviter["id"],code)
         return {"inviter_user_id":inviter["id"],"invite_code":code,"bound":False}
     @classmethod
-    def calc_recharge_bonus_points(cls,amount:float):
-        return max(0,int(round(float(amount or 0)*INVITE_POINT_RATE*cls.recharge_bonus_percent()/100)))
+    def calc_recharge_bonus_points(cls,points:int):
+        return max(0,int(round(float(points or 0)*cls.recharge_bonus_percent()/100)))
     @classmethod
-    def calc_recharge_rebate_points(cls,amount:float):
-        return max(0,int(round(float(amount or 0)*INVITE_POINT_RATE*cls.recharge_rebate_percent()/100)))
+    def calc_recharge_rebate_points(cls,points:int):
+        return max(0,int(round(float(points or 0)*cls.recharge_rebate_percent()/100)))
     @classmethod
-    def build_recharge_snapshot(cls,conn,user_id:int,amount:float,invite_code:str,current_ip:str):
+    def build_recharge_snapshot(cls,conn,user_id:int,amount:float,points:int,invite_code:str,current_ip:str):
         resolved=cls.resolve_recharge_inviter(conn,user_id,invite_code)
-        bonus=cls.calc_recharge_bonus_points(amount) if resolved else 0
-        rebate=cls.calc_recharge_rebate_points(amount) if resolved else 0
+        bonus=cls.calc_recharge_bonus_points(points) if resolved else 0
+        rebate=cls.calc_recharge_rebate_points(points) if resolved else 0
         same_ip={"hit":False,"reason":""}
         if resolved and resolved.get("inviter_user_id"):
             same_ip=cls.detect_same_ip(conn,resolved["inviter_user_id"],current_ip)

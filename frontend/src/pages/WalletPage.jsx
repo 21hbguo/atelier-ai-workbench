@@ -70,7 +70,7 @@ const handleSubmitRecharge=async()=>{if(!proofUrl.trim()){setRechargeMsg({type:'
 const handleChangePassword=async()=>{if(!oldPassword||!newPassword)return;setPasswordSubmitting(true);try{await accountAPI.changePassword({old_password:oldPassword,new_password:newPassword});setOldPassword('');setNewPassword('');dialog.alert('密码修改成功')}catch(e){dialog.alert(e.message||'修改失败')}setPasswordSubmitting(false)}
 const totalPages=Math.ceil(total/size)
 const activeQr=rechargeChannel==='wechat'?payConfig.wechat_pay_qr_url:payConfig.alipay_pay_qr_url
-const inviteBonusPreview=inviteConfig?.invite_enabled?Math.max(0,Math.round(rechargeAmount*10*Number(inviteConfig?.invite_recharge_bonus_percent||0)/100)):0
+const inviteBonusPreview=inviteConfig?.invite_enabled?Math.max(0,Math.round(rechargePoints*Number(inviteConfig?.invite_recharge_bonus_percent||0)/100)):0
 return(
 <>
 <MainLayout>

@@ -122,7 +122,7 @@ async def create_recharge_request(body: RechargeCreateRequest, request: Request,
     remark = (body.remark or "").strip()[:500]
     ip = get_client_ip(request)
     with get_db() as conn:
-        invite_snapshot=InviteService.build_recharge_snapshot(conn,user["user_id"],body.amount,body.invite_code,ip) if InviteService.is_enabled() else {"inviter_user_id":None,"invite_code":"","invite_discount_percent_snapshot":0,"invite_rebate_percent_snapshot":0,"invite_bonus_points":0,"invite_rebate_points":0,"same_ip_hit":False,"same_ip_reason":""}
+        invite_snapshot=InviteService.build_recharge_snapshot(conn,user["user_id"],body.amount,body.points,body.invite_code,ip) if InviteService.is_enabled() else {"inviter_user_id":None,"invite_code":"","invite_discount_percent_snapshot":0,"invite_rebate_percent_snapshot":0,"invite_bonus_points":0,"invite_rebate_points":0,"same_ip_hit":False,"same_ip_reason":""}
         risk_level, risk_flags = _build_recharge_risk(conn, user["user_id"], ip, tx_no, body.amount, proof_url)
         if invite_snapshot.get("same_ip_hit"):
             risk_flags=list(risk_flags)+[invite_snapshot.get("same_ip_reason") or "same_ip_within_30d"]
