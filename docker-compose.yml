@@ -22,8 +22,10 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://${PG_USER:-app_user}:${PG_PASSWORD:-CHANGE_ME}@db:5432/${PG_DB:-app_db}
+      TZ: Asia/Shanghai
     volumes:
       - ./data:/app/data
+      - /etc/localtime:/etc/localtime:ro
     depends_on:
       db:
         condition: service_healthy
