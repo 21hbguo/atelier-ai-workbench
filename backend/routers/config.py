@@ -22,6 +22,7 @@ class ConfigUpdate(BaseModel):
     generate_concurrent_limit_per_user: Optional[int] = Field(None, ge=1)
     points_cost_per_generation: Optional[int] = Field(None, ge=1)
     points_cost_per_optimize: Optional[int] = Field(None, ge=1)
+    points_cost_per_image_extend: Optional[int] = Field(None, ge=1)
     points_checkin_reward: Optional[int] = Field(None, ge=0)
     points_register_bonus: Optional[int] = Field(None, ge=0)
     points_migration_amount: Optional[int] = Field(None, ge=0)
@@ -66,6 +67,7 @@ async def get_runtime_config(user=Depends(get_optional_user)):
         "recharge_packages": get_recharge_packages(),
         "points_cost_per_generation": cfg.get("points_cost_per_generation", 10),
         "points_cost_per_optimize": cfg.get("points_cost_per_optimize", 10),
+        "points_cost_per_image_extend": cfg.get("points_cost_per_image_extend", 2),
     }
 
 

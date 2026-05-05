@@ -94,7 +94,7 @@ export default function AdminPage() {
   const [newTitle, setNewTitle] = useState('')
   const [newContent, setNewContent] = useState('')
   const [creatingAnnouncement, setCreatingAnnouncement] = useState(false)
-  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', register_enabled: true, image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', recharge_packages: defaultRechargePackages, generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_cost_per_optimize: 10, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3, github_hosting_enabled: false, github_hosting_repo: '', github_hosting_token: '', github_hosting_branch: 'main', smtp_server: 'smtp.qq.com', smtp_port: 465, smtp_password: '', smtp_sender: '', smtp_sender_name: 'Atelier·AI造梦工坊' })
+  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', register_enabled: true, image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', recharge_packages: defaultRechargePackages, generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_cost_per_optimize: 10, points_cost_per_image_extend: 2, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3, github_hosting_enabled: false, github_hosting_repo: '', github_hosting_token: '', github_hosting_branch: 'main', smtp_server: 'smtp.qq.com', smtp_port: 465, smtp_password: '', smtp_sender: '', smtp_sender_name: 'Atelier·AI造梦工坊' })
   const [configSaving, setConfigSaving] = useState(false)
   const [defaultModelId, setDefaultModelId] = useState('image-default')
   const [generationModelsText, setGenerationModelsText] = useState('{}')
@@ -111,7 +111,7 @@ export default function AdminPage() {
   const [editingProviderId, setEditingProviderId] = useState('')
   const [editingProviderDraft, setEditingProviderDraft] = useState({ type: 'wuyin', enabled: true, priority: 100, api_url: '', api_key: '', circuit_fail_threshold: 3, circuit_cooldown_seconds: 60, unit_name: '供应商额度', unit_code: 'vendor_quota' })
   const [editingModelId, setEditingModelId] = useState('')
-  const [editingModelDraft, setEditingModelDraft] = useState({ label: '', capability: 'image', enabled: true, providers: [] })
+  const [editingModelDraft, setEditingModelDraft] = useState({ label: '', capability: 'image', enabled: true, providers: [], points_cost: '' })
   const [draggingModelProviderId, setDraggingModelProviderId] = useState('')
   const [modelLabelMap, setModelLabelMap] = useState({})
   const [financeRange, setFinanceRange] = useState('30d')
@@ -255,6 +255,7 @@ export default function AdminPage() {
         generate_concurrent_limit_per_user: Number(data.generate_concurrent_limit_per_user || 10),
         points_cost_per_generation: Number(data.points_cost_per_generation || 10),
         points_cost_per_optimize: Number(data.points_cost_per_optimize || 10),
+        points_cost_per_image_extend: Number(data.points_cost_per_image_extend || 2),
         points_checkin_reward: Number(data.points_checkin_reward || 10),
         points_register_bonus: Number(data.points_register_bonus || 50),
         points_migration_amount: Number(data.points_migration_amount || 50),
@@ -388,12 +389,12 @@ export default function AdminPage() {
   const handleAddRechargePackage = () => setRuntimeConfig(prev => { const list = Array.isArray(prev.recharge_packages) ? prev.recharge_packages : []; return { ...prev, recharge_packages: [...list, { amount: '', points: '', label: `套餐${list.length + 1}` }] } })
   const handleDeleteRechargePackage = (idx) => setRuntimeConfig(prev => { const list = Array.isArray(prev.recharge_packages) ? prev.recharge_packages : []; return { ...prev, recharge_packages: list.length <= 1 ? list : list.filter((_, i) => i !== idx) } })
   const handleSaveConfig = async () => {
-    const n = ['generate_concurrent_limit_per_user', 'points_cost_per_generation', 'points_cost_per_optimize', 'points_checkin_reward', 'points_register_bonus', 'points_migration_amount', 'login_rate_limit_per_minute_per_ip', 'register_rate_limit_per_minute_per_ip', 'smtp_port', 'llm_max_tokens', 'llm_timeout_seconds']
+    const n = ['generate_concurrent_limit_per_user', 'points_cost_per_generation', 'points_cost_per_optimize', 'points_cost_per_image_extend', 'points_checkin_reward', 'points_register_bonus', 'points_migration_amount', 'login_rate_limit_per_minute_per_ip', 'register_rate_limit_per_minute_per_ip', 'smtp_port', 'llm_max_tokens', 'llm_timeout_seconds']
     const payload = { ...runtimeConfig }
     payload.default_model_id = (defaultModelId || '').trim() || 'image-default'
     let recharge_packages = []
     for (const k of n) payload[k] = Number(payload[k])
-    if (payload.generate_concurrent_limit_per_user < 1 || payload.points_cost_per_generation < 1 || payload.points_cost_per_optimize < 1 || payload.login_rate_limit_per_minute_per_ip < 1 || payload.register_rate_limit_per_minute_per_ip < 1 || payload.points_checkin_reward < 0 || payload.points_register_bonus < 0 || payload.points_migration_amount < 0) { dialog.alert('限制配置不合法'); return }
+    if (payload.generate_concurrent_limit_per_user < 1 || payload.points_cost_per_generation < 1 || payload.points_cost_per_optimize < 1 || payload.points_cost_per_image_extend < 1 || payload.login_rate_limit_per_minute_per_ip < 1 || payload.register_rate_limit_per_minute_per_ip < 1 || payload.points_checkin_reward < 0 || payload.points_register_bonus < 0 || payload.points_migration_amount < 0) { dialog.alert('限制配置不合法'); return }
     try {
       recharge_packages = Array.isArray(payload.recharge_packages) ? payload.recharge_packages : []
       if (!Array.isArray(recharge_packages) || !recharge_packages.length) throw new Error('充值套餐需要 JSON 数组且至少保留一项')
@@ -437,7 +438,7 @@ export default function AdminPage() {
   }
   const handleAddModel = () => {
     const id = `image-model-${Date.now()}`
-    const next = { ...genModelsObj, [id]: { label: '新模型', capability: 'image', enabled: true, providers: [] } }
+    const next = { ...genModelsObj, [id]: { label: '新模型', capability: 'image', enabled: true, providers: [], params: {} } }
     setGenModelsObj(next); syncGenJsonFromForm(next, genProvidersObj)
   }
   const handleDeleteModel = (id) => {
@@ -476,7 +477,7 @@ export default function AdminPage() {
     const m = genModelsObj[id] || {}
     setDraggingModelProviderId('')
     setEditingModelId(id)
-    setEditingModelDraft({ label: m.label || '', capability: m.capability || 'image', enabled: m.enabled !== false, providers: Array.isArray(m.providers) ? m.providers : [] })
+    setEditingModelDraft({ label: m.label || '', capability: m.capability || 'image', enabled: m.enabled !== false, providers: Array.isArray(m.providers) ? m.providers : [], points_cost: m?.params?.points_cost ?? '' })
   }
   const applyProviderEditor = () => {
     if (!editingProviderId) return
@@ -486,7 +487,12 @@ export default function AdminPage() {
   const applyModelEditor = () => {
     if (!editingModelId) return
     const providers = Array.isArray(editingModelDraft.providers) ? [...new Set(editingModelDraft.providers.map(i => String(i || '').trim()).filter(Boolean))] : []
-    const next = { ...genModelsObj, [editingModelId]: { ...(genModelsObj[editingModelId] || {}), ...editingModelDraft, providers } }
+    const prev = genModelsObj[editingModelId] || {}
+    const pointsCost = Number(editingModelDraft.points_cost || 0)
+    const params = { ...(prev.params || {}) }
+    if (pointsCost > 0) params.points_cost = Math.round(pointsCost)
+    else delete params.points_cost
+    const next = { ...genModelsObj, [editingModelId]: { ...prev, label: editingModelDraft.label, capability: editingModelDraft.capability, enabled: editingModelDraft.enabled, providers, params } }
     setGenModelsObj(next); syncGenJsonFromForm(next, genProvidersObj); setDraggingModelProviderId(''); setEditingModelId('')
   }
   const reorderEditingModelProviders = (fromId, toId) => {
@@ -933,7 +939,8 @@ export default function AdminPage() {
                       <div style={{ color: 'var(--text-primary)' }}>登录限流：{systemStats.limits.login_rate}</div>
                       <div style={{ color: 'var(--text-primary)' }}>注册限流：{systemStats.limits.register_rate}</div>
                       <div style={{ color: 'var(--text-primary)' }}>生成并发：{systemStats.limits.generate_concurrent}</div>
-                      <div style={{ color: 'var(--text-primary)' }}>单次扣分：{systemStats.limits.points_cost_per_generation}</div>
+                      <div style={{ color: 'var(--text-primary)' }}>默认生成扣分：{systemStats.limits.points_cost_per_generation}</div>
+                      <div style={{ color: 'var(--text-primary)' }}>图片续期扣分：{systemStats.limits.points_cost_per_image_extend}</div>
                       <div style={{ color: 'var(--text-primary)' }}>签到奖励：{systemStats.limits.points_checkin_reward}</div>
                       <div style={{ color: 'var(--text-primary)' }}>注册送分：{systemStats.limits.points_register_bonus}</div>
                     </div>
@@ -1220,7 +1227,7 @@ export default function AdminPage() {
                 </button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {[{ k: 'generate_concurrent_limit_per_user', l: '生成并发上限/用户', min: 1 }, { k: 'points_cost_per_generation', l: '每次生成扣分', min: 1 }, { k: 'points_cost_per_optimize', l: '每次优化扣分', min: 1 }, { k: 'points_checkin_reward', l: '每日签到奖励', min: 0 }, { k: 'points_register_bonus', l: '注册送分', min: 0 }, { k: 'points_migration_amount', l: '补发积分值', min: 0 }, { k: 'login_rate_limit_per_minute_per_ip', l: '登录限流/分钟/IP', min: 1 }, { k: 'register_rate_limit_per_minute_per_ip', l: '注册限流/分钟/IP', min: 1 }].map(item => (
+                {[{ k: 'generate_concurrent_limit_per_user', l: '生成并发上限/用户', min: 1 }, { k: 'points_cost_per_generation', l: '默认生成扣分', min: 1 }, { k: 'points_cost_per_optimize', l: '每次优化扣分', min: 1 }, { k: 'points_cost_per_image_extend', l: '图片续期扣分/张', min: 1 }, { k: 'points_checkin_reward', l: '每日签到奖励', min: 0 }, { k: 'points_register_bonus', l: '注册送分', min: 0 }, { k: 'points_migration_amount', l: '补发积分值', min: 0 }, { k: 'login_rate_limit_per_minute_per_ip', l: '登录限流/分钟/IP', min: 1 }, { k: 'register_rate_limit_per_minute_per_ip', l: '注册限流/分钟/IP', min: 1 }].map(item => (
                   <div key={item.k}>
                     <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>{item.l}</label>
                     <input type="number" min={item.min} value={runtimeConfig[item.k]} onChange={e => onConfigInput(item.k, e.target.value)} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
@@ -1506,6 +1513,10 @@ export default function AdminPage() {
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>能力</label>
                 <select value={editingModelDraft.capability || 'image'} onChange={e => setEditingModelDraft(prev => ({ ...prev, capability: e.target.value }))} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}><option value="image">image</option><option value="video">video</option></select>
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>模型扣分（留空走默认）</label>
+                <input type="number" min="1" value={editingModelDraft.points_cost ?? ''} onChange={e => setEditingModelDraft(prev => ({ ...prev, points_cost: e.target.value }))} placeholder={`默认 ${runtimeConfig.points_cost_per_generation}`} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
               <div className="flex items-end">
                 <label className="inline-flex items-center gap-2 text-sm" style={{ color: 'var(--text-primary)' }}><input type="checkbox" checked={editingModelDraft.enabled !== false} onChange={e => setEditingModelDraft(prev => ({ ...prev, enabled: e.target.checked }))} />启用该模型</label>

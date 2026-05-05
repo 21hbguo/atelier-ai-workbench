@@ -4,7 +4,7 @@ import logging
 import math
 import os
 from datetime import datetime, timedelta
-from backend.config import GENERATED_IMAGES_DIR, is_github_hosting_enabled
+from backend.config import GENERATED_IMAGES_DIR, is_github_hosting_enabled, get_limit_config
 from backend.database import get_db
 from backend.services.task_manager import TaskManager
 logger=logging.getLogger(__name__)
@@ -22,6 +22,9 @@ def _detect_hosting_type(url: str) -> str:
     return "heliar"
 def _now():
     return datetime.now()
+def get_extend_cost_per_image():
+    try:return max(1,int(get_limit_config().get("points_cost_per_image_extend",EXTEND_COST_PER_IMAGE)))
+    except Exception:return EXTEND_COST_PER_IMAGE
 def _parse_dt(v):
     if not v: return None
     if isinstance(v, datetime): return v
@@ -56,7 +59,7 @@ def get_expiry_data(raw: dict | None) -> dict:
         delta=expires_at-now
         days_left=max(0, math.ceil(delta.total_seconds()/86400))
         expired=delta.total_seconds()<=0
-    return {"expires_at":_fmt_dt(expires_at),"is_permanent":is_permanent,"days_left":days_left,"expired":expired,"retention_days":RETENTION_DAYS,"extend_days":EXTEND_DAYS,"extend_cost":EXTEND_COST_PER_IMAGE}
+    return {"expires_at":_fmt_dt(expires_at),"is_permanent":is_permanent,"days_left":days_left,"expired":expired,"retention_days":RETENTION_DAYS,"extend_days":EXTEND_DAYS,"extend_cost":get_extend_cost_per_image()}
 
 def mark_image_permanent(filename: str, conn=None) -> None:
     def _run(c):
@@ -119,7 +122,7 @@ def extend_images(filenames: list[str], user_id: int) -> dict:
                 skipped.append({"filename": filename, "reason": "广场图片无需延长"})
                 continue
             eligible.append(filename)
-        total_cost=len(eligible)*EXTEND_COST_PER_IMAGE
+        total_cost=len(eligible)*get_extend_cost_per_image()
         if total_cost <= 0:
             return {"success": success, "skipped": skipped, "failed": failed, "total_cost": 0, "points": None}
         if user["points"] < total_cost:

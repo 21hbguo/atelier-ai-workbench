@@ -17,6 +17,16 @@ if [ ! -f "Dockerfile" ] || [ ! -f "docker-compose.yml" ]; then
     exit 1
 fi
 
+# 确保系统时区为北京时间
+EXPECTED_TZ="Asia/Shanghai"
+CURRENT_TZ=$(readlink /etc/localtime 2>/dev/null | grep -oP '[^/]+/[^/]+$' || timedatectl show -p Timezone --value 2>/dev/null || echo "")
+if [ "$CURRENT_TZ" != "$EXPECTED_TZ" ]; then
+    echo -e "${YELLOW}检测到系统时区为 $CURRENT_TZ，正在切换为北京时间...${NC}"
+    sudo timedatectl set-timezone $EXPECTED_TZ
+    echo -e "${GREEN}时区已切换为 $EXPECTED_TZ${NC}"
+    echo ""
+fi
+
 # 检查是否有新版本包
 if [ -f "../app_v1_incremental.tar.gz" ]; then
     echo -e "${YELLOW}[1/4] 发现增量包，正在解压...${NC}"

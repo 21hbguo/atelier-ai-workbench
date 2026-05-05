@@ -70,6 +70,7 @@ export default function ChatPage() {
   const [points, setPoints] = useState(currentUser?.points ?? 0)
   const [requestCost, setRequestCost] = useState(10)
   const [optimizeCost, setOptimizeCost] = useState(10)
+  const [extendCostPerImage, setExtendCostPerImage] = useState(2)
   const [loadError, setLoadError] = useState('')
   const [selectedCardIndex, setSelectedCardIndex] = useState(null)
   const [detailCards, setDetailCards] = useState([])
@@ -229,6 +230,7 @@ export default function ChatPage() {
     configAPI.get().then(res => {
       setRequestCost(Math.max(0, Number(res.data?.points_cost_per_generation) || 10))
       setOptimizeCost(Math.max(0, Number(res.data?.points_cost_per_optimize) || 10))
+      setExtendCostPerImage(Math.max(1, Number(res.data?.points_cost_per_image_extend) || 2))
     }).catch(() => { setRequestCost(10); setOptimizeCost(10) })
   }, [])
 
@@ -523,9 +525,9 @@ export default function ChatPage() {
     }
   }, [refreshTasks, dialog])
   const handleDetailExtend = useCallback(async (card) => {
-    if (!await dialog.confirm('确定延长3天？将扣除2积分')) return
+    if (!await dialog.confirm(`确定延长3天？将扣除${extendCostPerImage}积分`)) return
     await handleExtendImages([card.filename])
-  }, [handleExtendImages, dialog])
+  }, [handleExtendImages, dialog, extendCostPerImage])
 
   const toggleCheck = useCallback((taskId) => {
     setChecked(prev => { const next = new Set(prev); next.has(taskId) ? next.delete(taskId) : next.add(taskId); return next })
@@ -610,9 +612,9 @@ export default function ChatPage() {
       for (const url of (task.result_urls || [])) filenames.push(url.split('/').pop())
     }
     if (filenames.length === 0) return
-    if (!await dialog.confirm(`确定延长选中的 ${filenames.length} 张图片3天？将扣除 ${filenames.length * 2} 积分`)) return
+    if (!await dialog.confirm(`确定延长选中的 ${filenames.length} 张图片3天？将扣除 ${filenames.length * extendCostPerImage} 积分`)) return
     await handleExtendImages(filenames)
-  }, [checked, visibleTasks, handleExtendImages, dialog])
+  }, [checked, visibleTasks, handleExtendImages, dialog, extendCostPerImage])
 
   const exitSelectMode = useCallback(() => { setSelectMode(false); setChecked(new Set()) }, [])
 

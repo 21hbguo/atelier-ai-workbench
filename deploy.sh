@@ -6,6 +6,8 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
+export TZ=Asia/Shanghai
+
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}   AI 图像生成网站 - 一键部署${NC}"
 echo -e "${GREEN}========================================${NC}"
@@ -15,6 +17,16 @@ echo ""
 if [ ! -f "Dockerfile" ] || [ ! -f "docker-compose.yml" ]; then
     echo -e "${RED}[错误] 请在项目根目录运行此脚本${NC}"
     exit 1
+fi
+
+# Step 0: 确保系统时区为北京时间
+EXPECTED_TZ="Asia/Shanghai"
+CURRENT_TZ=$(readlink /etc/localtime 2>/dev/null | grep -oP '[^/]+/[^/]+$' || timedatectl show -p Timezone --value 2>/dev/null || echo "")
+if [ "$CURRENT_TZ" != "$EXPECTED_TZ" ]; then
+    echo -e "${YELLOW}检测到系统时区为 $CURRENT_TZ，正在切换为北京时间...${NC}"
+    sudo timedatectl set-timezone $EXPECTED_TZ
+    echo -e "${GREEN}时区已切换为 $EXPECTED_TZ${NC}"
+    echo ""
 fi
 
 # Step 1: 安装 Docker

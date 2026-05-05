@@ -8,6 +8,15 @@
 
 cd "$(dirname "$0")"
 
+# 确保系统时区为北京时间
+EXPECTED_TZ="Asia/Shanghai"
+CURRENT_TZ=$(readlink /etc/localtime 2>/dev/null | grep -oP '[^/]+/[^/]+$' || timedatectl show -p Timezone --value 2>/dev/null || echo "")
+if [ "$CURRENT_TZ" != "$EXPECTED_TZ" ]; then
+    echo "检测到系统时区为 $CURRENT_TZ，正在切换为北京时间..."
+    sudo timedatectl set-timezone $EXPECTED_TZ
+    echo "时区已切换为 $EXPECTED_TZ"
+fi
+
 case "${1:-start}" in
   start)
     docker compose up -d

@@ -16,7 +16,7 @@ from backend.database import get_db
 from backend.services.task_manager import TaskManager
 from backend.services.image_mapping import ImageUrlMapping
 from backend.auth import get_current_user, require_admin
-from backend.services.image_expiry import get_expiry_data, extend_images, RETENTION_DAYS, EXTEND_DAYS, EXTEND_COST_PER_IMAGE
+from backend.services.image_expiry import get_expiry_data, extend_images, RETENTION_DAYS, EXTEND_DAYS, get_extend_cost_per_image
 from backend.services.points_service import PointsService
 from backend.services.image_dimensions import get_image_dimensions
 
@@ -399,4 +399,4 @@ async def extend_image_expiry(req: ExtendImagesRequest, user=Depends(get_current
     points = result.get("points")
     if points is None:
         points = PointsService.get_balance(user["user_id"])
-    return {"message": "操作完成", "success_count": len(result["success"]), "skipped_count": len(result["skipped"]), "failed_count": len(result["failed"]), "total_cost": result["total_cost"], "points": points, "retention_days": RETENTION_DAYS, "extend_days": EXTEND_DAYS, "extend_cost_per_image": EXTEND_COST_PER_IMAGE, **result}
+    return {"message": "操作完成", "success_count": len(result["success"]), "skipped_count": len(result["skipped"]), "failed_count": len(result["failed"]), "total_cost": result["total_cost"], "points": points, "retention_days": RETENTION_DAYS, "extend_days": EXTEND_DAYS, "extend_cost_per_image": get_extend_cost_per_image(), **result}

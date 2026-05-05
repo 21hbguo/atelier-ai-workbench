@@ -72,6 +72,7 @@ async def get_system_stats(user=Depends(get_current_user)):
             "prompt_length": "2500字符",
             "image_upload_ext": "png,jpg,jpeg,webp",
             "points_cost_per_generation": limits_cfg["points_cost_per_generation"],
+            "points_cost_per_image_extend": limits_cfg["points_cost_per_image_extend"],
             "points_checkin_reward": limits_cfg["points_checkin_reward"],
             "points_register_bonus": limits_cfg["points_register_bonus"],
             "points_migration_amount": limits_cfg["points_migration_amount"],

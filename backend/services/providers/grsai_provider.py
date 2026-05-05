@@ -25,9 +25,11 @@ class GrsAIProvider:
             "webHook": "-1",
             "shutProgress": False
         }
+        size = str(size or "").strip()
         if size and size != "auto":
-            payload["aspectRatio"] = size
-        if quality:
+            payload["size" if "x" in size.lower() else "aspectRatio"] = size
+        quality = str(quality or "").strip()
+        if quality and quality != "auto":
             payload["quality"] = quality
         if urls:
             payload["urls"] = urls
