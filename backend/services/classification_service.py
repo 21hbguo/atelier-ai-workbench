@@ -167,13 +167,16 @@ class ClassificationService:
 
                 # 流式调用 LLM
                 full_text = ""
+                token_count = 0
                 async for chunk in cls.stream_classify_batch(system_prompt, items, use_stream=True):
+                    cls._push_log(task_id, "debug", f"收到 chunk: type={chunk['type']}, content={str(chunk)[:100]}")
                     if chunk["type"] == "token":
                         full_text += chunk["text"]
+                        token_count += 1
                         cls._push_log(task_id, "token", chunk["text"])
                     elif chunk["type"] == "done":
                         full_text = chunk.get("full_text", full_text)
-                        cls._push_log(task_id, "info", f"LLM 响应完成")
+                        cls._push_log(task_id, "info", f"LLM 响应完成，共 {token_count} 个 token")
                     elif chunk["type"] == "error":
                         cls._push_log(task_id, "error", chunk["message"])
 
