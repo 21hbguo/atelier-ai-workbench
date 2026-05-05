@@ -10,6 +10,7 @@ from backend.services.task_manager import TaskManager
 from backend.services.banned_words import BannedWordsService
 from backend.services.image_mapping import ImageUrlMapping
 from backend.services.points_service import PointsService
+from backend.services.invite_service import InviteService
 from backend.services.notification_service import NotificationService
 from backend.services.image_expiry import refresh_permanent_flags_by_filenames
 from backend.services.finance_service import FinanceService
@@ -142,16 +143,22 @@ async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
             total = conn.execute("SELECT COUNT(*) as cnt FROM users WHERE username LIKE %s OR nickname LIKE %s", (q, q)).fetchone()["cnt"]
             rows = conn.execute(
                 """
-                SELECT u.id, u.username, u.nickname, u.is_admin, u.is_frozen, u.points, u.last_ip, u.last_active, u.created_at,
+                SELECT u.id, u.username, u.nickname, u.is_admin, u.is_frozen, u.points, u.last_ip, u.last_active, u.created_at,u.invite_code,u.inviter_user_id,iu.username AS inviter_username,iu.nickname AS inviter_nickname,
                        COALESCE(img.cnt, 0) as success_count,
                        COUNT(CASE WHEN ur.status = 'failed' THEN 1 END) as failed_count,
-                       COALESCE(proc.cnt, 0) as processing_count
+                       COALESCE(proc.cnt, 0) as processing_count,
+                       COALESCE(inv_stats.invited_register_count,0) AS invited_register_count,
+                       COALESCE(inv_stats.total_rebate_points,0) AS total_rebate_points,
+                       COALESCE(inv_stats.total_recharge_amount,0) AS total_recharge_amount,
+                       COALESCE(inv_stats.risk_hit_count,0) AS invite_risk_hit_count
                 FROM users u
                 LEFT JOIN user_requests ur ON u.id = ur.user_id
                 LEFT JOIN (SELECT user_id, COUNT(*) as cnt FROM image_metadata GROUP BY user_id) img ON u.id = img.user_id
                 LEFT JOIN (SELECT user_id, COUNT(*) as cnt FROM tasks WHERE LOWER(status) IN ('pending', 'queued', 'processing', 'running', 'generating') AND completed_at IS NULL AND COALESCE(updated_at,created_at,NOW()) >= NOW() - (%s || ' minutes')::interval GROUP BY user_id) proc ON u.id = proc.user_id
+                LEFT JOIN users iu ON u.inviter_user_id = iu.id
+                LEFT JOIN (SELECT inviter_user_id,COUNT(*) FILTER (WHERE event_type='register') AS invited_register_count,COALESCE(SUM(reward_points) FILTER (WHERE event_type='recharge_rebate' AND status='rewarded'),0) AS total_rebate_points,COALESCE(SUM(recharge_amount) FILTER (WHERE event_type IN ('recharge_rebate','recharge_bonus')),0) AS total_recharge_amount,COUNT(*) FILTER (WHERE same_ip_hit=TRUE) AS risk_hit_count FROM invite_events GROUP BY inviter_user_id) inv_stats ON u.id=inv_stats.inviter_user_id
                 WHERE u.username LIKE %s OR u.nickname LIKE %s
-                GROUP BY u.id, img.cnt, proc.cnt
+                GROUP BY u.id,iu.username,iu.nickname,img.cnt, proc.cnt,inv_stats.invited_register_count,inv_stats.total_rebate_points,inv_stats.total_recharge_amount,inv_stats.risk_hit_count
                 ORDER BY u.last_active DESC
                 LIMIT %s OFFSET %s
                 """,
@@ -161,15 +168,21 @@ async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
             total = conn.execute("SELECT COUNT(*) as cnt FROM users").fetchone()["cnt"]
             rows = conn.execute(
                 """
-                SELECT u.id, u.username, u.nickname, u.is_admin, u.is_frozen, u.points, u.last_ip, u.last_active, u.created_at,
+                SELECT u.id, u.username, u.nickname, u.is_admin, u.is_frozen, u.points, u.last_ip, u.last_active, u.created_at,u.invite_code,u.inviter_user_id,iu.username AS inviter_username,iu.nickname AS inviter_nickname,
                        COALESCE(img.cnt, 0) as success_count,
                        COUNT(CASE WHEN ur.status = 'failed' THEN 1 END) as failed_count,
-                       COALESCE(proc.cnt, 0) as processing_count
+                       COALESCE(proc.cnt, 0) as processing_count,
+                       COALESCE(inv_stats.invited_register_count,0) AS invited_register_count,
+                       COALESCE(inv_stats.total_rebate_points,0) AS total_rebate_points,
+                       COALESCE(inv_stats.total_recharge_amount,0) AS total_recharge_amount,
+                       COALESCE(inv_stats.risk_hit_count,0) AS invite_risk_hit_count
                 FROM users u
                 LEFT JOIN user_requests ur ON u.id = ur.user_id
                 LEFT JOIN (SELECT user_id, COUNT(*) as cnt FROM image_metadata GROUP BY user_id) img ON u.id = img.user_id
                 LEFT JOIN (SELECT user_id, COUNT(*) as cnt FROM tasks WHERE LOWER(status) IN ('pending', 'queued', 'processing', 'running', 'generating') AND completed_at IS NULL AND COALESCE(updated_at,created_at,NOW()) >= NOW() - (%s || ' minutes')::interval GROUP BY user_id) proc ON u.id = proc.user_id
-                GROUP BY u.id, img.cnt, proc.cnt
+                LEFT JOIN users iu ON u.inviter_user_id = iu.id
+                LEFT JOIN (SELECT inviter_user_id,COUNT(*) FILTER (WHERE event_type='register') AS invited_register_count,COALESCE(SUM(reward_points) FILTER (WHERE event_type='recharge_rebate' AND status='rewarded'),0) AS total_rebate_points,COALESCE(SUM(recharge_amount) FILTER (WHERE event_type IN ('recharge_rebate','recharge_bonus')),0) AS total_recharge_amount,COUNT(*) FILTER (WHERE same_ip_hit=TRUE) AS risk_hit_count FROM invite_events GROUP BY inviter_user_id) inv_stats ON u.id=inv_stats.inviter_user_id
+                GROUP BY u.id,iu.username,iu.nickname,img.cnt, proc.cnt,inv_stats.invited_register_count,inv_stats.total_rebate_points,inv_stats.total_recharge_amount,inv_stats.risk_hit_count
                 ORDER BY u.last_active DESC
                 LIMIT %s OFFSET %s
                 """,
@@ -182,6 +195,7 @@ async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=
             user["account"] = user.get("username", "")
             user["is_admin"] = bool(user.get("is_admin"))
             user["is_frozen"] = bool(user.get("is_frozen"))
+            user["inviter_name"] = user.get("inviter_nickname") or user.get("inviter_username") or ""
             # 获取最近一次请求时间
             last_request = conn.execute(
                 "SELECT created_at FROM user_requests WHERE user_id = %s ORDER BY created_at DESC LIMIT 1",
@@ -220,6 +234,10 @@ async def delete_user(user_id: int, admin=Depends(require_admin)):
             conn.execute("UPDATE point_transactions SET recharge_request_id = NULL WHERE recharge_request_id = ANY(%s)", (recharge_ids,))
             conn.execute("UPDATE redemption_codes SET recharge_request_id = NULL WHERE recharge_request_id = ANY(%s)", (recharge_ids,))
             conn.execute("DELETE FROM recharge_requests WHERE id = ANY(%s)", (recharge_ids,))
+        conn.execute("UPDATE users SET inviter_user_id = NULL WHERE inviter_user_id = %s", (user_id,))
+        conn.execute("UPDATE recharge_requests SET inviter_user_id = NULL WHERE inviter_user_id = %s", (user_id,))
+        conn.execute("UPDATE invite_events SET inviter_user_id = NULL WHERE inviter_user_id = %s", (user_id,))
+        conn.execute("UPDATE invite_events SET invitee_user_id = NULL WHERE invitee_user_id = %s", (user_id,))
         conn.execute("UPDATE redemption_codes SET used_by = NULL, used_by_ip = '', used_at = NULL WHERE used_by = %s", (user_id,))
         prompt_ids = [r["id"] for r in conn.execute("SELECT id FROM prompts WHERE user_id = %s", (user_id,)).fetchall()]
         if prompt_ids:
@@ -844,10 +862,11 @@ async def list_recharge_requests(page: int = Query(1, ge=1), size: int = Query(2
             params,
         ).fetchone()["cnt"]
         rows = conn.execute(
-            f"""SELECT rr.*, u.username, u.nickname, au.username as reviewed_by_name
+            f"""SELECT rr.*, u.username, u.nickname, au.username as reviewed_by_name,iu.username as inviter_username,iu.nickname as inviter_nickname
                 FROM recharge_requests rr
                 LEFT JOIN users u ON rr.user_id = u.id
                 LEFT JOIN users au ON rr.reviewed_by = au.id
+                LEFT JOIN users iu ON rr.inviter_user_id = iu.id
                 {where_sql}
                 ORDER BY {sort_field} {sort_order}
                 LIMIT %s OFFSET %s""",
@@ -868,7 +887,9 @@ async def approve_recharge_request(request_id: int, body: dict, admin=Depends(re
             return {"message": "该申请已审核通过", "code": item.get("redeem_code"), "points": item.get("points")}
         if item["status"] != "pending":
             raise HTTPException(status_code=400, detail="仅待审核申请可通过")
-        points = int(body.get("points") or item["points"])
+        base_points = int(body.get("points") or item["points"])
+        bonus_points = int(item.get("invite_bonus_points") or 0)
+        points = base_points + bonus_points
         if points <= 0:
             raise HTTPException(status_code=400, detail="发放积分必须大于0")
         user_id = item["user_id"]
@@ -883,18 +904,16 @@ async def approve_recharge_request(request_id: int, body: dict, admin=Depends(re
             "UPDATE redemption_codes SET is_used = true, used_by = %s, used_at = %s WHERE id = %s",
             (user_id, now, code_id),
         )
-        conn.execute("UPDATE users SET points = points + %s WHERE id = %s", (points, user_id))
-        new_balance = conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()["points"]
-        conn.execute(
-            "INSERT INTO point_transactions (user_id, amount, balance_after, type, description, recharge_request_id, request_key) VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
-            (user_id, points, new_balance, "redeem_code", f"充值审核通过 (¥{item['amount']})", request_id, f"recharge-approve:{request_id}"),
-        )
+        PointsService.add_points(user_id, points, "redeem_code", f"充值审核通过 (¥{item['amount']})", conn=conn, request_key=f"recharge-approve:{request_id}", recharge_request_id=request_id)
         conn.execute(
             "UPDATE recharge_requests SET status = 'approved', points = %s, redeem_code = %s, review_note = %s, reviewed_at = %s, reviewed_by = %s WHERE id = %s",
             (points, code, review_note, now, admin["user_id"], request_id),
         )
+        invite_result=InviteService.apply_recharge_rewards(conn,{**item,"points":base_points},item.get("submit_ip") or "")
         try:
             NotificationService.create(user_id, "recharge_approved", "充值审核通过", f"你的充值申请已通过，到账 {points} 积分", str(request_id))
+            if item.get("inviter_user_id") and invite_result.get("rebate_points",0)>0:
+                NotificationService.create(item["inviter_user_id"], "invite_recharge_rebate", "邀请返利到账", f"你收到 {invite_result['rebate_points']} 积分返利", str(request_id))
         except Exception:
             pass
         logger.info(f"[audit.recharge.approve] request={request_id} admin={admin['user_id']} user={user_id} points={points} amount={item['amount']}")
@@ -958,6 +977,10 @@ async def refund_recharge_request(request_id: int, body: dict, admin=Depends(req
             pass
         logger.info(f"[audit.recharge.refund] request={request_id} admin={admin['user_id']} user={user_id} points={points}")
         return {"message": f"已退款，扣除 {points} 积分", "points_deducted": points, "new_balance": new_balance}
+
+@router.get("/users/{user_id}/invite-history")
+async def admin_user_invite_history(user_id: int, page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), admin=Depends(require_admin)):
+    return InviteService.list_user_invite_history(user_id,page,size)
 
 
 @router.get("/stats/overview")

@@ -28,6 +28,11 @@ def init_db():
                 password_hash VARCHAR(255) NOT NULL,
                 nickname VARCHAR(128),
                 avatar VARCHAR(512),
+                invite_code VARCHAR(32),
+                invite_code_created_at TIMESTAMP,
+                inviter_user_id INTEGER REFERENCES users(id),
+                register_invite_code VARCHAR(32) DEFAULT '',
+                invited_at TIMESTAMP,
                 is_admin BOOLEAN DEFAULT FALSE,
                 is_frozen BOOLEAN DEFAULT FALSE,
                 last_ip VARCHAR(45),
@@ -171,6 +176,13 @@ def init_db():
                 channel VARCHAR(32) NOT NULL,
                 amount REAL NOT NULL,
                 points INTEGER NOT NULL,
+                submit_ip VARCHAR(45) DEFAULT '',
+                invite_code VARCHAR(32) DEFAULT '',
+                inviter_user_id INTEGER REFERENCES users(id),
+                invite_discount_percent_snapshot NUMERIC(10,4) DEFAULT 0,
+                invite_rebate_percent_snapshot NUMERIC(10,4) DEFAULT 0,
+                invite_bonus_points INTEGER DEFAULT 0,
+                invite_rebate_points INTEGER DEFAULT 0,
                 payer_name VARCHAR(128) DEFAULT '',
                 tx_no VARCHAR(128) DEFAULT '',
                 proof_url VARCHAR(1024) DEFAULT '',
@@ -291,6 +303,23 @@ def init_db():
             "CREATE INDEX IF NOT EXISTS idx_recharge_user_id ON recharge_requests(user_id)",
             "CREATE INDEX IF NOT EXISTS idx_recharge_status ON recharge_requests(status)",
             "CREATE INDEX IF NOT EXISTS idx_recharge_created_at ON recharge_requests(created_at DESC)",
+            """CREATE TABLE IF NOT EXISTS invite_events (
+                id SERIAL PRIMARY KEY,
+                inviter_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                invitee_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                event_type VARCHAR(32) NOT NULL,
+                status VARCHAR(32) NOT NULL DEFAULT 'recorded',
+                invite_code VARCHAR(32) DEFAULT '',
+                request_id INTEGER REFERENCES recharge_requests(id) ON DELETE SET NULL,
+                reward_points INTEGER DEFAULT 0,
+                recharge_amount REAL DEFAULT 0,
+                same_ip_hit BOOLEAN DEFAULT FALSE,
+                same_ip_reason VARCHAR(255) DEFAULT '',
+                metadata JSONB DEFAULT '{}'::jsonb,
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_invite_events_inviter_created ON invite_events(inviter_user_id,created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_invite_events_invitee_created ON invite_events(invitee_user_id,created_at DESC)",
             """CREATE TABLE IF NOT EXISTS announcements (
                 id SERIAL PRIMARY KEY,
                 title VARCHAR(255) NOT NULL,
@@ -446,9 +475,36 @@ def init_db():
             conn.execute("UPDATE image_metadata SET expires_at = created_at + interval '2 day' WHERE is_permanent = FALSE AND expires_at IS NOT NULL AND expires_at > NOW() + interval '1 day' AND expires_at <= NOW() + interval '3 day'")
             if not _column_exists(conn, "users", "email"):
                 conn.execute("ALTER TABLE users ADD COLUMN email VARCHAR(255) DEFAULT ''")
+            if not _column_exists(conn, "users", "invite_code"):
+                conn.execute("ALTER TABLE users ADD COLUMN invite_code VARCHAR(32)")
+            if not _column_exists(conn, "users", "invite_code_created_at"):
+                conn.execute("ALTER TABLE users ADD COLUMN invite_code_created_at TIMESTAMP")
+            if not _column_exists(conn, "users", "inviter_user_id"):
+                conn.execute("ALTER TABLE users ADD COLUMN inviter_user_id INTEGER REFERENCES users(id)")
+            if not _column_exists(conn, "users", "register_invite_code"):
+                conn.execute("ALTER TABLE users ADD COLUMN register_invite_code VARCHAR(32) DEFAULT ''")
+            if not _column_exists(conn, "users", "invited_at"):
+                conn.execute("ALTER TABLE users ADD COLUMN invited_at TIMESTAMP")
+            if not _column_exists(conn, "recharge_requests", "invite_code"):
+                conn.execute("ALTER TABLE recharge_requests ADD COLUMN invite_code VARCHAR(32) DEFAULT ''")
+            if not _column_exists(conn, "recharge_requests", "submit_ip"):
+                conn.execute("ALTER TABLE recharge_requests ADD COLUMN submit_ip VARCHAR(45) DEFAULT ''")
+            if not _column_exists(conn, "recharge_requests", "inviter_user_id"):
+                conn.execute("ALTER TABLE recharge_requests ADD COLUMN inviter_user_id INTEGER REFERENCES users(id)")
+            if not _column_exists(conn, "recharge_requests", "invite_discount_percent_snapshot"):
+                conn.execute("ALTER TABLE recharge_requests ADD COLUMN invite_discount_percent_snapshot NUMERIC(10,4) DEFAULT 0")
+            if not _column_exists(conn, "recharge_requests", "invite_rebate_percent_snapshot"):
+                conn.execute("ALTER TABLE recharge_requests ADD COLUMN invite_rebate_percent_snapshot NUMERIC(10,4) DEFAULT 0")
+            if not _column_exists(conn, "recharge_requests", "invite_bonus_points"):
+                conn.execute("ALTER TABLE recharge_requests ADD COLUMN invite_bonus_points INTEGER DEFAULT 0")
+            if not _column_exists(conn, "recharge_requests", "invite_rebate_points"):
+                conn.execute("ALTER TABLE recharge_requests ADD COLUMN invite_rebate_points INTEGER DEFAULT 0")
             dup_nickname = conn.execute("SELECT nickname,COUNT(*) cnt FROM users WHERE nickname IS NOT NULL AND nickname<>'' GROUP BY nickname HAVING COUNT(*)>1 LIMIT 1").fetchone()
             if not dup_nickname:
                 conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_nickname_unique ON users(nickname) WHERE nickname IS NOT NULL AND nickname<>''")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite_code_unique ON users(invite_code) WHERE invite_code IS NOT NULL AND invite_code<>''")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_users_inviter_user_id ON users(inviter_user_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_recharge_inviter_user_id ON recharge_requests(inviter_user_id)")
 
         # 初始化默认分类
             count = conn.execute("SELECT COUNT(*) AS cnt FROM categories").fetchone()["cnt"]

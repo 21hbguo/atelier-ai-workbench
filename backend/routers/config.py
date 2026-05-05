@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
-from backend.config import get_config, update_config, get_generation_models, get_generation_providers, get_default_model_id, get_recharge_packages, get_llm_config
+from backend.config import get_config, update_config, get_generation_models, get_generation_providers, get_default_model_id, get_recharge_packages, get_llm_config, get_invite_config
 from backend.auth import get_current_user, get_optional_user, require_admin
 from backend.services.gen_gateway import GenGateway
 
@@ -26,6 +26,10 @@ class ConfigUpdate(BaseModel):
     points_checkin_reward: Optional[int] = Field(None, ge=0)
     points_register_bonus: Optional[int] = Field(None, ge=0)
     points_migration_amount: Optional[int] = Field(None, ge=0)
+    invite_enabled: Optional[bool] = None
+    invite_register_reward_points: Optional[int] = Field(None, ge=0)
+    invite_recharge_rebate_percent: Optional[float] = Field(None, ge=0)
+    invite_recharge_bonus_percent: Optional[float] = Field(None, ge=0)
     login_rate_limit_per_minute_per_ip: Optional[int] = Field(None, ge=1)
     register_rate_limit_per_minute_per_ip: Optional[int] = Field(None, ge=1)
     default_model_id: Optional[str] = None
@@ -68,6 +72,7 @@ async def get_runtime_config(user=Depends(get_optional_user)):
         "points_cost_per_generation": cfg.get("points_cost_per_generation", 10),
         "points_cost_per_optimize": cfg.get("points_cost_per_optimize", 10),
         "points_cost_per_image_extend": cfg.get("points_cost_per_image_extend", 2),
+        **get_invite_config(),
     }
 
 
@@ -79,6 +84,7 @@ async def get_runtime_config_admin(admin=Depends(require_admin)):
     cfg["smtp_password"] = "***" if cfg.get("smtp_password") else ""
     cfg["llm_api_key"] = "***" if cfg.get("llm_api_key") else ""
     cfg["recharge_packages"] = get_recharge_packages()
+    cfg.update(get_invite_config())
     return cfg
 
 

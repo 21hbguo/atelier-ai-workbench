@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from backend.database import get_db
 from backend.auth import hash_password, verify_password, create_token, create_refresh_token, rotate_refresh_token, revoke_refresh_token, get_current_user, update_user_ip, get_client_ip, set_auth_cookies, clear_auth_cookies, REFRESH_COOKIE_NAME, validate_account, normalize_account, build_user_payload
 from backend.services.points_service import PointsService
+from backend.services.invite_service import InviteService
 from backend.config import get_limit_config, is_register_enabled
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -51,6 +52,7 @@ class RegisterRequest(BaseModel):
     nickname: str = None
     email: str = Field(..., min_length=5, max_length=255)
     code: str = Field(..., min_length=6, max_length=6)
+    invite_code: str = Field("", max_length=32)
 
 
 class SendCodeRequest(BaseModel):
@@ -105,10 +107,13 @@ async def register(req: RegisterRequest, request: Request, response: Response):
         update_user_ip(user_id, ip, conn=conn)
         register_bonus = PointsService.register_bonus()
         PointsService.add_points(user_id, register_bonus, "register_bonus", "注册赠送", conn=conn)
+        invite_result=None
+        if InviteService.is_enabled() and (req.invite_code or "").strip():
+            invite_result=InviteService.apply_register_invite(conn,user_id,req.invite_code,ip)
         mark_registered(req.email)
     access_token = _issue_session(response, user_id, account, False, ip, request.headers.get("user-agent", ""))
     logger.info(f"[audit.register] user={user_id} username={account} ip={ip}")
-    return {"token": access_token, "user": build_user_payload({"id": user_id, "account": account, "nickname": nickname, "is_admin": False, "points": register_bonus})}
+    return {"token": access_token, "user": build_user_payload({"id": user_id, "account": account, "nickname": nickname, "is_admin": False, "points": register_bonus, "invite_code": "", "inviter_user_id": invite_result["inviter_user_id"] if invite_result else None})}
 
 
 @router.post("/login")
@@ -151,7 +156,7 @@ async def logout(request: Request, response: Response):
 @router.get("/me")
 async def get_me(user=Depends(get_current_user)):
     with get_db() as conn:
-        u = conn.execute("SELECT id, username, nickname, avatar, is_admin, points, created_at FROM users WHERE id = %s", (user["user_id"],)).fetchone()
+        u = conn.execute("SELECT id, username, nickname, avatar, is_admin, points, created_at, invite_code, inviter_user_id, register_invite_code, invited_at FROM users WHERE id = %s", (user["user_id"],)).fetchone()
         if not u:
             raise HTTPException(status_code=404, detail="用户不存在")
         d = dict(u)

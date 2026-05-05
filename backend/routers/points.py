@@ -5,6 +5,7 @@ import logging
 import secrets
 from backend.auth import get_current_user, get_client_ip
 from backend.services.points_service import PointsService
+from backend.services.invite_service import InviteService
 from backend.services.upload_file_service import UploadFileService
 from backend.services.notification_service import NotificationService
 from backend.database import get_db
@@ -22,6 +23,7 @@ class RechargeCreateRequest(BaseModel):
     channel: str
     amount: float
     points: int
+    invite_code: str = ""
     payer_name: str = ""
     tx_no: str = ""
     proof_url: str = ""
@@ -120,10 +122,14 @@ async def create_recharge_request(body: RechargeCreateRequest, request: Request,
     remark = (body.remark or "").strip()[:500]
     ip = get_client_ip(request)
     with get_db() as conn:
+        invite_snapshot=InviteService.build_recharge_snapshot(conn,user["user_id"],body.amount,body.invite_code,ip) if InviteService.is_enabled() else {"inviter_user_id":None,"invite_code":"","invite_discount_percent_snapshot":0,"invite_rebate_percent_snapshot":0,"invite_bonus_points":0,"invite_rebate_points":0,"same_ip_hit":False,"same_ip_reason":""}
         risk_level, risk_flags = _build_recharge_risk(conn, user["user_id"], ip, tx_no, body.amount, proof_url)
+        if invite_snapshot.get("same_ip_hit"):
+            risk_flags=list(risk_flags)+[invite_snapshot.get("same_ip_reason") or "same_ip_within_30d"]
+            risk_level="high" if risk_level!="high" else risk_level
         cursor = conn.execute(
-            "INSERT INTO recharge_requests (user_id, channel, amount, points, payer_name, tx_no, proof_url, remark, status, risk_level, risk_flags) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s) RETURNING id",
-            (user["user_id"], channel, body.amount, body.points, payer_name, tx_no, proof_url, remark, risk_level, json.dumps(risk_flags, ensure_ascii=False)),
+            "INSERT INTO recharge_requests (user_id, channel, amount, points, submit_ip, invite_code, inviter_user_id, invite_discount_percent_snapshot, invite_rebate_percent_snapshot, invite_bonus_points, invite_rebate_points, payer_name, tx_no, proof_url, remark, status, risk_level, risk_flags) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s) RETURNING id",
+            (user["user_id"], channel, body.amount, body.points, ip, invite_snapshot["invite_code"], invite_snapshot["inviter_user_id"], invite_snapshot["invite_discount_percent_snapshot"], invite_snapshot["invite_rebate_percent_snapshot"], invite_snapshot["invite_bonus_points"], invite_snapshot["invite_rebate_points"], payer_name, tx_no, proof_url, remark, risk_level, json.dumps(risk_flags, ensure_ascii=False)),
         )
         request_id = cursor.fetchone()["id"]
         balance = conn.execute("SELECT points FROM users WHERE id = %s", (user["user_id"],)).fetchone()["points"]
@@ -139,6 +145,19 @@ async def create_recharge_request(body: RechargeCreateRequest, request: Request,
             pass
     logger.info(f"[audit.recharge.request] id={request_id} user={user['user_id']} amount={body.amount} points={body.points} risk={risk_level} flags={','.join(risk_flags) if risk_flags else 'none'} ip={ip}")
     return {"id": request_id, "tx_no": tx_no, "message": "充值申请已提交，等待审核"}
+
+@router.get("/invite")
+async def get_invite_info(user=Depends(get_current_user)):
+    return InviteService.get_user_invite_overview(user["user_id"])
+
+@router.post("/invite/generate")
+async def generate_invite_code(user=Depends(get_current_user)):
+    code=InviteService.ensure_user_invite_code(user["user_id"])
+    return {"invite_code":code}
+
+@router.get("/invite/history")
+async def get_invite_history(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), user=Depends(get_current_user)):
+    return InviteService.list_user_invite_history(user["user_id"],page,size)
 
 
 @router.get("/recharge/requests")

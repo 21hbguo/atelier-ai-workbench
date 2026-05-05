@@ -12,6 +12,7 @@ export default function LoginPage() {
   const [nickname, setNickname] = useState('')
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
+  const [inviteCode, setInviteCode] = useState('')
   const [sendingCode, setSendingCode] = useState(false)
   const [cooldown, setCooldown] = useState(0)
   const [error, setError] = useState('')
@@ -57,7 +58,7 @@ export default function LoginPage() {
 
     try {
       const data = isRegister
-        ? (await authAPI.register({ account, password, nickname: nickname || '', email, code })).data
+        ? (await authAPI.register({ account, password, nickname: nickname || '', email, code, invite_code: inviteCode || '' })).data
         : (await authAPI.login({ account, password })).data
       writeUser(data.user)
       if (isRegister && data.user?.points > 0) {
@@ -114,6 +115,21 @@ export default function LoginPage() {
                   className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
                   style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
                   placeholder="可选"
+                />
+              </div>
+            )}
+
+            {isRegister && (
+              <div>
+                <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>邀请码</label>
+                <input
+                  type="text"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+                  className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
+                  style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                  placeholder="选填，仅注册时有效"
+                  maxLength={32}
                 />
               </div>
             )}

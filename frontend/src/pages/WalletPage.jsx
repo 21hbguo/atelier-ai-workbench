@@ -5,7 +5,7 @@ import Pagination from '../components/Pagination'
 import { useAppDialog } from '../components/AppDialogProvider'
 import api, { pointsAPI, uploadAPI, accountAPI, configAPI } from '../api'
 import { readUser } from '../auth'
-const typeMap={register_bonus:{label:'注册赠送',color:'var(--accent)'},daily_checkin:{label:'每日签到',color:'var(--accent)'},generate_consume:{label:'生成消耗',color:'var(--color-error)'},prompt_optimize:{label:'提示词优化',color:'var(--color-error)'},image_expire_extend:{label:'延长有效期',color:'var(--color-error)'},generate_refund:{label:'生成退款',color:'var(--color-success)'},redeem_code:{label:'兑换码兑换',color:'var(--accent)'},admin_grant:{label:'管理员调整',color:'#8B7BA8'},migration:{label:'历史补偿',color:'var(--accent)'},migration_bonus:{label:'历史补偿',color:'var(--accent)'},recharge_pending:{label:'充值待审核',color:'var(--color-warning)'}}
+const typeMap={register_bonus:{label:'注册赠送',color:'var(--accent)'},daily_checkin:{label:'每日签到',color:'var(--accent)'},generate_consume:{label:'生成消耗',color:'var(--color-error)'},prompt_optimize:{label:'提示词优化',color:'var(--color-error)'},image_expire_extend:{label:'延长有效期',color:'var(--color-error)'},generate_refund:{label:'生成退款',color:'var(--color-success)'},redeem_code:{label:'兑换码兑换',color:'var(--accent)'},admin_grant:{label:'管理员调整',color:'#8B7BA8'},migration:{label:'历史补偿',color:'var(--accent)'},migration_bonus:{label:'历史补偿',color:'var(--accent)'},recharge_pending:{label:'充值待审核',color:'var(--color-warning)'},invite_register_reward:{label:'邀请注册奖励',color:'var(--color-success)'},invite_recharge_bonus:{label:'充值优惠赠送',color:'var(--color-success)'},invite_recharge_rebate:{label:'邀请充值返利',color:'var(--color-success)'}}
 const defaultRechargePackages=[{amount:9.9,points:120,label:'体验包'},{amount:29.9,points:400,label:'进阶包'},{amount:59.9,points:900,label:'超值包'}]
 const channelLabel={wechat:'微信',alipay:'支付宝'}
 const statusMap={pending:{label:'待审核',color:'var(--color-warning)'},approved:{label:'已通过',color:'var(--color-success)'},rejected:{label:'已拒绝',color:'var(--color-error)'}}
@@ -22,11 +22,17 @@ const [redeemCode,setRedeemCode]=useState('')
 const [redeemLoading,setRedeemLoading]=useState(false)
 const [redeemMsg,setRedeemMsg]=useState(null)
 const [payConfig,setPayConfig]=useState({wechat_pay_qr_url:'',alipay_pay_qr_url:'',manual_recharge_notice:''})
+const [inviteConfig,setInviteConfig]=useState({invite_enabled:true,invite_recharge_bonus_percent:10})
 const [rechargePackages,setRechargePackages]=useState(defaultRechargePackages)
 const [rechargeChannel,setRechargeChannel]=useState('wechat')
 const [packageIdx,setPackageIdx]=useState(0)
 const [rechargeAmount,setRechargeAmount]=useState(defaultRechargePackages[0].amount)
 const [rechargePoints,setRechargePoints]=useState(defaultRechargePackages[0].points)
+const [inviteCode,setInviteCode]=useState('')
+const [inviteInfo,setInviteInfo]=useState({invite_code:'',inviter_name:'',register_invite_code:'',summary:{invited_register_count:0,total_rebate_points:0,total_recharge_amount:0,risk_hit_count:0}})
+const [inviteHistory,setInviteHistory]=useState([])
+const [inviteHistoryTotal,setInviteHistoryTotal]=useState(0)
+const [inviteGenerating,setInviteGenerating]=useState(false)
 const [payerName,setPayerName]=useState('')
 const [proofUrl,setProofUrl]=useState('')
 const [remark,setRemark]=useState('')
@@ -54,8 +60,9 @@ setLoading(false)
 }
 useEffect(()=>{fetchData(page)},[page])
 useEffect(()=>{
-api.get('/config').then(({data})=>{const packages=Array.isArray(data.recharge_packages)&&data.recharge_packages.length?data.recharge_packages:defaultRechargePackages;setPayConfig({wechat_pay_qr_url:data.wechat_pay_qr_url||'',alipay_pay_qr_url:data.alipay_pay_qr_url||'',manual_recharge_notice:data.manual_recharge_notice||'请备注账号并在下方提交支付凭证，审核通过后自动发放兑换码'});setRechargePackages(packages);setPackageIdx(0);setRechargeAmount(Number(packages[0]?.amount||defaultRechargePackages[0].amount));setRechargePoints(Number(packages[0]?.points||defaultRechargePackages[0].points))}).catch(()=>{})
+api.get('/config').then(({data})=>{const packages=Array.isArray(data.recharge_packages)&&data.recharge_packages.length?data.recharge_packages:defaultRechargePackages;setPayConfig({wechat_pay_qr_url:data.wechat_pay_qr_url||'',alipay_pay_qr_url:data.alipay_pay_qr_url||'',manual_recharge_notice:data.manual_recharge_notice||'请备注账号并在下方提交支付凭证，审核通过后自动发放兑换码'});setInviteConfig({invite_enabled:data?.invite_enabled!==false,invite_recharge_bonus_percent:Number(data?.invite_recharge_bonus_percent||10)});setRechargePackages(packages);setPackageIdx(0);setRechargeAmount(Number(packages[0]?.amount||defaultRechargePackages[0].amount));setRechargePoints(Number(packages[0]?.points||defaultRechargePackages[0].points))}).catch(()=>{})
 },[])
+useEffect(()=>{pointsAPI.inviteInfo().then(({data})=>{setInviteInfo(data||{});if(data?.invite_code){const u=readUser();if(u){u.invite_code=data.invite_code;localStorage.setItem('user',JSON.stringify(u))}}}).catch(()=>{});pointsAPI.inviteHistory(1,20).then(({data})=>{setInviteHistory(data?.items||[]);setInviteHistoryTotal(data?.total||0)}).catch(()=>{})},[])
 useEffect(()=>{
 pointsAPI.checkinStatus().then(({data})=>{setCheckedInToday(data.checked_in_today)}).catch(()=>{})
 },[])
@@ -104,6 +111,7 @@ setCheckinLoading(false)
 }
 }
 const handlePickPackage=(idx)=>{const pkg=rechargePackages[idx];if(!pkg)return;setPackageIdx(idx);setRechargeAmount(Number(pkg.amount||0));setRechargePoints(Number(pkg.points||0))}
+const handleGenerateInviteCode=async()=>{setInviteGenerating(true);try{const {data}=await pointsAPI.generateInviteCode();setInviteInfo(v=>({...v,invite_code:data.invite_code||''}));const u=readUser();if(u){u.invite_code=data.invite_code||'';localStorage.setItem('user',JSON.stringify(u))}}catch(e){dialog.alert(e.message||'生成失败')}finally{setInviteGenerating(false)}}
 const handleUploadProof=async(e)=>{
 const file=e.target.files?.[0]
 if(!file)return
@@ -124,9 +132,10 @@ if(!proofUrl.trim()){setRechargeMsg({type:'error',text:'请上传支付凭证'})
 setSubmittingRecharge(true)
 setRechargeMsg(null)
 try{
-await pointsAPI.createRechargeRequest({channel:rechargeChannel,amount:rechargeAmount,points:rechargePoints,payer_name:payerName,proof_url:proofUrl,remark})
+await pointsAPI.createRechargeRequest({channel:rechargeChannel,amount:rechargeAmount,points:rechargePoints,invite_code:inviteCode,payer_name:payerName,proof_url:proofUrl,remark})
 setProofUrl('')
 setRemark('')
+setInviteCode('')
 setRechargeMsg({type:'success',text:'充值申请已提交，审核通过后会自动发放兑换码'})
 }catch(err){
 setRechargeMsg({type:'error',text:err.message||'提交失败'})
@@ -149,6 +158,7 @@ setPasswordSubmitting(false)
 }
 const totalPages=Math.ceil(total/size)
 const activeQr=rechargeChannel==='wechat'?payConfig.wechat_pay_qr_url:payConfig.alipay_pay_qr_url
+const inviteBonusPreview=inviteConfig?.invite_enabled?Math.max(0,Math.round(rechargeAmount*10*Number(inviteConfig?.invite_recharge_bonus_percent||0)/100)):0
 return(
 <>
 <MainLayout>
@@ -192,6 +202,12 @@ return(
 <button onClick={handleChangePassword} disabled={passwordSubmitting||!oldPassword||newPassword.length<6} className="mt-3 px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50" style={{background:'var(--accent)'}}>{passwordSubmitting?'提交中...':'确认修改'}</button>
 </div>
 </div>
+<div className="p-4 rounded-xl border mb-6" style={{background:'var(--bg-ai-bubble)',borderColor:'var(--border-color)'}}>
+<div className="flex items-center justify-between gap-3 mb-3"><div><div className="text-sm font-medium" style={{color:'var(--text-primary)'}}>邀请中心</div><div className="text-xs mt-1" style={{color:'var(--text-secondary)'}}>注册邀请码选填；充值使用邀请码可获得优惠积分，邀请人获得返利积分，同IP近30天会拦截返利/注册奖励</div></div>{inviteInfo?.invite_code?<div className="px-3 py-1.5 rounded-lg text-xs font-mono" style={{background:'var(--bg-primary)',color:'var(--accent)',border:'1px solid var(--border-color)'}}>{inviteInfo.invite_code}</div>:<button onClick={handleGenerateInviteCode} disabled={inviteGenerating} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-50" style={{background:'var(--accent)'}}>{inviteGenerating?'生成中...':'生成邀请码'}</button>}</div>
+<div className="grid sm:grid-cols-4 gap-2 mb-3">{[{l:'邀请注册',v:inviteInfo?.summary?.invited_register_count||0},{l:'累计返利积分',v:inviteInfo?.summary?.total_rebate_points||0},{l:'带来充值金额',v:`¥${Number(inviteInfo?.summary?.total_recharge_amount||0).toFixed(2)}`},{l:'风险拦截',v:inviteInfo?.summary?.risk_hit_count||0}].map(item=><div key={item.l} className="p-3 rounded-lg border" style={{borderColor:'var(--border-color)',background:'var(--bg-primary)'}}><div className="text-[11px]" style={{color:'var(--text-secondary)'}}>{item.l}</div><div className="text-sm font-semibold" style={{color:'var(--text-primary)'}}>{item.v}</div></div>)}</div>
+<div className="text-xs mb-3" style={{color:'var(--text-secondary)'}}>{inviteInfo?.inviter_name?`已绑定邀请人：${inviteInfo.inviter_name}`:'当前未绑定邀请人'}{inviteInfo?.register_invite_code?`，绑定邀请码：${inviteInfo.register_invite_code}`:''}</div>
+<div className="rounded-xl border overflow-hidden" style={{borderColor:'var(--border-color)'}}><div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr style={{background:'var(--bg-primary)'}}><th className="px-3 py-2 text-left font-medium" style={{color:'var(--text-secondary)'}}>类型</th><th className="px-3 py-2 text-left font-medium" style={{color:'var(--text-secondary)'}}>对象</th><th className="px-3 py-2 text-center font-medium" style={{color:'var(--text-secondary)'}}>积分</th><th className="px-3 py-2 text-center font-medium" style={{color:'var(--text-secondary)'}}>金额</th><th className="px-3 py-2 text-center font-medium" style={{color:'var(--text-secondary)'}}>状态</th><th className="px-3 py-2 text-right font-medium" style={{color:'var(--text-secondary)'}}>时间</th></tr></thead><tbody>{inviteHistory.map(item=><tr key={item.id} className="border-t" style={{borderColor:'var(--border-color)'}}><td className="px-3 py-2" style={{color:'var(--text-primary)'}}>{item.event_type==='register'?'注册邀请':item.event_type==='recharge_bonus'?'充值优惠':item.event_type==='recharge_rebate'?'充值返利':'充值记录'}</td><td className="px-3 py-2" style={{color:'var(--text-secondary)'}}>{item.invitee_nickname||item.invitee_username||item.inviter_nickname||item.inviter_username||'-'}</td><td className="px-3 py-2 text-center tabular-nums" style={{color:'var(--text-secondary)'}}>{item.reward_points||0}</td><td className="px-3 py-2 text-center tabular-nums" style={{color:'var(--text-secondary)'}}>{item.recharge_amount?`¥${Number(item.recharge_amount).toFixed(2)}`:'-'}</td><td className="px-3 py-2 text-center" style={{color:item.same_ip_hit?'var(--color-error)':'var(--text-secondary)'}}>{item.status==='blocked_same_ip'?'同IP拦截':item.status==='rewarded'?'已发放':'已记录'}</td><td className="px-3 py-2 text-right whitespace-nowrap" style={{color:'var(--text-secondary)'}}>{new Date(item.created_at).toLocaleString('zh-CN')}</td></tr>)}</tbody></table></div></div>{inviteHistoryTotal===0&&<div className="text-center py-4 text-xs" style={{color:'var(--text-secondary)'}}>暂无邀请记录</div>}
+</div>
 <div className="grid grid-cols-1 mb-6">
 <div className="p-4 rounded-xl border" style={{background:'var(--bg-ai-bubble)',borderColor:'var(--border-color)'}}>
 <div className="flex items-center gap-2 mb-3"><Wallet size={16} style={{color:'var(--accent)'}} /><span className="text-sm font-medium" style={{color:'var(--text-primary)'}}>人工充值</span></div>
@@ -199,6 +215,9 @@ return(
 <div className="flex gap-2 mb-3">{['wechat','alipay'].map(c=><button key={c} onClick={()=>setRechargeChannel(c)} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${rechargeChannel===c?'text-white':'hover:bg-bg-hover'}`} style={{background:rechargeChannel===c?'var(--accent)':'var(--bg-primary)',color:rechargeChannel===c?'#fff':'var(--text-primary)',border:'1px solid var(--border-color)'}}>{channelLabel[c]}</button>)}</div>
 <div className="mb-3 p-3 rounded-lg border flex items-center justify-center" style={{background:'var(--bg-primary)',borderColor:'var(--border-color)'}}>{activeQr?<img src={activeQr} alt="收款码" className="w-44 h-44 object-contain rounded-lg" />:<span className="text-xs" style={{color:'var(--text-secondary)'}}>管理员暂未配置{channelLabel[rechargeChannel]}收款码</span>}</div>
 <div className="grid grid-cols-3 gap-2 mb-3">{rechargePackages.map((pkg,idx)=><button key={pkg.label} onClick={()=>handlePickPackage(idx)} className={`px-2 py-2 rounded-lg text-xs font-medium ${packageIdx===idx?'text-white':'hover:bg-bg-hover'}`} style={{background:packageIdx===idx?'var(--accent)':'var(--bg-primary)',color:packageIdx===idx?'#fff':'var(--text-primary)',border:'1px solid var(--border-color)'}}><div>{pkg.label}</div><div className="mt-0.5">¥{pkg.amount} / {pkg.points}积分</div></button>)}</div>
+{!inviteInfo?.inviter_user_id&&<div className="mb-2"><input type="text" value={inviteCode} onChange={e=>setInviteCode(e.target.value.toUpperCase())} placeholder="充值邀请码（未绑定时可选填）" className="w-full px-3 py-2 rounded-lg text-sm outline-none transition-colors" style={{background:'var(--bg-primary)',color:'var(--text-primary)',border:'1px solid var(--border-color)'}} /></div>}
+{inviteInfo?.inviter_user_id&&<div className="mb-2 text-xs" style={{color:'var(--text-secondary)'}}>当前充值将沿用已绑定邀请码{inviteInfo?.register_invite_code?`：${inviteInfo.register_invite_code}`:''}</div>}
+<div className="mb-2 text-xs" style={{color:'var(--color-success)'}}>{inviteConfig?.invite_enabled?`使用邀请码本次预计额外到账 ${inviteBonusPreview} 积分，邀请人返利按审核通过后计算`:'邀请码系统当前已关闭'}</div>
 <div className="mb-2"><input type="text" value={payerName} onChange={e=>setPayerName(e.target.value)} placeholder="付款人（选填）" className="w-full px-3 py-2 rounded-lg text-sm outline-none transition-colors" style={{background:'var(--bg-primary)',color:'var(--text-primary)',border:'1px solid var(--border-color)'}} /></div>
 <textarea value={remark} onChange={e=>setRemark(e.target.value)} placeholder="备注（选填）" rows={2} className="w-full px-3 py-2 rounded-lg text-sm outline-none resize-none transition-colors mb-2" style={{background:'var(--bg-primary)',color:'var(--text-primary)',border:'1px solid var(--border-color)'}} />
 <div className="flex flex-wrap items-center gap-2 mb-2"><label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium cursor-pointer hover:bg-bg-hover" style={{color:'var(--text-primary)',border:'1px solid var(--border-color)'}}><Upload size={14} />{uploadingProof?'上传中...':'上传支付凭证'}<input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleUploadProof} /></label>{proofUrl&&<button type="button" onClick={()=>setProofLightbox(true)} className="text-xs underline" style={{color:'var(--accent)'}}>查看已上传凭证</button>}</div>

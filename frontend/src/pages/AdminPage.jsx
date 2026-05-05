@@ -94,7 +94,7 @@ export default function AdminPage() {
   const [newTitle, setNewTitle] = useState('')
   const [newContent, setNewContent] = useState('')
   const [creatingAnnouncement, setCreatingAnnouncement] = useState(false)
-  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', register_enabled: true, image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', recharge_packages: defaultRechargePackages, generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_cost_per_optimize: 10, points_cost_per_image_extend: 2, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3, github_hosting_enabled: false, github_hosting_repo: '', github_hosting_token: '', github_hosting_branch: 'main', smtp_server: 'smtp.qq.com', smtp_port: 465, smtp_password: '', smtp_sender: '', smtp_sender_name: 'Atelier·AI造梦工坊' })
+  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', register_enabled: true, image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', recharge_packages: defaultRechargePackages, generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_cost_per_optimize: 10, points_cost_per_image_extend: 2, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, invite_enabled: true, invite_register_reward_points: 20, invite_recharge_rebate_percent: 10, invite_recharge_bonus_percent: 10, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3, github_hosting_enabled: false, github_hosting_repo: '', github_hosting_token: '', github_hosting_branch: 'main', smtp_server: 'smtp.qq.com', smtp_port: 465, smtp_password: '', smtp_sender: '', smtp_sender_name: 'Atelier·AI造梦工坊' })
   const [configSaving, setConfigSaving] = useState(false)
   const [defaultModelId, setDefaultModelId] = useState('image-default')
   const [generationModelsText, setGenerationModelsText] = useState('{}')
@@ -259,6 +259,10 @@ export default function AdminPage() {
         points_checkin_reward: Number(data.points_checkin_reward || 10),
         points_register_bonus: Number(data.points_register_bonus || 50),
         points_migration_amount: Number(data.points_migration_amount || 50),
+        invite_enabled: data.invite_enabled !== false,
+        invite_register_reward_points: Number(data.invite_register_reward_points || 20),
+        invite_recharge_rebate_percent: Number(data.invite_recharge_rebate_percent || 10),
+        invite_recharge_bonus_percent: Number(data.invite_recharge_bonus_percent || 10),
         login_rate_limit_per_minute_per_ip: Number(data.login_rate_limit_per_minute_per_ip || 5),
         register_rate_limit_per_minute_per_ip: Number(data.register_rate_limit_per_minute_per_ip || 3),
         github_hosting_enabled: data.github_hosting_enabled === true || data.github_hosting_enabled === 'true',
@@ -389,12 +393,12 @@ export default function AdminPage() {
   const handleAddRechargePackage = () => setRuntimeConfig(prev => { const list = Array.isArray(prev.recharge_packages) ? prev.recharge_packages : []; return { ...prev, recharge_packages: [...list, { amount: '', points: '', label: `套餐${list.length + 1}` }] } })
   const handleDeleteRechargePackage = (idx) => setRuntimeConfig(prev => { const list = Array.isArray(prev.recharge_packages) ? prev.recharge_packages : []; return { ...prev, recharge_packages: list.length <= 1 ? list : list.filter((_, i) => i !== idx) } })
   const handleSaveConfig = async () => {
-    const n = ['generate_concurrent_limit_per_user', 'points_cost_per_generation', 'points_cost_per_optimize', 'points_cost_per_image_extend', 'points_checkin_reward', 'points_register_bonus', 'points_migration_amount', 'login_rate_limit_per_minute_per_ip', 'register_rate_limit_per_minute_per_ip', 'smtp_port', 'llm_max_tokens', 'llm_timeout_seconds']
+    const n = ['generate_concurrent_limit_per_user', 'points_cost_per_generation', 'points_cost_per_optimize', 'points_cost_per_image_extend', 'points_checkin_reward', 'points_register_bonus', 'points_migration_amount', 'invite_register_reward_points', 'invite_recharge_rebate_percent', 'invite_recharge_bonus_percent', 'login_rate_limit_per_minute_per_ip', 'register_rate_limit_per_minute_per_ip', 'smtp_port', 'llm_max_tokens', 'llm_timeout_seconds']
     const payload = { ...runtimeConfig }
     payload.default_model_id = (defaultModelId || '').trim() || 'image-default'
     let recharge_packages = []
     for (const k of n) payload[k] = Number(payload[k])
-    if (payload.generate_concurrent_limit_per_user < 1 || payload.points_cost_per_generation < 1 || payload.points_cost_per_optimize < 1 || payload.points_cost_per_image_extend < 1 || payload.login_rate_limit_per_minute_per_ip < 1 || payload.register_rate_limit_per_minute_per_ip < 1 || payload.points_checkin_reward < 0 || payload.points_register_bonus < 0 || payload.points_migration_amount < 0) { dialog.alert('限制配置不合法'); return }
+    if (payload.generate_concurrent_limit_per_user < 1 || payload.points_cost_per_generation < 1 || payload.points_cost_per_optimize < 1 || payload.points_cost_per_image_extend < 1 || payload.login_rate_limit_per_minute_per_ip < 1 || payload.register_rate_limit_per_minute_per_ip < 1 || payload.points_checkin_reward < 0 || payload.points_register_bonus < 0 || payload.points_migration_amount < 0 || payload.invite_register_reward_points < 0 || payload.invite_recharge_rebate_percent < 0 || payload.invite_recharge_bonus_percent < 0) { dialog.alert('限制配置不合法'); return }
     try {
       recharge_packages = Array.isArray(payload.recharge_packages) ? payload.recharge_packages : []
       if (!Array.isArray(recharge_packages) || !recharge_packages.length) throw new Error('充值套餐需要 JSON 数组且至少保留一项')
@@ -1227,12 +1231,18 @@ export default function AdminPage() {
                 </button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {[{ k: 'generate_concurrent_limit_per_user', l: '生成并发上限/用户', min: 1 }, { k: 'points_cost_per_generation', l: '默认生成扣分', min: 1 }, { k: 'points_cost_per_optimize', l: '每次优化扣分', min: 1 }, { k: 'points_cost_per_image_extend', l: '图片续期扣分/张', min: 1 }, { k: 'points_checkin_reward', l: '每日签到奖励', min: 0 }, { k: 'points_register_bonus', l: '注册送分', min: 0 }, { k: 'points_migration_amount', l: '补发积分值', min: 0 }, { k: 'login_rate_limit_per_minute_per_ip', l: '登录限流/分钟/IP', min: 1 }, { k: 'register_rate_limit_per_minute_per_ip', l: '注册限流/分钟/IP', min: 1 }].map(item => (
+                {[{ k: 'generate_concurrent_limit_per_user', l: '生成并发上限/用户', min: 1 }, { k: 'points_cost_per_generation', l: '默认生成扣分', min: 1 }, { k: 'points_cost_per_optimize', l: '每次优化扣分', min: 1 }, { k: 'points_cost_per_image_extend', l: '图片续期扣分/张', min: 1 }, { k: 'points_checkin_reward', l: '每日签到奖励', min: 0 }, { k: 'points_register_bonus', l: '注册送分', min: 0 }, { k: 'points_migration_amount', l: '补发积分值', min: 0 }, { k: 'invite_register_reward_points', l: '邀请注册奖励', min: 0 }, { k: 'invite_recharge_rebate_percent', l: '充值返利百分比', min: 0 }, { k: 'invite_recharge_bonus_percent', l: '充值优惠百分比', min: 0 }, { k: 'login_rate_limit_per_minute_per_ip', l: '登录限流/分钟/IP', min: 1 }, { k: 'register_rate_limit_per_minute_per_ip', l: '注册限流/分钟/IP', min: 1 }].map(item => (
                   <div key={item.k}>
                     <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>{item.l}</label>
                     <input type="number" min={item.min} value={runtimeConfig[item.k]} onChange={e => onConfigInput(item.k, e.target.value)} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                   </div>
                 ))}
+              </div>
+              <div className="mt-3 p-3 rounded-lg border flex items-center justify-between gap-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+                <div><div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>启用邀请码系统</div><div className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>关闭后隐藏邀请权益，已有邀请关系保留但不再发放新奖励</div></div>
+                <button type="button" onClick={() => onConfigToggle('invite_enabled', !runtimeConfig.invite_enabled)} className="relative inline-flex h-7 w-12 items-center rounded-full transition-colors" style={{ background: runtimeConfig.invite_enabled ? 'var(--accent)' : 'var(--border-color)' }}>
+                  <span className="inline-block h-5 w-5 transform rounded-full bg-white transition-transform" style={{ transform: runtimeConfig.invite_enabled ? 'translateX(22px)' : 'translateX(3px)' }} />
+                </button>
               </div>
             </div>
             <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
