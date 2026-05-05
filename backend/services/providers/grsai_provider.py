@@ -104,4 +104,4 @@ class GrsAIProvider:
     @classmethod
     def is_retryable_error(cls, exc: Exception) -> bool:
         msg = str(exc)
-        return any(x in msg for x in ["poll_transport", "poll_http_5", "submit_http_5", "429", "timeout", "timed out", "connection", "connect", "refused"])
+        return any(x in msg for x in ["poll_transport", "poll_http_5", "submit_http_4", "submit_http_5", "429", "timeout", "timed out", "connection", "connect", "refused"])
