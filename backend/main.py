@@ -2,6 +2,7 @@ import os
 import logging
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -79,4 +80,5 @@ app.include_router(prompt_optimize.router)
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": "1.0.0"}
+    now = datetime.now().astimezone()
+    return {"status": "ok", "version": "1.0.0", "server_time": now.isoformat(), "timezone": now.tzname(), "tz_env": os.getenv("TZ", "")}
