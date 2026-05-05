@@ -28,6 +28,11 @@ export default function AdminClassificationTab({
   const [resultFilter, setResultFilter] = useState('all')
   const [processingIds, setProcessingIds] = useState(new Set())
   const [createType, setCreateType] = useState('prompt')
+  const [liveLogs, setLiveLogs] = useState([])
+  const [liveTaskId, setLiveTaskId] = useState(null)
+  const [showLiveLogs, setShowLiveLogs] = useState(false)
+  const logEndRef = useRef(null)
+  const eventSourceRef = useRef(null)
 
   useEffect(() => {
     if (detail?.status !== 'processing') return
@@ -44,9 +49,57 @@ export default function AdminClassificationTab({
     return () => clearInterval(timer)
   }, [detail?.id, detail?.status])
 
+  // 订阅任务日志
+  const subscribeLogs = (taskId) => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close()
+    }
+    setLiveLogs([])
+    setLiveTaskId(taskId)
+    setShowLiveLogs(true)
+
+    const es = new EventSource(`/api/admin/classification/tasks/${taskId}/logs`)
+    eventSourceRef.current = es
+
+    es.onmessage = (e) => {
+      try {
+        const log = JSON.parse(e.data)
+        setLiveLogs(prev => [...prev, log])
+        if (log.type === 'complete') {
+          es.close()
+          onRefreshTasks()
+        }
+      } catch {}
+    }
+
+    es.onerror = () => {
+      es.close()
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close()
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (logEndRef.current && showLiveLogs) {
+      logEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [liveLogs, showLiveLogs])
+
   const handleCreate = async () => {
     setCreating(true)
-    try { await onCreateTask(createType) } catch {}
+    try {
+      const result = await onCreateTask(createType)
+      // 订阅新任务的日志
+      if (result?.id) {
+        subscribeLogs(result.id)
+      }
+    } catch {}
     setCreating(false)
   }
 
@@ -190,6 +243,49 @@ export default function AdminClassificationTab({
             <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1} className="px-3 py-1 rounded text-xs" style={{ color: 'var(--text-secondary)' }}>上一页</button>
             <span className="text-xs px-2 py-1" style={{ color: 'var(--text-secondary)' }}>{page}/{totalPages}</span>
             <button onClick={() => setPage(Math.min(totalPages, page + 1))} disabled={page === totalPages} className="px-3 py-1 rounded text-xs" style={{ color: 'var(--text-secondary)' }}>下一页</button>
+          </div>
+        )}
+
+        {/* 实时日志区域 */}
+        {showLiveLogs && (
+          <div className="rounded-lg border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
+            <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid var(--border-color)' }}>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
+                  任务 #{liveTaskId} 实时输出
+                </span>
+                {liveLogs.some(l => l.type === 'complete') ? (
+                  <span className="px-2 py-0.5 rounded-full text-xs" style={{ background: 'var(--color-success)20', color: 'var(--color-success)' }}>已完成</span>
+                ) : (
+                  <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--accent)' }}>
+                    <Loader2 size={12} className="animate-spin" /> 处理中
+                  </span>
+                )}
+              </div>
+              <button onClick={() => setShowLiveLogs(false)} className="p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
+                <X size={14} />
+              </button>
+            </div>
+            <div className="p-3 text-xs font-mono overflow-auto max-h-80" style={{ color: 'var(--text-primary)', background: 'var(--bg-ai-bubble)' }}>
+              {liveLogs.length === 0 ? (
+                <span style={{ color: 'var(--text-secondary)' }}>等待输出...</span>
+              ) : liveLogs.map((log, i) => (
+                <div key={i} className="mb-1">
+                  {log.type === 'token' ? (
+                    <span>{log.message}</span>
+                  ) : log.type === 'error' ? (
+                    <span style={{ color: 'var(--color-error)' }}>[错误] {log.message}</span>
+                  ) : log.type === 'result' ? (
+                    <span style={{ color: 'var(--color-success)' }}>[结果] {log.message}</span>
+                  ) : log.type === 'complete' ? (
+                    <span style={{ color: 'var(--color-success)' }}>[完成] {log.message}</span>
+                  ) : (
+                    <span style={{ color: 'var(--text-secondary)' }}>[信息] {log.message}</span>
+                  )}
+                </div>
+              ))}
+              <div ref={logEndRef} />
+            </div>
           </div>
         )}
 

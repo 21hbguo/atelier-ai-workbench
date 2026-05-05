@@ -1351,3 +1351,19 @@ async def test_classification_stream(body: dict, admin=Depends(require_admin)):
         async for chunk in ClassificationService.stream_classify_batch(system_prompt, items, use_stream=False):
             result.append(chunk)
         return result[-1] if result else {"type": "error", "message": "无响应"}
+
+
+@router.get("/classification/tasks/{task_id}/logs")
+async def stream_classification_logs(task_id: int, admin=Depends(require_admin)):
+    """SSE 端点：实时推送分类任务日志"""
+    from fastapi.responses import StreamingResponse
+
+    task = ClassificationService.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    async def event_stream():
+        async for log in ClassificationService.get_task_logs(task_id):
+            yield f"data: {json.dumps(log, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")

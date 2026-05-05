@@ -1,12 +1,17 @@
 import httpx
 import json
 import logging
+import asyncio
 from typing import List, Dict, Any, Optional
 from backend.config import get_llm_config
 from backend.database import get_db
 from backend.services.category_service import CategoryService
 
 logger = logging.getLogger(__name__)
+
+# 任务日志缓冲区：task_id -> list of log entries
+_task_logs: Dict[int, List[Dict]] = {}
+_task_log_events: Dict[int, asyncio.Event] = {}
 
 SYSTEM_TEMPLATE = """你是一名专业的AI绘画内容分类专家。你的任务是根据作品的提示词内容，将其归类到最合适的分类中。
 
@@ -51,6 +56,51 @@ class ClassificationService:
             cls._client = None
 
     @classmethod
+    def _push_log(cls, task_id: int, log_type: str, message: str, data: Any = None):
+        """推送日志到任务缓冲区"""
+        if task_id not in _task_logs:
+            _task_logs[task_id] = []
+            _task_log_events[task_id] = asyncio.Event()
+        entry = {"type": log_type, "message": message, "data": data}
+        _task_logs[task_id].append(entry)
+        if task_id in _task_log_events:
+            _task_log_events[task_id].set()
+
+    @classmethod
+    async def get_task_logs(cls, task_id: int):
+        """异步生成器，yield 任务日志"""
+        if task_id not in _task_logs:
+            _task_logs[task_id] = []
+            _task_log_events[task_id] = asyncio.Event()
+
+        idx = 0
+        while True:
+            logs = _task_logs.get(task_id, [])
+            while idx < len(logs):
+                yield logs[idx]
+                idx += 1
+
+            # 检查任务是否已完成
+            with get_db() as conn:
+                task = conn.execute("SELECT status FROM classification_tasks WHERE id = %s", (task_id,)).fetchone()
+                if task and task["status"] not in ("processing",):
+                    # 推送剩余日志
+                    while idx < len(logs):
+                        yield logs[idx]
+                        idx += 1
+                    yield {"type": "complete", "message": "任务已完成"}
+                    # 清理
+                    _task_logs.pop(task_id, None)
+                    _task_log_events.pop(task_id, None)
+                    return
+
+            _task_log_events[task_id].clear()
+            try:
+                await asyncio.wait_for(_task_log_events[task_id].wait(), timeout=2.0)
+            except asyncio.TimeoutError:
+                pass
+
+    @classmethod
     def create_task(cls, admin_id: int, item_type: str = "prompt") -> Dict[str, Any]:
         with get_db() as conn:
             if item_type == "image":
@@ -83,9 +133,12 @@ class ClassificationService:
     @classmethod
     async def run_classification(cls, task_id: int):
         try:
+            cls._push_log(task_id, "info", "开始分类任务")
+
             categories = CategoryService.get_all_as_dict()
             cat_text = "\n".join(f"- {slug}: {label}" for slug, label in categories.items())
             system_prompt = SYSTEM_TEMPLATE.format(categories=cat_text)
+            cls._push_log(task_id, "info", f"已加载 {len(categories)} 个分类")
 
             with get_db() as conn:
                 task = conn.execute("SELECT id, status FROM classification_tasks WHERE id = %s", (task_id,)).fetchone()
@@ -93,6 +146,7 @@ class ClassificationService:
                     return
 
             processed = 0
+            batch_num = 0
             while True:
                 with get_db() as conn:
                     batch = conn.execute(
@@ -103,11 +157,37 @@ class ClassificationService:
                 if not batch:
                     break
 
+                batch_num += 1
+                cls._push_log(task_id, "info", f"处理批次 {batch_num}，{len(batch)} 个项目")
+
                 items = [
                     {"item_id": r["item_id"], "name": r["item_name"] or "", "prompt": (r["item_prompt"] or "")[:300]}
                     for r in batch
                 ]
-                results = await cls._classify_batch(system_prompt, items)
+
+                # 流式调用 LLM
+                full_text = ""
+                async for chunk in cls.stream_classify_batch(system_prompt, items, use_stream=True):
+                    if chunk["type"] == "token":
+                        full_text += chunk["text"]
+                        cls._push_log(task_id, "token", chunk["text"])
+                    elif chunk["type"] == "done":
+                        full_text = chunk.get("full_text", full_text)
+                        cls._push_log(task_id, "info", f"LLM 响应完成")
+                    elif chunk["type"] == "error":
+                        cls._push_log(task_id, "error", chunk["message"])
+
+                # 解析结果
+                results = []
+                try:
+                    text = full_text.strip()
+                    if text.startswith("```"):
+                        lines = text.split("\n")
+                        text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+                        text = text.strip()
+                    results = json.loads(text) if text else []
+                except json.JSONDecodeError as e:
+                    cls._push_log(task_id, "error", f"JSON 解析失败: {str(e)[:100]}")
 
                 result_map = {r["item_id"]: r for r in results} if results else {}
                 with get_db() as conn:
@@ -118,11 +198,13 @@ class ClassificationService:
                                 "UPDATE classification_results SET suggested_category = %s, suggested_category_label = %s, is_new_category = %s, confidence = %s WHERE id = %s",
                                 (match.get("category_slug", ""), match.get("category_label", ""), match.get("is_new", False), match.get("confidence", ""), row["id"]),
                             )
+                            cls._push_log(task_id, "result", f"{row['item_name']} -> {match.get('category_label', '')}")
                         else:
                             conn.execute(
                                 "UPDATE classification_results SET suggested_category = '_error', suggested_category_label = '分类失败', status = 'failed' WHERE id = %s",
                                 (row["id"],),
                             )
+                            cls._push_log(task_id, "error", f"{row['item_name']} 分类失败")
                         processed += 1
 
                     conn.execute(
@@ -140,9 +222,11 @@ class ClassificationService:
                     "UPDATE classification_tasks SET status = %s, processed_items = total_items, completed_at = NOW() WHERE id = %s",
                     (new_status, task_id),
                 )
+            cls._push_log(task_id, "info", f"任务完成，处理 {processed} 个项目")
             logger.info(f"[classification] Task {task_id} completed, {processed} items processed")
 
-        except Exception:
+        except Exception as e:
+            cls._push_log(task_id, "error", f"任务异常: {str(e)[:200]}")
             logger.exception(f"[classification] Task {task_id} failed")
             with get_db() as conn:
                 conn.execute(

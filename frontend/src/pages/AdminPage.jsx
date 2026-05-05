@@ -215,9 +215,10 @@ export default function AdminPage() {
   }
   const handleCreateClsTask = async (itemType = 'prompt') => {
     try {
-      await adminAPI.createClassificationTask(itemType)
+      const { data } = await adminAPI.createClassificationTask(itemType)
       fetchClsTasks()
-    } catch (e) { dialog.alert(e.message || '创建失败') }
+      return data
+    } catch (e) { dialog.alert(e.message || '创建失败'); throw e }
   }
   const fetchSystemStats = async (rangeValue = statsRange) => {
     setLoading(true)
