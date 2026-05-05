@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useDragSelection } from '../hooks/useDragSelection'
 import { useNavigate } from 'react-router-dom'
 import { Download, Trash2, RefreshCw, Coins } from 'lucide-react'
 import JSZip from 'jszip'
@@ -73,6 +74,13 @@ export default function ChatPage() {
   const [selectedCardIndex, setSelectedCardIndex] = useState(null)
   const [detailCards, setDetailCards] = useState([])
   const feedRef = useRef(null)
+  const cardGridRef = useRef(null)
+  const { selectionRect, dragSelected, wasDraggedRef } = useDragSelection({
+    enabled: selectMode,
+    selected: checked,
+    onSelectionChange: setChecked,
+    containerRef: cardGridRef,
+  })
   const inputRef = useRef(null)
   const dragCounter = useRef(0)
   const recoveringRef = useRef(new Set())
@@ -726,8 +734,11 @@ export default function ChatPage() {
             <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{tasks.length === 0 ? '输入提示词或上传参考图，AI 为你创作' : '当前时间筛选下没有记录'}</p>
           </div>
         ) : (
-          <div className={`${layoutMode === 'masonry' ? 'card-feed-masonry' : 'card-feed-grid'} pt-4`}>
-            {visibleTasks.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onAddPrompt={handleAddPrompt} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id)} onToggleCheck={() => toggleCheck(task.task_id)} showUsername={isAdmin} username={task.username} onViewDetail={() => handleCardViewDetail(task.task_id)} masonry={layoutMode === 'masonry'} />)}
+          <div ref={cardGridRef} className={`${layoutMode === 'masonry' ? 'card-feed-masonry' : 'card-feed-grid'} pt-4`} style={{ position: 'relative' }}>
+            {visibleTasks.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onAddPrompt={handleAddPrompt} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id) || dragSelected.has(String(task.task_id))} onToggleCheck={() => toggleCheck(task.task_id)} wasDraggedRef={wasDraggedRef} showUsername={isAdmin} username={task.username} onViewDetail={() => handleCardViewDetail(task.task_id)} masonry={layoutMode === 'masonry'} data-card-id={String(task.task_id)} />)}
+            {selectionRect && selectionRect.width > 5 && selectionRect.height > 5 && (
+              <div className="drag-selection-rect" style={{ position: 'fixed', left: selectionRect.left, top: selectionRect.top, width: selectionRect.width, height: selectionRect.height }} />
+            )}
           </div>
         )}
       </div>

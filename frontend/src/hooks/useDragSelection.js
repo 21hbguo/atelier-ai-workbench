@@ -55,6 +55,8 @@ export function useDragSelection({
       if (e.clientX < containerRect.left || e.clientX > containerRect.right ||
           e.clientY < containerRect.top || e.clientY > containerRect.bottom) return
 
+      e.preventDefault()
+
       isToggleRef.current = e.ctrlKey || e.metaKey || e.shiftKey
       startSelectedRef.current = new Set(selectedRef.current)
 
@@ -75,6 +77,8 @@ export function useDragSelection({
     const handleMouseMove = (e) => {
       const d = dragRef.current
       if (!d.active) return
+
+      e.preventDefault()
 
       d.currentX = e.clientX
       d.currentY = e.clientY
