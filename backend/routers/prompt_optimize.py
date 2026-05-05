@@ -10,6 +10,7 @@ router = APIRouter(prefix="/api/prompt", tags=["prompt-optimize"])
 
 class PromptOptimizeRequest(BaseModel):
     prompt: str = Field(..., min_length=2, max_length=500)
+    count: int = Field(1, ge=1, le=3)
 
 
 class PromptOptimizeResponse(BaseModel):
@@ -20,7 +21,7 @@ class PromptOptimizeResponse(BaseModel):
 @router.post("/optimize", response_model=PromptOptimizeResponse)
 async def optimize_prompt(body: PromptOptimizeRequest, user=Depends(get_current_user)):
     try:
-        versions = await PromptOptimizer.optimize(body.prompt)
+        versions = await PromptOptimizer.optimize(body.prompt, body.count)
         return PromptOptimizeResponse(versions=versions, original=body.prompt)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

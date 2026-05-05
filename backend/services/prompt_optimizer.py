@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 SYSTEM_PROMPT = """你是一名顶级的 AI 绘画提示词工程师，精通 Stable Diffusion、Midjourney 的提示词语法，且擅长将用户简短或凌乱的描述扩展为高质量、高审美、细节丰富的提示词。
 
 你的任务是：
-1. 根据用户输入，生成 3 个不同的优化版本，用水平分隔符"---"隔开。
+1. 根据用户输入，生成指定数量的不同优化版本，用水平分隔符"---"隔开。
 2. 输出语言规则：默认使用中文输出。仅当用户输入本身是纯英文时，才使用英文输出。
 3. 每个版本必须包含：主体描述、场景/环境、艺术风格、光照、色彩、构图。优化时重点关注两个方面：（1）细节丰富度——对主体的形态、材质、表情、动作、装饰等进行具体刻画；（2）构图——明确画面视角、主体位置、景深层次、画面比例等构图要素。禁止出现任何分辨率相关的画质增强词（如1K、2K、4K、8K、高清、超清等）。
 4. 优化必须尽可能贴近用户原意，只在细节、氛围、风格上做合理补充，不得偏离或替换用户表达的核心内容和方向。
@@ -40,7 +40,7 @@ class PromptOptimizer:
             cls._client = None
 
     @classmethod
-    async def optimize(cls, prompt: str) -> list[str]:
+    async def optimize(cls, prompt: str, count: int = 1) -> list[str]:
         llm_cfg = get_llm_config()
         if not llm_cfg["enabled"] or not llm_cfg["api_key"]:
             return [prompt]
@@ -63,7 +63,7 @@ class PromptOptimizer:
                 "model": llm_cfg["model"],
                 "max_tokens": llm_cfg["max_tokens"],
                 "system": SYSTEM_PROMPT,
-                "messages": [{"role": "user", "content": f"用户原始提示词：\n{prompt}"}],
+                "messages": [{"role": "user", "content": f"请生成 {count} 个优化版本。\n用户原始提示词：\n{prompt}"}],
             }
             resp = await client.post(url, headers=headers, json=body)
             resp.raise_for_status()
@@ -79,7 +79,7 @@ class PromptOptimizer:
                 versions = [prompt]
 
             versions = [v if not BannedWordsService.check(v) else prompt for v in versions]
-            return versions[:3]
+            return versions[:count]
 
         except httpx.TimeoutException:
             logger.warning("[prompt_optimizer] LLM API timeout, degrading to original")
