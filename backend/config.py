@@ -100,6 +100,10 @@ _runtime_config = {
     "points_cost_per_image_extend": int(os.getenv("POINTS_COST_PER_IMAGE_EXTEND", "2")),
     "points_register_bonus": int(os.getenv("POINTS_REGISTER_BONUS", "50")),
     "points_migration_amount": int(os.getenv("POINTS_MIGRATION_AMOUNT", "50")),
+    "invite_enabled": os.getenv("INVITE_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
+    "invite_register_reward_points": int(os.getenv("INVITE_REGISTER_REWARD_POINTS", "20")),
+    "invite_recharge_rebate_percent": float(os.getenv("INVITE_RECHARGE_REBATE_PERCENT", "10")),
+    "invite_recharge_bonus_percent": float(os.getenv("INVITE_RECHARGE_BONUS_PERCENT", "10")),
     "login_rate_limit_per_minute_per_ip": int(os.getenv("LOGIN_RATE_LIMIT_PER_MINUTE_PER_IP", "5")),
     "register_rate_limit_per_minute_per_ip": int(os.getenv("REGISTER_RATE_LIMIT_PER_MINUTE_PER_IP", "3")),
     "default_model_id": os.getenv("GEN_DEFAULT_MODEL_ID", "image-default"),
@@ -183,7 +187,7 @@ def update_config(new_values: dict):
 def get_limit_config():
     cfg = get_config()
     out = {}
-    for k in ["generate_concurrent_limit_per_user", "points_cost_per_generation", "points_cost_per_optimize", "points_cost_per_image_extend", "points_checkin_reward", "points_register_bonus", "points_migration_amount", "login_rate_limit_per_minute_per_ip", "register_rate_limit_per_minute_per_ip"]:
+    for k in ["generate_concurrent_limit_per_user", "points_cost_per_generation", "points_cost_per_optimize", "points_cost_per_image_extend", "points_checkin_reward", "points_register_bonus", "points_migration_amount", "invite_register_reward_points", "login_rate_limit_per_minute_per_ip", "register_rate_limit_per_minute_per_ip"]:
         try:
             v = int(cfg.get(k, _runtime_config_defaults[k]))
         except Exception:
@@ -196,9 +200,18 @@ def get_limit_config():
     if out["points_checkin_reward"] < 0: out["points_checkin_reward"] = 0
     if out["points_register_bonus"] < 0: out["points_register_bonus"] = 0
     if out["points_migration_amount"] < 0: out["points_migration_amount"] = 0
+    if out["invite_register_reward_points"] < 0: out["invite_register_reward_points"] = 0
     if out["login_rate_limit_per_minute_per_ip"] < 1: out["login_rate_limit_per_minute_per_ip"] = 1
     if out["register_rate_limit_per_minute_per_ip"] < 1: out["register_rate_limit_per_minute_per_ip"] = 1
     return out
+def get_invite_config():
+    cfg=get_config()
+    def _to_float(v,d=0):
+        try:return float(v)
+        except Exception:return float(d)
+    rebate=max(0.0,_to_float(cfg.get("invite_recharge_rebate_percent",_runtime_config_defaults["invite_recharge_rebate_percent"]),_runtime_config_defaults["invite_recharge_rebate_percent"]))
+    bonus=max(0.0,_to_float(cfg.get("invite_recharge_bonus_percent",_runtime_config_defaults["invite_recharge_bonus_percent"]),_runtime_config_defaults["invite_recharge_bonus_percent"]))
+    return {"invite_enabled":bool(cfg.get("invite_enabled",True)),"invite_register_reward_points":max(0,int(cfg.get("invite_register_reward_points",_runtime_config_defaults["invite_register_reward_points"]) or 0)),"invite_recharge_rebate_percent":rebate,"invite_recharge_bonus_percent":bonus}
 
 
 def is_register_enabled():

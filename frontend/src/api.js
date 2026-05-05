@@ -175,6 +175,7 @@ export const adminAPI = {
   deleteCode: codeId => api.post(`/admin/codes/${codeId}/delete`),
   adjustPoints: (userId, data) => api.post(`/admin/users/${userId}/points`, data),
   resetPassword: (userId, password) => api.post(`/admin/users/${userId}/reset-password`, { password }),
+  userInviteHistory: (userId, page = 1, size = 20) => api.get(`/admin/users/${userId}/invite-history`, { params: { page, size } }),
   migratePoints: () => api.post('/admin/migrate-points'),
   rechargeRequests: (page = 1, size = 20, status = 'all', query, sort = 'created_at', order = 'desc') => { const params = { page, size, status, sort, order }; if (query) params.query = query; return api.get('/admin/recharge-requests', { params }) },
   approveRecharge: (id, data) => api.post(`/admin/recharge-requests/${id}/approve`, data || {}),
@@ -209,6 +210,9 @@ export const pointsAPI = {
   checkin: () => api.post('/points/checkin'),
   redeem: code => api.post('/points/redeem', { code }),
   transactions: (page = 1, size = 20) => api.get('/points/transactions', { params: { page, size } }),
+  inviteInfo: () => api.get('/points/invite'),
+  generateInviteCode: () => api.post('/points/invite/generate'),
+  inviteHistory: (page = 1, size = 20) => api.get('/points/invite/history', { params: { page, size } }),
   createRechargeRequest: data => api.post('/points/recharge/requests', data),
   rechargeRequests: (page = 1, size = 20) => api.get('/points/recharge/requests', { params: { page, size } }),
 }

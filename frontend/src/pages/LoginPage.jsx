@@ -3,263 +3,58 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { authAPI, configAPI } from '../api'
 import { writeUser } from '../auth'
 const REGISTER_DRAFT_KEY='register_form_draft_v1'
-
-export default function LoginPage() {
-  const accountRe = /^[A-Za-z0-9_]{4,16}$/
-  const allowedEmailDomains = ['qq.com', 'vip.qq.com', 'foxmail.com', '163.com', '126.com', 'yeah.net', '188.com', 'sina.com', 'sohu.com', '139.com', '189.cn', '21cn.com', 'aliyun.com', 'gmail.com', 'outlook.com', 'hotmail.com']
-  const location = useLocation()
-  const navigate = useNavigate()
-  const [isRegister, setIsRegister] = useState(() => new URLSearchParams(location.search).get('mode') === 'register')
-  const [registerEnabled, setRegisterEnabled] = useState(true)
-  const [account, setAccount] = useState('')
-  const [password, setPassword] = useState('')
-  const [nickname, setNickname] = useState('')
-  const [email, setEmail] = useState('')
-  const [code, setCode] = useState('')
-  const [agreed, setAgreed] = useState(false)
-  const [sendingCode, setSendingCode] = useState(false)
-  const [cooldown, setCooldown] = useState(0)
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-  useEffect(() => {
-    if (!isRegister) return
-    try {
-      const raw = localStorage.getItem(REGISTER_DRAFT_KEY)
-      if (!raw) return
-      const draft = JSON.parse(raw)
-      if (draft && typeof draft === 'object') {
-        setAccount(typeof draft.account === 'string' ? draft.account : '')
-        setPassword(typeof draft.password === 'string' ? draft.password : '')
-        setNickname(typeof draft.nickname === 'string' ? draft.nickname : '')
-        setEmail(typeof draft.email === 'string' ? draft.email : '')
-        setCode(typeof draft.code === 'string' ? draft.code : '')
-        setAgreed(!!draft.agreed)
-        setCooldown(Number(draft.cooldown) > 0 ? Number(draft.cooldown) : 0)
-      }
-    } catch {}
-  }, [isRegister])
-  useEffect(() => {
-    if (!isRegister) return
-    try { localStorage.setItem(REGISTER_DRAFT_KEY, JSON.stringify({ account, password, nickname, email, code, agreed, cooldown })) } catch {}
-  }, [isRegister, account, password, nickname, email, code, agreed, cooldown])
-
-  const switchMode = (next) => {
-    setIsRegister(next)
-    setError('')
-    setAgreed(false)
-    if (!next) try { localStorage.removeItem(REGISTER_DRAFT_KEY) } catch {}
-    navigate(next ? '/login?mode=register' : '/login', { replace: true })
-  }
-
-  useEffect(() => {
-    configAPI.get().then(({ data }) => {
-      const enabled = data?.register_enabled !== false
-      setRegisterEnabled(enabled)
-      if (!enabled) switchMode(false)
-    }).catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    if (cooldown <= 0) return
-    const timer = setInterval(() => setCooldown(c => c - 1), 1000)
-    return () => clearInterval(timer)
-  }, [cooldown])
-
-  const validateEmailDomain = (value) => {
-    const normalized = String(value || '').trim().toLowerCase()
-    const domain = normalized.includes('@') ? normalized.split('@').pop() : ''
-    if (!allowedEmailDomains.includes(domain)) return '请使用常用邮箱地址'
-    return ''
-  }
-
-  const handleSendCode = async () => {
-    if (!email || cooldown > 0) return
-    if (!agreed) { setError('请先勾选并同意相关协议'); return }
-    if (!accountRe.test((account || '').trim())) { setError('请先填写账号（4-16位字母、数字或下划线）'); return }
-    if ((password || '').length < 6) { setError('请先设置密码（至少6个字符）'); return }
-    const emailError = validateEmailDomain(email)
-    if (emailError) { setError(emailError); return }
-    setSendingCode(true)
-    setError('')
-    try {
-      await authAPI.sendCode(email)
-      setCooldown(60)
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setSendingCode(false)
-    }
-  }
-
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    setError('')
-    if (isRegister && !registerEnabled) { setError('当前已关闭注册'); return }
-    if (isRegister && !agreed) { setError('请先勾选并同意相关协议'); return }
-    if (isRegister && !accountRe.test((account || '').trim())) { setError('账号需为4到16位字母、数字或下划线'); return }
-    if (isRegister) {
-      const emailError = validateEmailDomain(email)
-      if (emailError) { setError(emailError); return }
-    }
-    setLoading(true)
-
-    try {
-      const data = isRegister
-        ? (await authAPI.register({ account, password, nickname: nickname || '', email, code })).data
-        : (await authAPI.login({ account, password })).data
-      writeUser(data.user)
-      if (isRegister && data.user?.points > 0) {
-        localStorage.setItem('just_registered', JSON.stringify({ points: data.user.points }))
-      }
-      if (isRegister) try { localStorage.removeItem(REGISTER_DRAFT_KEY) } catch {}
-      navigate('/')
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div className="login-page min-h-[100dvh] flex items-start sm:items-center justify-center px-4 pt-[14vh] pb-6 sm:p-4" style={{ background: 'var(--bg-primary)' }}>
-      <div className="login-glow" />
-      <div className="login-glow login-glow-2" />
-      <div className="w-full max-w-sm relative z-10">
-        <div className="text-center mb-5 sm:mb-8">
-          <h1 className="login-title leading-none" style={{ fontFamily: "'Alex Brush', cursive", fontSize: 'clamp(2.8rem,12vw,3.5rem)' }}>Atelier</h1>
-          <p className="text-sm mt-1 tracking-widest" style={{ color: 'var(--text-secondary)', opacity: 0.7 }}>AI 造梦工坊</p>
-          <p className="text-xs mt-2 sm:mt-3" style={{ color: 'var(--text-secondary)' }}>
-            {isRegister ? '创建账号，开始你的 AI 创作之旅' : registerEnabled ? '欢迎回来，继续你的创作' : '当前仅开放登录，注册已关闭'}
-          </p>
-          <p className="text-[11px] mt-1.5 sm:mt-2" style={{ color: 'var(--text-secondary)', opacity: 0.6 }}>
-            无需复杂配置，一句话或一张图，即刻开启灵感之旅
-          </p>
-        </div>
-
-        <div className="login-card rounded-2xl p-4 sm:p-6" style={{ background: 'var(--bg-ai-bubble)', boxShadow: 'var(--shadow-lg)' }}>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:gap-4">
-            <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>账号或邮箱</label>
-              <input
-                type="text"
-                value={account}
-                onChange={(e) => setAccount(e.target.value)}
-                className="w-full px-3 py-2.5 sm:py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
-                style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent)' }}
-                placeholder={isRegister ? '4-16 位字母、数字或下划线' : '输入账号或注册邮箱'}
-                required
-                minLength={isRegister ? 5 : 3}
-                maxLength={isRegister ? 16 : 255}
-              />
-            </div>
-
-            {isRegister && (
-              <div>
-                <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>昵称</label>
-                <input
-                type="text"
-                value={nickname}
-                onChange={(e) => setNickname(e.target.value)}
-                className="w-full px-3 py-2.5 sm:py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
-                style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
-                placeholder="可选"
-              />
-              </div>
-            )}
-
-            {isRegister && (
-              <div>
-                <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>邮箱</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => { setEmail(e.target.value); if (error) setError('') }}
-                  className="w-full px-3 py-2.5 sm:py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
-                  style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
-                  placeholder="仅支持常用邮箱"
-                  required
-                />
-              </div>
-            )}
-
-            <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>密码</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2.5 sm:py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
-                style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
-                placeholder="至少 6 个字符"
-                required
-                minLength={6}
-              />
-            </div>
-
-            {isRegister && (
-              <label className="flex items-start gap-2 text-xs leading-5 sm:leading-6" style={{ color: 'var(--text-secondary)' }}>
-                <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} className="mt-1 h-4 w-4 rounded border" style={{ accentColor: 'var(--accent)' }} />
-                <span>我已阅读并同意 <button type="button" onClick={() => navigate('/agreement')} className="underline underline-offset-2" style={{ color: 'var(--text-primary)' }}>《用户协议》</button>、<button type="button" onClick={() => navigate('/privacy')} className="underline underline-offset-2" style={{ color: 'var(--text-primary)' }}>《隐私政策》</button></span>
-              </label>
-            )}
-
-            {isRegister && (
-              <div>
-                <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>验证码</label>
-                <div className="grid grid-cols-[minmax(0,1fr)_6.5rem] gap-2">
-                  <input
-                    type="text"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    className="w-full min-w-0 px-3 py-2.5 sm:py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
-                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
-                    placeholder="6 位验证码"
-                    required
-                    maxLength={6}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSendCode}
-                    disabled={sendingCode || cooldown > 0 || !email || !agreed}
-                    className="w-full px-2 py-2.5 sm:py-2.5 rounded-lg text-[11px] font-medium border whitespace-nowrap disabled:opacity-50"
-                    style={{ borderColor: 'var(--border-color)', color: cooldown > 0 ? 'var(--text-secondary)' : 'var(--accent)', background: 'var(--bg-primary)' }}
-                  >
-                    {cooldown > 0 ? `${cooldown}s` : sendingCode ? '发送中...' : '发送验证码'}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {error && (
-              <p className="text-sm text-[var(--color-error)] text-center">{error}</p>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-2.5 rounded-lg text-sm font-medium text-white transition-all hover:opacity-90 active:scale-[0.98]"
-              style={{ background: 'var(--accent)', opacity: loading ? 0.7 : 1 }}
-            >
-              {loading ? '处理中...' : isRegister ? '注册' : '登录'}
-            </button>
-          </form>
-
-          {registerEnabled ? <p className="text-center mt-3 sm:mt-4 text-sm" style={{ color: 'var(--text-secondary)' }}>
-            {isRegister ? '已有账号？' : '没有账号？'}
-            <button
-              onClick={() => switchMode(!isRegister)}
-              className="ml-1 font-medium"
-              style={{ color: 'var(--accent)' }}
-            >
-              {isRegister ? '去登录' : '去注册'}
-            </button>
-          </p> : <p className="text-center mt-4 text-sm" style={{ color: 'var(--text-secondary)' }}>注册入口已关闭</p>}
-        </div>
-
-        <p className="text-center mt-4 sm:mt-6 text-[11px]" style={{ color: 'var(--text-secondary)', opacity: 0.5 }}>
-          Atelier · AI 造梦工坊
-        </p>
-      </div>
-    </div>
-  )
-}
+export default function LoginPage(){
+const accountRe=/^[A-Za-z0-9_]{4,16}$/
+const allowedEmailDomains=['qq.com','vip.qq.com','foxmail.com','163.com','126.com','yeah.net','188.com','sina.com','sohu.com','139.com','189.cn','21cn.com','aliyun.com','gmail.com','outlook.com','hotmail.com']
+const location=useLocation()
+const navigate=useNavigate()
+const [isRegister,setIsRegister]=useState(()=>new URLSearchParams(location.search).get('mode')==='register')
+const [registerEnabled,setRegisterEnabled]=useState(true)
+const [account,setAccount]=useState('')
+const [password,setPassword]=useState('')
+const [nickname,setNickname]=useState('')
+const [email,setEmail]=useState('')
+const [code,setCode]=useState('')
+const [inviteCode,setInviteCode]=useState('')
+const [agreed,setAgreed]=useState(false)
+const [sendingCode,setSendingCode]=useState(false)
+const [cooldown,setCooldown]=useState(0)
+const [error,setError]=useState('')
+const [loading,setLoading]=useState(false)
+useEffect(()=>{if(!isRegister)return;try{const raw=localStorage.getItem(REGISTER_DRAFT_KEY);if(!raw)return;const draft=JSON.parse(raw);if(draft&&typeof draft==='object'){setAccount(typeof draft.account==='string'?draft.account:'');setPassword(typeof draft.password==='string'?draft.password:'');setNickname(typeof draft.nickname==='string'?draft.nickname:'');setEmail(typeof draft.email==='string'?draft.email:'');setCode(typeof draft.code==='string'?draft.code:'');setInviteCode(typeof draft.inviteCode==='string'?draft.inviteCode:'');setAgreed(!!draft.agreed);setCooldown(Number(draft.cooldown)>0?Number(draft.cooldown):0)}}catch{}},[isRegister])
+useEffect(()=>{if(!isRegister)return;try{localStorage.setItem(REGISTER_DRAFT_KEY,JSON.stringify({account,password,nickname,email,code,inviteCode,agreed,cooldown}))}catch{}},[isRegister,account,password,nickname,email,code,inviteCode,agreed,cooldown])
+const switchMode=next=>{setIsRegister(next);setError('');setAgreed(false);if(!next){setInviteCode('');try{localStorage.removeItem(REGISTER_DRAFT_KEY)}catch{}}navigate(next?'/login?mode=register':'/login',{replace:true})}
+useEffect(()=>{configAPI.get().then(({data})=>{const enabled=data?.register_enabled!==false;setRegisterEnabled(enabled);if(!enabled)switchMode(false)}).catch(()=>{})},[])
+useEffect(()=>{if(cooldown<=0)return;const timer=setInterval(()=>setCooldown(c=>c-1),1000);return()=>clearInterval(timer)},[cooldown])
+const validateEmailDomain=value=>{const normalized=String(value||'').trim().toLowerCase();const domain=normalized.includes('@')?normalized.split('@').pop():'';if(!allowedEmailDomains.includes(domain))return'请使用常用邮箱地址';return''}
+const handleSendCode=async()=>{if(!email||cooldown>0)return;if(!agreed){setError('请先勾选并同意相关协议');return}if(!accountRe.test((account||'').trim())){setError('请先填写账号（4-16位字母、数字或下划线）');return}if((password||'').length<6){setError('请先设置密码（至少6个字符）');return}const emailError=validateEmailDomain(email);if(emailError){setError(emailError);return}setSendingCode(true);setError('');try{await authAPI.sendCode(email);setCooldown(60)}catch(err){setError(err.message)}finally{setSendingCode(false)}}
+const handleSubmit=async e=>{e.preventDefault();setError('');if(isRegister&&!registerEnabled){setError('当前已关闭注册');return}if(isRegister&&!agreed){setError('请先勾选并同意相关协议');return}if(isRegister&&!accountRe.test((account||'').trim())){setError('账号需为4到16位字母、数字或下划线');return}if(isRegister){const emailError=validateEmailDomain(email);if(emailError){setError(emailError);return}}setLoading(true);try{const data=isRegister?(await authAPI.register({account,password,nickname:nickname||'',email,code,invite_code:inviteCode||''})).data:(await authAPI.login({account,password})).data;writeUser(data.user);if(isRegister&&data.user?.points>0)localStorage.setItem('just_registered',JSON.stringify({points:data.user.points}));if(isRegister)try{localStorage.removeItem(REGISTER_DRAFT_KEY)}catch{}navigate('/')}catch(err){setError(err.message)}finally{setLoading(false)}}
+return(
+<div className="login-page min-h-[100dvh] flex items-start sm:items-center justify-center px-4 pt-[14vh] pb-6 sm:p-4" style={{background:'var(--bg-primary)'}}>
+<div className="login-glow" />
+<div className="login-glow login-glow-2" />
+<div className="w-full max-w-sm relative z-10">
+<div className="text-center mb-5 sm:mb-8">
+<h1 className="login-title leading-none" style={{fontFamily:"'Alex Brush', cursive",fontSize:'clamp(2.8rem,12vw,3.5rem)'}}>Atelier</h1>
+<p className="text-sm mt-1 tracking-widest" style={{color:'var(--text-secondary)',opacity:0.7}}>AI 造梦工坊</p>
+<p className="text-xs mt-2 sm:mt-3" style={{color:'var(--text-secondary)'}}>{isRegister?'创建账号，开始你的 AI 创作之旅':registerEnabled?'欢迎回来，继续你的创作':'当前仅开放登录，注册已关闭'}</p>
+<p className="text-[11px] mt-1.5 sm:mt-2" style={{color:'var(--text-secondary)',opacity:0.6}}>无需复杂配置，一句话或一张图，即刻开启灵感之旅</p>
+</div>
+<div className="login-card rounded-2xl p-4 sm:p-6" style={{background:'var(--bg-ai-bubble)',boxShadow:'var(--shadow-lg)'}}>
+<form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:gap-4">
+<div><label className="text-xs font-medium mb-1 block" style={{color:'var(--text-secondary)'}}>账号或邮箱</label><input type="text" value={account} onChange={e=>setAccount(e.target.value)} className="w-full px-3 py-2.5 sm:py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2" style={{background:'var(--bg-primary)',borderColor:'var(--border-color)',color:'var(--text-primary)','--tw-ring-color':'var(--accent)'}} placeholder={isRegister?'4-16 位字母、数字或下划线':'输入账号或注册邮箱'} required minLength={isRegister?5:3} maxLength={isRegister?16:255} /></div>
+{isRegister&&<div><label className="text-xs font-medium mb-1 block" style={{color:'var(--text-secondary)'}}>昵称</label><input type="text" value={nickname} onChange={e=>setNickname(e.target.value)} className="w-full px-3 py-2.5 sm:py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2" style={{background:'var(--bg-primary)',borderColor:'var(--border-color)',color:'var(--text-primary)'}} placeholder="可选" /></div>}
+{isRegister&&<div><label className="text-xs font-medium mb-1 block" style={{color:'var(--text-secondary)'}}>邀请码</label><input type="text" value={inviteCode} onChange={e=>setInviteCode(e.target.value.toUpperCase())} className="w-full px-3 py-2.5 sm:py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2" style={{background:'var(--bg-primary)',borderColor:'var(--border-color)',color:'var(--text-primary)'}} placeholder="选填，仅注册时有效" maxLength={32} /></div>}
+{isRegister&&<div><label className="text-xs font-medium mb-1 block" style={{color:'var(--text-secondary)'}}>邮箱</label><input type="email" value={email} onChange={e=>{setEmail(e.target.value);if(error)setError('')}} className="w-full px-3 py-2.5 sm:py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2" style={{background:'var(--bg-primary)',borderColor:'var(--border-color)',color:'var(--text-primary)'}} placeholder="仅支持常用邮箱" required /></div>}
+<div><label className="text-xs font-medium mb-1 block" style={{color:'var(--text-secondary)'}}>密码</label><input type="password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full px-3 py-2.5 sm:py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2" style={{background:'var(--bg-primary)',borderColor:'var(--border-color)',color:'var(--text-primary)'}} placeholder="至少 6 个字符" required minLength={6} /></div>
+{isRegister&&<label className="flex items-start gap-2 text-xs leading-5 sm:leading-6" style={{color:'var(--text-secondary)'}}><input type="checkbox" checked={agreed} onChange={e=>setAgreed(e.target.checked)} className="mt-1 h-4 w-4 rounded border" style={{accentColor:'var(--accent)'}} /><span>我已阅读并同意 <button type="button" onClick={()=>navigate('/agreement')} className="underline underline-offset-2" style={{color:'var(--text-primary)'}}>《用户协议》</button>、<button type="button" onClick={()=>navigate('/privacy')} className="underline underline-offset-2" style={{color:'var(--text-primary)'}}>《隐私政策》</button></span></label>}
+{isRegister&&<div><label className="text-xs font-medium mb-1 block" style={{color:'var(--text-secondary)'}}>验证码</label><div className="grid grid-cols-[minmax(0,1fr)_6.5rem] gap-2"><input type="text" value={code} onChange={e=>setCode(e.target.value)} className="w-full min-w-0 px-3 py-2.5 sm:py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2" style={{background:'var(--bg-primary)',borderColor:'var(--border-color)',color:'var(--text-primary)'}} placeholder="6 位验证码" required maxLength={6} /><button type="button" onClick={handleSendCode} disabled={sendingCode||cooldown>0||!email||!agreed} className="w-full px-2 py-2.5 sm:py-2.5 rounded-lg text-[11px] font-medium border whitespace-nowrap disabled:opacity-50" style={{borderColor:'var(--border-color)',color:cooldown>0?'var(--text-secondary)':'var(--accent)',background:'var(--bg-primary)'}}>{cooldown>0?`${cooldown}s`:sendingCode?'发送中...':'发送验证码'}</button></div></div>}
+{error&&<p className="text-sm text-[var(--color-error)] text-center">{error}</p>}
+<button type="submit" disabled={loading} className="w-full py-2.5 rounded-lg text-sm font-medium text-white transition-all hover:opacity-90 active:scale-[0.98]" style={{background:'var(--accent)',opacity:loading?0.7:1}}>{loading?'处理中...':isRegister?'注册':'登录'}</button>
+</form>
+{registerEnabled?<p className="text-center mt-3 sm:mt-4 text-sm" style={{color:'var(--text-secondary)'}}>{isRegister?'已有账号？':'没有账号？'}<button onClick={()=>switchMode(!isRegister)} className="ml-1 font-medium" style={{color:'var(--accent)'}}>{isRegister?'去登录':'去注册'}</button></p>:<p className="text-center mt-4 text-sm" style={{color:'var(--text-secondary)'}}>注册入口已关闭</p>}
+</div>
+<p className="text-center mt-4 sm:mt-6 text-[11px]" style={{color:'var(--text-secondary)',opacity:0.5}}>Atelier · AI 造梦工坊</p>
+</div>
+</div>
+)}
