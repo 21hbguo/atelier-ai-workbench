@@ -15,6 +15,7 @@ _login_attempts = defaultdict(list)
 _register_attempts = defaultdict(list)
 _login_rate_hits = 0
 _register_rate_hits = 0
+_ALLOWED_EMAIL_DOMAINS = {"qq.com", "vip.qq.com", "foxmail.com", "163.com", "126.com", "yeah.net", "188.com", "sina.com", "sohu.com", "139.com", "189.cn", "21cn.com", "aliyun.com", "gmail.com", "outlook.com", "hotmail.com"}
 
 
 def _check_login_rate(ip: str):
@@ -43,6 +44,16 @@ def _check_register_rate(ip: str):
 
 def get_rate_limit_stats():
     return {"login_rate_hits": _login_rate_hits, "register_rate_hits": _register_rate_hits, "login_active_ips": len([k for k, v in _login_attempts.items() if v and time.time() - v[-1] < 60]), "register_active_ips": len([k for k, v in _register_attempts.items() if v and time.time() - v[-1] < 60])}
+
+
+def _normalize_and_validate_email(email: str) -> str:
+    value = (email or "").strip().lower()
+    if "@" not in value or value.startswith("@") or value.endswith("@"):
+        raise HTTPException(status_code=400, detail="邮箱格式不正确")
+    domain = value.rsplit("@", 1)[-1]
+    if domain not in _ALLOWED_EMAIL_DOMAINS:
+        raise HTTPException(status_code=400, detail="暂仅支持常用邮箱：qq.com、vip.qq.com、foxmail.com、163.com、126.com、yeah.net、188.com、sina.com、sohu.com、139.com、189.cn、21cn.com、aliyun.com、gmail.com、outlook.com、hotmail.com")
+    return value
 
 
 class RegisterRequest(BaseModel):
@@ -74,8 +85,9 @@ async def send_code(req: SendCodeRequest, request: Request):
     if not is_register_enabled():
         raise HTTPException(status_code=403, detail="当前已关闭注册")
     ip = get_client_ip(request)
+    email = _normalize_and_validate_email(req.email)
     from backend.services.email_service import create_and_send_code
-    await create_and_send_code(req.email, ip)
+    await create_and_send_code(email, ip)
     return {"status": "ok", "message": "验证码已发送"}
 
 
@@ -85,10 +97,11 @@ async def register(req: RegisterRequest, request: Request, response: Response):
         raise HTTPException(status_code=403, detail="当前已关闭注册")
     account = validate_account(req.account)
     nickname = (req.nickname or "").strip() or account
+    email = _normalize_and_validate_email(req.email)
     ip = get_client_ip(request)
     _check_register_rate(ip)
     from backend.services.email_service import verify_code, mark_registered
-    verify_code(req.email, req.code)
+    verify_code(email, req.code)
     with get_db() as conn:
         existing = conn.execute("SELECT id FROM users WHERE username = %s", (account,)).fetchone()
         if existing:
@@ -96,16 +109,16 @@ async def register(req: RegisterRequest, request: Request, response: Response):
         nickname_existing = conn.execute("SELECT id FROM users WHERE nickname = %s", (nickname,)).fetchone()
         if nickname_existing:
             raise HTTPException(status_code=400, detail="昵称已存在")
-        email_existing = conn.execute("SELECT id FROM users WHERE email = %s", (req.email,)).fetchone()
+        email_existing = conn.execute("SELECT id FROM users WHERE email = %s", (email,)).fetchone()
         if email_existing:
             raise HTTPException(status_code=400, detail="邮箱已被注册")
         password_hash = await hash_password(req.password)
-        cursor = conn.execute("INSERT INTO users (username, password_hash, nickname, email) VALUES (%s, %s, %s, %s) RETURNING id", (account, password_hash, nickname, req.email))
+        cursor = conn.execute("INSERT INTO users (username, password_hash, nickname, email) VALUES (%s, %s, %s, %s) RETURNING id", (account, password_hash, nickname, email))
         user_id = cursor.fetchone()["id"]
         update_user_ip(user_id, ip, conn=conn)
         register_bonus = PointsService.register_bonus()
         PointsService.add_points(user_id, register_bonus, "register_bonus", "注册赠送", conn=conn)
-        mark_registered(req.email)
+        mark_registered(email)
     access_token = _issue_session(response, user_id, account, False, ip, request.headers.get("user-agent", ""))
     logger.info(f"[audit.register] user={user_id} username={account} ip={ip}")
     return {"token": access_token, "user": build_user_payload({"id": user_id, "account": account, "nickname": nickname, "is_admin": False, "points": register_bonus})}

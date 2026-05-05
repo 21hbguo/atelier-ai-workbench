@@ -6,6 +6,7 @@ import { writeUser } from '../auth'
 
 export default function LoginPage() {
   const accountRe = /^[A-Za-z0-9_]{4,16}$/
+  const allowedEmailDomains = ['qq.com', 'vip.qq.com', 'foxmail.com', '163.com', '126.com', 'yeah.net', '188.com', 'sina.com', 'sohu.com', '139.com', '189.cn', '21cn.com', 'aliyun.com', 'gmail.com', 'outlook.com', 'hotmail.com']
   const location = useLocation()
   const navigate = useNavigate()
   const [isRegister, setIsRegister] = useState(() => new URLSearchParams(location.search).get('mode') === 'register')
@@ -42,11 +43,20 @@ export default function LoginPage() {
     return () => clearInterval(timer)
   }, [cooldown])
 
+  const validateEmailDomain = (value) => {
+    const normalized = String(value || '').trim().toLowerCase()
+    const domain = normalized.includes('@') ? normalized.split('@').pop() : ''
+    if (!allowedEmailDomains.includes(domain)) return `暂仅支持 ${allowedEmailDomains.join('、')} 邮箱`
+    return ''
+  }
+
   const handleSendCode = async () => {
     if (!email || cooldown > 0) return
     if (!agreed) { setError('请先勾选并同意相关协议'); return }
     if (!accountRe.test((account || '').trim())) { setError('请先填写账号（4-16位字母、数字或下划线）'); return }
     if ((password || '').length < 6) { setError('请先设置密码（至少6个字符）'); return }
+    const emailError = validateEmailDomain(email)
+    if (emailError) { setError(emailError); return }
     setSendingCode(true)
     setError('')
     try {
@@ -65,6 +75,10 @@ export default function LoginPage() {
     if (isRegister && !registerEnabled) { setError('当前已关闭注册'); return }
     if (isRegister && !agreed) { setError('请先勾选并同意相关协议'); return }
     if (isRegister && !accountRe.test((account || '').trim())) { setError('账号需为4到16位字母、数字或下划线'); return }
+    if (isRegister) {
+      const emailError = validateEmailDomain(email)
+      if (emailError) { setError(emailError); return }
+    }
     setLoading(true)
 
     try {
@@ -137,12 +151,13 @@ export default function LoginPage() {
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => { setEmail(e.target.value); if (error) setError('') }}
                   className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
                   style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
-                  placeholder="用于接收验证码"
+                  placeholder="仅支持常用邮箱"
                   required
                 />
+                <p className="text-[11px] mt-1" style={{ color: 'var(--text-secondary)', opacity: 0.75 }}>支持：qq.com、vip.qq.com、foxmail.com、163.com、126.com、yeah.net、188.com、sina.com、sohu.com、139.com、189.cn、21cn.com、aliyun.com、gmail.com、outlook.com、hotmail.com</p>
               </div>
             )}
 
@@ -170,12 +185,12 @@ export default function LoginPage() {
             {isRegister && (
               <div>
                 <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>验证码</label>
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row">
                   <input
                     type="text"
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
-                    className="flex-1 px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
+                    className="flex-1 min-w-0 px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
                     style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
                     placeholder="6 位验证码"
                     required
@@ -185,7 +200,7 @@ export default function LoginPage() {
                     type="button"
                     onClick={handleSendCode}
                     disabled={sendingCode || cooldown > 0 || !email || !agreed}
-                    className="px-3 py-2.5 rounded-lg text-xs font-medium border whitespace-nowrap disabled:opacity-50"
+                    className="w-full sm:w-auto px-3 py-2.5 rounded-lg text-xs font-medium border whitespace-nowrap disabled:opacity-50"
                     style={{ borderColor: 'var(--border-color)', color: cooldown > 0 ? 'var(--text-secondary)' : 'var(--accent)', background: 'var(--bg-primary)' }}
                   >
                     {cooldown > 0 ? `${cooldown}s` : sendingCode ? '发送中...' : '发送验证码'}
