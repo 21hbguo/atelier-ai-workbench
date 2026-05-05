@@ -1003,7 +1003,7 @@ export default function AdminPage() {
                               {item.registered ? '已注册' : '未注册'}
                             </span>
                           </td>
-                          <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : '-'}</td>
+                          <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{item.created_at ? (() => { const s = String(item.created_at); const withTz = s.includes('T') ? (s.includes('+') || s.includes('Z') ? s : s + '+08:00') : s.replace(' ', 'T') + '+08:00'; return new Date(withTz).toLocaleString('zh-CN') })() : '-'}</td>
                         </tr>
                       ))}
                       {evLogs.length === 0 && <tr><td colSpan={7} className="px-3 py-8 text-center" style={{ color: 'var(--text-secondary)' }}>暂无数据</td></tr>}

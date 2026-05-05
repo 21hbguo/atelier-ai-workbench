@@ -351,9 +351,8 @@ export default function UnifiedDetailModal({
           {(card.is_permanent || card.expiresAt || card.expired || typeof card.daysLeft === 'number') && <InfoItem label="有效期" value={card.is_permanent ? '已分享到广场，长久保存' : (card.expired ? `已过期（到期时间 ${card.expiresAt || '-' }）` : `${typeof card.daysLeft === 'number' ? card.daysLeft : '-'}天后过期`)} />}
           {meta.created_at && <InfoItem label="创建时间" value={meta.created_at} />}
           {meta.started_at && meta.completed_at && (() => {
-            const s = meta.started_at.includes('T') ? meta.started_at : meta.started_at.replace(' ', 'T')
-            const e = meta.completed_at.includes('T') ? meta.completed_at : meta.completed_at.replace(' ', 'T')
-            const sec = Math.round((new Date(e) - new Date(s)) / 1000)
+            const toTs = (v) => { const s = String(v || ''); const withTz = s.includes('T') ? (s.includes('+') || s.includes('Z') ? s : s + '+08:00') : s.replace(' ', 'T') + '+08:00'; return Date.parse(withTz) || 0 }
+            const sec = Math.round((toTs(meta.completed_at) - toTs(meta.started_at)) / 1000)
             const val = sec >= 60 ? `${Math.floor(sec / 60)}分${sec % 60}秒` : `${sec}秒`
             return <InfoItem label="耗时" value={val} />
           })()}

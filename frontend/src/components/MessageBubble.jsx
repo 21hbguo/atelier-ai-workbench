@@ -6,7 +6,7 @@ export default function MessageBubble({ message, onReusePrompt, onSavePrompt, on
   const [lightbox, setLightbox] = useState(null)
 
   const isUser = message.role === 'user'
-  const timestamp = message.timestamp ? new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : ''
+  const timestamp = message.timestamp ? (() => { const s = String(message.timestamp || ''); const withTz = s.includes('T') ? (s.includes('+') || s.includes('Z') ? s : s + '+08:00') : s.replace(' ', 'T') + '+08:00'; return new Date(withTz).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) })() : ''
 
   return (
     <>

@@ -16,8 +16,9 @@ const statusConfig = {
 function getProgress(startedAt, status) {
   if (!startedAt || status === 'completed') return status === 'completed' ? 100 : 0
   if (status === 'failed') return 0
-  const t = startedAt.includes('T') ? startedAt : startedAt.replace(' ', 'T')
-  const elapsed = (Date.now() - new Date(t).getTime()) / 1000
+  const s = String(startedAt || '')
+  const withTz = s.includes('T') ? (s.includes('+') || s.includes('Z') ? s : s + '+08:00') : s.replace(' ', 'T') + '+08:00'
+  const elapsed = (Date.now() - new Date(withTz).getTime()) / 1000
   return Math.min(99 * (1 - Math.exp(-elapsed / 30)), 99)
 }
 

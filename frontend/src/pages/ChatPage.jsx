@@ -31,7 +31,10 @@ function makeTaskId() {
 }
 function getExpiryByFilename(map, filename) { return (filename && map && map[filename]) ? map[filename] : {} }
 function parseTaskTime(value) {
-  const ts = Date.parse(String(value || '').replace(' ', 'T'))
+  const s = String(value || '')
+  // 数据库存储的是北京时间（无时区后缀），添加 +08:00 确保正确解析
+  const withTz = s.includes('T') ? (s.includes('+') || s.includes('Z') ? s : s + '+08:00') : s.replace(' ', 'T') + '+08:00'
+  const ts = Date.parse(withTz)
   return Number.isNaN(ts) ? 0 : ts
 }
 function getUploadExt(type, name = '') {
