@@ -34,6 +34,8 @@ export default function LoginPage() {
 
   const handleSendCode = async () => {
     if (!email || cooldown > 0) return
+    if (!accountRe.test((account || '').trim())) { setError('请先填写账号（5-16位字母、数字或下划线）'); return }
+    if ((password || '').length < 6) { setError('请先设置密码（至少6个字符）'); return }
     setSendingCode(true)
     setError('')
     try {
@@ -55,9 +57,12 @@ export default function LoginPage() {
 
     try {
       const data = isRegister
-        ? (await authAPI.register({ account, password, nickname: nickname || account, email, code })).data
+        ? (await authAPI.register({ account, password, nickname: nickname || '', email, code })).data
         : (await authAPI.login({ account, password })).data
       writeUser(data.user)
+      if (isRegister && data.user?.points > 0) {
+        localStorage.setItem('just_registered', JSON.stringify({ points: data.user.points }))
+      }
       navigate('/')
     } catch (err) {
       setError(err.message)
@@ -105,7 +110,7 @@ export default function LoginPage() {
                   onChange={(e) => setNickname(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
                   style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
-                  placeholder="可选，默认为账号"
+                  placeholder="可选"
                 />
               </div>
             )}
@@ -124,6 +129,20 @@ export default function LoginPage() {
                 />
               </div>
             )}
+
+            <div>
+              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>密码</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
+                style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                placeholder="至少 6 个字符"
+                required
+                minLength={6}
+              />
+            </div>
 
             {isRegister && (
               <div>
@@ -151,20 +170,6 @@ export default function LoginPage() {
                 </div>
               </div>
             )}
-
-            <div>
-              <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>密码</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none transition-colors focus:ring-2"
-                style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
-                placeholder="至少 6 个字符"
-                required
-                minLength={6}
-              />
-            </div>
 
             {error && (
               <p className="text-sm text-[var(--color-error)] text-center">{error}</p>

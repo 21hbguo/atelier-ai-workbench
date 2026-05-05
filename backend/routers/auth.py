@@ -75,7 +75,7 @@ async def send_code(req: SendCodeRequest, request: Request):
         raise HTTPException(status_code=403, detail="当前已关闭注册")
     ip = get_client_ip(request)
     from backend.services.email_service import create_and_send_code
-    create_and_send_code(req.email, ip)
+    await create_and_send_code(req.email, ip)
     return {"status": "ok", "message": "验证码已发送"}
 
 

@@ -44,7 +44,7 @@ export default function GenerationCard({ task, onAddImage, onAddPrompt, onRetry,
     ? task.result_urls.map(u => { const f = u.split('/').pop(); return { thumb: `/api/images/thumb/${f}?size=400`, thumb2x: `/api/images/thumb/${f}?size=800`, full: `/api/images/file/${f}`, width: task.width || task.image_width || null, height: task.height || task.image_height || null } })
     : (task.previewImages || []).map(u => ({ thumb: u, full: u }))
   const prompt = task.params?.prompt || task.prompt || ''
-  const expiryText = task.is_permanent ? '永久' : (task.expired ? '已过期' : (typeof task.days_left === 'number' ? `${task.days_left}天到期` : '3天到期'))
+  const expiryText = task.is_permanent ? '长久' : (task.expired ? '已过期' : (typeof task.days_left === 'number' ? `${task.days_left}天到期` : '3天到期'))
 
   const handleShare = async (e) => {
     e.stopPropagation()

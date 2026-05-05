@@ -304,7 +304,8 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     setShowOptimizeModal(false)
     setOptimizeLoading(true)
     try {
-      const { data } = await promptOptimizeAPI.optimize(prompt.trim(), optimizeCount)
+      const fullPrompt = `${style ? `风格为${style} ` : ''}${mood ? `氛围为${mood} ` : ''}${prompt.trim()}`.trim()
+      const { data } = await promptOptimizeAPI.optimize(fullPrompt, optimizeCount)
       setOptimizeResults(data)
       setShowOptimizeOverlay(true)
     } catch (e) {
@@ -315,10 +316,13 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   }, [prompt, optimizeLoading, optimizeCount])
 
   const handleSelectOptimized = useCallback((text) => {
-    setPrompt(text)
+    let cleaned = text
+    if (style && cleaned.startsWith(`风格为${style}`)) cleaned = cleaned.slice(`风格为${style}`.length).trimStart()
+    if (mood && cleaned.startsWith(`氛围为${mood}`)) cleaned = cleaned.slice(`氛围为${mood}`.length).trimStart()
+    setPrompt(cleaned)
     setShowOptimizeOverlay(false)
     setOptimizeResults(null)
-  }, [])
+  }, [style, mood])
 
   const handleDismissOptimize = useCallback(() => {
     setShowOptimizeOverlay(false)

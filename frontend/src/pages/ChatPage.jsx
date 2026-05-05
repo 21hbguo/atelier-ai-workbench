@@ -296,7 +296,20 @@ export default function ChatPage() {
         missingCount = 0
         errorCount = 0
         if (st.status === 'completed') {
-          updateTask(taskId, { ...st, _active: false })
+          const completedTask = { ...st, _active: false, task_id: taskId }
+          updateTask(taskId, completedTask)
+          if (st.result_urls?.length) {
+            const cardPrompt = st.params?.prompt || st.prompt || prompt
+            const newCards = st.result_urls.map((url, idx) => {
+              const filename = url.split('/').pop()
+              return { _type: 'image', _raw: { filename, metadata: { prompt: cardPrompt, task_id: taskId, created_at: st.created_at, started_at: st.started_at, completed_at: st.completed_at, type: st.params?.image_urls?.length ? 'image' : 'text', size: st.params?.size, input_urls: st.params?.image_urls } }, id: `${taskId}-${idx}`, prompt: cardPrompt, fullUrl: `/api/images/file/${filename}`, filename }
+            })
+            setDetailCards(prev => {
+              const existing = new Set(prev.map(c => c.id))
+              const toAdd = newCards.filter(c => !existing.has(c.id))
+              return toAdd.length ? [...prev, ...toAdd] : prev
+            })
+          }
           if (shareToSquare && st.result_urls?.length) {
             shareImageToSquare(st.result_urls[0].split('/').pop(), prompt, params, hasImages)
           }

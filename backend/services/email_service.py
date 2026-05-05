@@ -23,8 +23,9 @@ VERIFICATION_EMAIL_HTML = """\
   <div style="padding:35px 30px;color:#5A7063;">
     <p style="font-size:16px;line-height:1.7;">你好，<span style="color:#8CB39E;font-weight:500;">{email}</span>：</p>
     <p style="font-size:16px;line-height:1.7;margin:16px 0;">感谢使用 <strong style="color:#7AA88F;">Atelier·AI造梦工坊</strong>，你的验证码为：</p>
-    <div style="background-color:#F2F7F4;padding:18px;border-radius:8px;text-align:center;margin:20px 0;">
-      <strong style="font-size:24px;color:#6B947D;letter-spacing:4px;">{code}</strong>
+    <div style="background-color:#F2F7F4;padding:20px 24px;border-radius:10px;text-align:center;margin:20px 0;border:1px dashed #B0D1BB;">
+      <strong style="font-size:32px;color:#4A7A5C;letter-spacing:6px;font-family:'Courier New',Courier,monospace;user-select:all;-webkit-user-select:all;">{code}</strong>
+      <p style="margin:8px 0 0;font-size:12px;color:#999;">长按或双击验证码即可选中复制</p>
     </div>
     <p style="font-size:15px;line-height:1.7;color:#708579;">该验证码用于账号身份验证，3分钟内有效<br>请勿泄露或转发给他人，如非本人操作请忽略本邮件</p>
     <p style="font-size:16px;line-height:1.7;margin-top:30px;text-align:right;color:#8CB39E;">Atelier · AI 造梦工坊</p>
@@ -68,7 +69,7 @@ async def send_verification_email(to_email, code):
     await asyncio.to_thread(_send_email_sync, to_email, code)
 
 
-def create_and_send_code(email, ip):
+async def create_and_send_code(email, ip):
     email = email.strip().lower()
     with get_db() as conn:
         row = conn.execute(
@@ -87,13 +88,7 @@ def create_and_send_code(email, ip):
             (email, code, ip),
         )
 
-    async def _send():
-        try:
-            await send_verification_email(email, code)
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).error(f"发送验证码邮件失败: {e}")
-    asyncio.ensure_future(_send())
+    await send_verification_email(email, code)
 
 
 def verify_code(email, code):

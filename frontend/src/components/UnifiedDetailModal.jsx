@@ -352,7 +352,7 @@ export default function UnifiedDetailModal({
         <div className="grid grid-cols-2 gap-2">
           {meta.type && <InfoItem label="类型" value={meta.type === 'text' ? '纯文本' : '文本+图像'} />}
           {meta.size && <InfoItem label="尺寸" value={meta.size} />}
-          {(card.is_permanent || card.expiresAt || card.expired || typeof card.daysLeft === 'number') && <InfoItem label="有效期" value={card.is_permanent ? '已分享到广场，永久保存' : (card.expired ? `已过期（到期时间 ${card.expiresAt || '-' }）` : `${typeof card.daysLeft === 'number' ? card.daysLeft : '-'}天后过期`)} />}
+          {(card.is_permanent || card.expiresAt || card.expired || typeof card.daysLeft === 'number') && <InfoItem label="有效期" value={card.is_permanent ? '已分享到广场，长久保存' : (card.expired ? `已过期（到期时间 ${card.expiresAt || '-' }）` : `${typeof card.daysLeft === 'number' ? card.daysLeft : '-'}天后过期`)} />}
           {meta.created_at && <InfoItem label="创建时间" value={meta.created_at} />}
           {meta.started_at && meta.completed_at && (() => {
             const s = meta.started_at.includes('T') ? meta.started_at : meta.started_at.replace(' ', 'T')

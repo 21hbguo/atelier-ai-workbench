@@ -6,6 +6,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 import AppDialogProvider from './components/AppDialogProvider'
 import { useUserSync } from './hooks/useUserSync'
 import AnnouncementModal from './components/AnnouncementModal'
+import WelcomeModal from './components/WelcomeModal'
 import { announcementAPI, authAPI } from './api'
 import { clearUser, readUser, writeUser } from './auth'
 const ChatPage = lazy(() => import('./pages/ChatPage'))
@@ -72,6 +73,7 @@ function AnnouncementManager({ user }) {
 function AppContent() {
   const [user, setUser] = useState(readUser())
   const [authReady, setAuthReady] = useState(false)
+  const [welcomePoints, setWelcomePoints] = useState(null)
   useUserSync()
   useEffect(() => {
     let active = true
@@ -97,6 +99,18 @@ function AppContent() {
     window.addEventListener('auth-changed', sync)
     return () => { active = false; window.removeEventListener('auth-changed', sync) }
   }, [])
+
+  useEffect(() => {
+    if (!authReady || !user) return
+    try {
+      const raw = localStorage.getItem('just_registered')
+      if (raw) {
+        const { points } = JSON.parse(raw)
+        if (points > 0) setWelcomePoints(points)
+        localStorage.removeItem('just_registered')
+      }
+    } catch { localStorage.removeItem('just_registered') }
+  }, [authReady, user])
   const routeFallback = <div className="min-h-screen flex items-center justify-center text-sm" style={{ color: 'var(--text-secondary)' }}>加载中...</div>
   return (
     <ErrorBoundary>
@@ -105,6 +119,7 @@ function AppContent() {
       <AppDialogProvider>
       <BrowserRouter>
         <AnnouncementManager user={user} />
+        <WelcomeModal points={welcomePoints} onClose={() => setWelcomePoints(null)} />
         <Suspense fallback={routeFallback}><Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/agreement" element={<AgreementPage />} />
