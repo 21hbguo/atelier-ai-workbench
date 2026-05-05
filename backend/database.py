@@ -401,6 +401,11 @@ def init_db():
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_prompts_source ON prompts(source) WHERE source IS NOT NULL"
             )
 
+        # 迁移：给 square_images 添加 category 字段
+            if not _column_exists(conn, "square_images", "category"):
+                conn.execute("ALTER TABLE square_images ADD COLUMN category VARCHAR(64)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_square_images_category ON square_images(category)")
+
         # 迁移：给 square_images 添加 is_frozen 字段
             if not _column_exists(conn, "square_images", "is_frozen"):
                 conn.execute("ALTER TABLE square_images ADD COLUMN is_frozen BOOLEAN DEFAULT FALSE")

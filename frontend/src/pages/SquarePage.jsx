@@ -125,7 +125,7 @@ export default function SquarePage() {
               </button>
             </div>
           )}
-          {tab === 'prompts' && (
+          {(tab === 'prompts' || tab === 'works') && (
             <div className="mt-2">
               <PromptsCategoryFilter active={activeCategory} onChange={setActiveCategory} />
             </div>
@@ -133,7 +133,7 @@ export default function SquarePage() {
         </div>
         <div id="square-scroll-container" className="flex-1 overflow-y-auto px-4 sm:px-6 pb-6">
           {tab === 'works' ? (
-            <WorksTab query={query} sort={sort} authorFilter={authorFilter} onAuthorFilter={handleAuthorFilter} isAdmin={isAdmin} dialog={dialog} refreshTrigger={refreshTrigger} layoutMode={layoutMode} />
+            <WorksTab query={query} sort={sort} activeCategory={activeCategory} authorFilter={authorFilter} onAuthorFilter={handleAuthorFilter} isAdmin={isAdmin} dialog={dialog} refreshTrigger={refreshTrigger} layoutMode={layoutMode} />
           ) : tab === 'prompts' ? (
             <PromptsTab query={query} sort={sort} activeCategory={activeCategory} authorFilter={authorFilter} onAuthorFilter={handleAuthorFilter} isAdmin={isAdmin} dialog={dialog} refreshTrigger={refreshTrigger} layoutMode={layoutMode} />
           ) : tab === 'shared' ? (
@@ -145,22 +145,22 @@ export default function SquarePage() {
   )
 }
 
-function WorksTab({ query, sort, authorFilter, onAuthorFilter, isAdmin, dialog, refreshTrigger, layoutMode }) {
+function WorksTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, isAdmin, dialog, refreshTrigger, layoutMode }) {
   const [detailIdx, setDetailIdx] = useState(null)
   const { handleUsePrompt, handleUseImage } = useImageActions()
   const [status, setStatus] = useState('all')
   const [selectMode, setSelectMode] = useState(false)
   const [checked, setChecked] = useState(new Set())
 
-  const deps = useMemo(() => isAdmin ? [query, sort, status, refreshTrigger, authorFilter?.id || '', authorFilter?.name || ''] : [query, sort, refreshTrigger, authorFilter?.id || '', authorFilter?.name || ''], [query, sort, status, isAdmin, refreshTrigger, authorFilter])
+  const deps = useMemo(() => isAdmin ? [query, sort, status, refreshTrigger, authorFilter?.id || '', authorFilter?.name || '', activeCategory || ''] : [query, sort, refreshTrigger, authorFilter?.id || '', authorFilter?.name || '', activeCategory || ''], [query, sort, status, isAdmin, refreshTrigger, authorFilter, activeCategory])
 
-  useEffect(() => { setDetailIdx(null) }, [query, sort, status])
+  useEffect(() => { setDetailIdx(null) }, [query, sort, status, activeCategory])
 
   const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike, handleFavorite } = useCardData({
     type: 'image',
     apiFn: (p, s) => isAdmin
-      ? adminAPI.square(p, s, query || undefined, status, sort, authorFilter?.id || undefined)
-      : squareAPI.list(p, s, query || undefined, sort, authorFilter?.id || undefined),
+      ? adminAPI.square(p, s, query || undefined, status, sort, authorFilter?.id || undefined, activeCategory || undefined)
+      : squareAPI.list(p, s, query || undefined, sort, authorFilter?.id || undefined, activeCategory || undefined),
     deps,
     atomicPaging: true,
     preloadCount: 12,

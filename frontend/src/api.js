@@ -135,7 +135,7 @@ export const authAPI = {
 }
 
 export const squareAPI = {
-  list: (page = 1, size = 20, query, sort = 'likes', authorId) => { const params = { page, size, sort }; if (query) params.query = query; if (authorId) params.author_id = authorId; return api.get('/square', { params }) },
+  list: (page = 1, size = 20, query, sort = 'likes', authorId, category) => { const params = { page, size, sort }; if (query) params.query = query; if (authorId) params.author_id = authorId; if (category) params.category = category; return api.get('/square', { params }) },
   shared: (page = 1, size = 20) => api.get('/square/shared', { params: { page, size } }),
   my: (page = 1, size = 20) => api.get('/square/my', { params: { page, size } }),
   share: data => api.post('/square/share', data),
@@ -152,7 +152,7 @@ export const adminAPI = {
   createUser: data => api.post('/admin/users', data),
   deleteUser: userId => api.post(`/admin/users/${userId}/delete`),
   toggleFreeze: userId => api.post(`/admin/users/${userId}/freeze`),
-  square: (page = 1, size = 20, query, status = 'all', sort = 'likes', authorId) => { const params = { page, size, status, sort }; if (query) params.query = query; if (authorId) params.author_id = authorId; return api.get('/admin/square', { params }) },
+  square: (page = 1, size = 20, query, status = 'all', sort = 'likes', authorId, category) => { const params = { page, size, status, sort }; if (query) params.query = query; if (authorId) params.author_id = authorId; if (category) params.category = category; return api.get('/admin/square', { params }) },
   deleteSquare: imageId => api.post(`/admin/square/${imageId}/delete`),
   freezeSquare: (ids, frozen = true) => api.post('/admin/square/freeze', { ids, frozen }),
   batchDeleteSquare: ids => api.post('/admin/square/batch-delete', { ids }),
@@ -192,7 +192,7 @@ export const adminAPI = {
   deleteFinanceQuotaRule: ruleId => api.post(`/admin/finance/quota-rules/${ruleId}/delete`),
   financeTasks: (range = '30d', page = 1, size = 20, provider_id, model_id, status) => { const params = { range, page, size }; if (provider_id) params.provider_id = provider_id; if (model_id) params.model_id = model_id; if (status) params.status = status; return api.get('/admin/finance/tasks', { params }) },
   emailVerifications: (page = 1, size = 20, query) => { const params = { page, size }; if (query) params.query = query; return api.get('/admin/email-verifications', { params }) },
-  createClassificationTask: () => api.post('/admin/classification/tasks'),
+  createClassificationTask: (itemType = 'prompt') => api.post('/admin/classification/tasks', { item_type: itemType }),
   listClassificationTasks: (page = 1, size = 20) => api.get('/admin/classification/tasks', { params: { page, size } }),
   getClassificationTask: taskId => api.get(`/admin/classification/tasks/${taskId}`),
   approveClassification: (taskId, resultIds) => api.post(`/admin/classification/tasks/${taskId}/approve`, { result_ids: resultIds }),

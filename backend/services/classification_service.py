@@ -8,7 +8,7 @@ from backend.services.category_service import CategoryService
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_TEMPLATE = """你是一名专业的AI绘画内容分类专家。你的任务是根据提示词的标题和内容，将其归类到最合适的分类中。
+SYSTEM_TEMPLATE = """你是一名专业的AI绘画内容分类专家。你的任务是根据作品的提示词内容，将其归类到最合适的分类中。
 
 可用分类列表：
 {categories}
@@ -51,26 +51,34 @@ class ClassificationService:
             cls._client = None
 
     @classmethod
-    def create_task(cls, admin_id: int) -> Dict[str, Any]:
+    def create_task(cls, admin_id: int, item_type: str = "prompt") -> Dict[str, Any]:
         with get_db() as conn:
-            rows = conn.execute(
-                "SELECT id, name, prompt, category FROM prompts WHERE (category IS NULL OR category = '') AND COALESCE(is_frozen, FALSE) = FALSE"
-            ).fetchall()
-            if not rows:
-                raise ValueError("没有需要分类的提示词")
+            if item_type == "image":
+                rows = conn.execute(
+                    "SELECT id, filename, prompt, category FROM square_images WHERE (category IS NULL OR category = '') AND COALESCE(is_frozen, FALSE) = FALSE"
+                ).fetchall()
+                if not rows:
+                    raise ValueError("没有需要分类的作品")
+            else:
+                rows = conn.execute(
+                    "SELECT id, name, prompt, category FROM prompts WHERE (category IS NULL OR category = '') AND COALESCE(is_frozen, FALSE) = FALSE"
+                ).fetchall()
+                if not rows:
+                    raise ValueError("没有需要分类的提示词")
 
             task = conn.execute(
-                "INSERT INTO classification_tasks (status, item_type, total_items, created_by) VALUES ('processing', 'prompt', %s, %s) RETURNING id, status, total_items, created_at",
-                (len(rows), admin_id),
+                "INSERT INTO classification_tasks (status, item_type, total_items, created_by) VALUES ('processing', %s, %s, %s) RETURNING id, status, total_items, created_at",
+                (item_type, len(rows), admin_id),
             ).fetchone()
 
             with conn.cursor() as cur:
                 for r in rows:
+                    name = r.get("filename") or r.get("name") or ""
                     cur.execute(
-                        "INSERT INTO classification_results (task_id, item_id, item_type, item_name, item_prompt, item_category) VALUES (%s, %s, 'prompt', %s, %s, %s)",
-                        (task["id"], r["id"], r["name"], (r["prompt"] or "")[:500], r["category"]),
+                        "INSERT INTO classification_results (task_id, item_id, item_type, item_name, item_prompt, item_category) VALUES (%s, %s, %s, %s, %s, %s)",
+                        (task["id"], str(r["id"]), item_type, name, (r["prompt"] or "")[:500], r["category"]),
                     )
-            return {"id": task["id"], "status": task["status"], "total_items": task["total_items"], "created_at": str(task["created_at"])}
+            return {"id": task["id"], "status": task["status"], "item_type": item_type, "total_items": task["total_items"], "created_at": str(task["created_at"])}
 
     @classmethod
     async def run_classification(cls, task_id: int):
@@ -239,13 +247,13 @@ class ClassificationService:
     @classmethod
     def approve_results(cls, task_id: int, result_ids: List[int]) -> Dict[str, Any]:
         with get_db() as conn:
-            task = conn.execute("SELECT id, status FROM classification_tasks WHERE id = %s", (task_id,)).fetchone()
+            task = conn.execute("SELECT id, status, item_type FROM classification_tasks WHERE id = %s", (task_id,)).fetchone()
             if not task:
                 raise ValueError("任务不存在")
 
             placeholders = ",".join(["%s"] * len(result_ids))
             results = conn.execute(
-                f"SELECT id, item_id, suggested_category, suggested_category_label, is_new_category FROM classification_results WHERE task_id = %s AND id IN ({placeholders}) AND status = 'pending'",
+                f"SELECT id, item_id, item_type, suggested_category, suggested_category_label, is_new_category FROM classification_results WHERE task_id = %s AND id IN ({placeholders}) AND status = 'pending'",
                 (task_id, *result_ids),
             ).fetchall()
 
@@ -261,10 +269,16 @@ class ClassificationService:
                             "INSERT INTO categories (slug, label, sort_order) VALUES (%s, %s, %s)",
                             (r["suggested_category"], r["suggested_category_label"] or r["suggested_category"], max_order + 1),
                         )
-                conn.execute(
-                    "UPDATE prompts SET category = %s WHERE id = %s",
-                    (r["suggested_category"], r["item_id"]),
-                )
+                if r["item_type"] == "image":
+                    conn.execute(
+                        "UPDATE square_images SET category = %s WHERE id = %s",
+                        (r["suggested_category"], r["item_id"]),
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE prompts SET category = %s WHERE id = %s",
+                        (r["suggested_category"], r["item_id"]),
+                    )
                 conn.execute(
                     "UPDATE classification_results SET status = 'applied', applied_at = NOW() WHERE id = %s",
                     (r["id"],),

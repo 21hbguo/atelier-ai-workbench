@@ -64,6 +64,7 @@ async def list_square_images(
     size: int = Query(20, ge=1, le=100),
     query: str = Query(None),
     author_id: int = Query(None),
+    category: str = Query(None),
     sort: str = Query("likes", regex="^(likes|time)$"),
     user=Depends(get_optional_user),
 ):
@@ -75,6 +76,9 @@ async def list_square_images(
         if author_id is not None:
             where.append("si.user_id = %s")
             params.append(author_id)
+        if category:
+            where.append("si.category = %s")
+            params.append(category)
         if query:
             q = f"%{query}%"
             where.append("(si.prompt LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s)")
@@ -83,9 +87,10 @@ async def list_square_images(
         total = conn.execute(f"SELECT COUNT(*) AS cnt FROM square_images si JOIN users u ON si.user_id = u.id WHERE {where_sql}", params).fetchone()["cnt"]
         rows = conn.execute(
             f"""
-            SELECT si.*, u.username, u.nickname, u.avatar
+            SELECT si.*, u.username, u.nickname, u.avatar, cat.label AS category_label
             FROM square_images si
             JOIN users u ON si.user_id = u.id
+            LEFT JOIN categories cat ON si.category = cat.slug
             WHERE {where_sql}
             ORDER BY {order}
             LIMIT %s OFFSET %s
@@ -174,9 +179,10 @@ async def list_shared_items(
             placeholders = ",".join("%s" for _ in image_ids)
             rows = conn.execute(
                 f"""
-                SELECT si.*, u.username, u.nickname, u.avatar
+                SELECT si.*, u.username, u.nickname, u.avatar, cat.label AS category_label
                 FROM square_images si
                 JOIN users u ON si.user_id = u.id
+                LEFT JOIN categories cat ON si.category = cat.slug
                 WHERE si.id IN ({placeholders}) AND (si.user_id = %s OR COALESCE(si.is_frozen, FALSE) = FALSE)
                 """,
                 [*image_ids, uid],
@@ -272,7 +278,7 @@ async def my_shares(
         ).fetchone()["cnt"]
 
         rows = conn.execute(
-            "SELECT si.*, u.username, u.nickname, u.avatar FROM square_images si JOIN users u ON si.user_id = u.id WHERE si.user_id = %s ORDER BY si.created_at DESC LIMIT %s OFFSET %s",
+            "SELECT si.*, u.username, u.nickname, u.avatar, cat.label AS category_label FROM square_images si JOIN users u ON si.user_id = u.id LEFT JOIN categories cat ON si.category = cat.slug WHERE si.user_id = %s ORDER BY si.created_at DESC LIMIT %s OFFSET %s",
             (user["user_id"], size, offset),
         ).fetchall()
 

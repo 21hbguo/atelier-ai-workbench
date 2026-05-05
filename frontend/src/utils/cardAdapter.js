@@ -25,8 +25,8 @@ export function normalizeImage(raw) {
     name: null,
     negativePrompt: null,
     tags: null,
-    category: null,
-    categoryLabel: null,
+    category: raw.category || null,
+    categoryLabel: raw.category_label || raw.category || null,
     imagePath: null,
   }
 }

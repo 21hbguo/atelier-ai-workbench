@@ -213,9 +213,9 @@ export default function AdminPage() {
       setClsTotal(data?.total || 0)
     } catch (e) { dialog.alert(e.message || '加载失败') }
   }
-  const handleCreateClsTask = async () => {
+  const handleCreateClsTask = async (itemType = 'prompt') => {
     try {
-      await adminAPI.createClassificationTask()
+      await adminAPI.createClassificationTask(itemType)
       fetchClsTasks()
     } catch (e) { dialog.alert(e.message || '创建失败') }
   }
