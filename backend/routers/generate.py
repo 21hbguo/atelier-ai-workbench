@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 logger = logging.getLogger(__name__)
 
 from backend.services.gen_gateway import GenGateway
+from backend.config import get_generation_models
 from backend.services.task_manager import TaskManager
 from backend.services.stats_service import StatsService
 from backend.services.banned_words import BannedWordsService
@@ -26,6 +27,19 @@ from backend.services.image_expiry import RETENTION_DAYS, mark_image_permanent
 from backend.config import get_config
 
 router = APIRouter(prefix="/api/generate", tags=["generate"])
+
+
+def _get_model_cost(model_id: str) -> int:
+    models = get_generation_models() or {}
+    model = models.get(model_id) or {}
+    params = model.get("params") or {}
+    cost = params.get("points_cost")
+    if cost is not None:
+        try:
+            return max(1, int(cost))
+        except (ValueError, TypeError):
+            pass
+    return PointsService.cost_per_generation()
 
 
 def _check_generate_rate(user_id: int):
@@ -63,7 +77,7 @@ def _share_to_square(user_id: int, file_path: str, prompt: str, size: str, task_
 
 async def _run_generation(task_id: str, task_type: str, submit_payload: dict, meta: dict, user_id: int, is_admin: bool):
     try:
-        result = await GenGateway.submit(model_id=submit_payload.get("model_id"), prompt=submit_payload["prompt"], size=submit_payload["size"], image_urls=submit_payload.get("image_urls") or [])
+        result = await GenGateway.submit(model_id=submit_payload.get("model_id"), prompt=submit_payload["prompt"], size=submit_payload["size"], quality=submit_payload.get("quality"), image_urls=submit_payload.get("image_urls") or [])
         external_task_id = result["external_task_id"]
         provider_id = result["provider_id"]
         model_id = result["model_id"]
@@ -105,7 +119,7 @@ async def _run_generation(task_id: str, task_type: str, submit_payload: dict, me
         StatsService.record_failed()
         record_request(user_id, "failed")
         try:
-            PointsService.refund(user_id, PointsService.cost_per_generation(), "生成失败退还", request_key=f"refund:{task_id}")
+            PointsService.refund(user_id, submit_payload.get("_cost") or PointsService.cost_per_generation(), "生成失败退还", request_key=f"refund:{task_id}")
         except Exception:
             logger.exception(f"[submit.refund.fail] type={task_type} task={task_id} user={user_id}")
 
@@ -122,7 +136,7 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
     _check_generate_rate(user_id)
 
     is_admin = user.get("is_admin")
-    cost = PointsService.cost_per_generation()
+    cost = _get_model_cost(request.model_id)
     points_balance_after = None
     try:
         points_balance_after = PointsService.consume(user_id, cost, "生成消耗", request_key=f"consume:{task_id}")
@@ -143,11 +157,12 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
             PointsService.refund(user_id, cost, "违禁词退还", request_key=f"refund:{task_id}")
             raise HTTPException(status_code=400, detail="提示词包含违禁词，请修改后重试")
 
-        TaskManager.create_task(task_id, "text", {"prompt": request.prompt, "size": request.size, "model_id": request.model_id, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}, user_id=user_id, points_cost=cost, points_balance_after=points_balance_after)
+        submit_dict = {"prompt": request.prompt, "size": request.size, "quality": request.quality, "model_id": request.model_id, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id, "_cost": cost}
+        TaskManager.create_task(task_id, "text", {"prompt": request.prompt, "size": request.size, "quality": request.quality, "model_id": request.model_id, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}, user_id=user_id, points_cost=cost, points_balance_after=points_balance_after)
         TaskManager.update_task(task_id, status="processing", progress=10)
         logger.info(f"[submit.task_created] type=text task={task_id} user={user_id}")
         meta = {"prompt": request.prompt, "size": request.size, "type": "text", "task_id": task_id, "model_id": request.model_id, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}
-        asyncio.create_task(_run_generation(task_id, "text", {"prompt": request.prompt, "size": request.size, "model_id": request.model_id, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}, meta, user_id, bool(is_admin)))
+        asyncio.create_task(_run_generation(task_id, "text", submit_dict, meta, user_id, bool(is_admin)))
         return GenerateResponse(task_id=task_id, status="processing", message="任务已提交")
 
     except HTTPException:
@@ -173,7 +188,7 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
     _check_generate_rate(user_id)
 
     is_admin = user.get("is_admin")
-    cost = PointsService.cost_per_generation()
+    cost = _get_model_cost(request.model_id)
     points_balance_after = None
     try:
         points_balance_after = PointsService.consume(user_id, cost, "生成消耗", request_key=f"consume:{task_id}")
@@ -194,11 +209,12 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
             PointsService.refund(user_id, cost, "违禁词退还", request_key=f"refund:{task_id}")
             raise HTTPException(status_code=400, detail="提示词包含违禁词，请修改后重试")
 
-        TaskManager.create_task(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "model_id": request.model_id, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}, user_id=user_id, points_cost=cost, points_balance_after=points_balance_after)
+        submit_dict = {"prompt": request.prompt, "size": request.size, "quality": request.quality, "model_id": request.model_id, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id, "_cost": cost}
+        TaskManager.create_task(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "quality": request.quality, "model_id": request.model_id, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}, user_id=user_id, points_cost=cost, points_balance_after=points_balance_after)
         TaskManager.update_task(task_id, status="processing", progress=10)
         logger.info(f"[submit.task_created] type=text_image task={task_id} user={user_id}")
         meta = {"prompt": request.prompt, "size": request.size, "type": "text_image", "task_id": task_id, "model_id": request.model_id, "input_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}
-        asyncio.create_task(_run_generation(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "model_id": request.model_id, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}, meta, user_id, bool(is_admin)))
+        asyncio.create_task(_run_generation(task_id, "text_image", submit_dict, meta, user_id, bool(is_admin)))
         return GenerateResponse(task_id=task_id, status="processing", message="任务已提交")
 
     except HTTPException:

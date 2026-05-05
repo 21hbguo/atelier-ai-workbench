@@ -59,7 +59,7 @@ async def finance_create_purchase(body: dict, admin=Depends(require_admin)):
 @router.post("/finance/purchases/{batch_id}")
 async def finance_update_purchase(batch_id: int, body: dict, admin=Depends(require_admin)):
     try:
-        row=FinanceService.update_purchase_batch(batch_id,body.get("provider_id"),body.get("purchase_date"),body.get("amount_rmb"),body.get("quota_amount"),body.get("remark"),admin["user_id"])
+        row=FinanceService.update_purchase_batch(batch_id,body.get("provider_id"),body.get("purchase_date"),body.get("amount_rmb"),body.get("quota_amount"),body.get("remark"),admin["user_id"],adjust_consumed=body.get("adjust_consumed"))
         return {"message":"已更新采购批次","item":dict(row) if row else None}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -825,7 +825,7 @@ async def list_recharge_requests(page: int = Query(1, ge=1), size: int = Query(2
     offset = (page - 1) * size
     where = []
     params = []
-    if status in {"pending", "approved", "rejected"}:
+    if status in {"pending", "approved", "rejected", "refunded"}:
         where.append("rr.status = %s")
         params.append(status)
     if query:
@@ -925,6 +925,39 @@ async def reject_recharge_request(request_id: int, body: dict, admin=Depends(req
                 pass
         logger.info(f"[audit.recharge.reject] request={request_id} admin={admin['user_id']} reason={review_note[:120]}")
         return {"message": "已拒绝该充值申请"}
+
+
+@router.post("/recharge-requests/{request_id}/refund")
+async def refund_recharge_request(request_id: int, body: dict, admin=Depends(require_admin)):
+    review_note = (body.get("review_note") or "").strip()[:500] or "管理员退款"
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM recharge_requests WHERE id = %s", (request_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="充值申请不存在")
+        item = dict(row)
+        if item["status"] != "approved":
+            raise HTTPException(status_code=400, detail="仅已通过的申请可退款")
+        user_id = item["user_id"]
+        points = int(item.get("points") or 0)
+        if points <= 0:
+            raise HTTPException(status_code=400, detail="该申请无有效积分，无法退款")
+        conn.execute("UPDATE users SET points = MAX(0, points - %s) WHERE id = %s", (points, user_id))
+        new_balance = conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()["points"]
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute(
+            "INSERT INTO point_transactions (user_id, amount, balance_after, type, description, recharge_request_id, request_key) VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
+            (user_id, -points, new_balance, "recharge_refund", f"充值退款 (¥{item['amount']})", request_id, f"recharge-refund:{request_id}"),
+        )
+        conn.execute(
+            "UPDATE recharge_requests SET status = 'refunded', review_note = %s, reviewed_at = %s, reviewed_by = %s WHERE id = %s",
+            (review_note, now, admin["user_id"], request_id),
+        )
+        try:
+            NotificationService.create(user_id, "recharge_refunded", "充值已退款", f"你的充值申请已被退款，扣除 {points} 积分", str(request_id))
+        except Exception:
+            pass
+        logger.info(f"[audit.recharge.refund] request={request_id} admin={admin['user_id']} user={user_id} points={points}")
+        return {"message": f"已退款，扣除 {points} 积分", "points_deducted": points, "new_balance": new_balance}
 
 
 @router.get("/stats/overview")

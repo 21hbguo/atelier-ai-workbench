@@ -60,7 +60,6 @@ export default function ChatPage() {
   const [loaded, setLoaded] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
-  const [zipAsOne, setZipAsOne] = useState(false)
   const [checked, setChecked] = useState(new Set())
   const [searchQuery, setSearchQuery] = useState('')
   const [timeRange, setTimeRange] = useState('1d')
@@ -352,9 +351,9 @@ export default function ChatPage() {
 
   const handleSubmit = useCallback(async ({ prompt, images, params, shareToSquare, rollCount = 1 }) => {
     const batchCount = Math.min(5, Math.max(1, Number(rollCount) || 1))
+    const modelCost = params?._points_cost || requestCost
     if (batchCount > 1) {
-      const cost = requestCost
-      if (!await dialog.confirm(`本次将提交 ${batchCount} 次生成，预计消耗 ${batchCount * cost} 积分，是否继续？`)) return false
+      if (!await dialog.confirm(`本次将提交 ${batchCount} 次生成，预计消耗 ${batchCount * modelCost} 积分，是否继续？`)) return false
     }
     setLoading(true)
     try {
@@ -375,10 +374,10 @@ export default function ChatPage() {
         scroll()
         const taskId = makeTaskId()
         try {
-          const data = hasImages ? (await generateAPI.submitTextImage({ prompt, image_urls: imageUrls, size: params?.size || 'auto', model_id: params?.model_id, task_id: taskId, share_to_square: !!shareToSquare, local_image_urls: localImageUrls })).data : (await generateAPI.submitText({ prompt, size: params?.size || 'auto', model_id: params?.model_id, task_id: taskId, share_to_square: !!shareToSquare })).data
-          setPoints(p => Math.max(0, p - requestCost))
+          const data = hasImages ? (await generateAPI.submitTextImage({ prompt, image_urls: imageUrls, size: params?.size || 'auto', quality: params?.quality || undefined, model_id: params?.model_id, task_id: taskId, share_to_square: !!shareToSquare, local_image_urls: localImageUrls })).data : (await generateAPI.submitText({ prompt, size: params?.size || 'auto', quality: params?.quality || undefined, model_id: params?.model_id, task_id: taskId, share_to_square: !!shareToSquare })).data
+          setPoints(p => Math.max(0, p - modelCost))
           const u = readUser()
-          if (u) { u.points = Math.max(0, (u.points ?? 0) - requestCost); localStorage.setItem('user', JSON.stringify(u)) }
+          if (u) { u.points = Math.max(0, (u.points ?? 0) - modelCost); localStorage.setItem('user', JSON.stringify(u)) }
           window.dispatchEvent(new Event('points-updated'))
           const realId = data.task_id
           setTasks(prev => { const next = prev.map(t => t.task_id === tempId ? { ...t, task_id: realId } : t); saveCachedActiveTasks(next); return next })
@@ -541,7 +540,17 @@ export default function ChatPage() {
     }
     if (files.length === 0) return
 
-    if (zipAsOne && files.length > 1) {
+    let asZip = false
+    if (files.length > 1) {
+      const choice = await dialog.choose(`已选 ${files.length} 张图片，选择下载方式：`, [
+        { label: '逐个下载', value: 'single' },
+        { label: '打包 ZIP 下载', value: 'zip', color: 'var(--color-info)' },
+      ])
+      if (!choice) return
+      asZip = choice === 'zip'
+    }
+
+    if (asZip) {
       const zip = new JSZip()
       for (const file of files) {
         const res = await fetch(file.url)
@@ -559,7 +568,7 @@ export default function ChatPage() {
         await new Promise(r => setTimeout(r, 300))
       }
     }
-  }, [checked, visibleTasks, zipAsOne])
+  }, [checked, visibleTasks, dialog])
 
   const handleBatchDelete = useCallback(async () => {
     if (!await dialog.confirm(`确定删除选中的 ${checked.size} 项？`)) return
@@ -602,18 +611,22 @@ export default function ChatPage() {
   const handleDragEnter = useCallback((e) => {
     e.preventDefault()
     e.stopPropagation()
+    if (selectMode) return
     if (e.dataTransfer.types.includes('Files')) {
+      if (e.currentTarget.contains(e.relatedTarget)) return
       dragCounter.current++
       setDragging(true)
     }
-  }, [])
+  }, [selectMode])
 
   const handleDragLeave = useCallback((e) => {
     e.preventDefault()
     e.stopPropagation()
+    if (selectMode) return
+    if (e.currentTarget.contains(e.relatedTarget)) return
     dragCounter.current--
     if (dragCounter.current === 0) setDragging(false)
-  }, [])
+  }, [selectMode])
 
   const handleDragOver = useCallback((e) => {
     e.preventDefault()
@@ -625,9 +638,10 @@ export default function ChatPage() {
     e.stopPropagation()
     dragCounter.current = 0
     setDragging(false)
+    if (selectMode) return
     const files = Array.from(e.dataTransfer.files).filter(f => /\.(png|jpe?g|webp)$/i.test(f.name))
     if (files.length > 0) inputRef.current?.addFiles(files)
-  }, [])
+  }, [selectMode])
 
   const dragProps = {
     onDragEnter: handleDragEnter,
@@ -645,10 +659,6 @@ export default function ChatPage() {
           </button>
           <div className="ml-auto flex items-center gap-2">
             <button onClick={handleBatchExtend} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--color-info)' }}>延长3天</button>
-            <label className="flex items-center gap-1.5 text-xs cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
-              <input type="checkbox" checked={zipAsOne} onChange={e => setZipAsOne(e.target.checked)} className="accent-[var(--accent)]" />
-              打包ZIP
-            </label>
             <button onClick={handleBatchDownload} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}><Download size={14} /> 下载</button>
             <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-[var(--color-error)] hover:bg-[var(--color-error)]/10"><Trash2 size={14} /> 删除</button>
           </div>

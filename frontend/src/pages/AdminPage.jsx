@@ -129,7 +129,7 @@ export default function AdminPage() {
   const [financeTasks, setFinanceTasks] = useState([])
   const [financeLoading, setFinanceLoading] = useState(false)
   const [financeCreatingPurchase, setFinanceCreatingPurchase] = useState(false)
-  const [financePurchaseDraft, setFinancePurchaseDraft] = useState({ id: null, provider_id: '', amount_rmb: '', quota_amount: '', purchase_date: nowFinanceTime(), remark: '', can_edit_core: true })
+  const [financePurchaseDraft, setFinancePurchaseDraft] = useState({ id: null, provider_id: '', amount_rmb: '', quota_amount: '', purchase_date: nowFinanceTime(), remark: '', can_edit_core: true, consumed_quota: 0, adjust_consumed: '' })
   const [financeRules, setFinanceRules] = useState([])
   const [financeRuleSaving, setFinanceRuleSaving] = useState(false)
   const [financeRuleDraft, setFinanceRuleDraft] = useState({ id: null, provider_id: '', model_id: '', quota_per_success: '', enabled: true, remark: '' })
@@ -318,7 +318,11 @@ export default function AdminPage() {
     } catch (e) { dialog.alert(e.message || '调用明细加载失败') }
   }
   const handleCreateFinancePurchase = async () => {
-    const payload = { ...financePurchaseDraft, amount_rmb: Number(financePurchaseDraft.amount_rmb || 0), quota_amount: Number(financePurchaseDraft.quota_amount || 0) }
+    const draft = financePurchaseDraft
+    const payload = { ...draft, amount_rmb: Number(draft.amount_rmb || 0), quota_amount: Number(draft.quota_amount || 0) }
+    if (draft.id && draft.adjust_consumed !== '' && draft.adjust_consumed !== undefined) {
+      payload.adjust_consumed = Number(draft.adjust_consumed)
+    }
     if (!payload.provider_id) { dialog.alert('请选择供应商'); return }
     if (payload.amount_rmb < 0 || payload.quota_amount <= 0) { dialog.alert('采购金额不能小于0，供应商单位数量必须大于0'); return }
     setFinanceCreatingPurchase(true)
@@ -330,15 +334,15 @@ export default function AdminPage() {
         await adminAPI.createFinancePurchase(payload)
         dialog.alert('采购批次已记录')
       }
-      setFinancePurchaseDraft({ id: null, provider_id: payload.provider_id, amount_rmb: '', quota_amount: '', purchase_date: nowFinanceTime(), remark: '', can_edit_core: true })
+      setFinancePurchaseDraft({ id: null, provider_id: payload.provider_id, amount_rmb: '', quota_amount: '', purchase_date: nowFinanceTime(), remark: '', can_edit_core: true, consumed_quota: 0, adjust_consumed: '' })
       fetchFinanceOverview(financeRange)
       fetchFinanceProviders(financeRange)
       fetchFinancePurchases()
       fetchFinanceTasks()
     } catch (e) { dialog.alert(e.message || (payload.id ? '更新采购失败' : '新增采购失败')) } finally { setFinanceCreatingPurchase(false) }
   }
-  const handleEditFinancePurchase = row => setFinancePurchaseDraft({ id: row.id, provider_id: row.provider_id, amount_rmb: String(row.amount_rmb ?? ''), quota_amount: String(row.quota_amount ?? ''), purchase_date: row.purchase_date || nowFinanceTime(), remark: row.remark || '', can_edit_core: row.can_edit_core !== false })
-  const handleCancelFinancePurchaseEdit = () => setFinancePurchaseDraft({ id: null, provider_id: financeProviderFilter || '', amount_rmb: '', quota_amount: '', purchase_date: nowFinanceTime(), remark: '', can_edit_core: true })
+  const handleEditFinancePurchase = row => setFinancePurchaseDraft({ id: row.id, provider_id: row.provider_id, amount_rmb: String(row.amount_rmb ?? ''), quota_amount: String(row.quota_amount ?? ''), purchase_date: row.purchase_date || nowFinanceTime(), remark: row.remark || '', can_edit_core: row.can_edit_core !== false, consumed_quota: row.consumed_quota ?? 0, adjust_consumed: '' })
+  const handleCancelFinancePurchaseEdit = () => setFinancePurchaseDraft({ id: null, provider_id: financeProviderFilter || '', amount_rmb: '', quota_amount: '', purchase_date: nowFinanceTime(), remark: '', can_edit_core: true, consumed_quota: 0, adjust_consumed: '' })
   const handleDeleteFinancePurchase = async row => {
     if (!await dialog.confirm(`确定删除采购批次 #${row.id}？`)) return
     try {
@@ -605,6 +609,15 @@ export default function AdminPage() {
       setReviewModal(null); setReviewNote('')
       fetchRechargeRequests()
     } catch (e) { dialog.alert(e.message || '操作失败') }
+  }
+
+  const handleRefundRecharge = async (row) => {
+    if (!await dialog.confirm(`确认退款？将扣除用户 ${row.points} 积分（当前余额不足则扣至0）`)) return
+    try {
+      const { data } = await adminAPI.refundRecharge(row.id, { review_note: '管理员退款' })
+      dialog.alert(data.message || '退款成功')
+      fetchRechargeRequests()
+    } catch (e) { dialog.alert(e.message || '退款失败') }
   }
 
   const handleGenerateCodes = async () => {
@@ -1047,6 +1060,7 @@ export default function AdminPage() {
                     <option value="pending">待审核</option>
                     <option value="approved">已通过</option>
                     <option value="rejected">已拒绝</option>
+                    <option value="refunded">已退款</option>
                   </select>
                   <select value={codesSort} onChange={e => setCodesSort(e.target.value)}
                     className="px-2 py-1 rounded-lg text-xs font-medium border outline-none cursor-pointer"
@@ -1111,10 +1125,10 @@ export default function AdminPage() {
                             </td>
                             <td className="px-4 py-3 text-center">
                               <span className="px-2 py-0.5 rounded-full text-[11px] font-medium" style={{
-                                color: c.status === 'approved' ? 'var(--color-success)' : c.status === 'rejected' ? 'var(--color-error)' : 'var(--color-warning)',
-                                background: c.status === 'approved' ? 'color-mix(in srgb, var(--color-success) 12%, transparent)' : c.status === 'rejected' ? 'color-mix(in srgb, var(--color-error) 12%, transparent)' : 'color-mix(in srgb, var(--color-warning) 12%, transparent)'
+                                color: c.status === 'approved' ? 'var(--color-success)' : c.status === 'rejected' || c.status === 'refunded' ? 'var(--color-error)' : 'var(--color-warning)',
+                                background: c.status === 'approved' ? 'color-mix(in srgb, var(--color-success) 12%, transparent)' : c.status === 'rejected' || c.status === 'refunded' ? 'color-mix(in srgb, var(--color-error) 12%, transparent)' : 'color-mix(in srgb, var(--color-warning) 12%, transparent)'
                               }}>
-                                {{ pending: '待审核', approved: '已通过', rejected: '已拒绝' }[c.status]}
+                                {{ pending: '待审核', approved: '已通过', rejected: '已拒绝', refunded: '已退款' }[c.status]}
                               </span>
                             </td>
                             <td className="px-4 py-3 text-left text-[11px] truncate max-w-[120px]" style={{ color: 'var(--text-secondary)' }}>
@@ -1143,8 +1157,14 @@ export default function AdminPage() {
                                   </button>
                                 </div>
                               )}
-                              {c.status === 'approved' && c.redeem_code && (
-                                <span className="text-[10px] font-mono" style={{ color: 'var(--accent)' }}>{c.redeem_code}</span>
+                              {c.status === 'approved' && (
+                                <div className="flex items-center justify-center gap-1">
+                                  {c.redeem_code && <span className="text-[10px] font-mono" style={{ color: 'var(--accent)' }}>{c.redeem_code}</span>}
+                                  <button onClick={() => handleRefundRecharge(c)} className="px-2 py-1 rounded-lg text-[11px] font-medium bg-[var(--color-error)] text-white hover:opacity-90">退款</button>
+                                </div>
+                              )}
+                              {c.status === 'refunded' && (
+                                <span className="text-[10px]" style={{ color: 'var(--color-error)' }}>已退款</span>
                               )}
                             </td>
                           </tr>

@@ -26,6 +26,9 @@ export default function ParamPanel({ params, onChange }) {
         defaults[key] = cfg.default
       }
     }
+    if (modelParams.points_cost !== undefined) {
+      defaults._points_cost = modelParams.points_cost
+    }
     if (Object.keys(defaults).length > 0) {
       onChange(p => ({ ...p, ...defaults }))
     }
@@ -36,6 +39,10 @@ export default function ParamPanel({ params, onChange }) {
     if (!model) return
     const newParams = { model_id: modelId }
     for (const [key, cfg] of Object.entries(model.params || {})) {
+      if (key === 'points_cost') {
+        newParams._points_cost = cfg
+        continue
+      }
       if (cfg.default !== undefined) {
         newParams[key] = cfg.default
       }

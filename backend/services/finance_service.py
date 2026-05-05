@@ -103,6 +103,8 @@ class FinanceService:
                 if isinstance(trace,list) and trace:
                     provider_id=((trace[0] or {}).get("provider_id") or "").strip()
             model_id=(params.get("model_id") or "image-default").strip() or "image-default"
+            if not provider_id:
+                return None
             existing=conn.execute("SELECT * FROM generation_finance_entries WHERE task_id=%s FOR UPDATE",(task_id,)).fetchone()
             if existing and str(existing.get("status") or "")==status:return existing
             quota_used=0.0;quota_shortage=0.0;cost_rmb=None;cost_source="unknown";pricing_source="rule";purchase_batch_id=None;allocations=[]
@@ -126,7 +128,7 @@ class FinanceService:
                         if quota_shortage>0 and not allocations:cost_rmb=None
             elif status=="failed":
                 cost_source="failed_no_charge"
-            entry=conn.execute("INSERT INTO generation_finance_entries (task_id,user_id,model_id,provider_id,status,charged_points,revenue_rmb,cost_rmb,pricing_source,cost_source,purchase_batch_id,quota_used,quota_shortage,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(task_id) DO UPDATE SET user_id=EXCLUDED.user_id,model_id=EXCLUDED.model_id,provider_id=EXCLUDED.provider_id,status=EXCLUDED.status,charged_points=EXCLUDED.charged_points,revenue_rmb=EXCLUDED.revenue_rmb,cost_rmb=EXCLUDED.cost_rmb,pricing_source=EXCLUDED.pricing_source,cost_source=EXCLUDED.cost_source,purchase_batch_id=EXCLUDED.purchase_batch_id,quota_used=EXCLUDED.quota_used,quota_shortage=EXCLUDED.quota_shortage,created_at=EXCLUDED.created_at,updated_at=NOW() RETURNING *",(task_id,task.get("user_id"),model_id,provider_id or "unknown",status,int(task.get("points_cost") or 0),0,cost_rmb,pricing_source,cost_source,purchase_batch_id,quota_used,quota_shortage,task.get("created_at") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"))).fetchone()
+            entry=conn.execute("INSERT INTO generation_finance_entries (task_id,user_id,model_id,provider_id,status,charged_points,revenue_rmb,cost_rmb,pricing_source,cost_source,purchase_batch_id,quota_used,quota_shortage,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(task_id) DO UPDATE SET user_id=EXCLUDED.user_id,model_id=EXCLUDED.model_id,provider_id=EXCLUDED.provider_id,status=EXCLUDED.status,charged_points=EXCLUDED.charged_points,revenue_rmb=EXCLUDED.revenue_rmb,cost_rmb=EXCLUDED.cost_rmb,pricing_source=EXCLUDED.pricing_source,cost_source=EXCLUDED.cost_source,purchase_batch_id=EXCLUDED.purchase_batch_id,quota_used=EXCLUDED.quota_used,quota_shortage=EXCLUDED.quota_shortage,created_at=EXCLUDED.created_at,updated_at=NOW() RETURNING *",(task_id,task.get("user_id"),model_id,provider_id,status,int(task.get("points_cost") or 0),0,cost_rmb,pricing_source,cost_source,purchase_batch_id,quota_used,quota_shortage,task.get("created_at") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"))).fetchone()
             if allocations and entry:
                 conn.execute("DELETE FROM generation_finance_allocations WHERE finance_entry_id=%s",(entry["id"],))
                 for a in allocations:
@@ -144,7 +146,7 @@ class FinanceService:
         with get_db() as conn:
             return conn.execute("INSERT INTO provider_purchase_batches (provider_id,purchase_date,amount_rmb,quota_amount,remaining_quota,unit_cost,remark,operator_user_id) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *",(provider_id,purchase_date,amount_rmb,quota_amount,quota_amount,unit_cost,(remark or "").strip(),operator_user_id)).fetchone()
     @classmethod
-    def update_purchase_batch(cls,batch_id:int,provider_id:str,purchase_date:str,amount_rmb:float,quota_amount:float,remark:str,operator_user_id:Optional[int]):
+    def update_purchase_batch(cls,batch_id:int,provider_id:str,purchase_date:str,amount_rmb:float,quota_amount:float,remark:str,operator_user_id:Optional[int],adjust_consumed:Optional[float]=None):
         provider_id=(provider_id or "").strip()
         if not provider_id:raise ValueError("供应商不能为空")
         amount_rmb=round(cls._safe_float(amount_rmb,0),6);quota_amount=round(cls._safe_float(quota_amount,0),6)
@@ -157,6 +159,11 @@ class FinanceService:
             consumed_quota=round(max(cls._safe_float(row.get("quota_amount"),0)-cls._safe_float(row.get("remaining_quota"),0),0),6)
             locked=consumed_quota>0
             if locked and (provider_id!=row["provider_id"] or round(cls._safe_float(row.get("amount_rmb"),0),6)!=amount_rmb or round(cls._safe_float(row.get("quota_amount"),0),6)!=quota_amount):raise ValueError("该采购批次已被消耗，仅允许修改采购时间和备注")
+            if adjust_consumed is not None:
+                new_consumed=round(cls._safe_float(adjust_consumed,consumed_quota),6)
+                if new_consumed<0:raise ValueError("已消耗不能小于0")
+                if new_consumed>quota_amount:raise ValueError("已消耗不能大于采购总量")
+                consumed_quota=new_consumed
             next_remaining=round(quota_amount-consumed_quota,6)
             if next_remaining<0:raise ValueError("采购单位数量不能小于已消耗数量")
             unit_cost=round(amount_rmb/quota_amount,8)

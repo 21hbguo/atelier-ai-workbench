@@ -14,19 +14,21 @@ class GrsAIProvider:
         return f"Bearer {(conf or {}).get('api_key') or ''}"
 
     @classmethod
-    async def submit(cls, conf: Dict[str, Any], prompt: str, size: str = "auto", urls: Optional[List[str]] = None) -> Dict[str, Any]:
+    async def submit(cls, conf: Dict[str, Any], prompt: str, size: str = "auto", quality: Optional[str] = None, urls: Optional[List[str]] = None, model: Optional[str] = None) -> Dict[str, Any]:
         headers = {
             "Content-Type": "application/json",
             "Authorization": cls._auth_header(conf)
         }
         payload = {
-            "model": (conf or {}).get("model") or "gpt-image-2",
+            "model": model or (conf or {}).get("model") or "gpt-image-2",
             "prompt": prompt,
             "webHook": "-1",
             "shutProgress": False
         }
         if size and size != "auto":
             payload["aspectRatio"] = size
+        if quality:
+            payload["quality"] = quality
         if urls:
             payload["urls"] = urls
 
