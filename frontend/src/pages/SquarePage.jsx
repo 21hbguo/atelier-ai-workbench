@@ -386,7 +386,7 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
   const [initialEditing, setInitialEditing] = useState(false)
 
   const handleCreate = useCallback(() => {
-    const card = normalizePrompt({ id: '', name: '', prompt: '', negative_prompt: '', tags: [], category: null })
+    const card = normalizePrompt({ id: '', name: '', prompt: '', category: null })
     setNewCard(card)
     newCardRef.current = card
     setInitialEditing(true)
@@ -411,8 +411,6 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
         ...newCardRef.current,
         name: payload.name,
         prompt: payload.prompt,
-        negativePrompt: payload.negative_prompt,
-        tags: payload.tags,
         category: payload.category,
         categoryLabel: payload.category,
         title: payload.name,

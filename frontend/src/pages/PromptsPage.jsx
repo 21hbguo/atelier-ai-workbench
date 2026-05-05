@@ -15,7 +15,7 @@ export default function PromptsPage() {
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState(new Set())
   const [detailIdx, setDetailIdx] = useState(null)
-  const [form, setForm] = useState({ name: '', prompt: '', tags: '', category: '' })
+  const [form, setForm] = useState({ name: '', prompt: '', category: '' })
   const deps = useMemo(() => [query], [query])
   const [showNewForm, setShowNewForm] = useState(false)
   const [categories, setCategories] = useState([])
@@ -38,11 +38,11 @@ export default function PromptsPage() {
 
   const handleCreate = async () => {
     if (!form.name || !form.prompt) return
-    const payload = { name: form.name, prompt: form.prompt, negative_prompt: '', tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [], category: form.category || null }
+    const payload = { name: form.name, prompt: form.prompt, category: form.category || null }
     try {
       await promptAPI.create(payload)
       setShowNewForm(false)
-      setForm({ name: '', prompt: '', tags: '', category: '' })
+      setForm({ name: '', prompt: '', category: '' })
       refresh()
     } catch (e) { dialog.alert('失败: ' + e.message) }
   }
@@ -92,7 +92,7 @@ export default function PromptsPage() {
     <MainLayout>
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="flex flex-wrap gap-2 mb-4">
-          <button onClick={() => { setForm({ name: '', prompt: '', tags: '', category: '' }); setShowNewForm(true) }}
+          <button onClick={() => { setForm({ name: '', prompt: '', category: '' }); setShowNewForm(true) }}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}><Plus size={16} /> 新增</button>
           <button onClick={handleExport} disabled={selected.size === 0}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
@@ -122,15 +122,13 @@ export default function PromptsPage() {
                 className="px-3 py-2 rounded-lg text-sm border outline-none focus:ring-1 focus:ring-accent/50" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
               <textarea value={form.prompt} onChange={e => setForm(f => ({ ...f, prompt: e.target.value }))} placeholder="提示词内容" rows={4}
                 className="px-3 py-2 rounded-lg text-sm border outline-none resize-none focus:ring-1 focus:ring-accent/50" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
-              <input value={form.tags} onChange={e => setForm(f => ({ ...f, tags: e.target.value }))} placeholder="标签，逗号分隔"
-                className="px-3 py-2 rounded-lg text-sm border outline-none focus:ring-1 focus:ring-accent/50" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
               <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
                 className="px-3 py-2 rounded-lg text-sm border outline-none focus:ring-1 focus:ring-accent/50" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
                 <option value="">无分类</option>
                 {categories.map(c => <option key={c.slug} value={c.slug}>{c.label}</option>)}
               </select>
               <div className="flex justify-end gap-2">
-                <button onClick={() => { setShowNewForm(false); setForm({ name: '', prompt: '', tags: '', category: '' }) }} className="px-4 py-2 rounded-lg text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>取消</button>
+                <button onClick={() => { setShowNewForm(false); setForm({ name: '', prompt: '', category: '' }) }} className="px-4 py-2 rounded-lg text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>取消</button>
                 <button onClick={handleCreate} className="px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}>保存</button>
               </div>
             </div>

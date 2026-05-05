@@ -201,8 +201,6 @@ export default function UnifiedDetailModal({
     setEditForm({
       name: card.name || '',
       prompt: card.prompt || '',
-      negative_prompt: card.negativePrompt || '',
-      tags: Array.isArray(card.tags) ? card.tags.join(', ') : '',
       category: card.category || '',
       image_path: card.imagePath || '',
     })
@@ -235,8 +233,6 @@ export default function UnifiedDetailModal({
       const payload = {
         name: editForm.name,
         prompt: editForm.prompt,
-        negative_prompt: editForm.negative_prompt || '',
-        tags: editForm.tags ? editForm.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
         category: editForm.category || null,
         image_path: editForm.image_path || null,
       }
@@ -392,20 +388,6 @@ export default function UnifiedDetailModal({
               rows={4} />
           </div>
           <div>
-            <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>反向提示词 (可选)</label>
-            <textarea value={editForm.negative_prompt || ''} onChange={e => setEditForm(f => ({ ...f, negative_prompt: e.target.value }))}
-              className="w-full px-3 py-2 rounded-lg text-sm border outline-none resize-none"
-              style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
-              rows={2} />
-          </div>
-          <div>
-            <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>标签</label>
-            <input value={editForm.tags || ''} onChange={e => setEditForm(f => ({ ...f, tags: e.target.value }))}
-              placeholder="逗号分隔"
-              className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
-              style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
-          </div>
-          <div>
             <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>分类</label>
             <select value={editForm.category || ''} onChange={e => setEditForm(f => ({ ...f, category: e.target.value }))}
               className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
@@ -442,16 +424,6 @@ export default function UnifiedDetailModal({
           {card.categoryLabel && <InfoItem label="分类" value={card.categoryLabel} />}
           {card.createdAt && <InfoItem label="创建时间" value={card.createdAt} />}
         </div>
-        {card.tags?.length > 0 && (
-          <div>
-            <label className="text-xs mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>标签</label>
-            <div className="flex gap-1.5 flex-wrap">
-              {card.tags.map((tag, i) => (
-                <span key={i} className="text-sm" style={{ color: 'var(--text-primary)' }}>{tag}</span>
-              ))}
-            </div>
-          </div>
-        )}
       </>
     )
   }
