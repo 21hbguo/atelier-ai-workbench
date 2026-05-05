@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-import sys,json,re,argparse
+import sys,json,re,argparse,shutil
 from pathlib import Path
 from uuid import uuid4
 from datetime import datetime,timezone
 sys.path.insert(0,str(Path(__file__).resolve().parent.parent.parent))
 from backend.database import get_db,init_db
-from backend.config import EVO_IMAGES_DIR
+from backend.config import EVO_IMAGES_DIR,EVO_IMPORTED_DIR
 EVO_ROOT=Path(__file__).resolve().parent.parent.parent.parent/"evo"
 DATA_DIR=EVO_ROOT/"data"
 CASES_FILE=DATA_DIR/"parsed_cases.json"
@@ -74,7 +74,8 @@ def _merge_records(cases_records:list[dict],evo_records:list[dict])->tuple[dict,
         author=(c["author"] if c and c["author"] else e["author"] if e else "")
         image_path=(c["image_path"] if c else e["image_path"] if e else None)
         sources=[x for x in [f"cases:{key}" if c else None,f"evo:{key}" if e else None] if x]
-        merged[key]={"key":key,"name":title,"prompt":prompt,"author":author,"category":category,"raw_category":raw_cat,"category_label":_category_label(raw_cat,category),"image_path":image_path if (image_path and (EVO_IMAGES_DIR/image_path).exists()) else None,"source":f"evo:{key}","source_refs":sources,"tags":[category]}
+        has_image = image_path and ((EVO_IMAGES_DIR/image_path).exists() or (EVO_IMPORTED_DIR/image_path).exists())
+        merged[key]={"key":key,"name":title,"prompt":prompt,"author":author,"category":category,"raw_category":raw_cat,"category_label":_category_label(raw_cat,category),"image_path":image_path if has_image else None,"source":f"evo:{key}","source_refs":sources,"tags":[category]}
     stats["merged"]=len(merged)
     return merged,stats
 def _ensure_categories(conn,items:dict)->int:
@@ -102,6 +103,22 @@ def _parse_dt(s:str):
         if d.tzinfo is None:d=d.replace(tzinfo=timezone.utc)
         return d
     except Exception:return None
+def _copy_images(merged:dict,dry_run:bool)->dict:
+    stats={"copied":0,"skipped":0,"missing":0}
+    for key,item in merged.items():
+        src=EVO_IMAGES_DIR/f"{key}/output.jpg"
+        dst=EVO_IMPORTED_DIR/f"{key}/output.jpg"
+        if dst.exists():
+            stats["skipped"]+=1
+            continue
+        if not src.exists():
+            stats["missing"]+=1
+            continue
+        if not dry_run:
+            dst.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(src,dst)
+        stats["copied"]+=1
+    return stats
 def _upsert_prompts(conn,merged:dict,mode:str,dry_run:bool)->dict:
     existing=_load_existing(conn)
     existing_prompts={r["prompt"] for r in conn.execute("SELECT prompt FROM prompts WHERE source LIKE 'evo:%'").fetchall()}
@@ -160,8 +177,9 @@ def main():
             print(f"No new data (evo={gen_evo}, cases={gen_cases})")
             return
         new_cat_count=_ensure_categories(conn,merged)
+        copy_stats=_copy_images(merged,args.dry_run)
         upsert_stats=_upsert_prompts(conn,merged,args.mode,args.dry_run)
-        meta={"mode":args.mode,"input":merge_stats,"result":upsert_stats,"new_categories":new_cat_count,"generated_at":{"evo":gen_evo,"cases":gen_cases}}
+        meta={"mode":args.mode,"input":merge_stats,"result":upsert_stats,"copy":copy_stats,"new_categories":new_cat_count,"generated_at":{"evo":gen_evo,"cases":gen_cases}}
         _save_import_source(conn,"evo",gen_evo,len(evo_records),{"mode":args.mode,"upsert":upsert_stats,"conflicts":merge_stats["conflicts"]},args.dry_run)
         _save_import_source(conn,"evo_cases",gen_cases,len(cases_records),{"mode":args.mode,"upsert":upsert_stats,"conflicts":merge_stats["conflicts"]},args.dry_run)
         _save_import_source(conn,"evo_dual",max(gen_evo,gen_cases),len(merged),meta,args.dry_run)

@@ -941,7 +941,7 @@ async def refund_recharge_request(request_id: int, body: dict, admin=Depends(req
         points = int(item.get("points") or 0)
         if points <= 0:
             raise HTTPException(status_code=400, detail="该申请无有效积分，无法退款")
-        conn.execute("UPDATE users SET points = MAX(0, points - %s) WHERE id = %s", (points, user_id))
+        conn.execute("UPDATE users SET points = GREATEST(0, points - %s) WHERE id = %s", (points, user_id))
         new_balance = conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()["points"]
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         conn.execute(

@@ -7,8 +7,15 @@ from uuid import uuid4
 from backend.database import get_db
 from backend.services.category_service import CategoryService
 from backend.services.favorite_service import FavoriteService
-from backend.config import EVO_IMAGES_DIR, UPLOAD_DIR
+from backend.config import EVO_IMAGES_DIR, EVO_IMPORTED_DIR, UPLOAD_DIR
 from backend.services.image_dimensions import get_image_dimensions
+
+
+def _get_evo_image_path(image_path: str):
+    p = EVO_IMPORTED_DIR / image_path
+    if p.exists():
+        return p
+    return EVO_IMAGES_DIR / image_path
 
 
 class PromptService:
@@ -20,7 +27,7 @@ class PromptService:
         if d.get("created_at") is not None:
             d["created_at"] = d["created_at"].strftime("%Y-%m-%d %H:%M:%S") if hasattr(d["created_at"], "strftime") else str(d["created_at"])
         if d.get("image_path") and "/" in d["image_path"]:
-            w,h=get_image_dimensions(str(EVO_IMAGES_DIR / d["image_path"]))
+            w,h=get_image_dimensions(str(_get_evo_image_path(d["image_path"])))
             d["width"]=w
             d["height"]=h
         elif d.get("image_path"):

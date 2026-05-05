@@ -5,8 +5,15 @@ from backend.database import get_db
 from backend.auth import get_current_user, get_optional_user
 from backend.services.image_expiry import mark_image_permanent
 from backend.services.favorite_service import FavoriteService
-from backend.config import GENERATED_IMAGES_DIR, EVO_IMAGES_DIR, UPLOAD_DIR
+from backend.config import GENERATED_IMAGES_DIR, EVO_IMAGES_DIR, EVO_IMPORTED_DIR, UPLOAD_DIR
 from backend.services.image_dimensions import get_image_dimensions
+
+
+def _get_evo_image_path(image_path: str):
+    p = EVO_IMPORTED_DIR / image_path
+    if p.exists():
+        return p
+    return EVO_IMAGES_DIR / image_path
 
 router = APIRouter(prefix="/api/square", tags=["square"])
 
@@ -215,7 +222,7 @@ async def list_shared_items(
                 item["account"] = item.get("username", "")
                 item["is_liked"] = str(item["id"]) in prompt_liked_ids
                 if item.get("image_path"):
-                    width,height=get_image_dimensions(str((EVO_IMAGES_DIR if "/" in str(item["image_path"]) else UPLOAD_DIR) / item["image_path"]))
+                    width,height=get_image_dimensions(str(_get_evo_image_path(item["image_path"]) if "/" in str(item["image_path"]) else UPLOAD_DIR / item["image_path"]))
                     item["width"]=width
                     item["height"]=height
                 prompt_map[str(item["id"])] = item

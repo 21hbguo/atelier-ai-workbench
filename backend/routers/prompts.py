@@ -147,9 +147,11 @@ async def serve_evo_thumbnail(path: str, size: int = Query(400)):
     import hashlib
     from pathlib import Path
     from fastapi.responses import FileResponse
-    from backend.config import EVO_IMAGES_DIR, EVO_THUMBS_DIR
+    from backend.config import EVO_IMAGES_DIR, EVO_THUMBS_DIR, EVO_IMPORTED_DIR
 
-    source = EVO_IMAGES_DIR / path
+    source = EVO_IMPORTED_DIR / path
+    if not source.exists():
+        source = EVO_IMAGES_DIR / path
     if not source.exists():
         raise HTTPException(status_code=404, detail="图片不存在")
 

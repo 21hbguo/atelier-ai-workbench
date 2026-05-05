@@ -42,9 +42,10 @@ GENERATED_IMAGES_DIR = DATA_DIR / "images"
 THUMBS_DIR = DATA_DIR / "thumbs"
 EVO_IMAGES_DIR = Path(os.getenv("EVO_IMAGES_DIR", str(PROJECT_ROOT.parent / "evo" / "images")))
 EVO_THUMBS_DIR = DATA_DIR / "evo_thumbs"
+EVO_IMPORTED_DIR = DATA_DIR / "evo_images"
 
 # 确保目录存在
-for directory in [DATA_DIR, UPLOAD_DIR, GENERATED_IMAGES_DIR, THUMBS_DIR, EVO_THUMBS_DIR]:
+for directory in [DATA_DIR, UPLOAD_DIR, GENERATED_IMAGES_DIR, THUMBS_DIR, EVO_THUMBS_DIR, EVO_IMPORTED_DIR]:
     directory.mkdir(parents=True, exist_ok=True)
 
 # 运行时可修改的配置
