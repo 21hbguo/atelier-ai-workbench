@@ -1,4 +1,5 @@
 import httpx
+import json
 import logging
 from backend.config import get_llm_config
 from backend.services.banned_words import BannedWordsService
@@ -88,3 +89,96 @@ class PromptOptimizer:
         except Exception:
             logger.exception("[prompt_optimizer] LLM API call failed")
             return [prompt]
+
+    @classmethod
+    async def optimize_stream(cls, prompt: str, count: int = 1):
+        llm_cfg = get_llm_config()
+        if not llm_cfg["enabled"] or not llm_cfg["api_key"]:
+            yield {"type": "done", "versions": [prompt]}
+            return
+
+        if len(prompt) < 2 or len(prompt) > 500:
+            yield {"type": "error", "detail": "输入长度需在 2-500 个字符之间"}
+            return
+
+        if BannedWordsService.check(prompt):
+            yield {"type": "done", "versions": [prompt]}
+            return
+
+        try:
+            client = cls._get_client()
+            url = f"{llm_cfg['base_url'].rstrip('/')}/v1/messages"
+            headers = {
+                "x-api-key": llm_cfg["api_key"],
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            }
+            body = {
+                "model": llm_cfg["model"],
+                "max_tokens": max(llm_cfg["max_tokens"], 2000) * count,
+                "system": SYSTEM_PROMPT,
+                "stream": True,
+                "messages": [{"role": "user", "content": f"请生成 {count} 个优化版本。\n用户原始提示词：\n{prompt}"}],
+            }
+
+            full_text = ""
+            current_version = 0
+            buffer = ""
+            sep = "---"
+
+            async with client.stream("POST", url, headers=headers, json=body, timeout=httpx.Timeout(float(llm_cfg["timeout_seconds"]), connect=5.0)) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data_str = line[6:]
+                    if data_str.strip() == "[DONE]":
+                        break
+                    try:
+                        event = json.loads(data_str)
+                    except json.JSONDecodeError:
+                        continue
+
+                    if event.get("type") == "content_block_delta":
+                        delta = event.get("delta", {})
+                        if delta.get("type") == "text_delta":
+                            text = delta.get("text", "")
+                            full_text += text
+                            buffer += text
+
+                            while True:
+                                idx = buffer.find(sep)
+                                if idx < 0:
+                                    break
+                                before = buffer[:idx].strip()
+                                buffer = buffer[idx + len(sep):]
+                                if before:
+                                    checked = before if not BannedWordsService.check(before) else prompt
+                                    yield {"type": "chunk", "text": before, "version_index": current_version, "done": True}
+                                current_version += 1
+
+                            remaining = buffer.strip()
+                            if remaining:
+                                partial = remaining
+                            else:
+                                partial = ""
+                            if partial:
+                                yield {"type": "chunk", "text": partial, "version_index": current_version, "done": False}
+
+            if buffer.strip():
+                last = buffer.strip()
+                checked = last if not BannedWordsService.check(last) else prompt
+                yield {"type": "chunk", "text": last, "version_index": current_version, "done": True}
+
+            versions = [v.strip() for v in full_text.split("---") if v.strip()]
+            if not versions:
+                versions = [prompt]
+            versions = [v if not BannedWordsService.check(v) else prompt for v in versions]
+            yield {"type": "done", "versions": versions[:count]}
+
+        except httpx.TimeoutException:
+            logger.warning("[prompt_optimizer] LLM API timeout (stream)")
+            yield {"type": "error", "detail": "优化超时，请重试"}
+        except Exception:
+            logger.exception("[prompt_optimizer] LLM API stream failed")
+            yield {"type": "error", "detail": "优化失败，请重试"}

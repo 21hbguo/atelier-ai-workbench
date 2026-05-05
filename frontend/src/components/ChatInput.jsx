@@ -33,6 +33,8 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const [showOptimizeOverlay, setShowOptimizeOverlay] = useState(false)
   const [showOptimizeModal, setShowOptimizeModal] = useState(false)
   const [optimizeCount, setOptimizeCount] = useState(2)
+  const [streamingVersions, setStreamingVersions] = useState([])
+  const [isStreaming, setIsStreaming] = useState(false)
   const [toast, setToast] = useState(null)
   const [type, setType] = useState(() => localStorage.getItem('cached_type') || '')
   const [style, setStyle] = useState(() => localStorage.getItem('cached_style') || '')
@@ -309,22 +311,41 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const handleConfirmOptimize = useCallback(async () => {
     setShowOptimizeModal(false)
     setOptimizeLoading(true)
-    try {
-      const fullPrompt = `${type ? `类型为${type} ` : ''}${style ? `风格为${style} ` : ''}${mood ? `氛围为${mood} ` : ''}${prompt.trim()}`.trim()
-      const { data } = await promptOptimizeAPI.optimize(fullPrompt, optimizeCount)
-      setOptimizeResults(data)
-      setShowOptimizeOverlay(true)
-      if (data.points_balance != null) {
-        const u = JSON.parse(localStorage.getItem('user') || 'null')
-        if (u) { u.points = data.points_balance; localStorage.setItem('user', JSON.stringify(u)) }
-        window.dispatchEvent(new Event('points-updated'))
-      }
-    } catch (e) {
-      setToast({ message: typeof e?.message === 'string' ? e.message : '优化失败，请重试', type: 'error' })
-    } finally {
-      setOptimizeLoading(false)
-    }
-  }, [prompt, type, style, mood, optimizeLoading, optimizeCount])
+    setStreamingVersions([{ text: '', done: false }])
+    setIsStreaming(true)
+    setShowOptimizeOverlay(true)
+    setOptimizeResults(null)
+
+    const fullPrompt = `${type ? `类型为${type} ` : ''}${style ? `风格为${style} ` : ''}${mood ? `氛围为${mood} ` : ''}${prompt.trim()}`.trim()
+
+    await promptOptimizeAPI.optimizeStream(fullPrompt, optimizeCount, {
+      onChunk: (data) => {
+        setStreamingVersions(prev => {
+          const next = [...prev]
+          while (next.length <= data.version_index) next.push({ text: '', done: false })
+          next[data.version_index] = { text: data.text, done: !!data.done }
+          return next
+        })
+      },
+      onDone: (data) => {
+        setOptimizeResults({ versions: data.versions, original: fullPrompt })
+        setIsStreaming(false)
+        setOptimizeLoading(false)
+        if (data.points_balance != null) {
+          const u = JSON.parse(localStorage.getItem('user') || 'null')
+          if (u) { u.points = data.points_balance; localStorage.setItem('user', JSON.stringify(u)) }
+          window.dispatchEvent(new Event('points-updated'))
+        }
+      },
+      onError: (detail) => {
+        setToast({ message: detail || '优化失败，请重试', type: 'error' })
+        setIsStreaming(false)
+        setOptimizeLoading(false)
+        setShowOptimizeOverlay(false)
+        setStreamingVersions([])
+      },
+    })
+  }, [prompt, type, style, mood, optimizeCount])
 
   const handleSelectOptimized = useCallback((text) => {
     let cleaned = text
@@ -339,12 +360,15 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     setPrompt(cleaned)
     setShowOptimizeOverlay(false)
     setOptimizeResults(null)
+    setStreamingVersions([])
   }, [type, style, mood])
 
   const handleDismissOptimize = useCallback(() => {
+    if (isStreaming) return
     setShowOptimizeOverlay(false)
     setOptimizeResults(null)
-  }, [])
+    setStreamingVersions([])
+  }, [isStreaming])
 
   useImperativeHandle(ref, () => ({
     addFiles(files) { handleFiles(files) },
@@ -394,31 +418,42 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   return (
     <>
       <div className="w-full px-4 pt-2 pb-2 relative">
-        {showOptimizeOverlay && optimizeResults && (
-          <div className="absolute bottom-full left-0 right-0 mb-3 z-30" onClick={e => e.stopPropagation()}>
-            <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-lg)' }}>
-              <div className="flex items-center justify-between px-4 py-2.5 border-b" style={{ borderColor: 'var(--border-color)' }}>
-                <div className="flex items-center gap-1.5">
-                  <Sparkles size={14} style={{ color: 'var(--accent)' }} />
-                  <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>AI 优化结果</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: 'var(--accent)', color: '#fff', opacity: 0.85 }}>{optimizeResults.versions.length}</span>
-                </div>
-                <button onClick={handleDismissOptimize} className="p-1 rounded-lg hover:bg-bg-hover transition-colors"><X size={14} style={{ color: 'var(--text-secondary)' }} /></button>
-              </div>
-              <div className="p-2 space-y-1.5 max-h-56 overflow-y-auto">
-                {optimizeResults.versions.map((v, i) => (
-                  <div key={i} className="group rounded-xl border p-3 transition-all hover:border-[var(--accent)]" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
-                    <div className="flex items-start gap-2">
-                      <span className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold mt-0.5" style={{ background: 'var(--accent)', color: '#fff' }}>{i + 1}</span>
-                      <p className="flex-1 text-xs leading-relaxed min-w-0" style={{ color: 'var(--text-primary)', wordBreak: 'break-word' }}>{v}</p>
-                      <button onClick={() => handleSelectOptimized(v)} className="flex-shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-medium opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" style={{ background: 'var(--accent)', color: '#fff' }}>使用</button>
-                    </div>
+        {showOptimizeOverlay && (isStreaming || optimizeResults) && (() => {
+          const displayVersions = optimizeResults
+            ? optimizeResults.versions.map((v, i) => ({ text: v, done: true }))
+            : streamingVersions
+          return (
+            <div className="absolute bottom-full left-0 right-0 mb-3 z-30" onClick={e => e.stopPropagation()}>
+              <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-lg)' }}>
+                <div className="flex items-center justify-between px-4 py-2.5 border-b" style={{ borderColor: 'var(--border-color)' }}>
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles size={14} style={{ color: 'var(--accent)' }} />
+                    <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>AI 优化结果</span>
+                    {isStreaming
+                      ? <span className="text-[10px] px-1.5 py-0.5 rounded-full animate-pulse" style={{ background: 'var(--accent)', color: '#fff', opacity: 0.85 }}>生成中</span>
+                      : <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: 'var(--accent)', color: '#fff', opacity: 0.85 }}>{optimizeResults.versions.length}</span>
+                    }
                   </div>
-                ))}
+                  {!isStreaming && <button onClick={handleDismissOptimize} className="p-1 rounded-lg hover:bg-bg-hover transition-colors"><X size={14} style={{ color: 'var(--text-secondary)' }} /></button>}
+                </div>
+                <div className="p-2 space-y-1.5 max-h-56 overflow-y-auto">
+                  {displayVersions.map((v, i) => (
+                    <div key={i} className="group rounded-xl border p-3 transition-all hover:border-[var(--accent)]" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+                      <div className="flex items-start gap-2">
+                        <span className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold mt-0.5" style={{ background: 'var(--accent)', color: '#fff' }}>{i + 1}</span>
+                        <p className="flex-1 text-xs leading-relaxed min-w-0" style={{ color: 'var(--text-primary)', wordBreak: 'break-word' }}>
+                          {v.text}
+                          {isStreaming && !v.done && <span className="inline-block w-0.5 h-3.5 ml-0.5 align-middle animate-pulse" style={{ background: 'var(--accent)' }} />}
+                        </p>
+                        {v.done && <button onClick={() => handleSelectOptimized(v.text)} className="flex-shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-medium opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" style={{ background: 'var(--accent)', color: '#fff' }}>使用</button>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )
+        })()}
         {showOptimizeModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowOptimizeModal(false)}>
             <div className="absolute inset-0 bg-black/50" />

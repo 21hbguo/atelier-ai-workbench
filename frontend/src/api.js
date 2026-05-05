@@ -86,6 +86,43 @@ export const statsAPI = { get: () => api.get('/stats'), system: () => api.get('/
 
 export const promptOptimizeAPI = {
   optimize: (prompt, count = 1) => api.post('/prompt/optimize', { prompt, count }, { timeout: 60000 }),
+  optimizeStream: async (prompt, count, { onChunk, onDone, onError }) => {
+    try {
+      const resp = await fetch('/api/prompt/optimize/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ prompt, count }),
+      })
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}))
+        onError?.(data.detail || `请求失败 (${resp.status})`)
+        return
+      }
+      const reader = resp.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop()
+        let eventType = ''
+        for (const line of lines) {
+          if (line.startsWith('event: ')) { eventType = line.slice(7).trim() }
+          else if (line.startsWith('data: ')) {
+            const data = JSON.parse(line.slice(6))
+            if (eventType === 'chunk') onChunk?.(data)
+            else if (eventType === 'done') onDone?.(data)
+            else if (eventType === 'error') onError?.(data.detail)
+          }
+        }
+      }
+    } catch (e) {
+      onError?.(e.message || '网络错误')
+    }
+  },
 }
 
 export const authAPI = {
