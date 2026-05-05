@@ -49,6 +49,36 @@ for directory in [DATA_DIR, UPLOAD_DIR, GENERATED_IMAGES_DIR, THUMBS_DIR, EVO_TH
 
 # 运行时可修改的配置
 CONFIG_FILE = DATA_DIR / "config.json"
+ENV_FILE = PROJECT_ROOT / ".env"
+
+# 敏感字段：config.json 中不保存，改为存入 .env
+_SENSITIVE_KEYS = {
+    "api_key": "IMAGE_GEN_API_KEY",
+    "github_hosting_token": "GITHUB_HOSTING_TOKEN",
+    "smtp_password": "SMTP_PASSWORD",
+    "smtp_sender": "SMTP_SENDER",
+    "llm_api_key": "LLM_API_KEY",
+}
+
+def _update_env_file(key: str, value: str):
+    """更新 .env 文件中的指定 key，不存在则追加"""
+    lines = []
+    if ENV_FILE.exists():
+        lines = ENV_FILE.read_text(encoding="utf-8").splitlines(keepends=True)
+    found = False
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("#") or "=" not in stripped:
+            continue
+        if stripped.split("=", 1)[0].strip() == key:
+            lines[i] = f"{key}={value}\n"
+            found = True
+            break
+    if not found:
+        if lines and not lines[-1].endswith("\n"):
+            lines[-1] += "\n"
+        lines.append(f"{key}={value}\n")
+    ENV_FILE.write_text("".join(lines), encoding="utf-8")
 
 _runtime_config = {
     "api_url": os.getenv("IMAGE_GEN_API_URL", "https://api.wuyinkeji.com/api/async"),
@@ -102,14 +132,23 @@ def _load_runtime_config():
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 saved = json.load(f)
-            _runtime_config.update(saved)
+            for k, v in saved.items():
+                if k not in _SENSITIVE_KEYS:
+                    _runtime_config[k] = v
         except Exception:
             pass
 
 
 def _save_runtime_config():
+    to_save = {k: v for k, v in _runtime_config.items() if k not in _SENSITIVE_KEYS}
+    # generation_providers 中的 api_key 也属于敏感字段，保存时清除
+    if "generation_providers" in to_save:
+        to_save["generation_providers"] = {
+            pk: {k: v for k, v in pv.items() if k != "api_key"}
+            for pk, pv in to_save["generation_providers"].items()
+        }
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(_runtime_config, f, ensure_ascii=False, indent=2)
+        json.dump(to_save, f, ensure_ascii=False, indent=2)
 
 
 def get_config():
@@ -119,6 +158,10 @@ def get_config():
 def update_config(new_values: dict):
     if "recharge_packages" in new_values:
         new_values["recharge_packages"] = normalize_recharge_packages(new_values.get("recharge_packages"))
+    # 敏感字段写入 .env，其余写入 config.json
+    for k, env_key in _SENSITIVE_KEYS.items():
+        if k in new_values:
+            _update_env_file(env_key, str(new_values[k]))
     _runtime_config.update(new_values)
     _save_runtime_config()
 def get_limit_config():
