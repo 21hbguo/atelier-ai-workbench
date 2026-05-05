@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Trash2, Users, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket, Megaphone, Wallet, Key, SlidersHorizontal, BarChart3, Mail } from 'lucide-react'
+import { Trash2, Users, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket, Megaphone, Wallet, Key, SlidersHorizontal, BarChart3, Mail, Tags } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { adminAPI, announcementAPI, configAPI, statsAPI } from '../api'
+import { adminAPI, announcementAPI, configAPI, statsAPI, promptAPI } from '../api'
 import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts'
 import MainLayout from '../components/MainLayout'
 import PageLayout from '../components/PageLayout'
@@ -14,6 +14,7 @@ import AdminAnnouncementsTab from './admin-tabs/AdminAnnouncementsTab'
 import AdminBannedTab from './admin-tabs/AdminBannedTab'
 import AdminHostingTab from './admin-tabs/AdminHostingTab'
 import AdminFinanceTab from './admin-tabs/AdminFinanceTab'
+import AdminClassificationTab from './admin-tabs/AdminClassificationTab'
 import { readUser } from '../auth'
 import { useAppDialog } from '../components/AppDialogProvider'
 
@@ -93,7 +94,7 @@ export default function AdminPage() {
   const [newTitle, setNewTitle] = useState('')
   const [newContent, setNewContent] = useState('')
   const [creatingAnnouncement, setCreatingAnnouncement] = useState(false)
-  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', register_enabled: true, image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', recharge_packages: defaultRechargePackages, generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3, github_hosting_enabled: false, github_hosting_repo: '', github_hosting_token: '', github_hosting_branch: 'main', smtp_server: 'smtp.qq.com', smtp_port: 465, smtp_password: '', smtp_sender: '', smtp_sender_name: 'Atelier·AI造梦工坊' })
+  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', register_enabled: true, image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', recharge_packages: defaultRechargePackages, generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_cost_per_optimize: 10, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3, github_hosting_enabled: false, github_hosting_repo: '', github_hosting_token: '', github_hosting_branch: 'main', smtp_server: 'smtp.qq.com', smtp_port: 465, smtp_password: '', smtp_sender: '', smtp_sender_name: 'Atelier·AI造梦工坊' })
   const [configSaving, setConfigSaving] = useState(false)
   const [defaultModelId, setDefaultModelId] = useState('image-default')
   const [generationModelsText, setGenerationModelsText] = useState('{}')
@@ -133,6 +134,14 @@ export default function AdminPage() {
   const [financeRuleSaving, setFinanceRuleSaving] = useState(false)
   const [financeRuleDraft, setFinanceRuleDraft] = useState({ id: null, provider_id: '', model_id: '', quota_per_success: '', enabled: true, remark: '' })
 
+  // AI 分类
+  const [clsTasks, setClsTasks] = useState([])
+  const [clsTotal, setClsTotal] = useState(0)
+  const [clsPage, setClsPage] = useState(1)
+  const [clsDetail, setClsDetail] = useState(null)
+  const [clsSelected, setClsSelected] = useState(new Set())
+  const [clsCategories, setClsCategories] = useState([])
+
   useEffect(() => { setUserPage(1) }, [userQuery])
   useEffect(() => { setHistoryPage(1) }, [historyQuery])
   useEffect(() => { setBannedWordsPage(1) }, [bannedWordsQuery])
@@ -167,6 +176,8 @@ export default function AdminPage() {
   useEffect(() => { configAPI.models().then(({ data }) => { const rows = data?.models || []; const m = {}; for (const r of rows) m[r.model_id] = r.label || r.model_id; setModelLabelMap(m) }).catch(() => {}) }, [])
   useEffect(() => { if (tab === 'evlogs') fetchEvLogs() }, [tab, evPage, evQuery])
   useEffect(() => { setEvPage(1) }, [evQuery])
+  useEffect(() => { if (tab === 'classification') fetchClsTasks() }, [tab, clsPage])
+  useEffect(() => { promptAPI.categories().then(({ data }) => setClsCategories(data || [])).catch(() => {}) }, [])
 
   const fetchUsers = async () => {
     setLoading(true)
@@ -194,6 +205,19 @@ export default function AdminPage() {
       setEvLogs(data?.items || [])
       setEvTotal(data?.total || 0)
     } catch (e) { dialog.alert(e.message || '加载失败') } finally { setLoading(false) }
+  }
+  const fetchClsTasks = async () => {
+    try {
+      const { data } = await adminAPI.listClassificationTasks(clsPage, 20)
+      setClsTasks(data?.items || [])
+      setClsTotal(data?.total || 0)
+    } catch (e) { dialog.alert(e.message || '加载失败') }
+  }
+  const handleCreateClsTask = async () => {
+    try {
+      await adminAPI.createClassificationTask()
+      fetchClsTasks()
+    } catch (e) { dialog.alert(e.message || '创建失败') }
   }
   const fetchSystemStats = async (rangeValue = statsRange) => {
     setLoading(true)
@@ -229,6 +253,7 @@ export default function AdminPage() {
         recharge_packages: Array.isArray(data.recharge_packages) && data.recharge_packages.length ? data.recharge_packages.map(item => ({ amount: item.amount, points: item.points, label: item.label })) : defaultRechargePackages.map(item => ({ ...item })),
         generate_concurrent_limit_per_user: Number(data.generate_concurrent_limit_per_user || 10),
         points_cost_per_generation: Number(data.points_cost_per_generation || 10),
+        points_cost_per_optimize: Number(data.points_cost_per_optimize || 10),
         points_checkin_reward: Number(data.points_checkin_reward || 10),
         points_register_bonus: Number(data.points_register_bonus || 50),
         points_migration_amount: Number(data.points_migration_amount || 50),
@@ -358,12 +383,12 @@ export default function AdminPage() {
   const handleAddRechargePackage = () => setRuntimeConfig(prev => { const list = Array.isArray(prev.recharge_packages) ? prev.recharge_packages : []; return { ...prev, recharge_packages: [...list, { amount: '', points: '', label: `套餐${list.length + 1}` }] } })
   const handleDeleteRechargePackage = (idx) => setRuntimeConfig(prev => { const list = Array.isArray(prev.recharge_packages) ? prev.recharge_packages : []; return { ...prev, recharge_packages: list.length <= 1 ? list : list.filter((_, i) => i !== idx) } })
   const handleSaveConfig = async () => {
-    const n = ['generate_concurrent_limit_per_user', 'points_cost_per_generation', 'points_checkin_reward', 'points_register_bonus', 'points_migration_amount', 'login_rate_limit_per_minute_per_ip', 'register_rate_limit_per_minute_per_ip', 'smtp_port', 'llm_max_tokens', 'llm_timeout_seconds']
+    const n = ['generate_concurrent_limit_per_user', 'points_cost_per_generation', 'points_cost_per_optimize', 'points_checkin_reward', 'points_register_bonus', 'points_migration_amount', 'login_rate_limit_per_minute_per_ip', 'register_rate_limit_per_minute_per_ip', 'smtp_port', 'llm_max_tokens', 'llm_timeout_seconds']
     const payload = { ...runtimeConfig }
     payload.default_model_id = (defaultModelId || '').trim() || 'image-default'
     let recharge_packages = []
     for (const k of n) payload[k] = Number(payload[k])
-    if (payload.generate_concurrent_limit_per_user < 1 || payload.points_cost_per_generation < 1 || payload.login_rate_limit_per_minute_per_ip < 1 || payload.register_rate_limit_per_minute_per_ip < 1 || payload.points_checkin_reward < 0 || payload.points_register_bonus < 0 || payload.points_migration_amount < 0) { dialog.alert('限制配置不合法'); return }
+    if (payload.generate_concurrent_limit_per_user < 1 || payload.points_cost_per_generation < 1 || payload.points_cost_per_optimize < 1 || payload.login_rate_limit_per_minute_per_ip < 1 || payload.register_rate_limit_per_minute_per_ip < 1 || payload.points_checkin_reward < 0 || payload.points_register_bonus < 0 || payload.points_migration_amount < 0) { dialog.alert('限制配置不合法'); return }
     try {
       recharge_packages = Array.isArray(payload.recharge_packages) ? payload.recharge_packages : []
       if (!Array.isArray(recharge_packages) || !recharge_packages.length) throw new Error('充值套餐需要 JSON 数组且至少保留一项')
@@ -729,7 +754,7 @@ export default function AdminPage() {
     <MainLayout>
       <div className="admin-dense flex-1 overflow-y-auto p-3 sm:p-4">
         <div className="flex gap-1 p-0.5 rounded-lg mb-4 overflow-x-auto scrollbar-hide" style={{ background: 'var(--border-color)', scrollbarWidth: 'none' }}>
-          {[{ k: 'stats', l: '系统统计', i: BarChart3 }, { k: 'finance', l: '财务中心', i: Wallet }, { k: 'users', l: '用户管理', i: Users }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'recharge', l: '充值审核', i: Ticket }, { k: 'announcements', l: '公告管理', i: Megaphone }, { k: 'evlogs', l: '邮件验证', i: Mail }, { k: 'config', l: '配置中心', i: SlidersHorizontal }].map(({ k, l, i: Icon }) => (
+          {[{ k: 'stats', l: '系统统计', i: BarChart3 }, { k: 'finance', l: '财务中心', i: Wallet }, { k: 'users', l: '用户管理', i: Users }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'classification', l: 'AI分类', i: Tags }, { k: 'recharge', l: '充值审核', i: Ticket }, { k: 'announcements', l: '公告管理', i: Megaphone }, { k: 'evlogs', l: '邮件验证', i: Mail }, { k: 'config', l: '配置中心', i: SlidersHorizontal }].map(({ k, l, i: Icon }) => (
             <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
               <Icon size={14} />{l}{k === 'recharge' && rechargePendingCount > 0 && <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] text-white" style={{ background: 'var(--color-error)' }}>{rechargePendingCount}</span>}
@@ -1138,6 +1163,20 @@ export default function AdminPage() {
               <Pagination page={codesPage} totalPages={Math.ceil(codesTotal / 20)} onPageChange={setCodesPage} />
             </div>
           </div>
+        ) : tab === 'classification' ? (
+          <AdminClassificationTab
+            tasks={clsTasks}
+            total={clsTotal}
+            page={clsPage}
+            setPage={setClsPage}
+            detail={clsDetail}
+            setDetail={setClsDetail}
+            selected={clsSelected}
+            setSelected={setClsSelected}
+            onCreateTask={handleCreateClsTask}
+            categories={clsCategories}
+            onRefreshTasks={fetchClsTasks}
+          />
         ) : tab === 'config' ? (
           <div className="space-y-4">
             <div className="flex items-center gap-2">
@@ -1160,7 +1199,7 @@ export default function AdminPage() {
                 </button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {[{ k: 'generate_concurrent_limit_per_user', l: '生成并发上限/用户', min: 1 }, { k: 'points_cost_per_generation', l: '每次生成扣分', min: 1 }, { k: 'points_checkin_reward', l: '每日签到奖励', min: 0 }, { k: 'points_register_bonus', l: '注册送分', min: 0 }, { k: 'points_migration_amount', l: '补发积分值', min: 0 }, { k: 'login_rate_limit_per_minute_per_ip', l: '登录限流/分钟/IP', min: 1 }, { k: 'register_rate_limit_per_minute_per_ip', l: '注册限流/分钟/IP', min: 1 }].map(item => (
+                {[{ k: 'generate_concurrent_limit_per_user', l: '生成并发上限/用户', min: 1 }, { k: 'points_cost_per_generation', l: '每次生成扣分', min: 1 }, { k: 'points_cost_per_optimize', l: '每次优化扣分', min: 1 }, { k: 'points_checkin_reward', l: '每日签到奖励', min: 0 }, { k: 'points_register_bonus', l: '注册送分', min: 0 }, { k: 'points_migration_amount', l: '补发积分值', min: 0 }, { k: 'login_rate_limit_per_minute_per_ip', l: '登录限流/分钟/IP', min: 1 }, { k: 'register_rate_limit_per_minute_per_ip', l: '注册限流/分钟/IP', min: 1 }].map(item => (
                   <div key={item.k}>
                     <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>{item.l}</label>
                     <input type="number" min={item.min} value={runtimeConfig[item.k]} onChange={e => onConfigInput(item.k, e.target.value)} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />

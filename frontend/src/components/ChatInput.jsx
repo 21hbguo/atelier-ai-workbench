@@ -21,7 +21,7 @@ function normalizeImageName(name, type, fallback = 'reference') {
   return `${base}.${getImageExt(type, raw)}`
 }
 
-const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost = 10 }, ref) {
+const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost = 10, optimizeCost = 10 }, ref) {
   const [prompt, setPrompt] = useState('')
   const [images, setImages] = useState([])
   const [showParams, setShowParams] = useState(false)
@@ -319,6 +319,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
       setShowOptimizeOverlay(true)
       setOptimizeResults(null)
 
+      let doneCalled = false
       await promptOptimizeAPI.optimizeStream(fullPrompt, optimizeCount, {
         onChunk: (data) => {
           setStreamingVersions(prev => {
@@ -329,6 +330,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
           })
         },
         onDone: (data) => {
+          doneCalled = true
           setOptimizeResults({ versions: data.versions, original: fullPrompt })
           setIsStreaming(false)
           setOptimizeLoading(false)
@@ -339,6 +341,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
           }
         },
         onError: async (detail) => {
+          doneCalled = true
           setIsStreaming(false)
           setStreamingVersions([])
           try {
@@ -358,6 +361,10 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
           }
         },
       })
+      if (!doneCalled) {
+        setOptimizeLoading(false)
+        setIsStreaming(false)
+      }
     } else {
       try {
         const { data } = await promptOptimizeAPI.optimize(fullPrompt, optimizeCount)
@@ -508,7 +515,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
               </div>
               <div className="flex items-center justify-between mb-4 px-1">
                 <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>消耗积分</span>
-                <span className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>{requestCost * optimizeCount}</span>
+                <span className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>{optimizeCost * optimizeCount}</span>
               </div>
               <div className="flex gap-2">
                 <button onClick={() => setShowOptimizeModal(false)} className="flex-1 py-2 rounded-lg text-xs font-medium border transition-colors" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>取消</button>

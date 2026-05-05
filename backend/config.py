@@ -93,6 +93,7 @@ _runtime_config = {
     "recharge_packages": _safe_json_list(os.getenv("RECHARGE_PACKAGES_JSON", ""), [{"amount": 9.9, "points": 120, "label": "体验包"}, {"amount": 29.9, "points": 400, "label": "进阶包"}, {"amount": 59.9, "points": 900, "label": "超值包"}]),
     "generate_concurrent_limit_per_user": int(os.getenv("GENERATE_CONCURRENT_LIMIT_PER_USER", "10")),
     "points_cost_per_generation": int(os.getenv("POINTS_COST_PER_GENERATION", "10")),
+    "points_cost_per_optimize": int(os.getenv("POINTS_COST_PER_OPTIMIZE", "10")),
     "points_checkin_reward": int(os.getenv("POINTS_CHECKIN_REWARD", "10")),
     "points_register_bonus": int(os.getenv("POINTS_REGISTER_BONUS", "50")),
     "points_migration_amount": int(os.getenv("POINTS_MIGRATION_AMOUNT", "50")),
@@ -179,7 +180,7 @@ def update_config(new_values: dict):
 def get_limit_config():
     cfg = get_config()
     out = {}
-    for k in ["generate_concurrent_limit_per_user", "points_cost_per_generation", "points_checkin_reward", "points_register_bonus", "points_migration_amount", "login_rate_limit_per_minute_per_ip", "register_rate_limit_per_minute_per_ip"]:
+    for k in ["generate_concurrent_limit_per_user", "points_cost_per_generation", "points_cost_per_optimize", "points_checkin_reward", "points_register_bonus", "points_migration_amount", "login_rate_limit_per_minute_per_ip", "register_rate_limit_per_minute_per_ip"]:
         try:
             v = int(cfg.get(k, _runtime_config_defaults[k]))
         except Exception:
@@ -187,6 +188,7 @@ def get_limit_config():
         out[k] = v if v >= 0 else int(_runtime_config_defaults[k])
     if out["generate_concurrent_limit_per_user"] < 1: out["generate_concurrent_limit_per_user"] = 1
     if out["points_cost_per_generation"] < 1: out["points_cost_per_generation"] = 1
+    if out["points_cost_per_optimize"] < 1: out["points_cost_per_optimize"] = 1
     if out["points_checkin_reward"] < 0: out["points_checkin_reward"] = 0
     if out["points_register_bonus"] < 0: out["points_register_bonus"] = 0
     if out["points_migration_amount"] < 0: out["points_migration_amount"] = 0

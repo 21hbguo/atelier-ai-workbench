@@ -8,6 +8,9 @@ class PointsService:
     def cost_per_generation(cls) -> int:
         return get_limit_config()["points_cost_per_generation"]
     @classmethod
+    def cost_per_optimize(cls) -> int:
+        return get_limit_config()["points_cost_per_optimize"]
+    @classmethod
     def checkin_reward(cls) -> int:
         return get_limit_config()["points_checkin_reward"]
     @classmethod

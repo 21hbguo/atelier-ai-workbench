@@ -66,6 +66,7 @@ export default function ChatPage() {
   const [selectedUserId, setSelectedUserId] = useState(null)
   const [points, setPoints] = useState(currentUser?.points ?? 0)
   const [requestCost, setRequestCost] = useState(10)
+  const [optimizeCost, setOptimizeCost] = useState(10)
   const [loadError, setLoadError] = useState('')
   const [selectedCardIndex, setSelectedCardIndex] = useState(null)
   const [detailCards, setDetailCards] = useState([])
@@ -215,7 +216,10 @@ export default function ChatPage() {
     return () => window.removeEventListener('points-updated', handleUpdate)
   }, [])
   useEffect(() => {
-    configAPI.get().then(res => setRequestCost(Math.max(0, Number(res.data?.points_cost_per_generation) || 10))).catch(() => setRequestCost(10))
+    configAPI.get().then(res => {
+      setRequestCost(Math.max(0, Number(res.data?.points_cost_per_generation) || 10))
+      setOptimizeCost(Math.max(0, Number(res.data?.points_cost_per_optimize) || 10))
+    }).catch(() => { setRequestCost(10); setOptimizeCost(10) })
   }, [])
 
   useEffect(() => {
@@ -620,7 +624,7 @@ export default function ChatPage() {
           </div>
         </div>
       )}
-      <ChatInput ref={inputRef} onSubmit={handleSubmit} loading={loading} requestCost={requestCost} />
+      <ChatInput ref={inputRef} onSubmit={handleSubmit} loading={loading} requestCost={requestCost} optimizeCost={optimizeCost} />
     </div>
   )
 
