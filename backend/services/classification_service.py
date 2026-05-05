@@ -131,6 +131,38 @@ class ClassificationService:
             return {"id": task["id"], "status": task["status"], "item_type": item_type, "total_items": task["total_items"], "created_at": str(task["created_at"])}
 
     @classmethod
+    def create_review_task(cls, admin_id: int, item_type: str, category_slug: str) -> Dict[str, Any]:
+        """创建分类审查任务，重新审查指定分类下的项目"""
+        with get_db() as conn:
+            if item_type == "image":
+                rows = conn.execute(
+                    "SELECT id, filename, prompt, category FROM square_images WHERE category = %s AND COALESCE(is_frozen, FALSE) = FALSE",
+                    (category_slug,)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT id, name, prompt, category FROM prompts WHERE category = %s AND COALESCE(is_frozen, FALSE) = FALSE",
+                    (category_slug,)
+                ).fetchall()
+
+            if not rows:
+                raise ValueError(f"分类 '{category_slug}' 下没有可审查的项目")
+
+            task = conn.execute(
+                "INSERT INTO classification_tasks (status, item_type, total_items, created_by) VALUES ('processing', %s, %s, %s) RETURNING id, status, total_items, created_at",
+                (item_type, len(rows), admin_id),
+            ).fetchone()
+
+            with conn.cursor() as cur:
+                for r in rows:
+                    name = r.get("filename") or r.get("name") or ""
+                    cur.execute(
+                        "INSERT INTO classification_results (task_id, item_id, item_type, item_name, item_prompt, item_category) VALUES (%s, %s, %s, %s, %s, %s)",
+                        (task["id"], str(r["id"]), item_type, name, (r["prompt"] or "")[:500], r["category"]),
+                    )
+            return {"id": task["id"], "status": task["status"], "item_type": item_type, "total_items": task["total_items"], "created_at": str(task["created_at"])}
+
+    @classmethod
     async def run_classification(cls, task_id: int):
         try:
             cls._push_log(task_id, "info", "开始分类任务")

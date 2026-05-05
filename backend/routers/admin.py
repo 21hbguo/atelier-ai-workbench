@@ -1265,6 +1265,28 @@ async def create_classification_task(body: dict = {}, admin=Depends(require_admi
     return task
 
 
+@router.post("/classification/review")
+async def create_review_task(body: dict, admin=Depends(require_admin)):
+    """创建分类审查任务，重新审查指定分类下的项目"""
+    item_type = body.get("item_type", "prompt")
+    category_slug = body.get("category_slug", "")
+    if not category_slug:
+        raise HTTPException(status_code=400, detail="category_slug 不能为空")
+    if item_type not in ("prompt", "image"):
+        raise HTTPException(status_code=400, detail="item_type 必须是 prompt 或 image")
+    try:
+        task = ClassificationService.create_review_task(
+            admin_id=admin["user_id"],
+            item_type=item_type,
+            category_slug=category_slug,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    import asyncio
+    asyncio.create_task(ClassificationService.run_classification(task["id"]))
+    return task
+
+
 @router.get("/classification/tasks")
 async def list_classification_tasks(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), admin=Depends(require_admin)):
     return ClassificationService.list_tasks(page=page, size=size)

@@ -194,6 +194,7 @@ export const adminAPI = {
   financeTasks: (range = '30d', page = 1, size = 20, provider_id, model_id, status) => { const params = { range, page, size }; if (provider_id) params.provider_id = provider_id; if (model_id) params.model_id = model_id; if (status) params.status = status; return api.get('/admin/finance/tasks', { params }) },
   emailVerifications: (page = 1, size = 20, query) => { const params = { page, size }; if (query) params.query = query; return api.get('/admin/email-verifications', { params }) },
   createClassificationTask: (itemType = 'prompt') => api.post('/admin/classification/tasks', { item_type: itemType }),
+  reviewClassification: (itemType, categorySlug) => api.post('/admin/classification/review', { item_type: itemType, category_slug: categorySlug }),
   listClassificationTasks: (page = 1, size = 20) => api.get('/admin/classification/tasks', { params: { page, size } }),
   getClassificationTask: taskId => api.get(`/admin/classification/tasks/${taskId}`),
   approveClassification: (taskId, resultIds) => api.post(`/admin/classification/tasks/${taskId}/approve`, { result_ids: resultIds }),

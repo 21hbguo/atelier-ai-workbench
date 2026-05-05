@@ -31,6 +31,8 @@ export default function AdminClassificationTab({
   const [liveLogs, setLiveLogs] = useState([])
   const [liveTaskId, setLiveTaskId] = useState(null)
   const [showLiveLogs, setShowLiveLogs] = useState(false)
+  const [reviewCategory, setReviewCategory] = useState('')
+  const [reviewing, setReviewing] = useState(false)
   const logEndRef = useRef(null)
   const eventSourceRef = useRef(null)
 
@@ -95,12 +97,24 @@ export default function AdminClassificationTab({
     setCreating(true)
     try {
       const result = await onCreateTask(createType)
-      // 订阅新任务的日志
       if (result?.id) {
         subscribeLogs(result.id)
       }
     } catch {}
     setCreating(false)
+  }
+
+  const handleReview = async () => {
+    if (!reviewCategory) return
+    setReviewing(true)
+    try {
+      const { data } = await adminAPI.reviewClassification(createType, reviewCategory)
+      if (data?.id) {
+        subscribeLogs(data.id)
+      }
+      onRefreshTasks()
+    } catch {}
+    setReviewing(false)
   }
 
   const handleApprove = async () => {
@@ -182,7 +196,7 @@ export default function AdminClassificationTab({
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>AI 自动分类</h3>
-          <div className="flex gap-2 items-center">
+          <div className="flex gap-2 items-center flex-wrap">
             <select value={createType} onChange={e => setCreateType(e.target.value)} className="px-2 py-1.5 rounded-lg text-xs border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}>
               <option value="prompt">提示词</option>
               <option value="image">作品</option>
@@ -194,6 +208,16 @@ export default function AdminClassificationTab({
               {creating ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
               {creating ? '创建中...' : '开始新分类'}
             </button>
+            <div className="flex items-center gap-1.5">
+              <select value={reviewCategory} onChange={e => setReviewCategory(e.target.value)} className="px-2 py-1.5 rounded-lg text-xs border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}>
+                <option value="">选择分类审查...</option>
+                {categories.map(c => <option key={c.slug} value={c.slug}>{c.label}</option>)}
+              </select>
+              <button onClick={handleReview} disabled={!reviewCategory || reviewing} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white hover:opacity-90 disabled:opacity-50" style={{ background: 'var(--color-warning)' }}>
+                {reviewing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                {reviewing ? '审查中...' : '重新审查'}
+              </button>
+            </div>
           </div>
         </div>
         <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
