@@ -317,8 +317,13 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
 
   const handleSelectOptimized = useCallback((text) => {
     let cleaned = text
-    if (style && cleaned.startsWith(`风格为${style}`)) cleaned = cleaned.slice(`风格为${style}`.length).trimStart()
-    if (mood && cleaned.startsWith(`氛围为${mood}`)) cleaned = cleaned.slice(`氛围为${mood}`.length).trimStart()
+    const stripPrefix = (s, label, val) => {
+      if (!val) return s
+      const re = new RegExp(`^${label}为${val}[,，\\s]*`)
+      return s.replace(re, '')
+    }
+    cleaned = stripPrefix(cleaned, '风格', style)
+    cleaned = stripPrefix(cleaned, '氛围', mood)
     setPrompt(cleaned)
     setShowOptimizeOverlay(false)
     setOptimizeResults(null)
