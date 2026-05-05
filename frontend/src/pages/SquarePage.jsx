@@ -272,6 +272,7 @@ function WorksTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, i
         selectable={isAdmin && selectMode}
         selected={checked}
         onToggleSelect={isAdmin ? toggleCheck : undefined}
+        onSelectionChange={isAdmin ? setChecked : undefined}
         renderOverlay={isAdmin ? (card) => (
           <>
             {card.isFrozen && (
@@ -501,6 +502,7 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
         selectable={isAdmin && selectMode}
         selected={checked}
         onToggleSelect={isAdmin ? toggleCheck : undefined}
+        onSelectionChange={isAdmin ? setChecked : undefined}
         renderOverlay={isAdmin ? (card) => (
           <>
             {card.isFrozen && (
