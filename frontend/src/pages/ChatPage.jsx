@@ -2,8 +2,6 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useDragSelection } from '../hooks/useDragSelection'
 import { useNavigate } from 'react-router-dom'
 import { Download, Trash2, RefreshCw, Coins } from 'lucide-react'
-import JSZip from 'jszip'
-import { saveAs } from 'file-saver'
 import ChatInput from '../components/ChatInput'
 import GenerationCard from '../components/GenerationCard'
 import SearchInput from '../components/SearchInput'
@@ -45,6 +43,40 @@ function getUploadExt(type, name = '') {
   const match = String(name || '').toLowerCase().match(/\.([a-z0-9]+)$/)
   const ext = match?.[1] || ''
   return ['png', 'jpg', 'jpeg', 'webp'].includes(ext) ? (ext === 'jpeg' ? 'jpg' : ext) : 'png'
+}
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename || `download_${Date.now()}`
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  setTimeout(() => { a.remove(); URL.revokeObjectURL(url) }, 1500)
+}
+async function saveBlob(blob, filename) {
+  if (window.isSecureContext && typeof window.showSaveFilePicker === 'function') {
+    try {
+      const ext = filename.includes('.') ? `.${filename.split('.').pop().toLowerCase()}` : ''
+      const handle = await window.showSaveFilePicker({ suggestedName: filename, types: [{ description: 'Download', accept: { [blob.type || 'application/octet-stream']: ext ? [ext] : ['.bin'] } }] })
+      const writable = await handle.createWritable()
+      await writable.write(blob)
+      await writable.close()
+      return true
+    } catch (e) {
+      if (e?.name === 'AbortError') return false
+      throw e
+    }
+  }
+  downloadBlob(blob, filename)
+  return true
+}
+function getDownloadFilename(headers, fallback) {
+  const raw = headers?.['content-disposition'] || headers?.['Content-Disposition'] || ''
+  const utf8 = raw.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  if (utf8) return decodeURIComponent(utf8)
+  const plain = raw.match(/filename="?([^"]+)"?/i)?.[1]
+  return plain || fallback
 }
 function normalizeUploadName(name, type, url = '') {
   const raw = String(name || '').trim() || decodeURIComponent(String(url || '').split('?')[0].split('/').pop() || '')
@@ -98,6 +130,7 @@ export default function ChatPage() {
   })
   const inputRef = useRef(null)
   const dragCounter = useRef(0)
+  const downloadLockRef = useRef(false)
   const recoveringRef = useRef(new Set())
   const squareIdMapRef = useRef({})
   const navigate = useNavigate()
@@ -552,7 +585,7 @@ export default function ChatPage() {
   }, [checked.size, visibleTasks])
 
   const handleBatchDownload = useCallback(async () => {
-    if (downloadProgress.open) return
+    if (downloadLockRef.current || downloadProgress.open) return
     const files = []
     for (const task of visibleTasks) {
       if (!checked.has(task.task_id)) continue
@@ -563,35 +596,19 @@ export default function ChatPage() {
       }
     }
     if (files.length === 0) return
-
-    let asZip = false
+    downloadLockRef.current = true
     if (files.length > 1) {
-      const choice = await dialog.choose(`已选 ${files.length} 张图片，选择下载方式：`, [
-        { label: '逐个下载', value: 'single' },
-        { label: '打包 ZIP 下载', value: 'zip', color: 'var(--color-info)' },
-      ])
-      if (!choice) return
-      asZip = choice === 'zip'
-    }
-
-    if (asZip) {
       try {
-        const zip = new JSZip()
-        setDownloadProgress({ open: true, phase: 'download', current: 0, total: files.length, percent: 0, filename: '' })
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i]
-          setDownloadProgress(v => ({ ...v, phase: 'download', current: i, total: files.length, percent: Math.min(45, Math.round(i / files.length * 45)), filename: file.name }))
-          const { data: blob } = await imageAPI.getBlobByUrl(file.url)
-          zip.file(file.name, blob)
-          setDownloadProgress(v => ({ ...v, phase: 'download', current: i + 1, total: files.length, percent: Math.min(45, Math.round((i + 1) / files.length * 45)), filename: file.name }))
-        }
-        const content = await zip.generateAsync({ type: 'blob' }, meta => setDownloadProgress(v => ({ ...v, phase: 'zip', percent: Math.max(45, Math.min(99, 45 + Math.round((meta.percent || 0) * 0.55))) })))
-        setDownloadProgress(v => ({ ...v, phase: 'done', percent: 100, current: files.length, total: files.length }))
-        saveAs(content, `images_${Date.now()}.zip`)
+        setDownloadProgress({ open: true, phase: 'zip', current: 0, total: files.length, percent: 10, filename: `${files.length} files` })
+        const resp = await imageAPI.downloadBatch(files.map(file => file.name))
+        setDownloadProgress(v => ({ ...v, phase: 'zip', current: files.length, total: files.length, percent: 95 }))
+        const saved = await saveBlob(resp.data, getDownloadFilename(resp.headers, `images_${Date.now()}.zip`))
+        if (!saved) return
+        setDownloadProgress(v => ({ ...v, phase: 'done', current: files.length, total: files.length, percent: 100 }))
       } catch (e) {
         dialog.alert(e?.message || '打包下载失败')
       } finally {
-        setTimeout(() => setDownloadProgress({ open: false, phase: 'idle', current: 0, total: 0, percent: 0, filename: '' }), 400)
+        setTimeout(() => { setDownloadProgress({ open: false, phase: 'idle', current: 0, total: 0, percent: 0, filename: '' }); downloadLockRef.current = false }, 400)
       }
     } else {
       try {
@@ -601,14 +618,14 @@ export default function ChatPage() {
           setDownloadProgress(v => ({ ...v, phase: 'single', current: i, total: files.length, percent: Math.min(85, Math.round(i / files.length * 85)), filename: file.name }))
           const { data: blob } = await imageAPI.getBlobByUrl(file.url)
           setDownloadProgress(v => ({ ...v, phase: 'single', current: i + 1, total: files.length, percent: Math.min(95, Math.round((i + 1) / files.length * 95)), filename: file.name }))
-          saveAs(blob, file.name)
-          await new Promise(r => setTimeout(r, 180))
+          const saved = await saveBlob(blob, file.name)
+          if (!saved) return
         }
         setDownloadProgress(v => ({ ...v, phase: 'done', current: files.length, total: files.length, percent: 100 }))
       } catch (e) {
         dialog.alert(e?.message || '下载失败')
       } finally {
-        setTimeout(() => setDownloadProgress({ open: false, phase: 'idle', current: 0, total: 0, percent: 0, filename: '' }), 400)
+        setTimeout(() => { setDownloadProgress({ open: false, phase: 'idle', current: 0, total: 0, percent: 0, filename: '' }); downloadLockRef.current = false }, 400)
       }
     }
   }, [checked, visibleTasks, dialog, downloadProgress.open])

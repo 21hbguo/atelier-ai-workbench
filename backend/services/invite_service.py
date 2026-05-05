@@ -9,6 +9,7 @@ INVITE_POINT_RATE=10
 SAME_IP_WINDOW_SQL="NOW() - interval '30 day'"
 
 class InviteService:
+    CODE_LENGTH=6
     @classmethod
     def is_enabled(cls):
         return bool(get_invite_config().get("invite_enabled",True))
@@ -27,7 +28,9 @@ class InviteService:
     @classmethod
     def generate_unique_code(cls,conn)->str:
         while True:
-            code=secrets.token_hex(4).upper()
+            code=secrets.token_urlsafe(8).replace("-","").replace("_","").upper()[:cls.CODE_LENGTH]
+            if len(code)<cls.CODE_LENGTH:
+                continue
             if not conn.execute("SELECT id FROM users WHERE invite_code=%s",(code,)).fetchone():
                 return code
     @classmethod

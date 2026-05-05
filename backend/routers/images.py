@@ -1,15 +1,17 @@
 import os
 import json
+import io
 import hashlib
 import logging
 import time
+import zipfile
 from datetime import datetime, timedelta
 from typing import Optional
 from pydantic import BaseModel, Field
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Response, Depends
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from backend.config import GENERATED_IMAGES_DIR, THUMBS_DIR, UPLOAD_DIR
 from backend.database import get_db
@@ -23,6 +25,10 @@ from backend.services.image_dimensions import get_image_dimensions
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["images"])
 MAX_REMOTE_IMAGE_BYTES = int(os.getenv("MAX_REMOTE_IMAGE_BYTES", str(10 * 1024 * 1024)))
+
+
+class BatchDownloadRequest(BaseModel):
+    filenames: list[str] = Field(default_factory=list)
 
 
 def get_image_metadata(filename: str) -> dict:
@@ -82,6 +88,25 @@ def _can_access_generated_image(filename: str, user: dict) -> bool:
 def _assert_generated_image_access(filename: str, user: dict):
     if not _can_access_generated_image(filename, user):
         raise HTTPException(status_code=403, detail="无权访问此图片")
+
+
+def _normalize_download_filenames(items: list[str]) -> list[str]:
+    seen = set()
+    result = []
+    for item in items or []:
+        name = os.path.basename((item or "").strip())
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        result.append(name)
+    return result
+
+
+def _build_archive_name(filename: str, used: dict[str, int]) -> str:
+    base, ext = os.path.splitext(filename)
+    idx = used.get(filename, 0)
+    used[filename] = idx + 1
+    return filename if idx == 0 else f"{base}_{idx}{ext}"
 
 
 @router.get("/images")
@@ -260,6 +285,33 @@ async def serve_image(filename: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="图片不存在")
     _assert_generated_image_access(filename, user)
     return FileResponse(str(image_path), media_type=_image_media_type(str(image_path)))
+
+
+@router.post("/images/download-batch")
+async def download_batch_images(body: BatchDownloadRequest, user=Depends(get_current_user)):
+    filenames = _normalize_download_filenames(body.filenames)
+    if not filenames:
+        raise HTTPException(status_code=400, detail="请选择要下载的图片")
+    if len(filenames) == 1:
+        filename = filenames[0]
+        image_path = GENERATED_IMAGES_DIR / filename
+        if not image_path.exists():
+            raise HTTPException(status_code=404, detail=f"图片不存在: {filename}")
+        _assert_generated_image_access(filename, user)
+        return FileResponse(str(image_path), media_type=_image_media_type(str(image_path)), filename=filename)
+    buf = io.BytesIO()
+    used = {}
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for filename in filenames:
+            image_path = GENERATED_IMAGES_DIR / filename
+            if not image_path.exists():
+                raise HTTPException(status_code=404, detail=f"图片不存在: {filename}")
+            _assert_generated_image_access(filename, user)
+            zf.write(image_path, arcname=_build_archive_name(filename, used))
+    buf.seek(0)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    headers = {"Content-Disposition": f"attachment; filename=images_{stamp}.zip"}
+    return StreamingResponse(buf, media_type="application/zip", headers=headers)
 
 
 @router.get("/images/thumb/{filename}")

@@ -3,6 +3,7 @@ import re
 import asyncio
 import secrets
 import hashlib
+import ipaddress
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import HTTPException, Security, Depends, Request, Response
@@ -21,7 +22,7 @@ REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "14"))
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() in {"1", "true", "yes", "on"}
 COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax")
 TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "false").lower() in {"1", "true", "yes", "on"}
-TRUSTED_PROXY_IPS = {i.strip() for i in os.getenv("TRUSTED_PROXY_IPS", "127.0.0.1,::1").split(",") if i.strip()}
+TRUSTED_PROXY_IPS = [i.strip() for i in os.getenv("TRUSTED_PROXY_IPS", "127.0.0.1,::1,private").split(",") if i.strip()]
 security = HTTPBearer(auto_error=False)
 ACCOUNT_RE = re.compile(r"^[A-Za-z0-9_]{4,16}$")
 
@@ -206,16 +207,77 @@ def record_request(user_id: int, status: str):
         conn.execute("INSERT INTO user_requests (user_id, status) VALUES (%s, %s)", (user_id, status))
 
 
+def _normalize_ip(value: str) -> str:
+    item = (value or "").strip().strip('"').strip("'")
+    if not item or item.lower() == "unknown":
+        return ""
+    if item.lower().startswith("for="):
+        item = item[4:].strip().strip('"').strip("'")
+    if ";" in item:
+        item = item.split(";", 1)[0].strip()
+    if item.startswith("[") and "]" in item:
+        item = item[1:item.index("]")]
+    elif item.count(":") == 1 and "." in item:
+        item = item.rsplit(":", 1)[0]
+    try:
+        return str(ipaddress.ip_address(item))
+    except ValueError:
+        return ""
+
+
+def _first_header_ip(value: str) -> str:
+    for item in (value or "").split(","):
+        ip = _normalize_ip(item)
+        if ip:
+            return ip
+    return ""
+
+
+def _forwarded_header_ip(value: str) -> str:
+    for part in (value or "").split(","):
+        for item in part.split(";"):
+            key, sep, raw = item.strip().partition("=")
+            if sep and key.lower() == "for":
+                ip = _normalize_ip(raw)
+                if ip:
+                    return ip
+    return ""
+
+
+def _is_trusted_proxy(remote_ip: str) -> bool:
+    if not TRUST_PROXY_HEADERS:
+        return False
+    ip = _normalize_ip(remote_ip)
+    if not ip:
+        return False
+    if "*" in TRUSTED_PROXY_IPS:
+        return True
+    addr = ipaddress.ip_address(ip)
+    for item in TRUSTED_PROXY_IPS:
+        token = item.lower()
+        if token == "loopback" and addr.is_loopback:
+            return True
+        if token == "private" and addr.is_private:
+            return True
+        exact = _normalize_ip(item)
+        if exact and exact == ip:
+            return True
+        try:
+            if addr in ipaddress.ip_network(item, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def get_client_ip(request: Request) -> str:
-    remote_ip = request.client.host if request.client and request.client.host else ""
-    if TRUST_PROXY_HEADERS and remote_ip and (not TRUSTED_PROXY_IPS or remote_ip in TRUSTED_PROXY_IPS):
-        forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-        if forwarded:
-            return forwarded
-        real_ip = request.headers.get("x-real-ip", "").strip()
-        if real_ip:
-            return real_ip
-    return remote_ip
+    remote_host = request.client.host if request.client and request.client.host else ""
+    remote_ip = _normalize_ip(remote_host)
+    if _is_trusted_proxy(remote_host):
+        for header_ip in (_first_header_ip(request.headers.get("cf-connecting-ip", "")), _forwarded_header_ip(request.headers.get("forwarded", "")), _first_header_ip(request.headers.get("x-forwarded-for", "")), _first_header_ip(request.headers.get("x-real-ip", ""))):
+            if header_ip:
+                return header_ip
+    return remote_ip or remote_host
 
 
 def update_user_ip(user_id: int, ip: str, conn=None):
