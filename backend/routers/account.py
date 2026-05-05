@@ -28,7 +28,7 @@ async def change_password(req: ChangePasswordRequest, user=Depends(get_current_u
 async def security_sessions(request: Request, page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), user=Depends(get_current_user)):
     offset = (page - 1) * size
     current_hash = hashlib.sha256((request.cookies.get(REFRESH_COOKIE_NAME) or "").encode()).hexdigest() if request.cookies.get(REFRESH_COOKIE_NAME) else ""
-    now = datetime.utcnow()
+    now = datetime.now()
     with get_db() as conn:
         total = conn.execute("SELECT COUNT(*) cnt FROM auth_refresh_tokens WHERE user_id = %s", (user["user_id"],)).fetchone()["cnt"]
         rows = conn.execute("SELECT id, token_hash, expires_at, created_at, revoked_at, last_ip, user_agent FROM auth_refresh_tokens WHERE user_id = %s ORDER BY created_at DESC LIMIT %s OFFSET %s", (user["user_id"], size, offset)).fetchall()

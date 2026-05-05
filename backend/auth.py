@@ -103,7 +103,7 @@ def _hash_refresh_token(token: str) -> str:
 
 def create_refresh_token(user_id: int, ip: str = "", user_agent: str = "") -> str:
     token = secrets.token_urlsafe(48)
-    expires_at = (datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
+    expires_at = (datetime.now() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
     safe_ip = (ip or "")[:45]
     safe_ua = (user_agent or "")[:255]
     with get_db() as conn:
@@ -118,13 +118,13 @@ def revoke_refresh_token(token: str):
     if not token:
         return
     with get_db() as conn:
-        conn.execute("UPDATE auth_refresh_tokens SET revoked_at = %s WHERE token_hash = %s AND revoked_at IS NULL", (datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), _hash_refresh_token(token)))
+        conn.execute("UPDATE auth_refresh_tokens SET revoked_at = %s WHERE token_hash = %s AND revoked_at IS NULL", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), _hash_refresh_token(token)))
 
 
 def rotate_refresh_token(token: str, ip: str = "", user_agent: str = "") -> Optional[dict]:
     if not token:
         return None
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with get_db() as conn:
         row = conn.execute(
             "SELECT rt.*,u.username,u.nickname,u.is_admin,u.points,u.is_frozen FROM auth_refresh_tokens rt JOIN users u ON rt.user_id=u.id WHERE rt.token_hash = %s AND rt.revoked_at IS NULL",
@@ -153,7 +153,7 @@ def _optional_user_from_refresh(request: Optional[Request]) -> Optional[dict]:
     refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
     if not refresh_token:
         return None
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with get_db() as conn:
         row = conn.execute(
             "SELECT rt.user_id,u.username,u.nickname,u.is_admin,u.is_frozen,u.points,rt.expires_at FROM auth_refresh_tokens rt JOIN users u ON rt.user_id=u.id WHERE rt.token_hash=%s AND rt.revoked_at IS NULL",

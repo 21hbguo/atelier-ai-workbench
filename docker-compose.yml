@@ -26,6 +26,10 @@ services:
     environment:
       DATABASE_URL: postgresql://${PG_USER:-app_user}:${PG_PASSWORD:-CHANGE_ME}@db:5432/${PG_DB:-app_db}
       TZ: Asia/Shanghai
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
+      TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-true}
+      TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-127.0.0.1,::1}
     volumes:
       - ./data:/app/data
       - /etc/localtime:/etc/localtime:ro

@@ -178,7 +178,7 @@ async def cleanup_expired_hosting_images() -> dict:
     github_cleanup=0
     github_failed=0
     with get_db() as conn:
-        rows=conn.execute("SELECT m.filename, im.delete_token FROM image_metadata m JOIN image_mappings im ON im.local_path = CONCAT(%s, '/', m.filename) WHERE m.is_permanent = FALSE AND m.expires_at IS NOT NULL AND m.expires_at <= %s AND im.url LIKE '%%cdn.jsdelivr.net%%' AND im.delete_token != ''", (str(GENERATED_IMAGES_DIR), now)).fetchall()
+        rows=conn.execute("SELECT m.filename, im.delete_token FROM image_metadata m JOIN image_mappings im ON im.local_path = (%s::text || '/' || m.filename) WHERE m.is_permanent = FALSE AND m.expires_at IS NOT NULL AND m.expires_at <= %s AND im.url LIKE '%%cdn.jsdelivr.net%%' AND im.delete_token != ''", (str(GENERATED_IMAGES_DIR), now)).fetchall()
         for row in rows:
             filename=row["filename"]
             delete_token=row["delete_token"]
@@ -233,7 +233,7 @@ async def enforce_github_repo_size_limit() -> dict:
     github_deleted=0
     github_failed=0
     with get_db() as conn:
-        rows=conn.execute("SELECT m.filename, im.delete_token FROM image_metadata m JOIN image_mappings im ON im.local_path = CONCAT(%s, '/', m.filename) WHERE m.is_permanent = FALSE AND im.url LIKE '%%cdn.jsdelivr.net%%' AND im.delete_token != '' ORDER BY m.created_at ASC LIMIT 20", (str(GENERATED_IMAGES_DIR),)).fetchall()
+        rows=conn.execute("SELECT m.filename, im.delete_token FROM image_metadata m JOIN image_mappings im ON im.local_path = (%s::text || '/' || m.filename) WHERE m.is_permanent = FALSE AND im.url LIKE '%%cdn.jsdelivr.net%%' AND im.delete_token != '' ORDER BY m.created_at ASC LIMIT 20", (str(GENERATED_IMAGES_DIR),)).fetchall()
         for row in rows:
             try:
                 if await GithubImageHostingService.delete_image(row["delete_token"]):

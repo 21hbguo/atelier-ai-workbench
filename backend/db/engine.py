@@ -15,7 +15,7 @@ def init_pool():
         conninfo=DATABASE_URL,
         min_size=PG_POOL_MIN,
         max_size=PG_POOL_MAX,
-        kwargs={"row_factory": dict_row},
+        kwargs={"row_factory": dict_row, "options": "-c timezone=Asia/Shanghai"},
     )
 
 
