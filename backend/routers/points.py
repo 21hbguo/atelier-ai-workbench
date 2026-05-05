@@ -101,22 +101,22 @@ async def get_transactions(page: int = 1, size: int = 20, user=Depends(get_curre
 async def create_recharge_request(body: RechargeCreateRequest, request: Request, user=Depends(get_current_user)):
     channel = (body.channel or "").strip().lower()
     if channel not in {"wechat", "alipay"}:
-        raise HTTPException(status_code=400, detail="充值渠道仅支持 wechat/alipay")
+        raise HTTPException(status_code=400, detail="支持方式仅支持 wechat/alipay")
     if body.amount <= 0:
-        raise HTTPException(status_code=400, detail="充值金额必须大于0")
+        raise HTTPException(status_code=400, detail="捐赠金额必须大于0")
     if body.points <= 0:
-        raise HTTPException(status_code=400, detail="兑换积分必须大于0")
+        raise HTTPException(status_code=400, detail="赠送积分必须大于0")
     if not any(abs(float(pkg["amount"]) - float(body.amount)) < 1e-6 and int(pkg["points"]) == int(body.points) for pkg in get_recharge_packages()):
-        raise HTTPException(status_code=400, detail="充值套餐已变更，请刷新页面后重试")
+        raise HTTPException(status_code=400, detail="捐赠档位已变更，请刷新页面后重试")
     payer_name = (body.payer_name or "").strip()[:64]
     from datetime import datetime
     tx_no = f"RCH{datetime.now().strftime('%Y%m%d%H%M%S')}{user['user_id']}{secrets.token_hex(4).upper()}"
     proof_url = (body.proof_url or "").strip()[:1000]
     if not proof_url.startswith("/api/uploads/"):
-        raise HTTPException(status_code=400, detail="支付凭证地址不合法")
+        raise HTTPException(status_code=400, detail="捐赠凭证地址不合法")
     file_key = proof_url.rsplit("/", 1)[-1]
     if not UploadFileService.belongs_to_user(file_key, user["user_id"]):
-        raise HTTPException(status_code=400, detail="支付凭证不存在或无权使用")
+        raise HTTPException(status_code=400, detail="捐赠凭证不存在或无权使用")
     remark = (body.remark or "").strip()[:500]
     ip = get_client_ip(request)
     with get_db() as conn:
@@ -129,16 +129,16 @@ async def create_recharge_request(body: RechargeCreateRequest, request: Request,
         balance = conn.execute("SELECT points FROM users WHERE id = %s", (user["user_id"],)).fetchone()["points"]
         conn.execute(
             "INSERT INTO point_transactions (user_id, amount, balance_after, type, description, recharge_request_id) VALUES (%s, %s, %s, %s, %s, %s)",
-            (user["user_id"], 0, balance, "recharge_pending", f"充值申请待审核 (¥{body.amount})", request_id),
+            (user["user_id"], 0, balance, "recharge_pending", f"捐赠凭证待审核 (¥{body.amount})", request_id),
         )
         admins = conn.execute("SELECT id FROM users WHERE is_admin = TRUE").fetchall()
     for a in admins or []:
         try:
-            NotificationService.create(a["id"], "recharge_pending", "待审核充值申请", f"用户 {user['username']} 提交了充值申请 ¥{body.amount}", str(request_id))
+            NotificationService.create(a["id"], "recharge_pending", "待审核捐赠凭证", f"用户 {user['username']} 提交了捐赠凭证 ¥{body.amount}", str(request_id))
         except Exception:
             pass
     logger.info(f"[audit.recharge.request] id={request_id} user={user['user_id']} amount={body.amount} points={body.points} risk={risk_level} flags={','.join(risk_flags) if risk_flags else 'none'} ip={ip}")
-    return {"id": request_id, "tx_no": tx_no, "message": "充值申请已提交，等待审核"}
+    return {"id": request_id, "tx_no": tx_no, "message": "捐赠凭证已提交，等待审核"}
 
 
 @router.get("/recharge/requests")

@@ -42,8 +42,8 @@ export default function RedeemPage() {
             <Coins size={24} />
           </div>
           <div>
-            <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>兑换积分</h1>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>输入兑换码获取积分</p>
+            <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>兑换码领积分</h1>
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>输入兑换码领取已发放积分</p>
           </div>
         </div>
 

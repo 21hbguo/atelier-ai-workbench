@@ -887,14 +887,14 @@ async def approve_recharge_request(request_id: int, body: dict, admin=Depends(re
         new_balance = conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()["points"]
         conn.execute(
             "INSERT INTO point_transactions (user_id, amount, balance_after, type, description, recharge_request_id, request_key) VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
-            (user_id, points, new_balance, "redeem_code", f"充值审核通过 (¥{item['amount']})", request_id, f"recharge-approve:{request_id}"),
+            (user_id, points, new_balance, "redeem_code", f"捐赠审核通过 (¥{item['amount']})", request_id, f"recharge-approve:{request_id}"),
         )
         conn.execute(
             "UPDATE recharge_requests SET status = 'approved', points = %s, redeem_code = %s, review_note = %s, reviewed_at = %s, reviewed_by = %s WHERE id = %s",
             (points, code, review_note, now, admin["user_id"], request_id),
         )
         try:
-            NotificationService.create(user_id, "recharge_approved", "充值审核通过", f"你的充值申请已通过，到账 {points} 积分", str(request_id))
+            NotificationService.create(user_id, "recharge_approved", "捐赠审核通过", f"你的捐赠凭证已通过审核，已发放 {points} 积分", str(request_id))
         except Exception:
             pass
         logger.info(f"[audit.recharge.approve] request={request_id} admin={admin['user_id']} user={user_id} points={points} amount={item['amount']}")
@@ -920,11 +920,11 @@ async def reject_recharge_request(request_id: int, body: dict, admin=Depends(req
         user_row = conn.execute("SELECT user_id FROM recharge_requests WHERE id = %s", (request_id,)).fetchone()
         if user_row:
             try:
-                NotificationService.create(user_row["user_id"], "recharge_rejected", "充值审核未通过", f"你的充值申请未通过：{review_note}", str(request_id))
+                NotificationService.create(user_row["user_id"], "recharge_rejected", "捐赠审核未通过", f"你的捐赠凭证未通过审核：{review_note}", str(request_id))
             except Exception:
                 pass
         logger.info(f"[audit.recharge.reject] request={request_id} admin={admin['user_id']} reason={review_note[:120]}")
-        return {"message": "已拒绝该充值申请"}
+        return {"message": "已拒绝该捐赠凭证"}
 
 
 @router.post("/recharge-requests/{request_id}/refund")
@@ -946,18 +946,18 @@ async def refund_recharge_request(request_id: int, body: dict, admin=Depends(req
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         conn.execute(
             "INSERT INTO point_transactions (user_id, amount, balance_after, type, description, recharge_request_id, request_key) VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
-            (user_id, -points, new_balance, "recharge_refund", f"充值退款 (¥{item['amount']})", request_id, f"recharge-refund:{request_id}"),
+            (user_id, -points, new_balance, "recharge_refund", f"积分回退 (¥{item['amount']})", request_id, f"recharge-refund:{request_id}"),
         )
         conn.execute(
             "UPDATE recharge_requests SET status = 'refunded', review_note = %s, reviewed_at = %s, reviewed_by = %s WHERE id = %s",
             (review_note, now, admin["user_id"], request_id),
         )
         try:
-            NotificationService.create(user_id, "recharge_refunded", "充值已退款", f"你的充值申请已被退款，扣除 {points} 积分", str(request_id))
+            NotificationService.create(user_id, "recharge_refunded", "积分已回退", f"你的捐赠发放已回退，扣除 {points} 积分", str(request_id))
         except Exception:
             pass
         logger.info(f"[audit.recharge.refund] request={request_id} admin={admin['user_id']} user={user_id} points={points}")
-        return {"message": f"已退款，扣除 {points} 积分", "points_deducted": points, "new_balance": new_balance}
+        return {"message": f"已回退，扣除 {points} 积分", "points_deducted": points, "new_balance": new_balance}
 
 
 @router.get("/stats/overview")

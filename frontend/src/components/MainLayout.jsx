@@ -7,7 +7,7 @@ const quickNavItems = [
   { label: '生成', path: '/' },
   { label: '广场', path: '/square' },
   { label: '提示词', path: '/prompts' },
-  { label: '小金库', path: '/wallet' },
+  { label: '积分详情', path: '/wallet' },
   { label: '公告', path: '/announcements' },
 ]
 

@@ -11,7 +11,7 @@ const navItems = [
   { path: '/', icon: MessageSquare, label: '生成' },
   { path: '/square', icon: Globe, label: '广场' },
   { path: '/prompts', icon: BookOpen, label: '我的提示词' },
-  { path: '/wallet', icon: Wallet, label: '小金库' },
+  { path: '/wallet', icon: Wallet, label: '积分详情' },
   { path: '/notifications', icon: Bell, label: '通知' },
   { path: '/announcements', icon: Megaphone, label: '公告' },
   // { path: '/shares', icon: Share2, label: '分享管理' },
@@ -121,13 +121,13 @@ export default function Sidebar({ open, onClose }) {
           </button>
         </div>
         <div className="px-3 py-2 border-t flex flex-wrap gap-x-1 gap-y-0.5 text-xs opacity-50" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
-          <Link to="/wallet" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>兑换积分</Link>
+          <Link to="/wallet" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>积分详情</Link>
           <span>|</span>
           <Link to="/agreement" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>用户协议</Link>
           <span>|</span>
           <Link to="/privacy" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>隐私政策</Link>
           <span>|</span>
-          <Link to="/refund" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>充值退款规则</Link>
+          <Link to="/refund" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>捐赠说明与积分规则</Link>
         </div>
       </aside>
     </>

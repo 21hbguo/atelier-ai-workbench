@@ -90,8 +90,8 @@ _runtime_config = {
     "image_hosting_referer": os.getenv("IMAGE_HOSTING_REFERER", "https://img.heliar.top/"),
     "wechat_pay_qr_url": os.getenv("WECHAT_PAY_QR_URL", ""),
     "alipay_pay_qr_url": os.getenv("ALIPAY_PAY_QR_URL", ""),
-    "manual_recharge_notice": os.getenv("MANUAL_RECHARGE_NOTICE", "请备注账号并在下方提交支付凭证，审核通过后自动发放兑换码"),
-    "recharge_packages": _safe_json_list(os.getenv("RECHARGE_PACKAGES_JSON", ""), [{"amount": 9.9, "points": 120, "label": "体验包"}, {"amount": 29.9, "points": 400, "label": "进阶包"}, {"amount": 59.9, "points": 900, "label": "超值包"}]),
+    "manual_recharge_notice": os.getenv("MANUAL_RECHARGE_NOTICE", "支持 Atelier 持续承担模型、图床与服务器成本。你可自愿捐赠支持平台运行，审核通过后按1元=10积分赠送感谢积分。请备注账号并上传支付凭证，捐赠完成后不支持退款。"),
+    "recharge_packages": _safe_json_list(os.getenv("RECHARGE_PACKAGES_JSON", ""), [{"amount": 10, "points": 100, "label": "轻量支持"}, {"amount": 30, "points": 300, "label": "常用支持"}, {"amount": 50, "points": 500, "label": "高频支持"}]),
     "generate_concurrent_limit_per_user": int(os.getenv("GENERATE_CONCURRENT_LIMIT_PER_USER", "10")),
     "points_cost_per_generation": int(os.getenv("POINTS_COST_PER_GENERATION", "10")),
     "points_cost_per_optimize": int(os.getenv("POINTS_COST_PER_OPTIMIZE", "10")),
@@ -271,7 +271,7 @@ def normalize_recharge_packages(items):
         label=str(item.get("label") or f"套餐{i+1}").strip()[:32] or f"套餐{i+1}"
         out.append({"amount":amount,"points":points,"label":label})
     if out: return out
-    return [{"amount":9.9,"points":120,"label":"体验包"},{"amount":29.9,"points":400,"label":"进阶包"},{"amount":59.9,"points":900,"label":"超值包"}]
+    return [{"amount":10,"points":100,"label":"轻量支持"},{"amount":30,"points":300,"label":"常用支持"},{"amount":50,"points":500,"label":"高频支持"}]
 def get_recharge_packages():
     return normalize_recharge_packages(_runtime_config.get("recharge_packages"))
 

@@ -1086,7 +1086,7 @@ export default function AdminPage() {
               </div>
               {rechargePendingCount > 0 && (
                 <div className="mb-3 px-3 py-2 rounded-xl border text-sm flex items-center justify-between gap-3" style={{ borderColor: 'var(--color-warning)', background: 'color-mix(in srgb, var(--color-warning) 12%, transparent)', color: 'var(--color-warning)' }}>
-                  <span>当前有 {rechargePendingCount} 条充值申请待审核。</span>
+                  <span>当前有 {rechargePendingCount} 条捐赠凭证待审核。</span>
                   <button onClick={() => { setRechargeStatusFilter('pending'); setCodesPage(1) }} className="px-2 py-1 rounded-lg text-xs font-medium text-white" style={{ background: 'var(--color-warning)' }}>直达待审</button>
                 </div>
               )}
