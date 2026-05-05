@@ -432,6 +432,37 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     setStreamingVersions([])
     clearOptimizeDraft()
   }, [isStreaming])
+  const handleClearAll = useCallback(() => {
+    for (const img of imagesRef.current) {
+      if (img?.file && img.preview) URL.revokeObjectURL(img.preview)
+    }
+    setPrompt('')
+    setImages([])
+    setType('')
+    setStyle('')
+    setMood('')
+    setShowSelector(null)
+    setLightbox(null)
+    setShowOptimizeModal(false)
+    setShowOptimizeOverlay(false)
+    setOptimizeResults(null)
+    setStreamingVersions([])
+    setIsStreaming(false)
+    setOptimizeLoading(false)
+    clearOptimizeDraft()
+    localStorage.removeItem('cached_prompt')
+    localStorage.removeItem('cached_type')
+    localStorage.removeItem('cached_style')
+    localStorage.removeItem('cached_mood')
+    localStorage.removeItem('ref_images')
+    localStorage.removeItem('ref_image_url')
+    localStorage.removeItem('ref_image_name')
+    localStorage.removeItem('pending_prompt')
+    localStorage.removeItem('pending_image')
+    localStorage.removeItem('pending_image_token')
+    setCachedImages([]).catch(() => {})
+    clearPendingImage().catch(() => {})
+  }, [])
 
   useImperativeHandle(ref, () => ({
     addFiles(files) { handleFiles(files) },
@@ -601,6 +632,10 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
           >
             <Wind size={13} />
             <span>{mood || '氛围'}</span>
+          </button>
+          <button onClick={handleClearAll} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
+            <X size={13} />
+            <span>清空</span>
           </button>
         </div>
         <div
