@@ -120,7 +120,7 @@ class ClassificationService:
                             )
                         else:
                             conn.execute(
-                                "UPDATE classification_results SET suggested_category = '_error', suggested_category_label = '分类失败' WHERE id = %s",
+                                "UPDATE classification_results SET suggested_category = '_error', suggested_category_label = '分类失败', status = 'failed' WHERE id = %s",
                                 (row["id"],),
                             )
                         processed += 1
@@ -154,6 +154,7 @@ class ClassificationService:
     async def _classify_batch(cls, system_prompt: str, items: List[Dict]) -> List[Dict]:
         llm_cfg = get_llm_config()
         if not llm_cfg["enabled"] or not llm_cfg["api_key"]:
+            logger.warning("[classification] LLM not enabled or API key missing")
             return []
 
         try:
@@ -193,6 +194,9 @@ class ClassificationService:
 
         except httpx.TimeoutException:
             logger.warning("[classification] LLM API timeout")
+            return []
+        except httpx.HTTPStatusError as e:
+            logger.error(f"[classification] LLM API HTTP error: {e.response.status_code} - {e.response.text[:200]}")
             return []
         except json.JSONDecodeError:
             logger.warning(f"[classification] Failed to parse LLM response: {text[:200]}")
@@ -307,7 +311,7 @@ class ClassificationService:
         with get_db() as conn:
             placeholders = ",".join(["%s"] * len(result_ids))
             conn.execute(
-                f"UPDATE classification_results SET status = 'rejected' WHERE task_id = %s AND id IN ({placeholders}) AND status = 'pending'",
+                f"UPDATE classification_results SET status = 'rejected' WHERE task_id = %s AND id IN ({placeholders}) AND status IN ('pending', 'failed')",
                 (task_id, *result_ids),
             )
             remaining = conn.execute(
