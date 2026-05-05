@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Download, Trash2, RefreshCw, Coins } from 'lucide-react'
+import JSZip from 'jszip'
+import { saveAs } from 'file-saver'
 import ChatInput from '../components/ChatInput'
 import GenerationCard from '../components/GenerationCard'
 import SearchInput from '../components/SearchInput'
@@ -58,6 +60,7 @@ export default function ChatPage() {
   const [loaded, setLoaded] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
+  const [zipAsOne, setZipAsOne] = useState(false)
   const [checked, setChecked] = useState(new Set())
   const [searchQuery, setSearchQuery] = useState('')
   const [timeRange, setTimeRange] = useState('1d')
@@ -526,14 +529,37 @@ export default function ChatPage() {
     else setChecked(new Set(visibleTasks.map(t => t.task_id)))
   }, [checked.size, visibleTasks])
 
-  const handleBatchDownload = useCallback(() => {
+  const handleBatchDownload = useCallback(async () => {
+    const files = []
     for (const task of visibleTasks) {
       if (!checked.has(task.task_id)) continue
       for (const url of (task.result_urls || [])) {
-        const a = document.createElement('a'); a.href = url; a.download = url.split('/').pop(); a.click()
+        const filename = url.split('/').pop()
+        const apiUrl = `/api/images/file/${filename}`
+        files.push({ url: apiUrl, name: filename })
       }
     }
-  }, [checked, visibleTasks])
+    if (files.length === 0) return
+
+    if (zipAsOne && files.length > 1) {
+      const zip = new JSZip()
+      for (const file of files) {
+        const res = await fetch(file.url)
+        const blob = await res.blob()
+        zip.file(file.name, blob)
+      }
+      const content = await zip.generateAsync({ type: 'blob' })
+      saveAs(content, `images_${Date.now()}.zip`)
+    } else {
+      for (const file of files) {
+        const a = document.createElement('a')
+        a.href = file.url
+        a.download = file.name
+        a.click()
+        await new Promise(r => setTimeout(r, 300))
+      }
+    }
+  }, [checked, visibleTasks, zipAsOne])
 
   const handleBatchDelete = useCallback(async () => {
     if (!await dialog.confirm(`确定删除选中的 ${checked.size} 项？`)) return
@@ -617,8 +643,12 @@ export default function ChatPage() {
           <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
             {checked.size === visibleTasks.length ? '取消全选' : '全选'}
           </button>
-          <div className="ml-auto flex gap-2">
+          <div className="ml-auto flex items-center gap-2">
             <button onClick={handleBatchExtend} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--color-info)' }}>延长3天</button>
+            <label className="flex items-center gap-1.5 text-xs cursor-pointer" style={{ color: 'var(--text-secondary)' }}>
+              <input type="checkbox" checked={zipAsOne} onChange={e => setZipAsOne(e.target.checked)} className="accent-[var(--accent)]" />
+              打包ZIP
+            </label>
             <button onClick={handleBatchDownload} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}><Download size={14} /> 下载</button>
             <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-[var(--color-error)] hover:bg-[var(--color-error)]/10"><Trash2 size={14} /> 删除</button>
           </div>
