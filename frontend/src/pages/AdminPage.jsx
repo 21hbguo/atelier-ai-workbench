@@ -163,6 +163,7 @@ export default function AdminPage() {
   useEffect(() => { if (tab === 'codes' || tab === 'recharge_review') fetchRechargeRequests() }, [tab, codesPage, codesSort, codesOrder, rechargeStatusFilter])
   useEffect(() => { if (tab === 'announcements') fetchAnnouncements() }, [tab, announcementPage])
   useEffect(() => { if (tab === 'config' || tab === 'finance') fetchRuntimeConfig() }, [tab])
+  useEffect(() => { if (!proofLightbox) return; const onPop = () => setProofLightbox(null); window.history.pushState({ __adminProofLightbox: true }, ''); window.addEventListener('popstate', onPop); return () => { window.removeEventListener('popstate', onPop); if (window.history.state?.__adminProofLightbox) window.history.back() } }, [proofLightbox])
   useEffect(() => {
     if (!editingModelId) return
     const m = genModelsObj[editingModelId]
@@ -1907,6 +1908,7 @@ export default function AdminPage() {
     </MainLayout>
     {proofLightbox && (
       <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setProofLightbox(null)}>
+        <button type="button" onClick={e => { e.stopPropagation(); setProofLightbox(null) }} className="absolute top-4 right-4 z-10 w-10 h-10 rounded-full bg-black/55 text-white flex items-center justify-center"><X size={18} /></button>
         <img src={proofLightbox} alt="支付凭证" className="max-w-full max-h-full rounded-lg" onClick={e => e.stopPropagation()} />
       </div>
     )}
