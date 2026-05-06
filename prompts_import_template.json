@@ -1,0 +1,54 @@
+[
+  {
+    "_说明_prompt_": "【必填】提示词内容，用于 AI 图像生成",
+    "_说明_其他字段均为选填_": true,
+
+    "name": "日落海景",
+    "prompt": "a beautiful sunset over the ocean, golden hour, dramatic clouds, photorealistic, 8k resolution",
+    "negative_prompt": "blurry, low quality, distorted",
+    "tags": ["风景", "日落", "写实"],
+    "category": "landscape",
+    "image_path": null
+  },
+  {
+    "name": "赛博朋克城市",
+    "prompt": "cyberpunk city at night, neon lights, rain reflections, futuristic buildings, blade runner style",
+    "negative_prompt": "daytime, bright, cartoon",
+    "tags": ["城市", "赛博朋克", "夜景"],
+    "category": "concept",
+    "image_path": null
+  },
+  {
+    "name": "动漫少女",
+    "prompt": "anime girl with pink hair, detailed face, cherry blossoms, studio ghibli style, soft lighting",
+    "negative_prompt": "realistic, 3d, ugly",
+    "tags": ["动漫", "人物", "日系"],
+    "category": "anime",
+    "image_path": null
+  },
+  {
+    "name": "奇幻森林",
+    "prompt": "enchanted forest, magical glowing mushrooms, fireflies, misty atmosphere, fantasy art",
+    "negative_prompt": "urban, modern, realistic",
+    "tags": ["奇幻", "森林", "魔法"],
+    "category": "fantasy",
+    "image_path": null
+  },
+  {
+    "name": "极简人像",
+    "prompt": "portrait of a woman, minimalist style, soft shadows, neutral background, fashion photography",
+    "negative_prompt": "busy background, harsh lighting",
+    "tags": ["人像", "极简", "时尚"],
+    "category": "portrait",
+    "image_path": "https://example.com/sample.jpg"
+  },
+  {
+    "_说明_只有prompt也可以_": true,
+    "prompt": "a cute cat sitting on a windowsill, sunlight, cozy atmosphere"
+  },
+  {
+    "_说明_支持本地图片路径_": true,
+    "prompt": "futuristic spaceship in orbit around earth, sci-fi, detailed",
+    "image_path": "abc123def456.jpg"
+  }
+]
