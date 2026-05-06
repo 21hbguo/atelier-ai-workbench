@@ -642,7 +642,7 @@ function SharedTab({ refreshTrigger, layoutMode }) {
   return (
     <>
       <div className="flex items-center gap-1 mb-3 p-0.5 rounded-2xl max-w-sm" style={{ background: 'var(--bg-active)' }}>
-        {[{ k: 'all', l: '全部' }, { k: 'my-shares', l: '我的分享', i: Share2 }, { k: 'image', l: '图片', i: Image }, { k: 'prompt', l: '提示词', i: BookOpen }].map(({ k, l, i: Icon }) => (
+        {[{ k: 'all', l: '全部' }, { k: 'my-shares', l: '分享', i: Share2 }, { k: 'image', l: '图片', i: Image }, { k: 'prompt', l: '提示词', i: BookOpen }].map(({ k, l, i: Icon }) => (
           <button key={k} onClick={() => { setSubTab(k); setDetailIdx(null) }} className={`flex-1 px-3 py-1.5 rounded-full text-xs font-medium transition-colors flex items-center justify-center gap-1 ${subTab === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`} style={{ color: subTab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{Icon ? <Icon size={12} /> : null}{l}</button>
         ))}
       </div>
