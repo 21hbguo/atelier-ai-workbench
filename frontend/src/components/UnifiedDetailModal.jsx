@@ -431,9 +431,21 @@ export default function UnifiedDetailModal({
     const actions = []
     if (isImage && fullUrl && !hideDownload) {
       actions.push(
-        <a key="dl" href={fullUrl} download className={actionBaseClass} style={actionPrimaryStyle} title="下载">
+        <button key="dl" onClick={async () => {
+          try {
+            const resp = await fetch(fullUrl)
+            const blob = await resp.blob()
+            const a = document.createElement('a')
+            a.href = URL.createObjectURL(blob)
+            a.download = raw.filename || 'image.png'
+            document.body.appendChild(a)
+            a.click()
+            a.remove()
+            URL.revokeObjectURL(a.href)
+          } catch { window.open(fullUrl, '_blank') }
+        }} className={actionBaseClass} style={actionPrimaryStyle} title="下载">
           <Download size={15} /><span>下载</span>
-        </a>
+        </button>
       )
     }
     if (onUsePrompt) {
