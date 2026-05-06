@@ -305,8 +305,9 @@ export default function ChatPage() {
     if (el) setTimeout(() => el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }), 50)
   }, [])
 
-  const handleAddPrompt = useCallback((promptText) => {
-    inputRef.current?.setPrompt(promptText)
+  const handleAddPrompt = useCallback((input) => {
+    const promptText = typeof input === 'object' ? input?.prompt : input
+    inputRef.current?.setPrompt(String(promptText || ''))
   }, [])
   const markSquareShared = useCallback((filename, shareId) => {
     if (!filename || !shareId) return
