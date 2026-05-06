@@ -185,6 +185,11 @@ export default function AdminPage() {
   useEffect(() => { if (tab === 'classification') fetchClsTasks() }, [tab, clsPage])
   useEffect(() => { if (tab === 'classification') fetchAuditTasks() }, [tab, auditPage])
   useEffect(() => { promptAPI.categories().then(({ data }) => setClsCategories(data?.categories || data || [])).catch(() => {}) }, [])
+  useEffect(() => {
+    const handle=e=>setClsCategories(e.detail||[])
+    window.addEventListener('admin-categories-updated',handle)
+    return ()=>window.removeEventListener('admin-categories-updated',handle)
+  }, [])
 
   const fetchUsers = async () => {
     setLoading(true)

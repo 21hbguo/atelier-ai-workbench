@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Tags, Play, ArrowLeft, Check, X, Plus, Loader2, RefreshCw } from 'lucide-react'
-import { adminAPI } from '../../api'
+import { adminAPI, promptAPI } from '../../api'
 
 const STATUS_MAP = {
   processing: { label: '处理中', color: 'var(--accent)' },
@@ -33,6 +33,8 @@ export default function AdminClassificationTab({
   const [showLiveLogs, setShowLiveLogs] = useState(false)
   const [reviewCategory, setReviewCategory] = useState('')
   const [reviewing, setReviewing] = useState(false)
+  const [categoryDraft,setCategoryDraft]=useState({ id:null, slug:'', label:'' })
+  const [savingCategory,setSavingCategory]=useState(false)
   const logEndRef = useRef(null)
   const eventSourceRef = useRef(null)
   const activeDetail=mode==='classification'?detail:auditDetail
@@ -239,14 +241,43 @@ export default function AdminClassificationTab({
       onRefreshTasks()
     } catch {}
   }
+  const refreshCategories = async () => {
+    try {
+      const { data } = await promptAPI.categories()
+      const rows = data?.categories || data || []
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('admin-categories-updated',{ detail: rows }))
+    } catch {}
+  }
+  const handleSaveCategory = async () => {
+    const slug=String(categoryDraft.slug||'').trim()
+    const label=String(categoryDraft.label||'').trim()
+    if (!slug || !label) return
+    setSavingCategory(true)
+    try {
+      if (categoryDraft.id) await promptAPI.updateCategory(categoryDraft.id,{ label })
+      else await promptAPI.createCategory({ slug,label })
+      setCategoryDraft({ id:null, slug:'', label:'' })
+      await refreshCategories()
+    } catch {}
+    setSavingCategory(false)
+  }
+  const handleDeleteCategory = async id => {
+    try {
+      await promptAPI.deleteCategory(id)
+      if (categoryDraft.id===id) setCategoryDraft({ id:null, slug:'', label:'' })
+      await refreshCategories()
+    } catch {}
+  }
 
   if (!activeDetail) {
     const totalPages = Math.ceil(activeTotal / 20)
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-2">
-          {[{k:'classification',l:'分类任务'},{k:'audit',l:'内容审核'}].map(i=><button key={i.k} onClick={()=>setMode(i.k)} className="px-3 py-1.5 rounded-lg text-xs font-medium border" style={mode===i.k?{background:'var(--accent)',color:'#fff',borderColor:'var(--accent)'}:{borderColor:'var(--border-color)',color:'var(--text-secondary)'}}>{i.l}</button>)}
+          {[{k:'classification',l:'分类任务'},{k:'audit',l:'内容审核'},{k:'categories',l:'分类管理'}].map(i=><button key={i.k} onClick={()=>setMode(i.k)} className="px-3 py-1.5 rounded-lg text-xs font-medium border" style={mode===i.k?{background:'var(--accent)',color:'#fff',borderColor:'var(--accent)'}:{borderColor:'var(--border-color)',color:'var(--text-secondary)'}}>{i.l}</button>)}
         </div>
+        {mode==='categories'&&<div className="space-y-4"><div className="rounded-lg border p-4 space-y-3" style={{ borderColor:'var(--border-color)',background:'var(--bg-card)' }}><div className="text-sm font-medium" style={{ color:'var(--text-primary)' }}>{categoryDraft.id?'编辑分类':'新建分类'}</div><div className="grid grid-cols-1 sm:grid-cols-[12rem_minmax(0,1fr)_auto] gap-2"><input value={categoryDraft.slug} onChange={e=>setCategoryDraft(prev=>({...prev,slug:e.target.value}))} disabled={!!categoryDraft.id} placeholder="slug" className="px-3 py-2 rounded-lg border text-sm" style={{ borderColor:'var(--border-color)',background:'var(--bg-primary)',color:'var(--text-primary)' }} /><input value={categoryDraft.label} onChange={e=>setCategoryDraft(prev=>({...prev,label:e.target.value}))} placeholder="分类名称" className="px-3 py-2 rounded-lg border text-sm" style={{ borderColor:'var(--border-color)',background:'var(--bg-primary)',color:'var(--text-primary)' }} /><button onClick={handleSaveCategory} disabled={savingCategory||!categoryDraft.slug||!categoryDraft.label} className="px-4 py-2 rounded-lg text-sm text-white disabled:opacity-50" style={{ background:'var(--accent)' }}>{savingCategory?'保存中...':categoryDraft.id?'保存':'新增'}</button></div>{categoryDraft.id&&<button onClick={()=>setCategoryDraft({ id:null, slug:'', label:'' })} className="text-xs" style={{ color:'var(--text-secondary)' }}>取消编辑</button>}</div><div className="rounded-lg border overflow-hidden" style={{ borderColor:'var(--border-color)',background:'var(--bg-card)' }}><table className="w-full text-sm"><thead><tr style={{ background:'var(--bg-ai-bubble)' }}><th className="px-3 py-2 text-left font-medium" style={{ color:'var(--text-secondary)' }}>ID</th><th className="px-3 py-2 text-left font-medium" style={{ color:'var(--text-secondary)' }}>Slug</th><th className="px-3 py-2 text-left font-medium" style={{ color:'var(--text-secondary)' }}>名称</th><th className="px-3 py-2 text-left font-medium" style={{ color:'var(--text-secondary)' }}>操作</th></tr></thead><tbody>{categories.length===0?<tr><td colSpan={4} className="px-3 py-8 text-center" style={{ color:'var(--text-secondary)' }}>暂无分类</td></tr>:categories.map(c=><tr key={c.id||c.slug} className="border-t" style={{ borderColor:'var(--border-color)' }}><td className="px-3 py-2" style={{ color:'var(--text-primary)' }}>{c.id||'-'}</td><td className="px-3 py-2" style={{ color:'var(--text-primary)' }}>{c.slug}</td><td className="px-3 py-2" style={{ color:'var(--text-primary)' }}>{c.label}</td><td className="px-3 py-2"><div className="flex items-center gap-2"><button onClick={()=>setCategoryDraft({ id:c.id, slug:c.slug, label:c.label })} className="text-xs font-medium hover:underline" style={{ color:'var(--accent)' }}>编辑</button><button onClick={()=>handleDeleteCategory(c.id)} className="text-xs font-medium hover:underline" style={{ color:'var(--color-error)' }}>删除</button></div></td></tr>)}</tbody></table></div></div>}
+        {mode!=='categories'&&<>
         <div className="flex items-center justify-between">
           <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{mode==='classification'?'AI 自动分类':'AI 内容审核'}</h3>
           <div className="flex gap-2 items-center flex-wrap">
@@ -368,6 +399,7 @@ export default function AdminClassificationTab({
 
         {/* LLM 调试区域 */}
         {mode==='classification'&&<LLMDebugPanel createType={createType} />}
+        </>}
       </div>
     )
   }
@@ -378,7 +410,7 @@ export default function AdminClassificationTab({
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        {[{k:'classification',l:'分类任务'},{k:'audit',l:'内容审核'}].map(i=><button key={i.k} onClick={()=>{setMode(i.k);setSelected(new Set());setAuditSelected(new Set())}} className="px-3 py-1.5 rounded-lg text-xs font-medium border" style={mode===i.k?{background:'var(--accent)',color:'#fff',borderColor:'var(--accent)'}:{borderColor:'var(--border-color)',color:'var(--text-secondary)'}}>{i.l}</button>)}
+        {[{k:'classification',l:'分类任务'},{k:'audit',l:'内容审核'},{k:'categories',l:'分类管理'}].map(i=><button key={i.k} onClick={()=>{setMode(i.k);setSelected(new Set());setAuditSelected(new Set())}} className="px-3 py-1.5 rounded-lg text-xs font-medium border" style={mode===i.k?{background:'var(--accent)',color:'#fff',borderColor:'var(--accent)'}:{borderColor:'var(--border-color)',color:'var(--text-secondary)'}}>{i.l}</button>)}
       </div>
       <div className="flex items-center gap-3">
         <button onClick={() => { setActiveDetail(null); setActiveSelected(new Set()) }} className="flex items-center gap-1 text-sm hover:underline" style={{ color: 'var(--accent)' }}>
@@ -452,8 +484,13 @@ export default function AdminClassificationTab({
                   </td>
                 )}
                 <td className="px-3 py-2 max-w-xs">
-                  <div className="font-medium truncate" style={{ color: 'var(--text-primary)' }}>{r.item_name || '(无标题)'}</div>
-                  <div className="text-xs truncate mt-0.5" style={{ color: 'var(--text-secondary)' }}>{r.item_prompt?.slice(0, 80)}</div>
+                  <div className="flex items-center gap-2">
+                    {mode==='audit'&&r.item_thumb_url&&<img src={r.item_thumb_url} alt="" className="w-10 h-10 rounded object-cover border shrink-0" style={{ borderColor:'var(--border-color)' }} loading="lazy" />}
+                    <div className="min-w-0">
+                      <div className="font-medium truncate" style={{ color: 'var(--text-primary)' }}>{r.item_name || '(无标题)'}</div>
+                      <div className="text-xs truncate mt-0.5" style={{ color: 'var(--text-secondary)' }}>{r.item_prompt?.slice(0, 80)}</div>
+                    </div>
+                  </div>
                 </td>
                 <td className="px-3 py-2">
                   {mode==='classification' ? (r.item_category ? (

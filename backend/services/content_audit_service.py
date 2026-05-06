@@ -85,6 +85,7 @@ class ContentAuditService:
     @classmethod
     def create_task(cls,admin_id:int,item_type:str="prompt",risk_level:str="",limit:int=200)->Dict[str,Any]:
         if item_type not in ("prompt","image"):raise ValueError("item_type 必须是 prompt 或 image")
+        limit=max(1,min(int(limit or 200),500))
         with get_db() as conn:
             if item_type=="image":
                 rows=conn.execute("SELECT si.id,si.filename,si.prompt,si.category,COALESCE(u.nickname,u.username,'') author FROM square_images si LEFT JOIN users u ON si.user_id = u.id WHERE COALESCE(si.is_frozen,FALSE)=FALSE ORDER BY si.created_at DESC LIMIT %s",(limit,)).fetchall()
@@ -94,7 +95,7 @@ class ContentAuditService:
             task=conn.execute("INSERT INTO content_audit_tasks (status,item_type,source_scope,total_items,created_by) VALUES ('processing',%s,'square',%s,%s) RETURNING id,status,item_type,source_scope,total_items,created_at",(item_type,len(rows),admin_id)).fetchone()
             with conn.cursor() as cur:
                 for r in rows:
-                    cur.execute("INSERT INTO content_audit_results (task_id,item_id,item_type,source_scope,item_name,item_prompt,item_category,item_author) VALUES (%s,%s,%s,'square',%s,%s,%s,%s)",(task["id"],str(r["id"]),item_type,r.get("filename") or r.get("name") or "",(r["prompt"] or "")[:1000],r.get("category") or "",r.get("author") or ""))
+                    cur.execute("INSERT INTO content_audit_results (task_id,item_id,item_type,source_scope,item_name,item_prompt,item_category,item_author,item_thumb_url) VALUES (%s,%s,%s,'square',%s,%s,%s,%s,%s)",(task["id"],str(r["id"]),item_type,r.get("filename") or r.get("name") or "",(r["prompt"] or "")[:1000],r.get("category") or "",r.get("author") or "",f"/api/images/thumb/{r['filename']}?size=400" if item_type=="image" and r.get("filename") else None))
             return {"id":task["id"],"status":task["status"],"item_type":task["item_type"],"source_scope":task["source_scope"],"total_items":task["total_items"],"created_at":str(task["created_at"])}
     @classmethod
     async def run_audit(cls,task_id:int):
@@ -120,6 +121,11 @@ class ContentAuditService:
                     for row in batch:
                         match=result_map.get(row["item_id"])
                         if match:
+                            if match.get("risk_level")=="low":
+                                conn.execute("UPDATE content_audit_results SET status = 'rejected', reviewed_at = NOW(), risk_level = %s, confidence = %s, suggested_action = %s, reason_summary = %s, reason_detail = %s, hit_rules = %s WHERE id = %s",(match.get("risk_level","low"),match.get("confidence","medium"),match.get("suggested_action","keep"),match.get("reason_summary","低风险已跳过"),match.get("reason_detail","该内容风险较低，系统已自动跳过，不进入待审核列表。"),json.dumps(match.get("hit_rules",[]),ensure_ascii=False),row["id"]))
+                                cls._push_log(task_id,"info",f"{row['item_name'] or row['item_id']} 低风险自动跳过")
+                                processed+=1
+                                continue
                             conn.execute("UPDATE content_audit_results SET risk_level = %s, confidence = %s, suggested_action = %s, reason_summary = %s, reason_detail = %s, hit_rules = %s WHERE id = %s",(match.get("risk_level",""),match.get("confidence",""),match.get("suggested_action","review"),match.get("reason_summary",""),match.get("reason_detail",""),json.dumps(match.get("hit_rules",[]),ensure_ascii=False),row["id"]))
                             cls._push_log(task_id,"result",f"{row['item_name'] or row['item_id']} -> {match.get('risk_level','')} / {match.get('suggested_action','review')}")
                         else:
@@ -183,7 +189,7 @@ class ContentAuditService:
         with get_db() as conn:
             task=conn.execute("SELECT * FROM content_audit_tasks WHERE id = %s",(task_id,)).fetchone()
             if not task:return None
-            results=conn.execute("SELECT * FROM content_audit_results WHERE task_id = %s ORDER BY id",(task_id,)).fetchall()
+            results=conn.execute("SELECT * FROM content_audit_results WHERE task_id = %s AND NOT (status = 'rejected' AND risk_level = 'low') ORDER BY CASE risk_level WHEN 'high' THEN 0 WHEN 'medium' THEN 1 WHEN 'low' THEN 2 ELSE 3 END,id DESC",(task_id,)).fetchall()
             items=[]
             for r in results:
                 d=dict(r)

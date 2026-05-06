@@ -445,6 +445,7 @@ def init_db():
                 item_prompt TEXT,
                 item_category VARCHAR(64),
                 item_author TEXT,
+                item_thumb_url TEXT,
                 risk_level VARCHAR(16),
                 confidence VARCHAR(16),
                 suggested_action VARCHAR(32),
@@ -458,6 +459,7 @@ def init_db():
             )""",
             "CREATE INDEX IF NOT EXISTS idx_audit_results_task ON content_audit_results(task_id)",
             "CREATE INDEX IF NOT EXISTS idx_audit_results_status ON content_audit_results(status)",
+            "ALTER TABLE content_audit_results ADD COLUMN IF NOT EXISTS item_thumb_url TEXT",
         ]
             for sql in statements:
                 conn.execute(sql)
