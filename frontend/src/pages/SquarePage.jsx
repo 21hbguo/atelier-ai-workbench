@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Image, BookOpen, Share2, Trash2, Snowflake, Sun, RefreshCw, Star, X, Plus } from 'lucide-react'
+import { Image, BookOpen, Share2, Trash2, Snowflake, Sun, RefreshCw, Star, X, Plus, Upload } from 'lucide-react'
 import { squareAPI, promptAPI, adminAPI, favoriteAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 import SearchInput from '../components/SearchInput'
@@ -413,6 +413,19 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
     setInitialEditing(true)
   }, [])
 
+  const handleImport = useCallback(async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const { data } = await promptAPI.importPublic(file)
+      dialog.alert(`导入完成：成功 ${data.success} 条，失败 ${data.failed} 条`)
+      refresh()
+    } catch (err) {
+      dialog.alert('导入失败: ' + (err?.response?.data?.detail || err.message || '未知错误'))
+    }
+    e.target.value = ''
+  }, [refresh, dialog])
+
   const handlePromptCreate = useCallback(async (payload) => {
     const { data } = await promptAPI.createPublic(payload)
     const card = normalizePrompt(data)
@@ -488,6 +501,10 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
                     style={{ background: 'var(--accent)' }}>
                     <Plus size={14} /> 新增
                   </button>
+                  <label className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer hover:bg-bg-hover transition-colors" style={{ color: 'var(--text-secondary)' }}>
+                    <Upload size={14} /> 导入
+                    <input type="file" accept=".json,.csv" className="hidden" onChange={handleImport} />
+                  </label>
                   <button onClick={() => setSelectMode(true)} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>选择</button>
                 </>
               )}

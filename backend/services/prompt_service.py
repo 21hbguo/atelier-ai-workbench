@@ -250,8 +250,13 @@ class PromptService:
                 if not prompt_text or prompt_text in existing or name in existing_names:
                     failed += 1
                     continue
+
+                image_path = item.get("image_path")
+                if image_path:
+                    image_path = cls._resolve_image_path(image_path)
+
                 conn.execute(
-                    "INSERT INTO prompts (id, name, prompt, negative_prompt, tags, created_at, user_id) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    "INSERT INTO prompts (id, name, prompt, negative_prompt, tags, created_at, user_id, category, image_path) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         str(uuid4()),
                         name or f"导入提示词_{success + 1}",
@@ -260,12 +265,49 @@ class PromptService:
                         json.dumps(item.get("tags", []), ensure_ascii=False),
                         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         user_id,
+                        item.get("category"),
+                        image_path,
                     ),
                 )
                 existing.add(prompt_text)
                 existing_names.add(name)
                 success += 1
         return {"success": success, "failed": failed}
+
+    @classmethod
+    def _resolve_image_path(cls, image_path: str) -> Optional[str]:
+        if image_path.startswith(("http://", "https://")):
+            return cls._download_image(image_path)
+        return image_path
+
+    @classmethod
+    def _download_image(cls, url: str) -> Optional[str]:
+        import requests
+        import secrets
+        from urllib.parse import urlparse
+        try:
+            resp = requests.get(url, timeout=30)
+            resp.raise_for_status()
+            content_type = resp.headers.get("content-type", "")
+            if "jpeg" in content_type or "jpg" in content_type:
+                ext = "jpg"
+            elif "png" in content_type:
+                ext = "png"
+            elif "webp" in content_type:
+                ext = "webp"
+            elif "gif" in content_type:
+                ext = "gif"
+            else:
+                path = urlparse(url).path
+                ext = path.rsplit(".", 1)[-1].lower() if "." in path else "jpg"
+                if ext not in ("jpg", "jpeg", "png", "webp", "gif"):
+                    ext = "jpg"
+            filename = f"{secrets.token_hex(16)}.{ext}"
+            save_path = UPLOAD_DIR / filename
+            save_path.write_bytes(resp.content)
+            return filename
+        except Exception:
+            return None
 
     @classmethod
     def export_prompts(cls, ids: Optional[List[str]] = None, format: str = "json", user_id: int = None) -> bytes:
