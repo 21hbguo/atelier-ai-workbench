@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useLocation, Link, useNavigate } from 'react-router-dom'
-import { Sun, Moon, BookOpen, MessageSquare, X, Globe, LogOut, User, Shield, Coins, Wallet, Megaphone, Bell, Settings, LayoutGrid } from 'lucide-react'
+import { Sun, Moon, BookOpen, MessageSquare, X, Globe, LogOut, User, Shield, Coins, Wallet, Bell, Settings, LayoutGrid } from 'lucide-react'
 import { useTheme } from '../ThemeContext'
 import { useLayoutMode } from '../LayoutModeContext'
-import { authAPI, pointsAPI, notificationAPI } from '../api'
+import { announcementAPI, authAPI, pointsAPI, notificationAPI } from '../api'
 import { clearUser, readUser } from '../auth'
 import { useAppDialog } from './AppDialogProvider'
 
@@ -13,7 +13,6 @@ const navItems = [
   { path: '/prompts', icon: BookOpen, label: '我的提示词' },
   { path: '/wallet', icon: Wallet, label: '积分详情' },
   { path: '/notifications', icon: Bell, label: '通知' },
-  { path: '/announcements', icon: Megaphone, label: '公告' },
   // { path: '/shares', icon: Share2, label: '分享管理' },
   // { path: '/settings', icon: Settings, label: '账号安全' },
 ]
@@ -41,14 +40,14 @@ export default function Sidebar({ open, onClose }) {
     pointsAPI.checkinStatus().then(res => {
       setCheckedInToday(res.data.checked_in_today)
     }).catch(() => {})
-    notificationAPI.unreadCount().then(res => setUnreadNoticeCount(res.data.count || 0)).catch(() => {})
+    Promise.allSettled([notificationAPI.unreadCount(),announcementAPI.getUnread()]).then(([noticeRes,annRes])=>setUnreadNoticeCount((noticeRes.status==='fulfilled'?(noticeRes.value.data.count||0):0)+(annRes.status==='fulfilled'?((annRes.value.data.items||[]).length):0))).catch(() => {})
     if (isAdmin) fetch('/api/admin/recharge-requests?page=1&size=1&status=pending',{ credentials:'include' }).then(r=>r.ok?r.json():null).then(data=>setRechargePendingCount(data?.total||0)).catch(()=>{})
 
     const handleUpdate = () => {
       const u = readUser()
       if (u) setPoints(u.points ?? 0)
     }
-    const handleNoticeUpdate = () => notificationAPI.unreadCount().then(res => setUnreadNoticeCount(res.data.count || 0)).catch(() => {})
+    const handleNoticeUpdate = () => Promise.allSettled([notificationAPI.unreadCount(),announcementAPI.getUnread()]).then(([noticeRes,annRes])=>setUnreadNoticeCount((noticeRes.status==='fulfilled'?(noticeRes.value.data.count||0):0)+(annRes.status==='fulfilled'?((annRes.value.data.items||[]).length):0))).catch(() => {})
     const handleRechargeUpdate = e => setRechargePendingCount(Number(e?.detail?.pending)||0)
     window.addEventListener('points-updated', handleUpdate)
     window.addEventListener('notifications-updated', handleNoticeUpdate)

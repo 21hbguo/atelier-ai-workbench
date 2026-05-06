@@ -20,7 +20,6 @@ const PrivacyPage = lazy(() => import('./pages/PrivacyPage'))
 const RefundPage = lazy(() => import('./pages/RefundPage'))
 const RedeemPage = lazy(() => import('./pages/RedeemPage'))
 const WalletPage = lazy(() => import('./pages/WalletPage'))
-const AnnouncementsPage = lazy(() => import('./pages/AnnouncementsPage'))
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
 const SharesPage = lazy(() => import('./pages/SharesPage'))
 
@@ -128,7 +127,7 @@ function AppContent() {
           <Route path="/redeem" element={<ProtectedRoute authReady={authReady} user={user}><RedeemPage /></ProtectedRoute>} />
           <Route path="/wallet" element={<ProtectedRoute authReady={authReady} user={user}><WalletPage /></ProtectedRoute>} />
           <Route path="/notifications" element={<ProtectedRoute authReady={authReady} user={user}><NotificationsPage /></ProtectedRoute>} />
-          <Route path="/announcements" element={<ProtectedRoute authReady={authReady} user={user}><AnnouncementsPage /></ProtectedRoute>} />
+          <Route path="/announcements" element={<Navigate to="/notifications" replace />} />
           <Route path="/" element={<ProtectedRoute authReady={authReady} user={user}><ChatPage /></ProtectedRoute>} />
           <Route path="/square" element={<ProtectedRoute authReady={authReady} user={user}><SquarePage /></ProtectedRoute>} />
           <Route path="/prompts" element={<ProtectedRoute authReady={authReady} user={user}><PromptsPage /></ProtectedRoute>} />

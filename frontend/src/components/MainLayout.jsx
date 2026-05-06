@@ -8,7 +8,7 @@ const quickNavItems = [
   { label: '广场', path: '/square' },
   { label: '提示词', path: '/prompts' },
   { label: '积分详情', path: '/wallet' },
-  { label: '公告', path: '/announcements' },
+  { label: '通知', path: '/notifications' },
 ]
 
 export default function MainLayout({ children, dragProps }) {
