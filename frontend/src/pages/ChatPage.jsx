@@ -3,6 +3,7 @@ import { useDragSelection } from '../hooks/useDragSelection'
 import { useNavigate } from 'react-router-dom'
 import { Download, Trash2, RefreshCw, Coins } from 'lucide-react'
 import ChatInput from '../components/ChatInput'
+import { CardGridSkeleton } from '../components/CardGrid'
 import GenerationCard from '../components/GenerationCard'
 import SearchInput from '../components/SearchInput'
 import MainLayout from '../components/MainLayout'
@@ -818,7 +819,7 @@ export default function ChatPage() {
       {downloadProgress.open && <div className="fixed left-4 right-4 bottom-24 sm:left-auto sm:right-4 sm:bottom-6 sm:w-80 z-40 pointer-events-none"><div className="rounded-2xl p-4 border shadow-lg" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}><div className="flex items-center justify-between gap-3"><div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{downloadProgress.phase === 'zip' ? '正在打包 ZIP' : downloadProgress.phase === 'single' ? '正在逐个下载' : downloadProgress.phase === 'done' ? '处理完成' : '正在准备下载'}</div><div className="text-xs tabular-nums" style={{ color: 'var(--accent)' }}>{downloadProgress.percent}%</div></div><div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{downloadProgress.phase === 'zip' ? `已下载 ${downloadProgress.total}/${downloadProgress.total} 张，正在压缩` : `已处理 ${downloadProgress.current}/${downloadProgress.total} 张`}</div>{downloadProgress.filename && <div className="mt-1 text-[11px] truncate" style={{ color: 'var(--text-secondary)', opacity: 0.8 }}>{downloadProgress.filename}</div>}<div className="mt-3 h-2 rounded-full overflow-hidden" style={{ background: 'var(--border-color)' }}><div className="h-full rounded-full transition-all duration-300" style={{ width: `${downloadProgress.percent}%`, background: 'var(--accent)' }} /></div></div></div>}
       <div ref={feedRef} className="flex-1 min-h-0 overflow-y-auto px-4 pb-56 lg:pb-6">
         {!loaded ? (
-          <div className="flex justify-center items-center h-full"><div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} /></div>
+          <div className="pt-4"><CardGridSkeleton layoutMode={layoutMode} label="加载中..." /></div>
         ) : visibleTasks.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center py-20">
             <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>开始生成你的图像</h2>

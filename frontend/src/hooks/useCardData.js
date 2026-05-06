@@ -45,7 +45,7 @@ export function useCardData({ type, apiFn, pageSize = 20, deps = [], atomicPagin
         if (cancelled || !mountedRef.current) return
         const rawItems = data.images || data.prompts || []
         const nextCards = mapCards ? mapCards(rawItems, type) : normalizeList(rawItems, type)
-        if (atomicPaging) await preloadThumbs(nextCards, preloadCount, preloadTimeoutMs)
+        if (atomicPaging) preloadThumbs(nextCards, preloadCount, preloadTimeoutMs).catch(() => {})
         if (cancelled || !mountedRef.current) return
         setCards(nextCards)
         setTotal(data.total || 0)
@@ -65,7 +65,7 @@ export function useCardData({ type, apiFn, pageSize = 20, deps = [], atomicPagin
       const { data } = await apiFn(page, pageSize)
       const rawItems = data.images || data.prompts || []
       const nextCards = mapCards ? mapCards(rawItems, type) : normalizeList(rawItems, type)
-      if (atomicPaging) await preloadThumbs(nextCards, preloadCount, preloadTimeoutMs)
+      if (atomicPaging) preloadThumbs(nextCards, preloadCount, preloadTimeoutMs).catch(() => {})
       setCards(nextCards)
       setTotal(data.total || 0)
     } catch {}
