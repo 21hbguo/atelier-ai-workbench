@@ -45,7 +45,6 @@ export default function UnifiedDetailModal({
   const [editForm, setEditForm] = useState(null)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
-  const [contentVisible, setContentVisible] = useState(true)
   const [mediaHovered, setMediaHovered] = useState(false)
   const touchStartX = useRef(0)
   const touchStartY = useRef(0)
@@ -60,20 +59,30 @@ export default function UnifiedDetailModal({
   const shouldAutoEdit = useRef(initialEditing)
   const fileInputRef = useRef(null)
   const isTokenState = useCallback((kind) => { const s = window.history.state; return s?.__udm === kind && s?.token === modalToken.current }, [])
-  const expiryInfo = getExpiryInfo({ expiresAt: card?.expiresAt, isPermanent: !!card?.is_permanent, now: nowTs, fallbackDaysLeft: card?.daysLeft })
-
+  const activeIndex = currentIndex
+  const activeCard = card
+  const getViewData = useCallback((sourceCard) => {
+    if (!sourceCard) return null
+    const isImage = sourceCard._type === 'image' || (!sourceCard._type && (sourceCard.fullUrl || sourceCard.url || sourceCard.filename || sourceCard.metadata))
+    const raw = sourceCard._raw || { metadata: sourceCard.metadata || {}, filename: sourceCard.filename || null }
+    const fullUrl = sourceCard.fullUrl || sourceCard.url || ''
+    const meta = typeof raw.metadata === 'string' ? JSON.parse(raw.metadata || '{}') : (raw.metadata || {})
+    const expiryInfo = getExpiryInfo({ expiresAt: sourceCard?.expiresAt, isPermanent: !!sourceCard?.is_permanent, now: nowTs, fallbackDaysLeft: sourceCard?.daysLeft })
+    return { card: sourceCard, isImage, raw, fullUrl, meta, expiryInfo }
+  }, [nowTs])
+  const activeView = getViewData(activeCard)
   const hasNavigation = cards.length > 1
-  const canPrev = hasNavigation && currentIndex > 0
-  const canNext = hasNavigation && currentIndex < cards.length - 1
+  const canPrev = hasNavigation && activeIndex > 0
+  const canNext = hasNavigation && activeIndex < cards.length - 1
   useEffect(() => { onCloseRef.current = onClose }, [onClose])
 
   const handlePrev = useCallback(() => {
-    if (canPrev && onNavigate) onNavigate(currentIndex - 1)
-  }, [canPrev, currentIndex, onNavigate])
+    if (canPrev && onNavigate) onNavigate(activeIndex - 1)
+  }, [canPrev, activeIndex, onNavigate])
 
   const handleNext = useCallback(() => {
-    if (canNext && onNavigate) onNavigate(currentIndex + 1)
-  }, [canNext, currentIndex, onNavigate])
+    if (canNext && onNavigate) onNavigate(activeIndex + 1)
+  }, [canNext, activeIndex, onNavigate])
 
   useEffect(() => {
     if (!hasNavigation) return
@@ -92,7 +101,7 @@ export default function UnifiedDetailModal({
       setEditing(false)
       setEditForm(null)
     }
-  }, [card?.id, currentIndex])
+  }, [activeCard?.id, activeIndex])
   useLayoutEffect(() => {
     if (!modalStatePushed.current) {
       window.history.pushState({ __udm: 'modal', token: modalToken.current }, '')
@@ -118,12 +127,6 @@ export default function UnifiedDetailModal({
     }
     if (!lightbox) lightboxStatePushed.current = false
   }, [lightbox])
-  useEffect(() => {
-    setContentVisible(false)
-    const t = setTimeout(() => setContentVisible(true), 20)
-    return () => clearTimeout(t)
-  }, [currentIndex, card?.id])
-
   const handleTouchStart = (e) => {
     if (!e.touches?.length) return
     touchStartX.current = e.touches[0].clientX
@@ -168,12 +171,9 @@ export default function UnifiedDetailModal({
     else { lightboxStatePushed.current = false; setLightbox(false) }
   }
 
-  if (!card) return null
+  if (!activeView) return null
 
-  const isImage = card._type === 'image' || (!card._type && (card.fullUrl || card.url || card.filename || card.metadata))
-  const raw = card._raw || { metadata: card.metadata || {}, filename: card.filename || null }
-  const fullUrl = card.fullUrl || card.url || ''
-  const meta = typeof raw.metadata === 'string' ? JSON.parse(raw.metadata || '{}') : (raw.metadata || {})
+  const { card: viewCard, isImage, raw, fullUrl, meta, expiryInfo } = activeView
   const handleSaveMetadata = async () => {
     if (!editForm || !raw.filename || saving) return
     setSaving(true)
@@ -277,13 +277,15 @@ export default function UnifiedDetailModal({
   const actionLikedStyle = { background: 'color-mix(in srgb, #f43f5e 12%, transparent)', borderColor: 'transparent', color: '#f43f5e' }
   const actionFavoritedStyle = { background: 'color-mix(in srgb, #f59e0b 14%, transparent)', borderColor: 'transparent', color: '#d97706' }
 
-  const renderLeftPanel = () => {
-    const editImageUrl = editing && editForm?.image_path ? (editForm.image_path.includes('/') ? `/api/prompts/evo-thumb/${editForm.image_path}` : `/api/prompts/image/${editForm.image_path}`) : null
+  const renderLeftPanel = (view, opts = {}) => {
+    if (!view) return null
+    const { fullUrl, isImage } = view
+    const editImageUrl = !opts.readonly && editing && editForm?.image_path ? (editForm.image_path.includes('/') ? `/api/prompts/evo-thumb/${editForm.image_path}` : `/api/prompts/image/${editForm.image_path}`) : null
     const displayUrl = editImageUrl || fullUrl
-    const showUploadBtn = editing && !isImage
+    const showUploadBtn = !opts.readonly && editing && !isImage
     if (!displayUrl) {
       return (
-        <div className={`md:w-3/5 bg-black flex items-center justify-center min-h-[260px] h-[49vh] md:h-full relative transition-opacity duration-150 ${contentVisible ? 'opacity-100' : 'opacity-0'}`} style={{ background: 'color-mix(in srgb, var(--accent) 8%, var(--bg-primary))' }}>
+        <div className="md:w-3/5 bg-black flex items-center justify-center min-h-[260px] min-[0px]:h-[75%] md:h-full relative shrink-0" style={{ background: 'color-mix(in srgb, var(--accent) 8%, var(--bg-primary))' }}>
           <ImageIcon size={64} style={{ color: 'var(--accent)', opacity: 0.3 }} />
           {showUploadBtn && (
             <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
@@ -295,9 +297,9 @@ export default function UnifiedDetailModal({
       )
     }
     return (
-      <div className={`md:w-3/5 bg-black flex items-center justify-center min-h-[260px] h-[49vh] md:h-full relative group cursor-pointer overflow-hidden transition-opacity duration-150 ${contentVisible ? 'opacity-100' : 'opacity-0'}`} onClick={showUploadBtn ? undefined : handleMediaClick} onMouseEnter={() => setMediaHovered(true)} onMouseLeave={() => setMediaHovered(false)}>
+      <div className={`md:w-3/5 bg-black flex items-center justify-center min-h-[260px] min-[0px]:h-[75%] md:h-full relative overflow-hidden shrink-0 ${opts.readonly ? '' : 'group cursor-pointer'}`} onClick={showUploadBtn || opts.readonly ? undefined : handleMediaClick} onMouseEnter={opts.readonly ? undefined : () => setMediaHovered(true)} onMouseLeave={opts.readonly ? undefined : () => setMediaHovered(false)}>
         <img src={displayUrl} alt="" className="max-w-full max-h-full object-contain" />
-        {!showUploadBtn && (
+        {!showUploadBtn && !opts.readonly && (
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
             <Maximize2 size={24} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
@@ -310,15 +312,17 @@ export default function UnifiedDetailModal({
         )}
         {hasNavigation && (
           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 px-2 py-1 rounded-full bg-black/50 text-white text-xs">
-            {currentIndex + 1} / {cards.length}
+            {(opts.index ?? activeIndex) + 1} / {cards.length}
           </div>
         )}
       </div>
     )
   }
 
-  const renderImageDetail = () => {
-    if (editing && editForm) {
+  const renderImageDetail = (view, opts = {}) => {
+    if (!view) return null
+    const { card, meta, expiryInfo } = view
+    if (!opts.readonly && editing && editForm) {
       return (
         <div className="space-y-2.5">
           <div>
@@ -372,8 +376,10 @@ export default function UnifiedDetailModal({
     )
   }
 
-  const renderPromptDetail = () => {
-    if (editing && editForm) {
+  const renderPromptDetail = (view, opts = {}) => {
+    if (!view) return null
+    const { card } = view
+    if (!opts.readonly && editing && editForm) {
       return (
         <div className="space-y-2.5">
           <div>
@@ -427,6 +433,32 @@ export default function UnifiedDetailModal({
           {card.createdAt && <InfoItem label="创建时间" value={card.createdAt} />}
         </div>
       </>
+    )
+  }
+  const renderDetailBody = (view, opts = {}) => view ? (view.isImage ? renderImageDetail(view, opts) : renderPromptDetail(view, opts)) : null
+  const renderDetailPane = (view, opts = {}) => {
+    if (!view) return null
+    const { card, isImage, raw } = view
+    const panelActions = opts.readonly ? [] : actions
+    return (
+      <div className="md:w-2/5 flex-none md:flex-1 md:flex-none min-h-[25%] p-3.5 md:p-4 flex flex-col gap-2.5 overflow-visible md:overflow-y-auto" style={{ color: 'var(--text-primary)' }}>
+        <div className="flex items-center justify-between mb-0.5 shrink-0">
+          <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{title}</span>
+          <div className="flex items-center gap-2">
+            {!opts.readonly && allowMetadataEdit && isImage && raw.filename && !detailExtra && (editing ? <button onClick={handleSaveMetadata} disabled={saving} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--accent)' }}><Check size={16} /></button> : <button onClick={startEditing} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}><Edit2 size={16} /></button>)}
+            {!opts.readonly && allowPromptEdit && !isImage && !detailExtra && (editing ? <button onClick={handleSavePrompt} disabled={saving} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--accent)' }}><Check size={16} /></button> : <button onClick={startPromptEditing} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}><Edit2 size={16} /></button>)}
+            {!opts.readonly ? <button onClick={requestCloseModal} className="p-1 rounded-lg hover:bg-bg-hover"><X size={18} /></button> : <div className="h-[18px] w-[18px] shrink-0" />}
+          </div>
+        </div>
+        <div className="shrink-0 md:order-last">
+          <div className="grid items-stretch gap-1.5 rounded-2xl p-1" style={{ background: 'color-mix(in srgb, var(--bg-primary) 50%, transparent)', gridTemplateColumns: `repeat(${Math.max(panelActions.length, 1)},minmax(0,1fr))` }}>
+          {panelActions.length ? panelActions : <div className="h-11 rounded-2xl" />}
+          </div>
+        </div>
+        <div className="min-h-0 md:flex-1 md:order-none">
+          {opts.readonly ? renderDetailBody(view, { readonly: true }) : detailExtra || renderDetailBody(view)}
+        </div>
+      </div>
     )
   }
 
@@ -516,7 +548,7 @@ export default function UnifiedDetailModal({
     <>
       <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 md:p-4" onClick={requestCloseModal}>
         <div
-          className="rounded-2xl overflow-hidden max-w-5xl w-full h-[70vh] md:h-[84vh] flex flex-col md:flex-row relative"
+          className="rounded-2xl overflow-hidden max-w-5xl w-full h-[84vh] md:h-[84vh] flex flex-col md:flex-row relative"
           style={{ background: 'var(--bg-card)', boxShadow: 'var(--shadow-lg)' }}
           onClick={(e) => e.stopPropagation()}
           onTouchStart={hasNavigation ? handleTouchStart : undefined}
@@ -533,28 +565,9 @@ export default function UnifiedDetailModal({
               <ChevronRight size={24} />
             </button>
           )}
-
-          {renderLeftPanel()}
-
-          <div className={`md:w-2/5 flex-1 md:flex-none p-3.5 md:p-4 flex flex-col gap-2.5 overflow-y-auto transition-opacity duration-150 ${contentVisible ? 'opacity-100' : 'opacity-0'}`} style={{ color: 'var(--text-primary)' }}>
-            <div className="flex items-center justify-between mb-0.5 shrink-0">
-              <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{title}</span>
-              <div className="flex items-center gap-2">
-                {allowMetadataEdit && isImage && raw.filename && !detailExtra && (editing ? <button onClick={handleSaveMetadata} disabled={saving} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--accent)' }}><Check size={16} /></button> : <button onClick={startEditing} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}><Edit2 size={16} /></button>)}
-                {allowPromptEdit && !isImage && !detailExtra && (editing ? <button onClick={handleSavePrompt} disabled={saving} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--accent)' }}><Check size={16} /></button> : <button onClick={startPromptEditing} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}><Edit2 size={16} /></button>)}
-                <button onClick={requestCloseModal} className="p-1 rounded-lg hover:bg-bg-hover"><X size={18} /></button>
-              </div>
-            </div>
-
-            <div className="shrink-0 md:order-last">
-              <div className="grid items-stretch gap-1.5 rounded-2xl p-1" style={{ background: 'color-mix(in srgb, var(--bg-primary) 50%, transparent)', gridTemplateColumns: `repeat(${Math.max(actions.length, 1)},minmax(0,1fr))` }}>
-              {actions}
-              </div>
-            </div>
-
-            <div className="flex-1 min-h-0 md:order-none">
-              {detailExtra || (isImage ? renderImageDetail() : renderPromptDetail())}
-            </div>
+          <div className="relative z-20 flex h-full w-full flex-col overflow-y-auto md:flex-row md:overflow-visible">
+            {renderLeftPanel(activeView)}
+            {renderDetailPane(activeView)}
           </div>
         </div>
       </div>

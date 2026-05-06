@@ -126,7 +126,6 @@ input,textarea,[contenteditable="true"],[contenteditable="plaintext-only"]{-webk
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes cardShimmer { from { background-position:200% 0; } to { background-position:-200% 0; } }
-
 .animate-fade-in-up { animation: fadeInUp 200ms ease-out; }
 .animate-slide-up { animation: slideUp 250ms ease-out; }
 .animate-pulse-slow { animation: pulse 2s ease-in-out infinite; }

@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { useDragSelection } from '../hooks/useDragSelection'
 import { useNavigate } from 'react-router-dom'
-import { Download, Trash2, RefreshCw, Coins } from 'lucide-react'
+import { Download, Trash2, RefreshCw, Coins, ChevronDown } from 'lucide-react'
 import ChatInput from '../components/ChatInput'
 import { CardGridSkeleton } from '../components/CardGrid'
 import GenerationCard from '../components/GenerationCard'
@@ -115,6 +116,8 @@ export default function ChatPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [timeRange, setTimeRange] = useState('1d')
   const [refreshing, setRefreshing] = useState(false)
+  const [timeRangeOpen, setTimeRangeOpen] = useState(false)
+  const [timeRangeMenuPos, setTimeRangeMenuPos] = useState(null)
   const [userList, setUserList] = useState([])
   const [selectedUserId, setSelectedUserId] = useState(null)
   const [points, setPoints] = useState(currentUser?.points ?? 0)
@@ -143,6 +146,9 @@ export default function ChatPage() {
   const downloadLockRef = useRef(false)
   const recoveringRef = useRef(new Set())
   const squareIdMapRef = useRef({})
+  const timeRangeMenuRef = useRef(null)
+  const timeRangeButtonRef = useRef(null)
+  const timeRangePanelRef = useRef(null)
   const navigate = useNavigate()
   const timeRangeOptions = useMemo(() => ([{ k: '1d', l: '近1天' }, { k: '3d', l: '近3天' }, { k: '7d', l: '近7天' }, { k: 'all', l: '全部' }]), [])
   const visibleTasks = useMemo(() => {
@@ -302,6 +308,20 @@ export default function ChatPage() {
       feedRef.current.scrollTop = feedRef.current.scrollHeight
     }
   }, [loaded])
+  useEffect(() => {
+    if (!timeRangeOpen) return
+    const updateTimeRangeMenuPos = () => {
+      const rect = timeRangeButtonRef.current?.getBoundingClientRect()
+      if (!rect) return
+      setTimeRangeMenuPos({ top: rect.bottom + 8, left: rect.right, width: Math.max(rect.width, 112) })
+    }
+    const handlePointerDown = (e) => { if (!timeRangeMenuRef.current?.contains(e.target) && !timeRangePanelRef.current?.contains(e.target)) setTimeRangeOpen(false) }
+    updateTimeRangeMenuPos()
+    window.addEventListener('pointerdown', handlePointerDown)
+    window.addEventListener('resize', updateTimeRangeMenuPos)
+    window.addEventListener('scroll', updateTimeRangeMenuPos, true)
+    return () => { window.removeEventListener('pointerdown', handlePointerDown); window.removeEventListener('resize', updateTimeRangeMenuPos); window.removeEventListener('scroll', updateTimeRangeMenuPos, true) }
+  }, [timeRangeOpen])
   useEffect(() => {
     if (!loaded || visibleTasks.length === 0 || feedLayoutInitializedRef.current) return
     const el = cardGridRef.current
@@ -798,7 +818,8 @@ export default function ChatPage() {
           </div>
         </div>
       )}
-      <div className="flex-shrink-0 flex min-h-10 items-center gap-2 px-4 pt-3 pb-1 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
+      <div className="flex-shrink-0 px-4 pt-3 pb-1 overflow-visible">
+      <div className="flex min-h-10 items-center gap-2 overflow-x-auto overflow-y-visible scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
         <button onClick={() => navigate('/wallet')} className="flex h-8 flex-shrink-0 items-center gap-1.5 px-3 rounded-2xl text-sm font-semibold transition-all hover:scale-105" style={{ background: 'var(--accent)', color: '#fff' }}>
           <Coins size={15} />
           <span className="tabular-nums">{points}</span>
@@ -822,16 +843,18 @@ export default function ChatPage() {
           style={{ color: 'var(--text-secondary)' }}>
           <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
         </button>
-        <div className="flex h-8 flex-shrink-0 items-center gap-1 rounded-2xl p-0.5" style={{ background: 'var(--bg-active)' }}>
-          {timeRangeOptions.map(({ k, l }) => (
-            <button key={k} onClick={() => setTimeRange(k)} className={`flex h-7 items-center px-3 rounded-full text-xs font-medium transition-colors ${timeRange === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`} style={{ color: timeRange === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{l}</button>
-          ))}
+        <div ref={timeRangeMenuRef} className="relative flex-shrink-0">
+          <button ref={timeRangeButtonRef} onClick={() => setTimeRangeOpen(v => !v)} className="flex h-8 items-center gap-1.5 rounded-2xl px-3 text-xs font-medium transition-colors hover:bg-bg-hover" style={{ background: 'var(--bg-active)', color: 'var(--text-primary)' }}>
+            <span>{timeRangeOptions.find(v => v.k === timeRange)?.l || '近1天'}</span>
+            <ChevronDown size={14} className={`transition-transform duration-200 ${timeRangeOpen ? 'rotate-180' : ''}`} />
+          </button>
         </div>
         {selectMode ? (
           <button onClick={exitSelectMode} className="ml-auto flex h-8 items-center px-3 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
         ) : (
           <button onClick={() => setSelectMode(true)} className="ml-auto flex h-8 items-center px-3 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>选择</button>
         )}
+      </div>
       </div>
       {loadError && <div className="mx-4 mt-2 px-3 py-2 rounded-2xl text-xs" style={{ background: 'color-mix(in srgb, var(--color-warning) 12%, transparent)', color: 'var(--color-warning)' }}>{loadError}</div>}
       {downloadProgress.open && <div className="fixed left-4 right-4 bottom-24 sm:left-auto sm:right-4 sm:bottom-6 sm:w-80 z-40 pointer-events-none"><div className="rounded-2xl p-4 border shadow-lg" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}><div className="flex items-center justify-between gap-3"><div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{downloadProgress.phase === 'zip' ? '正在打包 ZIP' : downloadProgress.phase === 'single' ? '正在逐个下载' : downloadProgress.phase === 'done' ? '处理完成' : '正在准备下载'}</div><div className="text-xs tabular-nums" style={{ color: 'var(--accent)' }}>{downloadProgress.percent}%</div></div><div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{downloadProgress.phase === 'zip' ? `已下载 ${downloadProgress.total}/${downloadProgress.total} 张，正在压缩` : `已处理 ${downloadProgress.current}/${downloadProgress.total} 张`}</div>{downloadProgress.filename && <div className="mt-1 text-[11px] truncate" style={{ color: 'var(--text-secondary)', opacity: 0.8 }}>{downloadProgress.filename}</div>}<div className="mt-3 h-2 rounded-full overflow-hidden" style={{ background: 'var(--border-color)' }}><div className="h-full rounded-full transition-all duration-300" style={{ width: `${downloadProgress.percent}%`, background: 'var(--accent)' }} /></div></div></div>}
@@ -854,6 +877,14 @@ export default function ChatPage() {
         )}
       </div>
       {bottomDock}
+      {timeRangeOpen && timeRangeMenuPos && createPortal(
+        <div ref={timeRangePanelRef} className="fixed z-[120] rounded-2xl border p-1 shadow-lg" style={{ top: `${timeRangeMenuPos.top}px`, left: `${timeRangeMenuPos.left}px`, minWidth: `${timeRangeMenuPos.width}px`, transform: 'translateX(-100%)', background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+          {timeRangeOptions.map(({ k, l }) => (
+            <button key={k} onClick={() => { setTimeRange(k); setTimeRangeOpen(false) }} className={`flex w-full items-center rounded-xl px-3 py-2 text-left text-xs font-medium transition-colors ${timeRange === k ? 'bg-[var(--bg-active)]' : 'hover:bg-bg-hover'}`} style={{ color: timeRange === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{l}</button>
+          ))}
+        </div>,
+        document.body
+      )}
 
       {selectedCardIndex !== null && visibleDetailCards.length > 0 && visibleDetailCards[selectedCardIndex] && (() => {
         const currentCard = visibleDetailCards[selectedCardIndex]
