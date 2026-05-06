@@ -30,6 +30,10 @@ function normalizeImageName(name, type, fallback = 'reference') {
 const MAX_IMAGES=5
 function normalizeInputFile(file,fallback=`reference-${Date.now()}`){const type=String(file?.type||'').split(';')[0].trim().toLowerCase();if(!['image/png','image/jpeg','image/webp'].includes(type))return null;if((file?.size||0)>10*1024*1024)return null;const name=normalizeImageName(file?.name||fallback,type,fallback);return file instanceof File&&file.name===name?file:new File([file],name,{type:type||'image/png'})}
 function getClipboardImageFiles(event){const items=Array.from(event?.clipboardData?.items||[]);return items.filter(item=>item.kind==='file'&&String(item.type||'').startsWith('image/')).map((item,i)=>item.getAsFile&&normalizeInputFile(item.getAsFile(),`pasted-${Date.now()}-${i}`)).filter(Boolean)}
+function getFileRejectReason(file){const type=String(file?.type||'').split(';')[0].trim().toLowerCase();const name=String(file?.name||'').toLowerCase();if(type==='application/pdf'||name.endsWith('.pdf'))return'参考图不支持 PDF';if(!['image/png','image/jpeg','image/webp'].includes(type))return'参考图仅支持 PNG/JPG/WebP';if((file?.size||0)>10*1024*1024)return'参考图不能超过 10MB';return''}
+function getClipboardText(event){return String(event?.clipboardData?.getData?.('text/plain')||'').trim()}
+function inferImageUrlName(url,type='image/png'){const clean=String(url||'').split('#')[0].split('?')[0];const last=decodeURIComponent(clean.split('/').pop()||'').trim();return normalizeImageName(last||`reference-${Date.now()}`,type,`reference-${Date.now()}`)}
+async function resolveClipboardImageUrl(text){if(!/^https?:\/\//i.test(text))return null;try{const res=await fetch(text,{method:'HEAD'}).catch(()=>fetch(text));if(!res?.ok)return{error:'图片链接不可访问'};const type=String(res.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();if(!['image/png','image/jpeg','image/webp'].includes(type))return{error:'仅支持 PNG/JPG/WebP 图片链接'};const size=Number(res.headers.get('content-length')||0);if(size>10*1024*1024)return{error:'参考图不能超过 10MB'};return{url:text,name:inferImageUrlName(text,type)}}catch{return{error:'图片链接读取失败'}}}
 
 const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost = 10, optimizeCost = 10 }, ref) {
   const initialOptimizeDraft=loadOptimizeDraft()
@@ -479,15 +483,23 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   }))
 
   const handleFiles = useCallback((files) => {
-    const valid = Array.from(files||[]).map((f,i)=>normalizeInputFile(f,`reference-${Date.now()}-${i}`)).filter(Boolean)
+    const list=Array.from(files||[])
+    const rejected=list.map(getFileRejectReason).filter(Boolean)
+    if(rejected.length)setToast({ message: rejected[0], type: 'error' })
+    const valid = list.map((f,i)=>normalizeInputFile(f,`reference-${Date.now()}-${i}`)).filter(Boolean)
     appendImages(valid.map(f => ({ file: f, preview: URL.createObjectURL(f) })))
   }, [appendImages])
-  const handlePaste = useCallback((e) => {
+  const handlePaste = useCallback(async (e) => {
     const pasted=getClipboardImageFiles(e)
-    if(!pasted.length)return
+    if(pasted.length){e.preventDefault();appendImages(pasted.map(f=>({file:f,preview:URL.createObjectURL(f),name:f.name})));setToast({ message: `已粘贴 ${Math.min(pasted.length,Math.max(0,MAX_IMAGES-images.length))} 张参考图`, type: 'success' });return}
+    const text=getClipboardText(e)
+    if(!text)return
+    const resolved=await resolveClipboardImageUrl(text)
+    if(!resolved)return
     e.preventDefault()
-    appendImages(pasted.map(f=>({file:f,preview:URL.createObjectURL(f),name:f.name})))
-    setToast({ message: `已粘贴 ${Math.min(pasted.length,Math.max(0,MAX_IMAGES-images.length))} 张参考图`, type: 'success' })
+    if(resolved.error){setToast({ message: resolved.error, type: 'error' });return}
+    appendImages([{url:resolved.url,preview:resolved.url,name:resolved.name}])
+    setToast({ message: '已添加图片链接作为参考图', type: 'success' })
   }, [appendImages,images.length])
 
   const canSend = prompt.trim() || type || style || mood
@@ -689,7 +701,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
             )}
             <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)} onPaste={handlePaste}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(false) } }}
-              placeholder="把脑洞变成画✨ 支持粘贴图片做参考图"
+              placeholder="把脑洞变成画✨ 支持粘贴图片或图片链接做参考图"
               className="block w-full resize-none bg-transparent outline-none py-2"
               rows={1} style={{ color: 'var(--text-primary)', minHeight: '40px', maxHeight: '120px', fontSize: '15px', paddingLeft: '10px' }} />
             <div className="mt-2 flex items-center justify-between gap-3">
