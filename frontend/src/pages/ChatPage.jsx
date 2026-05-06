@@ -3,6 +3,7 @@ import { useDragSelection } from '../hooks/useDragSelection'
 import { useNavigate } from 'react-router-dom'
 import { Download, Trash2, RefreshCw, Coins } from 'lucide-react'
 import ChatInput from '../components/ChatInput'
+import { CardGridSkeleton } from '../components/CardGrid'
 import GenerationCard from '../components/GenerationCard'
 import SearchInput from '../components/SearchInput'
 import MainLayout from '../components/MainLayout'
@@ -126,8 +127,11 @@ export default function ChatPage() {
   const [downloadProgress, setDownloadProgress] = useState({ open: false, phase: 'idle', current: 0, total: 0, percent: 0, filename: '' })
   const [thumbnailBlurMap, setThumbnailBlurMap] = useState({})
   const [expiryNowTs, setExpiryNowTs] = useState(() => Date.now())
+  const [feedLayoutReady, setFeedLayoutReady] = useState(false)
   const feedRef = useRef(null)
   const cardGridRef = useRef(null)
+  const feedRevealTimerRef = useRef(null)
+  const feedLayoutInitializedRef = useRef(false)
   const { selectionRect, dragSelected, wasDraggedRef } = useDragSelection({
     enabled: selectMode,
     selected: checked,
@@ -298,6 +302,21 @@ export default function ChatPage() {
       feedRef.current.scrollTop = feedRef.current.scrollHeight
     }
   }, [loaded])
+  useEffect(() => {
+    if (!loaded || visibleTasks.length === 0 || feedLayoutInitializedRef.current) return
+    const el = cardGridRef.current
+    if (!el) return
+    let observer = null
+    const reveal = () => { if (feedRevealTimerRef.current) clearTimeout(feedRevealTimerRef.current); feedRevealTimerRef.current = setTimeout(() => { observer?.disconnect(); feedLayoutInitializedRef.current = true; setFeedLayoutReady(true) }, 180) }
+    setFeedLayoutReady(false)
+    reveal()
+    observer = new ResizeObserver(() => reveal())
+    observer.observe(el)
+    return () => {
+      observer?.disconnect()
+      if (feedRevealTimerRef.current) { clearTimeout(feedRevealTimerRef.current); feedRevealTimerRef.current = null }
+    }
+  }, [loaded, visibleTasks.length])
   useEffect(() => {
     const tick = () => setExpiryNowTs(Date.now())
     tick()
@@ -818,7 +837,7 @@ export default function ChatPage() {
       {downloadProgress.open && <div className="fixed left-4 right-4 bottom-24 sm:left-auto sm:right-4 sm:bottom-6 sm:w-80 z-40 pointer-events-none"><div className="rounded-2xl p-4 border shadow-lg" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}><div className="flex items-center justify-between gap-3"><div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{downloadProgress.phase === 'zip' ? '正在打包 ZIP' : downloadProgress.phase === 'single' ? '正在逐个下载' : downloadProgress.phase === 'done' ? '处理完成' : '正在准备下载'}</div><div className="text-xs tabular-nums" style={{ color: 'var(--accent)' }}>{downloadProgress.percent}%</div></div><div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{downloadProgress.phase === 'zip' ? `已下载 ${downloadProgress.total}/${downloadProgress.total} 张，正在压缩` : `已处理 ${downloadProgress.current}/${downloadProgress.total} 张`}</div>{downloadProgress.filename && <div className="mt-1 text-[11px] truncate" style={{ color: 'var(--text-secondary)', opacity: 0.8 }}>{downloadProgress.filename}</div>}<div className="mt-3 h-2 rounded-full overflow-hidden" style={{ background: 'var(--border-color)' }}><div className="h-full rounded-full transition-all duration-300" style={{ width: `${downloadProgress.percent}%`, background: 'var(--accent)' }} /></div></div></div>}
       <div ref={feedRef} className="flex-1 min-h-0 overflow-y-auto px-4 pb-56 lg:pb-6">
         {!loaded ? (
-          <div className="flex justify-center items-center h-full"><div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} /></div>
+          <div className="pt-4"><CardGridSkeleton layoutMode={layoutMode} label="加载中..." /></div>
         ) : visibleTasks.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center py-20">
             <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>开始生成你的图像</h2>
@@ -826,6 +845,7 @@ export default function ChatPage() {
           </div>
         ) : (
           <div ref={cardGridRef} className={`${layoutMode === 'masonry' ? 'card-feed-masonry' : 'card-feed-grid'} pt-4`} style={{ position: 'relative' }}>
+            {!feedLayoutReady && <div className="card-feed-loading-mask" />}
             {visibleTasks.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onAddPrompt={handleAddPrompt} onAddToPromptLibrary={isAdmin?handleAddToPromptLibrary:undefined} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id) || dragSelected.has(String(task.task_id))} onToggleCheck={() => toggleCheck(task.task_id)} wasDraggedRef={wasDraggedRef} showUsername={isAdmin} username={task.username} thumbnailBlurred={!!thumbnailBlurMap[getThumbnailBlurItemKey(task)]} onToggleThumbnailBlur={() => { const k=getThumbnailBlurItemKey(task); setThumbnailBlurMap(prev => ({ ...prev, [k]: !prev[k] })) }} onViewDetail={() => handleCardViewDetail(task.task_id)} masonry={layoutMode === 'masonry'} nowTs={expiryNowTs} data-card-id={String(task.task_id)} />)}
             {selectionRect && selectionRect.width > 5 && selectionRect.height > 5 && (
               <div className="drag-selection-rect" style={{ position: 'fixed', left: selectionRect.left, top: selectionRect.top, width: selectionRect.width, height: selectionRect.height }} />
