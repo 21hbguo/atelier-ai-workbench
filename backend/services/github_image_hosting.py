@@ -16,9 +16,36 @@ from backend.config import (
 logger = logging.getLogger(__name__)
 
 GITHUB_API = "https://api.github.com"
+GITHUB_REPO_SOFT_LIMIT_MB = 180
+GITHUB_REPO_HARD_LIMIT_MB = 195
 
 
 class GithubImageHostingService:
+    @classmethod
+    async def get_repo_size_mb(cls) -> Optional[float]:
+        size_kb = await cls.get_repo_size_kb()
+        return round(size_kb / 1024, 1) if size_kb is not None else None
+
+    @classmethod
+    async def can_upload_with_size(cls, file_size_bytes: int) -> tuple[bool, dict]:
+        size_mb = await cls.get_repo_size_mb()
+        if size_mb is None:
+            return True, {"checked": False, "reason": "repo_size_unknown"}
+        projected_mb = size_mb + file_size_bytes / 1024 / 1024
+        if projected_mb >= GITHUB_REPO_HARD_LIMIT_MB:
+            return False, {"checked": True, "size_mb": size_mb, "projected_mb": round(projected_mb, 1), "hard_limit_mb": GITHUB_REPO_HARD_LIMIT_MB}
+        return True, {"checked": True, "size_mb": size_mb, "projected_mb": round(projected_mb, 1), "soft_limit_mb": GITHUB_REPO_SOFT_LIMIT_MB, "hard_limit_mb": GITHUB_REPO_HARD_LIMIT_MB}
+
+    @classmethod
+    async def ensure_upload_capacity(cls, file_size_bytes: int) -> tuple[bool, dict]:
+        allowed, info = await cls.can_upload_with_size(file_size_bytes)
+        if allowed:
+            return True, {**info, "cleaned_before_upload": 0}
+        from backend.services.image_expiry import enforce_github_repo_size_limit
+        cleanup_result = await enforce_github_repo_size_limit(target_size_mb=GITHUB_REPO_SOFT_LIMIT_MB)
+        allowed_after, info_after = await cls.can_upload_with_size(file_size_bytes)
+        return allowed_after, {**info_after, "cleaned_before_upload": cleanup_result.get("github_deleted", 0), "cleanup_result": cleanup_result}
+
     @classmethod
     async def upload_image(cls, image_path: str) -> tuple[Optional[str], Optional[str]]:
         """上传图片到 GitHub 仓库，返回 (jsdelivr_url, None)"""
@@ -32,6 +59,9 @@ class GithubImageHostingService:
         file_size = os.path.getsize(image_path)
         if file_size > MAX_FILE_SIZE:
             raise ValueError(f"文件大小 {file_size / 1024 / 1024:.2f}MB 超过限制")
+        allowed, info = await cls.ensure_upload_capacity(file_size)
+        if not allowed:
+            raise ValueError(f"GitHub 图床仓库容量不足，已后台尝试清理，当前约 {info.get('size_mb')}MB，预计上传后 {info.get('projected_mb')}MB，仍无法上传")
 
         with open(image_path, "rb") as f:
             content = f.read()

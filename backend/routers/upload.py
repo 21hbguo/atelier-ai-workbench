@@ -14,6 +14,7 @@ from backend.services.github_image_hosting import GithubImageHostingService
 from backend.services.image_mapping import ImageUrlMapping
 from backend.config import UPLOAD_DIR, MAX_FILE_SIZE, is_github_hosting_enabled
 from backend.services.upload_file_service import UploadFileService
+from backend.services.image_expiry import enforce_github_repo_size_limit
 from backend.models.schemas import UploadResponse
 from backend.auth import get_current_user
 
@@ -99,6 +100,9 @@ async def _do_upload(file: UploadFile) -> UploadResponse:
     await asyncio.to_thread(_write_file, save_path, content)
     logger.info(f"上传文件: {filename}, github_hosting={is_github_hosting_enabled()}")
     if is_github_hosting_enabled():
+        size_result = await enforce_github_repo_size_limit()
+        if size_result.get("hard_over_limit"):
+            logger.warning(f"github hosting repo still over hard limit after cleanup: {size_result}")
         url, delete_token = await GithubImageHostingService.upload_image(str(save_path))
     else:
         url, delete_token = await ImageHostingService.upload_image(str(save_path))

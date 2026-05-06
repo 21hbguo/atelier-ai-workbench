@@ -13,7 +13,8 @@ EXTEND_COST_PER_IMAGE=2
 RETENTION_DAYS=2
 IMAGE_EXTEND_TX_TYPE="image_expire_extend"
 IMAGE_GENERATED_TX_TYPE="image_generated"
-GITHUB_REPO_SIZE_LIMIT_MB=200
+GITHUB_REPO_SIZE_LIMIT_MB=180
+GITHUB_REPO_SIZE_HARD_LIMIT_MB=195
 
 
 def _detect_hosting_type(url: str) -> str:
@@ -218,34 +219,43 @@ async def cleanup_dangling_mappings() -> dict:
     return {"cleaned": cleaned, "github_deleted": github_deleted, "github_failed": github_failed}
 
 
-async def enforce_github_repo_size_limit() -> dict:
+async def enforce_github_repo_size_limit(target_size_mb: float | None = None) -> dict:
     from backend.services.github_image_hosting import GithubImageHostingService
     github_enabled=is_github_hosting_enabled()
     if not github_enabled:
         return {"checked": False, "reason": "GitHub hosting not enabled"}
+    target_size_mb=float(target_size_mb or GITHUB_REPO_SIZE_LIMIT_MB)
     size_kb=await GithubImageHostingService.get_repo_size_kb()
     if size_kb is None:
         return {"checked": False, "reason": "unable to get repo size"}
     size_mb=size_kb/1024
-    if size_mb<=GITHUB_REPO_SIZE_LIMIT_MB:
+    if size_mb<=target_size_mb:
         return {"checked": True, "size_mb": round(size_mb, 1), "over_limit": False, "github_deleted": 0}
-    logger.warning(f"GitHub repo size {size_mb:.1f}MB exceeds limit {GITHUB_REPO_SIZE_LIMIT_MB}MB")
+    logger.warning(f"GitHub repo size {size_mb:.1f}MB exceeds limit {target_size_mb}MB")
     github_deleted=0
     github_failed=0
-    with get_db() as conn:
-        rows=conn.execute("SELECT m.filename, im.delete_token FROM image_metadata m JOIN image_mappings im ON im.local_path = (%s::text || '/' || m.filename) WHERE m.is_permanent = FALSE AND im.url LIKE '%%cdn.jsdelivr.net%%' AND im.delete_token != '' ORDER BY m.created_at ASC LIMIT 20", (str(GENERATED_IMAGES_DIR),)).fetchall()
-        for row in rows:
-            try:
-                if await GithubImageHostingService.delete_image(row["delete_token"]):
-                    github_deleted+=1
-                else:
+    guard=0
+    while size_mb>target_size_mb and guard<20:
+        guard+=1
+        deleted_this_round=0
+        with get_db() as conn:
+            rows=conn.execute("SELECT m.filename, im.delete_token FROM image_metadata m JOIN image_mappings im ON im.local_path = (%s::text || '/' || m.filename) WHERE m.is_permanent = FALSE AND im.url LIKE '%%cdn.jsdelivr.net%%' AND im.delete_token != '' ORDER BY m.created_at ASC LIMIT 30", (str(GENERATED_IMAGES_DIR),)).fetchall()
+            if not rows:break
+            for row in rows:
+                try:
+                    if await GithubImageHostingService.delete_image(row["delete_token"]):
+                        github_deleted+=1
+                        deleted_this_round+=1
+                    else:
+                        github_failed+=1
+                except Exception:
                     github_failed+=1
-            except Exception:
-                github_failed+=1
-                logger.exception(f"github repo size enforcement delete failed filename={row['filename']}")
-    new_size_kb=await GithubImageHostingService.get_repo_size_kb()
-    new_size_mb=(new_size_kb/1024) if new_size_kb else None
-    return {"checked": True, "size_mb": round(size_mb, 1), "new_size_mb": round(new_size_mb, 1) if new_size_mb else None, "over_limit": new_size_mb is not None and new_size_mb>GITHUB_REPO_SIZE_LIMIT_MB, "github_deleted": github_deleted, "github_failed": github_failed}
+                    logger.exception(f"github repo size enforcement delete failed filename={row['filename']}")
+        if deleted_this_round<=0:break
+        new_size_kb=await GithubImageHostingService.get_repo_size_kb()
+        if new_size_kb is None:break
+        size_mb=new_size_kb/1024
+    return {"checked": True, "target_size_mb": round(target_size_mb, 1), "size_mb": round((size_kb/1024), 1), "new_size_mb": round(size_mb, 1), "over_limit": size_mb>target_size_mb, "hard_over_limit": size_mb>GITHUB_REPO_SIZE_HARD_LIMIT_MB, "github_deleted": github_deleted, "github_failed": github_failed}
 
 async def expiry_cleanup_loop(interval_seconds: int = 3600):
     while True:
