@@ -99,6 +99,7 @@ function makePromptLibraryName(prompt=''){const clean=String(prompt||'').replace
 function getThumbnailBlurStorageKey(user){const id=user?.id??user?.user_id??user?.username??'guest';return`chat_thumbnail_blur_${id}`}
 function getThumbnailBlurMap(user){try{return JSON.parse(localStorage.getItem(getThumbnailBlurStorageKey(user))||'{}')}catch{return {}}}
 function getThumbnailBlurItemKey(task){return String(task?.result_urls?.[0]?.split('/').pop()||task?.task_id||'')}
+function buildDetailCardsFromTask(task, expiryByFilename = {}, squareIdMap = {}) { const prompt = task?.params?.prompt || task?.prompt || ''; return (task?.result_urls || []).map((url, idx) => { const filename = url.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, filename); const known = filename in expiryByFilename; const expired = typeof exp.expired === 'boolean' ? exp.expired : !known ? true : !!task.expired; return { _type: 'image', _raw: { filename, metadata: { prompt, task_id: task.task_id, created_at: task.created_at, started_at: task.started_at, completed_at: task.completed_at, type: task?.params?.image_urls?.length ? 'image' : 'text', size: task?.params?.size, input_urls: task?.params?.image_urls } }, id: `${task.task_id}-${idx}`, prompt, fullUrl: `/api/images/file/${filename}`, filename, expiresAt: exp.expires_at || task.expires_at || null, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : !!task.is_permanent, daysLeft: typeof exp.days_left === 'number' ? exp.days_left : task.days_left, expired, square_image_id: squareIdMap[filename] || exp.square_image_id || task.square_image_id || null } }) }
 
 export default function ChatPage() {
   const dialog = useAppDialog()
@@ -114,7 +115,7 @@ export default function ChatPage() {
   const [selectMode, setSelectMode] = useState(false)
   const [checked, setChecked] = useState(new Set())
   const [searchQuery, setSearchQuery] = useState('')
-  const [timeRange, setTimeRange] = useState('1d')
+  const [timeRange, setTimeRange] = useState('all')
   const [refreshing, setRefreshing] = useState(false)
   const [timeRangeOpen, setTimeRangeOpen] = useState(false)
   const [timeRangeMenuPos, setTimeRangeMenuPos] = useState(null)
@@ -126,10 +127,12 @@ export default function ChatPage() {
   const [extendCostPerImage, setExtendCostPerImage] = useState(2)
   const [loadError, setLoadError] = useState('')
   const [selectedCardIndex, setSelectedCardIndex] = useState(null)
+  const [selectedDetailTaskId, setSelectedDetailTaskId] = useState(null)
   const [detailCards, setDetailCards] = useState([])
   const [downloadProgress, setDownloadProgress] = useState({ open: false, phase: 'idle', current: 0, total: 0, percent: 0, filename: '' })
   const [thumbnailBlurMap, setThumbnailBlurMap] = useState({})
   const [expiryNowTs, setExpiryNowTs] = useState(() => Date.now())
+  const [expiryByFilenameMap, setExpiryByFilenameMap] = useState({})
   const [feedLayoutReady, setFeedLayoutReady] = useState(false)
   const feedRef = useRef(null)
   const cardGridRef = useRef(null)
@@ -155,6 +158,7 @@ export default function ChatPage() {
     const now = Date.now()
     const limit = timeRange === 'all' ? 0 : timeRange === '1d' ? 24 * 60 * 60 * 1000 : timeRange === '3d' ? 3 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000
     return tasks.filter(t => {
+      if (t.expired) return false
       if (!limit) return true
       const ts = parseTaskTime(t.created_at)
       return ts > 0 ? now - ts <= limit : true
@@ -229,6 +233,7 @@ export default function ChatPage() {
       for (const u of (t.result_urls || [])) taskImageFiles.add(u.split('/').pop())
     }
     const expiryByFilename = Object.fromEntries(allImages.map(img => [img.filename, { expires_at: img.expires_at, is_permanent: !!img.is_permanent, days_left: img.days_left, expired: !!img.expired, width: img.width || null, height: img.height || null, square_image_id: img.square_image_id || null }]))
+    setExpiryByFilenameMap(expiryByFilename)
     let orphans = allImages.filter(img => !taskImageFiles.has(img.filename)).map(img => ({
       task_id: 'img-' + img.filename,
       status: 'completed',
@@ -250,10 +255,10 @@ export default function ChatPage() {
       const lower = q.toLowerCase()
       orphans = orphans.filter(o => ((o.params?.prompt || '').toLowerCase().includes(lower)))
     }
-    const merged = [...orphans, ...allTasks.map(t => { const fn = t.result_urls?.[0]?.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, fn); return { ...t, expires_at: exp.expires_at || t.expires_at, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : t.is_permanent, days_left: typeof exp.days_left === 'number' ? exp.days_left : t.days_left, expired: typeof exp.expired === 'boolean' ? exp.expired : t.expired, width: exp.width || t.width || null, height: exp.height || t.height || null, square_image_id: exp.square_image_id || t.square_image_id || null } })].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
+    const merged = [...orphans, ...allTasks.map(t => { const fn = t.result_urls?.[0]?.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, fn); const allExpired = (t.result_urls || []).every(u => { const f = u.split('/').pop(); const e = getExpiryByFilename(expiryByFilename, f); return (typeof e.expired === 'boolean' ? e.expired : false) || !(f in expiryByFilename) }); return { ...t, expires_at: exp.expires_at || t.expires_at, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : t.is_permanent, days_left: typeof exp.days_left === 'number' ? exp.days_left : t.days_left, expired: allExpired ? true : typeof exp.expired === 'boolean' ? exp.expired : t.expired, width: exp.width || t.width || null, height: exp.height || t.height || null, square_image_id: exp.square_image_id || t.square_image_id || null } })].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
     setTasks(merged)
     const completedMerged = merged.filter(t => t.status === 'completed' && t.result_urls?.length)
-    setDetailCards(completedMerged.flatMap(task => { const prompt = task.params?.prompt || task.prompt || ''; return task.result_urls.map((url, idx) => { const filename = url.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, filename); return { _type: 'image', _raw: { filename, metadata: { prompt, task_id: task.task_id, created_at: task.created_at, started_at: task.started_at, completed_at: task.completed_at, type: task.params?.image_urls?.length ? 'image' : 'text', size: task.params?.size, input_urls: task.params?.image_urls } }, id: `${task.task_id}-${idx}`, prompt, fullUrl: `/api/images/file/${filename}`, filename, expiresAt: exp.expires_at || task.expires_at || null, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : !!task.is_permanent, daysLeft: typeof exp.days_left === 'number' ? exp.days_left : task.days_left, expired: typeof exp.expired === 'boolean' ? exp.expired : !!task.expired, square_image_id: exp.square_image_id || task.square_image_id || squareIdMapRef.current[filename] || null } }) }))
+    setDetailCards(completedMerged.flatMap(task => buildDetailCardsFromTask(task, expiryByFilename, squareIdMapRef.current)))
     saveCachedActiveTasks(merged)
     if (!loaded) setLoaded(true)
   }, [loaded, isAdmin, selectedUserId, searchQuery, loadCachedActiveTasks, saveCachedActiveTasks])
@@ -582,20 +587,56 @@ export default function ChatPage() {
     }
   }, [tasks, pollTask, updateTask])
 
-  const completedTasks = visibleTasks.filter(t => t.status === 'completed' && t.result_urls?.length)
-  const visibleDetailCards = useMemo(() => {
-    const ids = new Set(completedTasks.map(t => t.task_id))
-    return detailCards.filter(c => ids.has(c?._raw?.metadata?.task_id))
-  }, [completedTasks, detailCards])
+  const allDetailCards = useMemo(() => {
+    const result = []
+    for (const task of visibleTasks) {
+      if (!task.result_urls?.length) continue
+      const cards = buildDetailCardsFromTask(task, expiryByFilenameMap, squareIdMapRef.current)
+      for (const c of cards) {
+        if (!c.expired) result.push(c)
+      }
+    }
+    return result
+  }, [visibleTasks, expiryByFilenameMap])
 
   const handleCardViewDetail = useCallback((taskId) => {
-    const idx = visibleDetailCards.findIndex(c => c?._raw?.metadata?.task_id === taskId)
-    if (idx >= 0) setSelectedCardIndex(idx)
-  }, [visibleDetailCards])
+    const task = visibleTasks.find(t => t.task_id === taskId && t.result_urls?.length)
+    if (!task) return
+    const cards = buildDetailCardsFromTask(task, expiryByFilenameMap, squareIdMapRef.current)
+    if (cards.every(c => c.expired)) return
+    const firstNonExpired = cards.findIndex(c => !c.expired)
+    let offset = 0
+    for (const t of visibleTasks) {
+      if (!t.result_urls?.length) continue
+      const tc = buildDetailCardsFromTask(t, expiryByFilenameMap, squareIdMapRef.current)
+      if (t.task_id === taskId) { offset += firstNonExpired; break }
+      offset += tc.filter(c => !c.expired).length
+    }
+    setSelectedDetailTaskId(taskId)
+    setSelectedCardIndex(offset)
+  }, [visibleTasks, expiryByFilenameMap])
 
   const handleModalNavigate = useCallback((newIndex) => {
     setSelectedCardIndex(newIndex)
-  }, [])
+    let offset = 0
+    for (const task of visibleTasks) {
+      if (!task.result_urls?.length) continue
+      const cards = buildDetailCardsFromTask(task, expiryByFilenameMap, squareIdMapRef.current)
+      const count = cards.filter(c => !c.expired).length
+      if (count === 0) continue
+      if (newIndex < offset + count) {
+        setSelectedDetailTaskId(task.task_id)
+        return
+      }
+      offset += count
+    }
+  }, [visibleTasks, expiryByFilenameMap])
+  useEffect(() => {
+    if (!selectedDetailTaskId) return
+    if (allDetailCards.length === 0) { setSelectedCardIndex(null); setSelectedDetailTaskId(null); return }
+    if (selectedCardIndex === null) setSelectedCardIndex(0)
+    else if (selectedCardIndex >= allDetailCards.length) setSelectedCardIndex(allDetailCards.length - 1)
+  }, [allDetailCards, selectedDetailTaskId, selectedCardIndex])
   const handleDetailShare = useCallback(async (card) => {
     try {
       const { data } = await squareAPI.share({ filename: card.filename, prompt: card.prompt || '', metadata: { size: card?._raw?.metadata?.size, type: card?._raw?.metadata?.type || 'text', input_urls: card?._raw?.metadata?.input_urls } })
@@ -886,17 +927,17 @@ export default function ChatPage() {
         document.body
       )}
 
-      {selectedCardIndex !== null && visibleDetailCards.length > 0 && visibleDetailCards[selectedCardIndex] && (() => {
-        const currentCard = visibleDetailCards[selectedCardIndex]
+      {selectedCardIndex !== null && allDetailCards.length > 0 && allDetailCards[selectedCardIndex] && (() => {
+        const currentCard = allDetailCards[selectedCardIndex]
         const currentShareId = currentCard?.square_image_id || squareIdMapRef.current[currentCard?.filename] || null
         const isShared = Boolean(currentShareId || currentCard?.is_permanent)
         return (
         <UnifiedDetailModal
           card={currentCard}
-          cards={visibleDetailCards}
+          cards={allDetailCards}
           currentIndex={selectedCardIndex}
           onNavigate={handleModalNavigate}
-          onClose={() => setSelectedCardIndex(null)}
+          onClose={() => { setSelectedCardIndex(null); setSelectedDetailTaskId(null) }}
           onUseImage={card => inputRef.current?.addImage(card.fullUrl)}
           onUsePrompt={handleAddPrompt}
           onShare={isShared ? undefined : handleDetailShare}

@@ -443,7 +443,7 @@ export default function UnifiedDetailModal({
     return (
       <div className="md:w-2/5 flex-none md:flex-1 md:flex-none min-h-[25%] p-3.5 md:p-4 flex flex-col gap-2.5 overflow-visible md:overflow-y-auto" style={{ color: 'var(--text-primary)' }}>
         <div className="flex items-center justify-between mb-0.5 shrink-0">
-          <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{title}</span>
+          <span className="text-sm font-medium shrink-0" style={{ color: 'var(--text-secondary)' }}>{title}</span>
           <div className="flex items-center gap-2">
             {!opts.readonly && allowMetadataEdit && isImage && raw.filename && !detailExtra && (editing ? <button onClick={handleSaveMetadata} disabled={saving} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--accent)' }}><Check size={16} /></button> : <button onClick={startEditing} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}><Edit2 size={16} /></button>)}
             {!opts.readonly && allowPromptEdit && !isImage && !detailExtra && (editing ? <button onClick={handleSavePrompt} disabled={saving} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--accent)' }}><Check size={16} /></button> : <button onClick={startPromptEditing} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}><Edit2 size={16} /></button>)}
