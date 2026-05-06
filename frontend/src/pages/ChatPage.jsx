@@ -447,8 +447,8 @@ export default function ChatPage() {
         } catch (e) {
           const msg = e.message || ''
           if (msg.includes('积分不足') || msg.includes('402')) {
-            updateTask(tempId, { status: 'failed', error: '积分不足，请充值后重试', _active: false })
-            return { ok: false, stop: true, message: '积分不足，请充值后重试' }
+            updateTask(tempId, { status: 'failed', error: '积分不足，请先获取更多积分后重试', _active: false })
+            return { ok: false, stop: true, message: '积分不足，请先获取更多积分后重试' }
           }
           const isTimeout = msg.includes('timeout') || msg.includes('超时')
           if (isTimeout) {
