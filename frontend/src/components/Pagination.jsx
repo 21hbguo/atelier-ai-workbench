@@ -32,18 +32,16 @@ export default function Pagination({ page, totalPages, onPageChange, scrollTarge
   }
 
   return (
-    <div className="flex items-center justify-center gap-2 mt-4 flex-wrap">
+    <div className="mt-4 flex items-center justify-center gap-2">
       <button onClick={e => go(page - 1, e)} disabled={page === 1}
-        className="px-3 py-1 rounded-lg text-xs font-medium disabled:opacity-40"
+        className="h-8 rounded-xl px-3 text-xs font-medium disabled:opacity-40"
         style={{ color: 'var(--text-secondary)', background: 'var(--bg-card)' }}>上一页</button>
-      <span className="text-xs tabular-nums" style={{ color: 'var(--text-secondary)' }}>{page}/{totalPages}</span>
-      <div className="flex items-center gap-1 rounded-lg px-2 py-1" style={{ background: 'var(--bg-card)' }}>
-        <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>跳至</span>
-        <input value={draft} onChange={e => setDraft(e.target.value.replace(/[^\d]/g, ''))} onKeyDown={e => { if (e.key === 'Enter') submitDraft(e) }} className="w-12 bg-transparent text-center text-xs outline-none tabular-nums" style={{ color: 'var(--text-primary)' }} />
-        <button onClick={submitDraft} className="px-2 py-0.5 rounded-md text-xs font-medium" style={{ color: 'var(--text-primary)', background: 'var(--bg-primary)' }}>确定</button>
+      <div className="flex h-8 items-center rounded-xl px-2" style={{ background: 'var(--bg-card)' }}>
+        <input value={draft} onChange={e => setDraft(e.target.value.replace(/[^\d]/g, ''))} onBlur={submitDraft} onKeyDown={e => { if (e.key === 'Enter') submitDraft(e) }} className="w-10 bg-transparent text-center text-xs outline-none tabular-nums" style={{ color: 'var(--text-primary)' }} />
+        <span className="px-1 text-xs tabular-nums" style={{ color: 'var(--text-secondary)' }}>/ {totalPages}</span>
       </div>
       <button onClick={e => go(page + 1, e)} disabled={page === totalPages}
-        className="px-3 py-1 rounded-lg text-xs font-medium disabled:opacity-40"
+        className="h-8 rounded-xl px-3 text-xs font-medium disabled:opacity-40"
         style={{ color: 'var(--text-secondary)', background: 'var(--bg-card)' }}>下一页</button>
     </div>
   )
