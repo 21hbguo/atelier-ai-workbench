@@ -429,7 +429,7 @@ export default function AdminPage() {
     if (!file) return
     setQrUploading(key)
     try {
-      const { data } = await uploadAPI.uploadLocal(file)
+      const { data } = await uploadAPI.uploadLocalPublic(file)
       setRuntimeConfig(prev => ({ ...prev, [key]: data?.url || '' }))
       dialog.alert('二维码上传成功')
     } catch (e) { dialog.alert(e.message || '二维码上传失败') } finally { setQrUploading('') }

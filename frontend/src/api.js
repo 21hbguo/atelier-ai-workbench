@@ -48,6 +48,7 @@ export const generateAPI = { submitText: data => api.post('/generate/text', data
 export const uploadAPI = {
   upload: file => { const fd = new FormData(); fd.append('file', file); return api.post('/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } }) },
   uploadLocal: file => { const fd = new FormData(); fd.append('file', file); return api.post('/upload/local', fd, { headers: { 'Content-Type': 'multipart/form-data' } }) },
+  uploadLocalPublic: file => { const fd = new FormData(); fd.append('file', file); return api.post('/upload/local/public', fd, { headers: { 'Content-Type': 'multipart/form-data' } }) },
   uploadBatch: files => { const fd = new FormData(); files.forEach(f => fd.append('files', f)); return api.post('/upload/batch', fd, { headers: { 'Content-Type': 'multipart/form-data' } }) },
 }
 

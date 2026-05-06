@@ -135,16 +135,27 @@ async def upload_images_batch(files: List[UploadFile] = File(...), user=Depends(
     return results
 
 
-@router.post("/upload/local", response_model=UploadResponse)
-async def upload_local(file: UploadFile = File(...), user=Depends(get_current_user)):
+async def _save_local_upload(file: UploadFile, user, category: str):
     content = await file.read()
     ext, content_type = _validate_upload(file, content, _UPLOAD_LOCAL_EXTS, _LOCAL_MIME)
     file_key = secrets.token_urlsafe(24)
     filename = f"{secrets.token_hex(16)}.{ext}"
     save_path = UPLOAD_DIR / filename
     await asyncio.to_thread(_write_file, save_path, content)
-    UploadFileService.create(file_key=file_key, owner_id=user["user_id"], original_name=_safe_filename(file.filename), storage_name=filename, content_type=content_type, category="payment_proof")
+    UploadFileService.create(file_key=file_key, owner_id=user["user_id"], original_name=_safe_filename(file.filename), storage_name=filename, content_type=content_type, category=category)
     return UploadResponse(url=f"/api/uploads/{file_key}", is_duplicate=False, storage_name=filename)
+
+
+@router.post("/upload/local", response_model=UploadResponse)
+async def upload_local(file: UploadFile = File(...), user=Depends(get_current_user)):
+    return await _save_local_upload(file, user, "payment_proof")
+
+
+@router.post("/upload/local/public", response_model=UploadResponse)
+async def upload_local_public(file: UploadFile = File(...), user=Depends(get_current_user)):
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="仅管理员可用")
+    return await _save_local_upload(file, user, "public_asset")
 
 
 @router.get("/uploads/{file_key}")
@@ -152,7 +163,7 @@ async def download_local_upload(file_key: str, user=Depends(get_current_user)):
     item = UploadFileService.get_by_key(file_key)
     if not item:
         raise HTTPException(status_code=404, detail="文件不存在")
-    if not user.get("is_admin") and item["owner_id"] != user["user_id"]:
+    if item.get("category") not in {"public_asset", "payment_qr"} and not (user.get("is_admin") or item["owner_id"] == user["user_id"]):
         raise HTTPException(status_code=403, detail="无权访问此文件")
     path = UPLOAD_DIR / item["storage_name"]
     if not path.exists():
