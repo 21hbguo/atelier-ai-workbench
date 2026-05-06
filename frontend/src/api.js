@@ -140,7 +140,7 @@ export const authAPI = {
 export const squareAPI = {
   list: (page = 1, size = 20, query, sort = 'likes', authorId, category) => { const params = { page, size, sort }; if (query) params.query = query; if (authorId) params.author_id = authorId; if (category) params.category = category; return api.get('/square', { params }) },
   shared: (page = 1, size = 20) => api.get('/square/shared', { params: { page, size } }),
-  my: (page = 1, size = 20) => api.get('/square/my', { params: { page, size } }),
+  my: (page = 1, size = 20) => api.get('/square/my', { params: { page, size: Math.min(Number(size) || 20, 100) } }),
   share: data => api.post('/square/share', data),
   unshare: imageId => api.post(`/square/unshare?image_id=${imageId}`),
   like: imageId => api.post(`/square/like?image_id=${imageId}`),
