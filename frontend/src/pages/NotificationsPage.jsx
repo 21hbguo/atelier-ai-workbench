@@ -15,7 +15,7 @@ const fmtTime=value=>{const s=String(value||'');const withTz=s.includes('T')?(s.
 const sortByTime=(a,b)=>new Date((String(b.created_at||'').includes('T')?String(b.created_at):String(b.created_at||'').replace(' ','T'))).getTime()-new Date((String(a.created_at||'').includes('T')?String(a.created_at):String(a.created_at||'').replace(' ','T'))).getTime()
 const fetchData=async(p=1)=>{
 setLoading(true)
-try{const [{data:nData},{data:aData}]=await Promise.all([notificationAPI.list(1,200),announcementAPI.list(1,200)]);const notifications=(nData.items||[]).map(v=>({...v,_kind:'notification'}));const announcements=(aData.items||[]).map(v=>({...v,_kind:'announcement'}));const merged=[...notifications,...announcements].sort(sortByTime);setTotal(merged.length);setItems(merged.slice((p-1)*size,p*size))}catch(e){dialog.alert(e.message||'加载失败')}
+try{const [{data:nData},{data:aData}]=await Promise.all([notificationAPI.list(1,100),announcementAPI.list(1,100)]);const notifications=(nData.items||[]).map(v=>({...v,_kind:'notification'}));const announcements=(aData.items||[]).map(v=>({...v,_kind:'announcement'}));const merged=[...notifications,...announcements].sort(sortByTime);setTotal(merged.length);setItems(merged.slice((p-1)*size,p*size))}catch(e){dialog.alert(e.message||'加载失败')}
 setLoading(false)
 }
 useEffect(()=>{fetchData(page)},[page])
