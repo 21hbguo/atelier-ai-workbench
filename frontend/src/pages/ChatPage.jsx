@@ -9,7 +9,7 @@ import MainLayout from '../components/MainLayout'
 import UnifiedDetailModal from '../components/UnifiedDetailModal'
 import { useAppDialog } from '../components/AppDialogProvider'
 import { useLayoutMode } from '../LayoutModeContext'
-import { generateAPI, uploadAPI, taskAPI, imageAPI, squareAPI, adminAPI, pointsAPI, configAPI } from '../api'
+import { generateAPI, uploadAPI, taskAPI, imageAPI, squareAPI, adminAPI, pointsAPI, configAPI, promptAPI } from '../api'
 import { readUser } from '../auth'
 
 function formatLocalTime(d) {
@@ -93,6 +93,7 @@ function formatSubmitSettings(params, shareToSquare, imageCount) {
   lines.push(`分享：${shareToSquare ? '开启' : '关闭'}`)
   return lines.join('\n')
 }
+function makePromptLibraryName(prompt=''){const clean=String(prompt||'').replace(/\s+/g,' ').trim();return(clean.slice(0,20)||'未命名提示词')+(clean.length>20?'...':'')}
 
 export default function ChatPage() {
   const dialog = useAppDialog()
@@ -309,6 +310,18 @@ export default function ChatPage() {
     const promptText = typeof input === 'object' ? input?.prompt : input
     inputRef.current?.setPrompt(String(promptText || ''))
   }, [])
+  const handleAddToPromptLibrary = useCallback(async (task) => {
+    if (!isAdmin) return
+    const promptText=String(task?.params?.prompt||task?.prompt||'').trim()
+    if (!promptText) { dialog.alert('该作品没有可入库的提示词'); return }
+    if (!await dialog.confirm('确定将该作品的提示词加入广场 Tab 的提示词库子 Tab 吗？\n作者将留空。')) return
+    try {
+      await promptAPI.createPublic({ name: makePromptLibraryName(promptText), prompt: promptText, negative_prompt: '', tags: [], category: null, image_path: null })
+      dialog.alert('已加入广场提示词库')
+    } catch (e) {
+      dialog.alert(e?.message || '加入提示词库失败')
+    }
+  }, [dialog,isAdmin])
   const markSquareShared = useCallback((filename, shareId) => {
     if (!filename || !shareId) return
     squareIdMapRef.current[filename] = shareId
@@ -789,7 +802,7 @@ export default function ChatPage() {
           </div>
         ) : (
           <div ref={cardGridRef} className={`${layoutMode === 'masonry' ? 'card-feed-masonry' : 'card-feed-grid'} pt-4`} style={{ position: 'relative' }}>
-            {visibleTasks.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onAddPrompt={handleAddPrompt} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id) || dragSelected.has(String(task.task_id))} onToggleCheck={() => toggleCheck(task.task_id)} wasDraggedRef={wasDraggedRef} showUsername={isAdmin} username={task.username} onViewDetail={() => handleCardViewDetail(task.task_id)} masonry={layoutMode === 'masonry'} data-card-id={String(task.task_id)} />)}
+            {visibleTasks.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onAddPrompt={handleAddPrompt} onAddToPromptLibrary={isAdmin?handleAddToPromptLibrary:undefined} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id) || dragSelected.has(String(task.task_id))} onToggleCheck={() => toggleCheck(task.task_id)} wasDraggedRef={wasDraggedRef} showUsername={isAdmin} username={task.username} onViewDetail={() => handleCardViewDetail(task.task_id)} masonry={layoutMode === 'masonry'} data-card-id={String(task.task_id)} />)}
             {selectionRect && selectionRect.width > 5 && selectionRect.height > 5 && (
               <div className="drag-selection-rect" style={{ position: 'fixed', left: selectionRect.left, top: selectionRect.top, width: selectionRect.width, height: selectionRect.height }} />
             )}
