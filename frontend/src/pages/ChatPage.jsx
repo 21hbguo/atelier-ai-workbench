@@ -125,6 +125,7 @@ export default function ChatPage() {
   const [detailCards, setDetailCards] = useState([])
   const [downloadProgress, setDownloadProgress] = useState({ open: false, phase: 'idle', current: 0, total: 0, percent: 0, filename: '' })
   const [thumbnailBlurMap, setThumbnailBlurMap] = useState({})
+  const [expiryNowTs, setExpiryNowTs] = useState(() => Date.now())
   const feedRef = useRef(null)
   const cardGridRef = useRef(null)
   const { selectionRect, dragSelected, wasDraggedRef } = useDragSelection({
@@ -297,6 +298,12 @@ export default function ChatPage() {
       feedRef.current.scrollTop = feedRef.current.scrollHeight
     }
   }, [loaded])
+  useEffect(() => {
+    const tick = () => setExpiryNowTs(Date.now())
+    tick()
+    const timer = setInterval(tick, 60000)
+    return () => clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     const handler = () => refreshTasks()
@@ -621,7 +628,8 @@ export default function ChatPage() {
     }
     if (files.length === 0) return
     downloadLockRef.current = true
-    if (files.length > 1) {
+    const asZip = files.length > 1 ? await dialog.choose(`下载 ${files.length} 张图片`, [{ label: '打包 ZIP', value: 'zip' }, { label: '逐个 PNG', value: 'png' }]) === 'zip' : false
+    if (asZip) {
       try {
         setDownloadProgress({ open: true, phase: 'zip', current: 0, total: files.length, percent: 10, filename: `${files.length} files` })
         const resp = await imageAPI.downloadBatch(files.map(file => file.name))
@@ -640,10 +648,16 @@ export default function ChatPage() {
         for (let i = 0; i < files.length; i++) {
           const file = files[i]
           setDownloadProgress(v => ({ ...v, phase: 'single', current: i, total: files.length, percent: Math.min(85, Math.round(i / files.length * 85)), filename: file.name }))
-          const { data: blob } = await imageAPI.getBlobByUrl(file.url)
+          const resp = await fetch(file.url)
+          const blob = await resp.blob()
+          const a = document.createElement('a')
+          a.href = URL.createObjectURL(blob)
+          a.download = file.name
+          document.body.appendChild(a)
+          a.click()
+          a.remove()
+          URL.revokeObjectURL(a.href)
           setDownloadProgress(v => ({ ...v, phase: 'single', current: i + 1, total: files.length, percent: Math.min(95, Math.round((i + 1) / files.length * 95)), filename: file.name }))
-          const saved = await saveBlob(blob, file.name)
-          if (!saved) return
         }
         setDownloadProgress(v => ({ ...v, phase: 'done', current: files.length, total: files.length, percent: 100 }))
       } catch (e) {
@@ -812,7 +826,7 @@ export default function ChatPage() {
           </div>
         ) : (
           <div ref={cardGridRef} className={`${layoutMode === 'masonry' ? 'card-feed-masonry' : 'card-feed-grid'} pt-4`} style={{ position: 'relative' }}>
-            {visibleTasks.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onAddPrompt={handleAddPrompt} onAddToPromptLibrary={isAdmin?handleAddToPromptLibrary:undefined} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id) || dragSelected.has(String(task.task_id))} onToggleCheck={() => toggleCheck(task.task_id)} wasDraggedRef={wasDraggedRef} showUsername={isAdmin} username={task.username} thumbnailBlurred={!!thumbnailBlurMap[getThumbnailBlurItemKey(task)]} onToggleThumbnailBlur={() => { const k=getThumbnailBlurItemKey(task); setThumbnailBlurMap(prev => ({ ...prev, [k]: !prev[k] })) }} onViewDetail={() => handleCardViewDetail(task.task_id)} masonry={layoutMode === 'masonry'} data-card-id={String(task.task_id)} />)}
+            {visibleTasks.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onAddPrompt={handleAddPrompt} onAddToPromptLibrary={isAdmin?handleAddToPromptLibrary:undefined} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id) || dragSelected.has(String(task.task_id))} onToggleCheck={() => toggleCheck(task.task_id)} wasDraggedRef={wasDraggedRef} showUsername={isAdmin} username={task.username} thumbnailBlurred={!!thumbnailBlurMap[getThumbnailBlurItemKey(task)]} onToggleThumbnailBlur={() => { const k=getThumbnailBlurItemKey(task); setThumbnailBlurMap(prev => ({ ...prev, [k]: !prev[k] })) }} onViewDetail={() => handleCardViewDetail(task.task_id)} masonry={layoutMode === 'masonry'} nowTs={expiryNowTs} data-card-id={String(task.task_id)} />)}
             {selectionRect && selectionRect.width > 5 && selectionRect.height > 5 && (
               <div className="drag-selection-rect" style={{ position: 'fixed', left: selectionRect.left, top: selectionRect.top, width: selectionRect.width, height: selectionRect.height }} />
             )}
@@ -839,6 +853,7 @@ export default function ChatPage() {
           onExtend={handleDetailExtend}
           title="生成详情"
           allowMetadataEdit
+          nowTs={expiryNowTs}
         />
         )
       })()}
