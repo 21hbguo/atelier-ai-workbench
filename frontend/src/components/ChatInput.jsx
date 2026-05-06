@@ -27,6 +27,9 @@ function normalizeImageName(name, type, fallback = 'reference') {
   const base = (raw.replace(/\.[^.]+$/, '') || fallback).replace(/[^\w.-]/g, '_').replace(/^\.+/, '') || fallback
   return `${base}.${getImageExt(type, raw)}`
 }
+const MAX_IMAGES=5
+function normalizeInputFile(file,fallback=`reference-${Date.now()}`){const type=String(file?.type||'').split(';')[0].trim().toLowerCase();if(!['image/png','image/jpeg','image/webp'].includes(type))return null;if((file?.size||0)>10*1024*1024)return null;const name=normalizeImageName(file?.name||fallback,type,fallback);return file instanceof File&&file.name===name?file:new File([file],name,{type:type||'image/png'})}
+function getClipboardImageFiles(event){const items=Array.from(event?.clipboardData?.items||[]);return items.filter(item=>item.kind==='file'&&String(item.type||'').startsWith('image/')).map((item,i)=>item.getAsFile&&normalizeInputFile(item.getAsFile(),`pasted-${Date.now()}-${i}`)).filter(Boolean)}
 
 const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost = 10, optimizeCost = 10 }, ref) {
   const initialOptimizeDraft=loadOptimizeDraft()
@@ -475,12 +478,17 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     }
   }))
 
-  const MAX_IMAGES = 5
-
   const handleFiles = useCallback((files) => {
-    const valid = Array.from(files).filter(f => /\.(png|jpe?g|webp)$/i.test(f.name) && f.size <= 10 * 1024 * 1024)
+    const valid = Array.from(files||[]).map((f,i)=>normalizeInputFile(f,`reference-${Date.now()}-${i}`)).filter(Boolean)
     appendImages(valid.map(f => ({ file: f, preview: URL.createObjectURL(f) })))
   }, [appendImages])
+  const handlePaste = useCallback((e) => {
+    const pasted=getClipboardImageFiles(e)
+    if(!pasted.length)return
+    e.preventDefault()
+    appendImages(pasted.map(f=>({file:f,preview:URL.createObjectURL(f),name:f.name})))
+    setToast({ message: `已粘贴 ${Math.min(pasted.length,Math.max(0,MAX_IMAGES-images.length))} 张参考图`, type: 'success' })
+  }, [appendImages,images.length])
 
   const canSend = prompt.trim() || type || style || mood
   const handleSend = async (batch = false) => {
@@ -679,9 +687,9 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
                 )}
               </div>
             )}
-            <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)}
+            <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)} onPaste={handlePaste}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(false) } }}
-              placeholder="把脑洞变成画✨"
+              placeholder="把脑洞变成画✨ 支持粘贴图片做参考图"
               className="block w-full resize-none bg-transparent outline-none py-2"
               rows={1} style={{ color: 'var(--text-primary)', minHeight: '40px', maxHeight: '120px', fontSize: '15px', paddingLeft: '10px' }} />
             <div className="mt-2 flex items-center justify-between gap-3">
