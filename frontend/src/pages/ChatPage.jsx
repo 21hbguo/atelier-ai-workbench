@@ -95,6 +95,8 @@ function formatSubmitSettings(params, shareToSquare, imageCount) {
 }
 function makePromptLibraryName(prompt=''){const clean=String(prompt||'').replace(/\s+/g,' ').trim();return(clean.slice(0,20)||'未命名提示词')+(clean.length>20?'...':'')}
 function getThumbnailBlurStorageKey(user){const id=user?.id??user?.user_id??user?.username??'guest';return`chat_thumbnail_blur_${id}`}
+function getThumbnailBlurMap(user){try{return JSON.parse(localStorage.getItem(getThumbnailBlurStorageKey(user))||'{}')}catch{return {}}}
+function getThumbnailBlurItemKey(task){return String(task?.result_urls?.[0]?.split('/').pop()||task?.task_id||'')}
 
 export default function ChatPage() {
   const dialog = useAppDialog()
@@ -122,7 +124,7 @@ export default function ChatPage() {
   const [selectedCardIndex, setSelectedCardIndex] = useState(null)
   const [detailCards, setDetailCards] = useState([])
   const [downloadProgress, setDownloadProgress] = useState({ open: false, phase: 'idle', current: 0, total: 0, percent: 0, filename: '' })
-  const [thumbnailBlurred, setThumbnailBlurred] = useState(false)
+  const [thumbnailBlurMap, setThumbnailBlurMap] = useState({})
   const feedRef = useRef(null)
   const cardGridRef = useRef(null)
   const { selectionRect, dragSelected, wasDraggedRef } = useDragSelection({
@@ -267,11 +269,11 @@ export default function ChatPage() {
     setPoints(currentUser?.points ?? 0)
   }, [currentUser])
   useEffect(() => {
-    try { setThumbnailBlurred(localStorage.getItem(getThumbnailBlurStorageKey(currentUser)) === '1') } catch { setThumbnailBlurred(false) }
+    setThumbnailBlurMap(getThumbnailBlurMap(currentUser))
   }, [currentUser?.id,currentUser?.user_id,currentUser?.username])
   useEffect(() => {
-    try { localStorage.setItem(getThumbnailBlurStorageKey(currentUser), thumbnailBlurred ? '1' : '0') } catch {}
-  }, [thumbnailBlurred,currentUser?.id,currentUser?.user_id,currentUser?.username])
+    try { localStorage.setItem(getThumbnailBlurStorageKey(currentUser), JSON.stringify(thumbnailBlurMap)) } catch {}
+  }, [thumbnailBlurMap,currentUser?.id,currentUser?.user_id,currentUser?.username])
   useEffect(() => {
     pointsAPI.balance().then(res => setPoints(res.data.points)).catch(() => {})
     const handleUpdate = () => {
@@ -810,7 +812,7 @@ export default function ChatPage() {
           </div>
         ) : (
           <div ref={cardGridRef} className={`${layoutMode === 'masonry' ? 'card-feed-masonry' : 'card-feed-grid'} pt-4`} style={{ position: 'relative' }}>
-            {visibleTasks.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onAddPrompt={handleAddPrompt} onAddToPromptLibrary={isAdmin?handleAddToPromptLibrary:undefined} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id) || dragSelected.has(String(task.task_id))} onToggleCheck={() => toggleCheck(task.task_id)} wasDraggedRef={wasDraggedRef} showUsername={isAdmin} username={task.username} thumbnailBlurred={thumbnailBlurred} onToggleThumbnailBlur={() => setThumbnailBlurred(v => !v)} onViewDetail={() => handleCardViewDetail(task.task_id)} masonry={layoutMode === 'masonry'} data-card-id={String(task.task_id)} />)}
+            {visibleTasks.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onAddPrompt={handleAddPrompt} onAddToPromptLibrary={isAdmin?handleAddToPromptLibrary:undefined} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id) || dragSelected.has(String(task.task_id))} onToggleCheck={() => toggleCheck(task.task_id)} wasDraggedRef={wasDraggedRef} showUsername={isAdmin} username={task.username} thumbnailBlurred={!!thumbnailBlurMap[getThumbnailBlurItemKey(task)]} onToggleThumbnailBlur={() => { const k=getThumbnailBlurItemKey(task); setThumbnailBlurMap(prev => ({ ...prev, [k]: !prev[k] })) }} onViewDetail={() => handleCardViewDetail(task.task_id)} masonry={layoutMode === 'masonry'} data-card-id={String(task.task_id)} />)}
             {selectionRect && selectionRect.width > 5 && selectionRect.height > 5 && (
               <div className="drag-selection-rect" style={{ position: 'fixed', left: selectionRect.left, top: selectionRect.top, width: selectionRect.width, height: selectionRect.height }} />
             )}
