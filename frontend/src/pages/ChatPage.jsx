@@ -489,20 +489,31 @@ export default function ChatPage() {
     setLoading(true)
     try {
       const previewImages = images?.map(i => i.preview) || []
-      const uploaded = images?.length > 0 ? await Promise.all(images.map(async img => {
-        if (img.file) { const type = img.file.type || 'image/png'; return uploadAPI.upload(new File([img.file], normalizeUploadName(img.file.name, type), { type })) }
-        if (img.url && img.url.startsWith('http')) return Promise.resolve({ data: { url: img.url } })
-        if (img.url) { const r = await fetch(img.url); if (!r.ok) throw new Error(`fetch ${r.status}`); const blob = await r.blob(); const type = blob.type || r.headers.get('content-type') || 'image/png'; return uploadAPI.upload(new File([blob], normalizeUploadName(img.name, type, img.url), { type })) }
-        return { data: { url: '' } }
-      })) : []
-      const imageUrls = uploaded.map(r => r.data.url)
-      const localImageUrls = uploaded.map(r => r.data.storage_name || r.data.url).filter(Boolean)
-      const hasImages = imageUrls.length > 0
-      const submitOne = async (index) => {
-        const tempId = `pending-${Date.now()}-${index}`
+      const tempIds = Array.from({ length: batchCount }, (_, i) => `pending-${Date.now()}-${i}`)
+      for (const tempId of tempIds) {
         const tempTask = { task_id: tempId, status: 'processing', prompt, params: { prompt, size: params?.size || 'auto', share_to_square: !!shareToSquare }, previewImages, created_at: formatLocalTime(new Date()), started_at: formatLocalTime(new Date()), _active: true }
         setTasks(prev => { const next = [...prev, tempTask]; saveCachedActiveTasks(next); return next })
-        scroll()
+      }
+      scroll()
+      let imageUrls = []
+      let localImageUrls = []
+      let hasImages = false
+      try {
+        const uploaded = images?.length > 0 ? await Promise.all(images.map(async img => {
+          if (img.file) { const type = img.file.type || 'image/png'; return uploadAPI.upload(new File([img.file], normalizeUploadName(img.file.name, type), { type })) }
+          if (img.url && img.url.startsWith('http')) return Promise.resolve({ data: { url: img.url } })
+          if (img.url) { const r = await fetch(img.url); if (!r.ok) throw new Error(`fetch ${r.status}`); const blob = await r.blob(); const type = blob.type || r.headers.get('content-type') || 'image/png'; return uploadAPI.upload(new File([blob], normalizeUploadName(img.name, type, img.url), { type })) }
+          return { data: { url: '' } }
+        })) : []
+        imageUrls = uploaded.map(r => r.data.url)
+        localImageUrls = uploaded.map(r => r.data.storage_name || r.data.url).filter(Boolean)
+        hasImages = imageUrls.length > 0
+      } catch (e) {
+        for (const tempId of tempIds) updateTask(tempId, { status: 'failed', error: '图片上传失败: ' + (e?.message || '未知错误'), _active: false })
+        return false
+      }
+      const submitOne = async (index) => {
+        const tempId = tempIds[index]
         const taskId = makeTaskId()
         try {
           const data = hasImages ? (await generateAPI.submitTextImage({ prompt, image_urls: imageUrls, size: params?.size || 'auto', quality: params?.quality || undefined, model_id: params?.model_id, task_id: taskId, share_to_square: !!shareToSquare, local_image_urls: localImageUrls })).data : (await generateAPI.submitText({ prompt, size: params?.size || 'auto', quality: params?.quality || undefined, model_id: params?.model_id, task_id: taskId, share_to_square: !!shareToSquare })).data
@@ -555,7 +566,7 @@ export default function ChatPage() {
       if (batchCount > 1) dialog.alert(`已提交 ${success} 次${failed > 0 ? `，失败 ${failed} 次` : ''}`)
       return true
     } catch (e) {
-      dialog.alert('上传失败: ' + (e?.message || '未知错误'))
+      dialog.alert('提交失败: ' + (e?.message || '未知错误'))
       return false
     } finally {
       setLoading(false)
