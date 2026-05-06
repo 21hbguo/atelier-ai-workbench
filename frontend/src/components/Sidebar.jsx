@@ -29,6 +29,7 @@ export default function Sidebar({ open, onClose }) {
   const [points, setPoints] = useState(user?.points ?? 0)
   const [checkedInToday, setCheckedInToday] = useState(false)
   const [unreadNoticeCount, setUnreadNoticeCount] = useState(0)
+  const [rechargePendingCount, setRechargePendingCount] = useState(0)
 
   useEffect(() => {
     pointsAPI.balance().then(res => {
@@ -41,16 +42,19 @@ export default function Sidebar({ open, onClose }) {
       setCheckedInToday(res.data.checked_in_today)
     }).catch(() => {})
     notificationAPI.unreadCount().then(res => setUnreadNoticeCount(res.data.count || 0)).catch(() => {})
+    if (isAdmin) fetch('/api/admin/recharge-requests?page=1&size=1&status=pending',{ credentials:'include' }).then(r=>r.ok?r.json():null).then(data=>setRechargePendingCount(data?.total||0)).catch(()=>{})
 
     const handleUpdate = () => {
       const u = readUser()
       if (u) setPoints(u.points ?? 0)
     }
     const handleNoticeUpdate = () => notificationAPI.unreadCount().then(res => setUnreadNoticeCount(res.data.count || 0)).catch(() => {})
+    const handleRechargeUpdate = e => setRechargePendingCount(Number(e?.detail?.pending)||0)
     window.addEventListener('points-updated', handleUpdate)
     window.addEventListener('notifications-updated', handleNoticeUpdate)
-    return () => { window.removeEventListener('points-updated', handleUpdate); window.removeEventListener('notifications-updated', handleNoticeUpdate) }
-  }, [])
+    window.addEventListener('admin-recharge-updated', handleRechargeUpdate)
+    return () => { window.removeEventListener('points-updated', handleUpdate); window.removeEventListener('notifications-updated', handleNoticeUpdate); window.removeEventListener('admin-recharge-updated', handleRechargeUpdate) }
+  }, [isAdmin])
 
   const handleCheckIn = async () => {
     try {
@@ -97,6 +101,14 @@ export default function Sidebar({ open, onClose }) {
               style={{ color: location.pathname === '/admin' ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: location.pathname === '/admin' ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined }}
               onClick={() => onClose?.()}>
               <Shield size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">管理后台</span>
+            </Link>
+          )}
+          {isAdmin && (
+            <Link to="/admin?tab=recharge_review"
+              className={`sidebar-nav-link ${(location.pathname === '/admin' && new URLSearchParams(location.search).get('tab') === 'recharge_review') ? 'bg-accent/10' : 'hover:bg-bg-hover'}`}
+              style={{ color: (location.pathname === '/admin' && new URLSearchParams(location.search).get('tab') === 'recharge_review') ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: (location.pathname === '/admin' && new URLSearchParams(location.search).get('tab') === 'recharge_review') ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined }}
+              onClick={() => onClose?.()}>
+              <Wallet size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">充值审核</span>{rechargePendingCount>0&&<span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{background:'var(--color-error)'}}>{rechargePendingCount>99?'99+':rechargePendingCount}</span>}
             </Link>
           )}
         </nav>

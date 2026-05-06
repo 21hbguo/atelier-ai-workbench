@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Trash2, Users, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket, Megaphone, Wallet, Key, SlidersHorizontal, BarChart3, Mail, Tags } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { adminAPI, announcementAPI, configAPI, statsAPI, promptAPI, uploadAPI } from '../api'
 import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts'
 import MainLayout from '../components/MainLayout'
@@ -24,6 +24,7 @@ const defaultRechargePackages=[{amount:9.9,points:120,label:'体验包'},{amount
 export default function AdminPage() {
   const dialog = useAppDialog()
   const navigate = useNavigate()
+  const location = useLocation()
   const [tab, setTab] = useState('users')
   const [users, setUsers] = useState([])
   const [history, setHistory] = useState([])
@@ -159,7 +160,7 @@ export default function AdminPage() {
   useEffect(() => { if (tab === 'stats') fetchSystemStats(statsRange) }, [tab, statsRange])
   useEffect(() => { if (tab === 'hosting') { fetchHostingImages(); fetchHostingStats() } }, [tab, hostingPage, hostingTypeFilter])
   useEffect(() => { if (tab === 'banned') fetchBannedWords() }, [tab, bannedWordsPage, bannedWordsQuery])
-  useEffect(() => { if (tab === 'recharge') fetchRechargeRequests() }, [tab, codesPage, codesSort, codesOrder, rechargeStatusFilter])
+  useEffect(() => { if (tab === 'codes' || tab === 'recharge_review') fetchRechargeRequests() }, [tab, codesPage, codesSort, codesOrder, rechargeStatusFilter])
   useEffect(() => { if (tab === 'announcements') fetchAnnouncements() }, [tab, announcementPage])
   useEffect(() => { if (tab === 'config' || tab === 'finance') fetchRuntimeConfig() }, [tab])
   useEffect(() => {
@@ -190,6 +191,11 @@ export default function AdminPage() {
     window.addEventListener('admin-categories-updated',handle)
     return ()=>window.removeEventListener('admin-categories-updated',handle)
   }, [])
+  useEffect(() => {
+    const q=new URLSearchParams(location.search).get('tab')
+    if(q&&['stats','finance','users','history','hosting','banned','classification','codes','recharge_review','announcements','evlogs','config'].includes(q))setTab(q)
+  }, [location.search])
+  const switchTab = useCallback((next) => { setTab(next); navigate(next==='users'?'/admin':`/admin?tab=${next}`, { replace: location.pathname === '/admin' }) }, [navigate,location.pathname])
 
   const fetchUsers = async () => {
     setLoading(true)
@@ -638,6 +644,7 @@ export default function AdminPage() {
       const [listRes, pendingRes] = await Promise.allSettled([adminAPI.rechargeRequests(codesPage, 20, rechargeStatusFilter === 'all' ? undefined : rechargeStatusFilter, undefined, codesSort, codesOrder), adminAPI.rechargeRequests(1, 1, 'pending')])
       if (listRes.status === 'fulfilled') { setCodes(listRes.value.data.items); setCodesTotal(listRes.value.data.total) }
       if (pendingRes.status === 'fulfilled') setRechargePendingCount(pendingRes.value.data.total || 0)
+      window.dispatchEvent(new CustomEvent('admin-recharge-updated',{ detail:{ pending: pendingRes.status === 'fulfilled' ? (pendingRes.value.data.total || 0) : rechargePendingCount } }))
     } catch {} finally { setLoading(false) }
   }
 
@@ -816,10 +823,10 @@ export default function AdminPage() {
     <MainLayout>
       <div className="admin-dense flex-1 overflow-y-auto p-3 sm:p-4">
         <div className="flex gap-1 p-0.5 rounded-lg mb-4 overflow-x-auto scrollbar-hide" style={{ background: 'var(--border-color)', scrollbarWidth: 'none' }}>
-          {[{ k: 'stats', l: '系统统计', i: BarChart3 }, { k: 'finance', l: '财务中心', i: Wallet }, { k: 'users', l: '用户管理', i: Users }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'classification', l: 'AI分类', i: Tags }, { k: 'recharge', l: '捐赠审核', i: Ticket }, { k: 'announcements', l: '公告管理', i: Megaphone }, { k: 'evlogs', l: '邮件验证', i: Mail }, { k: 'config', l: '配置中心', i: SlidersHorizontal }].map(({ k, l, i: Icon }) => (
-            <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`}
+          {[{ k: 'stats', l: '系统统计', i: BarChart3 }, { k: 'finance', l: '财务中心', i: Wallet }, { k: 'users', l: '用户管理', i: Users }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'classification', l: 'AI分类', i: Tags }, { k: 'codes', l: '兑换码', i: Key }, { k: 'recharge_review', l: '充值审核', i: Ticket }, { k: 'announcements', l: '公告管理', i: Megaphone }, { k: 'evlogs', l: '邮件验证', i: Mail }, { k: 'config', l: '配置中心', i: SlidersHorizontal }].map(({ k, l, i: Icon }) => (
+            <button key={k} onClick={() => switchTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
-              <Icon size={14} />{l}{k === 'recharge' && rechargePendingCount > 0 && <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] text-white" style={{ background: 'var(--color-error)' }}>{rechargePendingCount}</span>}
+              <Icon size={14} />{l}{k === 'recharge_review' && rechargePendingCount > 0 && <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] text-white" style={{ background: 'var(--color-error)' }}>{rechargePendingCount}</span>}
             </button>
           ))}
         </div>
@@ -1049,9 +1056,8 @@ export default function AdminPage() {
           <AdminHostingTab hostingStats={hostingStats} handleCleanDuplicates={handleCleanDuplicates} hostingTotal={hostingTotal} hostingSelectMode={hostingSelectMode} hostingChecked={hostingChecked} hostingImages={hostingImages} setHostingChecked={setHostingChecked} handleHostingBatchDelete={handleHostingBatchDelete} setHostingSelectMode={setHostingSelectMode} loading={loading} toggleHostingCheck={toggleHostingCheck} setHostingDetail={setHostingDetail} hostingPage={hostingPage} setHostingPage={setHostingPage} hostingTypeFilter={hostingTypeFilter} setHostingTypeFilter={setHostingTypeFilter} />
         ) : tab === 'banned' ? (
           <AdminBannedTab bannedWordsTotal={bannedWordsTotal} bannedWordsQuery={bannedWordsQuery} setBannedWordsQuery={setBannedWordsQuery} setShowBatchImport={setShowBatchImport} newBannedWord={newBannedWord} setNewBannedWord={setNewBannedWord} handleAddBannedWord={handleAddBannedWord} loading={loading} bannedWords={bannedWords} handleDeleteBannedWord={handleDeleteBannedWord} bannedWordsPage={bannedWordsPage} setBannedWordsPage={setBannedWordsPage} />
-        ) : tab === 'recharge' ? (
+        ) : tab === 'codes' ? (
           <div className="space-y-6">
-            {/* 生成兑换码 */}
             <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
               <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>生成兑换码</h3>
               <div className="flex flex-wrap items-end gap-3">
@@ -1093,8 +1099,9 @@ export default function AdminPage() {
                 </div>
               )}
             </div>
-
-            {/* 捐赠记录 */}
+          </div>
+        ) : tab === 'recharge_review' ? (
+          <div className="space-y-6">
             <div>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
