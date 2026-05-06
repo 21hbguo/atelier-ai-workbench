@@ -414,15 +414,15 @@ export default function AdminPage() {
     if (payload.generate_concurrent_limit_per_user < 1 || payload.points_cost_per_generation < 1 || payload.points_cost_per_optimize < 1 || payload.points_cost_per_image_extend < 1 || payload.login_rate_limit_per_minute_per_ip < 1 || payload.register_rate_limit_per_minute_per_ip < 1 || payload.points_checkin_reward < 0 || payload.points_register_bonus < 0 || payload.points_migration_amount < 0 || payload.invite_register_reward_points < 0 || payload.invite_recharge_rebate_percent < 0 || payload.invite_recharge_bonus_percent < 0) { dialog.alert('限制配置不合法'); return }
     try {
       recharge_packages = Array.isArray(payload.recharge_packages) ? payload.recharge_packages : []
-      if (!Array.isArray(recharge_packages) || !recharge_packages.length) throw new Error('充值套餐需要 JSON 数组且至少保留一项')
+      if (!Array.isArray(recharge_packages) || !recharge_packages.length) throw new Error('捐赠档位需要 JSON 数组且至少保留一项')
       recharge_packages = recharge_packages.map((item, idx) => {
-        if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error(`充值套餐第 ${idx + 1} 项不是对象`)
+        if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error(`捐赠档位第 ${idx + 1} 项不是对象`)
         const amount = Number(item.amount), points = Number(item.points), label = String(item.label || `套餐${idx + 1}`).trim()
-        if (!(amount > 0) || !(points > 0) || !Number.isFinite(amount) || !Number.isFinite(points)) throw new Error(`充值套餐第 ${idx + 1} 项金额或积分不合法`)
-        if (!label) throw new Error(`充值套餐第 ${idx + 1} 项标题不能为空`)
+        if (!(amount > 0) || !(points > 0) || !Number.isFinite(amount) || !Number.isFinite(points)) throw new Error(`捐赠档位第 ${idx + 1} 项金额或积分不合法`)
+        if (!label) throw new Error(`捐赠档位第 ${idx + 1} 项标题不能为空`)
         return { amount: Math.round(amount * 100) / 100, points: Math.round(points), label }
       })
-    } catch (e) { dialog.alert(e.message || '充值套餐 JSON 格式错误'); return }
+    } catch (e) { dialog.alert(e.message || '捐赠档位 JSON 格式错误'); return }
     let generation_models = {}
     let generation_providers = {}
     try {
@@ -636,12 +636,12 @@ export default function AdminPage() {
   }
 
   const handleRefundRecharge = async (row) => {
-    if (!await dialog.confirm(`确认退款？将扣除用户 ${row.points} 积分（当前余额不足则扣至0）`)) return
+    if (!await dialog.confirm(`确认回退发放？将扣除用户 ${row.points} 积分（当前余额不足则扣至0）`)) return
     try {
-      const { data } = await adminAPI.refundRecharge(row.id, { review_note: '管理员退款' })
-      dialog.alert(data.message || '退款成功')
+      const { data } = await adminAPI.refundRecharge(row.id, { review_note: '管理员回退发放' })
+      dialog.alert(data.message || '回退发放成功')
       fetchRechargeRequests()
-    } catch (e) { dialog.alert(e.message || '退款失败') }
+    } catch (e) { dialog.alert(e.message || '回退发放失败') }
   }
 
   const handleGenerateCodes = async () => {
@@ -791,7 +791,7 @@ export default function AdminPage() {
     <MainLayout>
       <div className="admin-dense flex-1 overflow-y-auto p-3 sm:p-4">
         <div className="flex gap-1 p-0.5 rounded-lg mb-4 overflow-x-auto scrollbar-hide" style={{ background: 'var(--border-color)', scrollbarWidth: 'none' }}>
-          {[{ k: 'stats', l: '系统统计', i: BarChart3 }, { k: 'finance', l: '财务中心', i: Wallet }, { k: 'users', l: '用户管理', i: Users }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'classification', l: 'AI分类', i: Tags }, { k: 'recharge', l: '充值审核', i: Ticket }, { k: 'announcements', l: '公告管理', i: Megaphone }, { k: 'evlogs', l: '邮件验证', i: Mail }, { k: 'config', l: '配置中心', i: SlidersHorizontal }].map(({ k, l, i: Icon }) => (
+          {[{ k: 'stats', l: '系统统计', i: BarChart3 }, { k: 'finance', l: '财务中心', i: Wallet }, { k: 'users', l: '用户管理', i: Users }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'classification', l: 'AI分类', i: Tags }, { k: 'recharge', l: '捐赠审核', i: Ticket }, { k: 'announcements', l: '公告管理', i: Megaphone }, { k: 'evlogs', l: '邮件验证', i: Mail }, { k: 'config', l: '配置中心', i: SlidersHorizontal }].map(({ k, l, i: Icon }) => (
             <button key={k} onClick={() => setTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
               <Icon size={14} />{l}{k === 'recharge' && rechargePendingCount > 0 && <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] text-white" style={{ background: 'var(--color-error)' }}>{rechargePendingCount}</span>}
@@ -855,7 +855,7 @@ export default function AdminPage() {
                     </div>
                   </div>
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
-                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>充值实收</div>
+                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>捐赠支持实收</div>
                     <div className="space-y-2 text-sm">
                       <div style={{ color: 'var(--text-primary)' }}>今日：¥{overviewStats?.revenue?.today_amount ?? 0} / {overviewStats?.revenue?.today_orders ?? 0}单</div>
                       <div style={{ color: 'var(--text-primary)' }}>7天：¥{overviewStats?.revenue?.days7_amount ?? 0} / {overviewStats?.revenue?.days7_orders ?? 0}单</div>
@@ -877,7 +877,7 @@ export default function AdminPage() {
                     </div>
                   </div>
                   <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
-                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>{{all:'总计',today:'今日','7d':'近7天','30d':'近30天'}[statsRange] || '近7天'}充值Top用户</div>
+                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>{{all:'总计',today:'今日','7d':'近7天','30d':'近30天'}[statsRange] || '近7天'}捐赠支持Top用户</div>
                     <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
                       {(overviewStats?.leaderboards?.recharge_top || []).slice(0, 8).map((i, idx) => <div key={`r-${i.user_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.nickname || i.account || i.username}`} style={{ color: 'var(--text-primary)' }}>{idx + 1}. {i.nickname || i.account || i.username}</span><span className="shrink-0" style={{ color: 'var(--color-warning)' }}>¥{i.amount}</span></div>)}
                     </div>
@@ -1069,11 +1069,11 @@ export default function AdminPage() {
               )}
             </div>
 
-            {/* 充值记录 */}
+            {/* 捐赠记录 */}
             <div>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>充值记录</h3>
+                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>捐赠记录</h3>
                   {rechargePendingCount > 0 && <span className="px-2 py-0.5 rounded-full text-[11px] text-white" style={{ background: 'var(--color-error)' }}>待审 {rechargePendingCount}</span>}
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -1085,7 +1085,7 @@ export default function AdminPage() {
                     <option value="pending">待审核</option>
                     <option value="approved">已通过</option>
                     <option value="rejected">已拒绝</option>
-                    <option value="refunded">已退款</option>
+                    <option value="refunded">已回退</option>
                   </select>
                   <select value={codesSort} onChange={e => setCodesSort(e.target.value)}
                     className="px-2 py-1 rounded-lg text-xs font-medium border outline-none cursor-pointer"
@@ -1153,7 +1153,7 @@ export default function AdminPage() {
                                 color: c.status === 'approved' ? 'var(--color-success)' : c.status === 'rejected' || c.status === 'refunded' ? 'var(--color-error)' : 'var(--color-warning)',
                                 background: c.status === 'approved' ? 'color-mix(in srgb, var(--color-success) 12%, transparent)' : c.status === 'rejected' || c.status === 'refunded' ? 'color-mix(in srgb, var(--color-error) 12%, transparent)' : 'color-mix(in srgb, var(--color-warning) 12%, transparent)'
                               }}>
-                                {{ pending: '待审核', approved: '已通过', rejected: '已拒绝', refunded: '已退款' }[c.status]}
+                                {{ pending: '待审核', approved: '已通过', rejected: '已拒绝', refunded: '已回退' }[c.status]}
                               </span>
                             </td>
                             <td className="px-4 py-3 text-left text-[11px] truncate max-w-[120px]" style={{ color: 'var(--text-secondary)' }}>
@@ -1185,11 +1185,11 @@ export default function AdminPage() {
                               {c.status === 'approved' && (
                                 <div className="flex items-center justify-center gap-1">
                                   {c.redeem_code && <span className="text-[10px] font-mono" style={{ color: 'var(--accent)' }}>{c.redeem_code}</span>}
-                                  <button onClick={() => handleRefundRecharge(c)} className="px-2 py-1 rounded-lg text-[11px] font-medium bg-[var(--color-error)] text-white hover:opacity-90">退款</button>
+                                  <button onClick={() => handleRefundRecharge(c)} className="px-2 py-1 rounded-lg text-[11px] font-medium bg-[var(--color-error)] text-white hover:opacity-90">回退发放</button>
                                 </div>
                               )}
                               {c.status === 'refunded' && (
-                                <span className="text-[10px]" style={{ color: 'var(--color-error)' }}>已退款</span>
+                                <span className="text-[10px]" style={{ color: 'var(--color-error)' }}>已回退</span>
                               )}
                             </td>
                           </tr>
@@ -1244,7 +1244,7 @@ export default function AdminPage() {
                 </button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {[{ k: 'generate_concurrent_limit_per_user', l: '生成并发上限/用户', min: 1 }, { k: 'points_cost_per_generation', l: '默认生成扣分', min: 1 }, { k: 'points_cost_per_optimize', l: '每次优化扣分', min: 1 }, { k: 'points_cost_per_image_extend', l: '图片续期扣分/张', min: 1 }, { k: 'points_checkin_reward', l: '每日签到奖励', min: 0 }, { k: 'points_register_bonus', l: '注册送分', min: 0 }, { k: 'points_migration_amount', l: '补发积分值', min: 0 }, { k: 'invite_register_reward_points', l: '邀请注册奖励', min: 0 }, { k: 'invite_recharge_rebate_percent', l: '充值返利百分比', min: 0 }, { k: 'invite_recharge_bonus_percent', l: '充值优惠百分比', min: 0 }, { k: 'login_rate_limit_per_minute_per_ip', l: '登录限流/分钟/IP', min: 1 }, { k: 'register_rate_limit_per_minute_per_ip', l: '注册限流/分钟/IP', min: 1 }].map(item => (
+                {[{ k: 'generate_concurrent_limit_per_user', l: '生成并发上限/用户', min: 1 }, { k: 'points_cost_per_generation', l: '默认生成扣分', min: 1 }, { k: 'points_cost_per_optimize', l: '每次优化扣分', min: 1 }, { k: 'points_cost_per_image_extend', l: '图片续期扣分/张', min: 1 }, { k: 'points_checkin_reward', l: '每日签到奖励', min: 0 }, { k: 'points_register_bonus', l: '注册送分', min: 0 }, { k: 'points_migration_amount', l: '补发积分值', min: 0 }, { k: 'invite_register_reward_points', l: '邀请注册奖励', min: 0 }, { k: 'invite_recharge_rebate_percent', l: '捐赠返利百分比', min: 0 }, { k: 'invite_recharge_bonus_percent', l: '捐赠加赠百分比', min: 0 }, { k: 'login_rate_limit_per_minute_per_ip', l: '登录限流/分钟/IP', min: 1 }, { k: 'register_rate_limit_per_minute_per_ip', l: '注册限流/分钟/IP', min: 1 }].map(item => (
                   <div key={item.k}>
                     <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>{item.l}</label>
                     <input type="number" min={item.min} value={runtimeConfig[item.k]} onChange={e => onConfigInput(item.k, e.target.value)} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
@@ -1270,12 +1270,12 @@ export default function AdminPage() {
                 ))}
               </div>
               <div className="mt-3">
-                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>手动充值提示文案</label>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>捐赠支持提示文案</label>
                 <textarea value={runtimeConfig.manual_recharge_notice} onChange={e => onConfigInput('manual_recharge_notice', e.target.value)} rows={3} className="w-full px-3 py-2 rounded-lg text-sm border resize-none outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
               <div className="mt-3">
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs" style={{ color: 'var(--text-secondary)' }}>充值套餐</label>
+                  <label className="block text-xs" style={{ color: 'var(--text-secondary)' }}>捐赠档位</label>
                   <button type="button" onClick={handleAddRechargePackage} className="px-2 py-1 rounded text-xs font-medium border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>新增套餐</button>
                 </div>
                 <div className="space-y-2">

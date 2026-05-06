@@ -836,7 +836,7 @@ async def migrate_points(admin=Depends(require_admin)):
     return {"message": f"已为 {result['migrated']} 个用户补发积分", **result}
 
 
-# ============ 人工充值审核 ============
+# ============ 人工捐赠审核 ============
 
 @router.get("/recharge-requests")
 async def list_recharge_requests(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), status: str = Query("all"), query: str = Query(None), sort: str = Query("created_at"), order: str = Query("desc"), admin=Depends(require_admin)):
@@ -881,7 +881,7 @@ async def approve_recharge_request(request_id: int, body: dict, admin=Depends(re
     with get_db() as conn:
         row = conn.execute("SELECT * FROM recharge_requests WHERE id = %s", (request_id,)).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="充值申请不存在")
+            raise HTTPException(status_code=404, detail="捐赠申请不存在")
         item = dict(row)
         if item["status"] == "approved":
             return {"message": "该申请已审核通过", "code": item.get("redeem_code"), "points": item.get("points")}
@@ -928,7 +928,7 @@ async def reject_recharge_request(request_id: int, body: dict, admin=Depends(req
     with get_db() as conn:
         row = conn.execute("SELECT status FROM recharge_requests WHERE id = %s", (request_id,)).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="充值申请不存在")
+            raise HTTPException(status_code=404, detail="捐赠申请不存在")
         if row["status"] != "pending":
             raise HTTPException(status_code=400, detail="仅待审核申请可拒绝")
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -948,18 +948,18 @@ async def reject_recharge_request(request_id: int, body: dict, admin=Depends(req
 
 @router.post("/recharge-requests/{request_id}/refund")
 async def refund_recharge_request(request_id: int, body: dict, admin=Depends(require_admin)):
-    review_note = (body.get("review_note") or "").strip()[:500] or "管理员退款"
+    review_note = (body.get("review_note") or "").strip()[:500] or "管理员回退发放"
     with get_db() as conn:
         row = conn.execute("SELECT * FROM recharge_requests WHERE id = %s", (request_id,)).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="充值申请不存在")
+            raise HTTPException(status_code=404, detail="捐赠申请不存在")
         item = dict(row)
         if item["status"] != "approved":
-            raise HTTPException(status_code=400, detail="仅已通过的申请可退款")
+            raise HTTPException(status_code=400, detail="仅已通过的申请可回退发放")
         user_id = item["user_id"]
         points = int(item.get("points") or 0)
         if points <= 0:
-            raise HTTPException(status_code=400, detail="该申请无有效积分，无法退款")
+            raise HTTPException(status_code=400, detail="该申请无有效积分，无法回退发放")
         conn.execute("UPDATE users SET points = GREATEST(0, points - %s) WHERE id = %s", (points, user_id))
         new_balance = conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()["points"]
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
