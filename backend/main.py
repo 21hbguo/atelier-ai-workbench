@@ -47,7 +47,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(),microphone=(),geolocation=()"
-        response.headers["Content-Security-Policy"] = "default-src 'self';img-src 'self' data: blob: https:;script-src 'self';style-src 'self' 'unsafe-inline';font-src 'self' data: https:;connect-src 'self' https:;frame-ancestors 'none';base-uri 'self';form-action 'self'"
+        response.headers["Content-Security-Policy"] = "default-src 'self';img-src 'self' data: blob: https:;script-src 'self' https://challenges.cloudflare.com;style-src 'self' 'unsafe-inline';font-src 'self' data: https:;connect-src 'self' https: https://challenges.cloudflare.com;frame-src https://challenges.cloudflare.com;frame-ancestors 'none';base-uri 'self';form-action 'self'"
         if ENABLE_HSTS and request.url.scheme == "https":
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         if request.url.path.startswith("/api/uploads/"):

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
-from backend.config import get_config, update_config, get_generation_models, get_generation_providers, get_default_model_id, get_recharge_packages, get_llm_config, get_invite_config
+from backend.config import get_config, update_config, get_generation_models, get_generation_providers, get_default_model_id, get_recharge_packages, get_llm_config, get_invite_config, get_turnstile_config
 from backend.auth import get_current_user, get_optional_user, require_admin
 from backend.services.gen_gateway import GenGateway
 
@@ -47,6 +47,10 @@ class ConfigUpdate(BaseModel):
     smtp_password: Optional[str] = None
     smtp_sender: Optional[str] = None
     smtp_sender_name: Optional[str] = None
+    sendgrid_api_key: Optional[str] = None
+    sendgrid_sender: Optional[str] = None
+    turnstile_site_key: Optional[str] = None
+    turnstile_secret_key: Optional[str] = None
     llm_base_url: Optional[str] = None
     llm_api_key: Optional[str] = None
     llm_model: Optional[str] = None
@@ -62,6 +66,7 @@ async def get_runtime_config(user=Depends(get_optional_user)):
         cfg["api_key"] = "***" if cfg.get("api_key") else ""
         cfg["github_hosting_token"] = "***" if cfg.get("github_hosting_token") else ""
         cfg["smtp_password"] = "***" if cfg.get("smtp_password") else ""
+        cfg["sendgrid_api_key"] = "***" if cfg.get("sendgrid_api_key") else ""
         cfg["llm_api_key"] = "***" if cfg.get("llm_api_key") else ""
         return cfg
     return {
@@ -74,6 +79,7 @@ async def get_runtime_config(user=Depends(get_optional_user)):
         "points_cost_per_generation": cfg.get("points_cost_per_generation", 10),
         "points_cost_per_optimize": cfg.get("points_cost_per_optimize", 10),
         "points_cost_per_image_extend": cfg.get("points_cost_per_image_extend", 2),
+        "turnstile_site_key": get_turnstile_config()["site_key"],
         **get_invite_config(),
     }
 
@@ -84,9 +90,12 @@ async def get_runtime_config_admin(admin=Depends(require_admin)):
     cfg["api_key"] = "***" if cfg.get("api_key") else ""
     cfg["github_hosting_token"] = "***" if cfg.get("github_hosting_token") else ""
     cfg["smtp_password"] = "***" if cfg.get("smtp_password") else ""
+    cfg["sendgrid_api_key"] = "***" if cfg.get("sendgrid_api_key") else ""
     cfg["llm_api_key"] = "***" if cfg.get("llm_api_key") else ""
+    cfg["turnstile_secret_key"] = "***" if cfg.get("turnstile_secret_key") else ""
     cfg["recharge_packages"] = get_recharge_packages()
     cfg.update(get_invite_config())
+    cfg.update({"turnstile_enabled":get_turnstile_config()["enabled"]})
     return cfg
 
 
@@ -97,6 +106,10 @@ async def update_runtime_config(body: ConfigUpdate, admin=Depends(require_admin)
         del updates["github_hosting_token"]
     if updates.get("smtp_password") == "***":
         del updates["smtp_password"]
+    if updates.get("sendgrid_api_key") == "***":
+        del updates["sendgrid_api_key"]
+    if updates.get("turnstile_secret_key") == "***":
+        del updates["turnstile_secret_key"]
     if updates.get("llm_api_key") == "***":
         del updates["llm_api_key"]
     update_config(updates)

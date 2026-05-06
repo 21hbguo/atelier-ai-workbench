@@ -94,7 +94,7 @@ export default function AdminPage() {
   const [newTitle, setNewTitle] = useState('')
   const [newContent, setNewContent] = useState('')
   const [creatingAnnouncement, setCreatingAnnouncement] = useState(false)
-  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', register_enabled: true, image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', recharge_packages: defaultRechargePackages, generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_cost_per_optimize: 10, points_cost_per_image_extend: 2, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, invite_enabled: true, invite_register_reward_points: 20, invite_recharge_rebate_percent: 10, invite_recharge_bonus_percent: 10, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3, github_hosting_enabled: false, github_hosting_repo: '', github_hosting_token: '', github_hosting_branch: 'main', smtp_server: 'smtp.qq.com', smtp_port: 465, smtp_password: '', smtp_sender: '', smtp_sender_name: 'Atelier·AI造梦工坊' })
+  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', register_enabled: true, image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', recharge_packages: defaultRechargePackages, generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_cost_per_optimize: 10, points_cost_per_image_extend: 2, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, invite_enabled: true, invite_register_reward_points: 20, invite_recharge_rebate_percent: 10, invite_recharge_bonus_percent: 10, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3, github_hosting_enabled: false, github_hosting_repo: '', github_hosting_token: '', github_hosting_branch: 'main', smtp_server: 'smtp.qq.com', smtp_port: 465, smtp_password: '', smtp_sender: '', smtp_sender_name: 'Atelier·AI造梦工坊', sendgrid_api_key: '', sendgrid_sender: '' })
   const [configSaving, setConfigSaving] = useState(false)
   const [defaultModelId, setDefaultModelId] = useState('image-default')
   const [generationModelsText, setGenerationModelsText] = useState('{}')
@@ -262,9 +262,9 @@ export default function AdminPage() {
         points_register_bonus: Number(data.points_register_bonus || 50),
         points_migration_amount: Number(data.points_migration_amount || 50),
         invite_enabled: data.invite_enabled !== false,
-        invite_register_reward_points: Number(data.invite_register_reward_points || 20),
-        invite_recharge_rebate_percent: Number(data.invite_recharge_rebate_percent || 10),
-        invite_recharge_bonus_percent: Number(data.invite_recharge_bonus_percent || 10),
+        invite_register_reward_points: Number(data.invite_register_reward_points ?? 20),
+        invite_recharge_rebate_percent: Number(data.invite_recharge_rebate_percent ?? 10),
+        invite_recharge_bonus_percent: Number(data.invite_recharge_bonus_percent ?? 10),
         login_rate_limit_per_minute_per_ip: Number(data.login_rate_limit_per_minute_per_ip || 5),
         register_rate_limit_per_minute_per_ip: Number(data.register_rate_limit_per_minute_per_ip || 3),
         github_hosting_enabled: data.github_hosting_enabled === true || data.github_hosting_enabled === 'true',
@@ -276,6 +276,8 @@ export default function AdminPage() {
         smtp_password: data.smtp_password || '',
         smtp_sender: data.smtp_sender || '',
         smtp_sender_name: data.smtp_sender_name || 'Atelier·AI造梦工坊',
+        sendgrid_api_key: data.sendgrid_api_key || '',
+        sendgrid_sender: data.sendgrid_sender || '',
         llm_base_url: data.llm_base_url || '',
         llm_api_key: data.llm_api_key || '',
         llm_model: data.llm_model || '',
@@ -1337,6 +1339,20 @@ export default function AdminPage() {
                 </div>
               </div>
               <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>填写发件人邮箱和授权码即可，服务器默认 smtp.qq.com:465。QQ 邮箱请在设置中开启 SMTP 并获取授权码。</p>
+            </div>
+            <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+              <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>SendGrid 邮件配置</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>SendGrid API Key</label>
+                  <input type="password" value={runtimeConfig.sendgrid_api_key || ''} onChange={e => onConfigInput('sendgrid_api_key', e.target.value)} placeholder="SG.xxxxx" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                </div>
+                <div>
+                  <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>SendGrid 发件邮箱</label>
+                  <input type="email" value={runtimeConfig.sendgrid_sender || ''} onChange={e => onConfigInput('sendgrid_sender', e.target.value)} placeholder="noreply@atelier-ai.me" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                </div>
+              </div>
+              <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>系统会优先使用 SendGrid 发送验证码，发件邮箱需在 SendGrid 完成 Sender Identity 或域名验证。</p>
             </div>
             <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
               <div className="flex items-center justify-between mb-3">

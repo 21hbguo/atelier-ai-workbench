@@ -3,13 +3,40 @@ import secrets
 import smtplib
 import asyncio
 import logging
+import socket
+import httpx
 from email.mime.text import MIMEText
 from email.header import Header
 from email.utils import formataddr
 from fastapi import HTTPException
-from backend.config import get_smtp_config
+from backend.config import get_smtp_config, get_email_delivery_config
 from backend.db.session import get_db
 logger = logging.getLogger(__name__)
+
+
+class IPv4SMTP_SSL(smtplib.SMTP_SSL):
+    def _get_socket(self, host, port, timeout):
+        last_error = None
+        for family, socktype, proto, _, sockaddr in socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM):
+            sock = None
+            try:
+                sock = socket.socket(family, socktype, proto)
+                if timeout is not None:
+                    sock.settimeout(timeout)
+                sock.connect(sockaddr)
+                if self.context and host:
+                    return self.context.wrap_socket(sock, server_hostname=host)
+                return sock
+            except OSError as e:
+                last_error = e
+                if sock:
+                    try:
+                        sock.close()
+                    except Exception:
+                        pass
+        if last_error:
+            raise last_error
+        raise OSError(f"无法解析 IPv4 地址: {host}")
 
 
 VERIFICATION_EMAIL_HTML = """\
@@ -58,7 +85,7 @@ def _send_email_sync(to_email, code):
     msg["To"] = to_email
 
     try:
-        with smtplib.SMTP_SSL(cfg["server"], cfg["port"], timeout=30) as server:
+        with IPv4SMTP_SSL(cfg["server"], cfg["port"], timeout=30) as server:
             server.login(cfg["sender"], cfg["password"])
             server.sendmail(cfg["sender"], to_email, msg.as_string())
     except HTTPException:
@@ -67,12 +94,54 @@ def _send_email_sync(to_email, code):
         raise HTTPException(status_code=500, detail=f"邮件发送失败：{e}")
 
 
+def _build_email_html(to_email, code):
+    return VERIFICATION_EMAIL_HTML.format(email=to_email, code=code)
+
+
+def _build_email_subject():
+    return "Atelier·AI造梦工坊 邮箱验证码"
+
+
+async def _send_via_sendgrid(to_email, code, cfg):
+    api_key=(cfg.get("sendgrid_api_key") or "").strip()
+    sender=(cfg.get("sendgrid_sender") or cfg.get("smtp_sender") or "").strip()
+    if not api_key or not sender:
+        raise HTTPException(status_code=500, detail="SendGrid 未配置，请联系管理员")
+    sender_name=(cfg.get("smtp_sender_name") or "Atelier·AI造梦工坊").strip()
+    payload={"personalizations":[{"to":[{"email":to_email}]}],"from":{"email":sender,"name":sender_name},"subject":_build_email_subject(),"content":[{"type":"text/html","value":_build_email_html(to_email,code)}]}
+    headers={"Authorization":f"Bearer {api_key}","Content-Type":"application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp=await client.post("https://api.sendgrid.com/v3/mail/send",headers=headers,json=payload)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"SendGrid 发送失败：{e}")
+    if resp.status_code >= 400:
+        detail=resp.text[:300] if resp.text else f"HTTP {resp.status_code}"
+        raise HTTPException(status_code=500, detail=f"SendGrid 发送失败：{detail}")
+
+
 async def send_verification_email(to_email, code):
-    await asyncio.to_thread(_send_email_sync, to_email, code)
+    cfg=get_email_delivery_config()
+    sendgrid_error=None
+    if (cfg.get("sendgrid_api_key") or "").strip():
+        try:
+            await _send_via_sendgrid(to_email, code, cfg)
+            return
+        except HTTPException as e:
+            sendgrid_error=e.detail
+            logger.warning("sendgrid send failed for %s: %s", to_email, sendgrid_error)
+    try:
+        await asyncio.to_thread(_send_email_sync, to_email, code)
+    except HTTPException as e:
+        if sendgrid_error:
+            raise HTTPException(status_code=500, detail=f"{sendgrid_error}；SMTP 发送失败：{e.detail.replace('邮件发送失败：','')}")
+        raise
 
 
 async def create_and_send_code(email, ip):
     email = email.strip().lower()
+    code_id = None
+    code = ""
     with get_db() as conn:
         row = conn.execute(
             "SELECT EXTRACT(EPOCH FROM NOW() - created_at)::int AS age_seconds FROM email_verification_codes WHERE email = %s ORDER BY id DESC LIMIT 1",
@@ -84,12 +153,19 @@ async def create_and_send_code(email, ip):
                 raise HTTPException(status_code=429, detail=f"请等待 {60 - age} 秒后再试")
 
         code = generate_verification_code()
-        conn.execute(
+        row = conn.execute(
             """INSERT INTO email_verification_codes (email, code, expires_at, ip)
-               VALUES (%s, %s, NOW() + INTERVAL '3 minutes', %s)""",
+               VALUES (%s, %s, NOW() + INTERVAL '3 minutes', %s) RETURNING id""",
             (email, code, ip),
-        )
-    asyncio.create_task(_send_code_background(email, code))
+        ).fetchone()
+        code_id = row["id"] if row else None
+    try:
+        await send_verification_email(email, code)
+    except Exception:
+        if code_id is not None:
+            with get_db() as conn:
+                conn.execute("DELETE FROM email_verification_codes WHERE id = %s", (code_id,))
+        raise
 
 
 async def _send_code_background(email, code):

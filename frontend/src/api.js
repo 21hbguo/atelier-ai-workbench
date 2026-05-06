@@ -132,7 +132,9 @@ export const authAPI = {
   me: () => api.get('/auth/me'),
   refresh: () => api.post('/auth/refresh'),
   logout: () => api.post('/auth/logout'),
-  sendCode: email => api.post('/auth/send-code', { email }),
+  sendCode: (email, turnstile_token) => api.post('/auth/send-code', { email, turnstile_token }),
+  sendResetCode: (email, turnstile_token) => api.post('/auth/send-reset-code', { email, turnstile_token }),
+  resetPassword: data => api.post('/auth/reset-password', data),
 }
 
 export const squareAPI = {
