@@ -51,9 +51,9 @@ return(
 <div className="text-center mb-5 sm:mb-8">
 <h1 className="login-title leading-none" style={{fontFamily:"'Alex Brush', cursive",fontSize:'clamp(2.8rem,12vw,3.5rem)'}}>Atelier</h1>
 <p className="text-sm mt-1 tracking-widest" style={{color:'var(--text-secondary)',opacity:0.7}}>AI 造梦工坊</p>
-<p className="text-xs mt-2 sm:mt-3" style={{color:'var(--text-secondary)'}}>{isRegister?'创建账号，开始你的 AI 创作之旅':isReset?'通过邮箱验证码重置密码':registerEnabled?'欢迎回来，继续你的创作':'当前仅开放登录，注册已关闭'}</p>
-<p className="text-[11px] mt-1.5 sm:mt-2" style={{color:'var(--text-secondary)',opacity:0.6}}>无需复杂配置，一句话或一张图，即刻开启灵感之旅</p>
-<p className="text-[11px] mt-1" style={{color:'var(--text-secondary)',opacity:0.7}}>现已支持 GPT-Image-2！</p>
+<p className="text-sm mt-2.5 sm:mt-3.5" style={{color:'var(--text-secondary)'}}>{isRegister?'创建账号，开始你的 AI 创作之旅':isReset?'通过邮箱验证码重置密码':registerEnabled?'欢迎回来，继续你的创作':'当前仅开放登录，注册已关闭'}</p>
+<p className="text-xs mt-2 sm:mt-2.5" style={{color:'var(--text-secondary)',opacity:0.72}}>无需复杂配置，一句话或一张图，即刻开启灵感之旅</p>
+<p className="text-xs mt-1.5" style={{color:'var(--text-secondary)',opacity:0.82}}>现已支持 GPT-Image-2！</p>
 </div>
 <div className="login-card rounded-2xl p-4 sm:p-6" style={{background:'var(--bg-ai-bubble)',boxShadow:'var(--shadow-lg)'}}>
 <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:gap-4">
