@@ -132,21 +132,22 @@ class ClassificationService:
 
     @classmethod
     def create_review_task(cls, admin_id: int, item_type: str, category_slug: str) -> Dict[str, Any]:
-        """创建分类审查任务，重新审查指定分类下的项目"""
+        """创建分类审查任务，重新审查指定分类下的项目或全部项目"""
         with get_db() as conn:
+            review_all = category_slug == "all"
             if item_type == "image":
                 rows = conn.execute(
-                    "SELECT id, filename, prompt, category FROM square_images WHERE category = %s AND COALESCE(is_frozen, FALSE) = FALSE",
-                    (category_slug,)
+                    "SELECT id, filename, prompt, category FROM square_images WHERE COALESCE(is_frozen, FALSE) = FALSE" if review_all else "SELECT id, filename, prompt, category FROM square_images WHERE category = %s AND COALESCE(is_frozen, FALSE) = FALSE",
+                    () if review_all else (category_slug,)
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT id, name, prompt, category FROM prompts WHERE category = %s AND COALESCE(is_frozen, FALSE) = FALSE",
-                    (category_slug,)
+                    "SELECT id, name, prompt, category FROM prompts WHERE COALESCE(is_frozen, FALSE) = FALSE" if review_all else "SELECT id, name, prompt, category FROM prompts WHERE category = %s AND COALESCE(is_frozen, FALSE) = FALSE",
+                    () if review_all else (category_slug,)
                 ).fetchall()
 
             if not rows:
-                raise ValueError(f"分类 '{category_slug}' 下没有可审查的项目")
+                raise ValueError("当前类型下没有可审查的项目" if review_all else f"分类 '{category_slug}' 下没有可审查的项目")
 
             task = conn.execute(
                 "INSERT INTO classification_tasks (status, item_type, total_items, created_by) VALUES ('processing', %s, %s, %s) RETURNING id, status, total_items, created_at",

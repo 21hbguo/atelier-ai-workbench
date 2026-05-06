@@ -31,7 +31,7 @@ export default function AdminClassificationTab({
   const [liveLogs, setLiveLogs] = useState([])
   const [liveTaskId, setLiveTaskId] = useState(null)
   const [showLiveLogs, setShowLiveLogs] = useState(false)
-  const [reviewCategory, setReviewCategory] = useState('')
+  const [reviewCategory, setReviewCategory] = useState('all')
   const [reviewing, setReviewing] = useState(false)
   const [categoryDraft,setCategoryDraft]=useState({ id:null, slug:'', label:'' })
   const [savingCategory,setSavingCategory]=useState(false)
@@ -294,7 +294,8 @@ export default function AdminClassificationTab({
             </button>
             {mode==='classification'&&<div className="flex items-center gap-1.5">
               <select value={reviewCategory} onChange={e => setReviewCategory(e.target.value)} className="px-2 py-1.5 rounded-lg text-xs border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}>
-                <option value="">选择分类审查...</option>
+                <option value="all">全部分类</option>
+                <option value="">选择具体分类...</option>
                 {categories.map(c => <option key={c.slug} value={c.slug}>{c.label}</option>)}
               </select>
               <button onClick={handleReview} disabled={!reviewCategory || reviewing} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white hover:opacity-90 disabled:opacity-50" style={{ background: 'var(--color-warning)' }}>
