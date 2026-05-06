@@ -142,6 +142,11 @@ export default function AdminPage() {
   const [clsDetail, setClsDetail] = useState(null)
   const [clsSelected, setClsSelected] = useState(new Set())
   const [clsCategories, setClsCategories] = useState([])
+  const [auditTasks, setAuditTasks] = useState([])
+  const [auditTotal, setAuditTotal] = useState(0)
+  const [auditPage, setAuditPage] = useState(1)
+  const [auditDetail, setAuditDetail] = useState(null)
+  const [auditSelected, setAuditSelected] = useState(new Set())
 
   useEffect(() => { setUserPage(1) }, [userQuery])
   useEffect(() => { setHistoryPage(1) }, [historyQuery])
@@ -178,6 +183,7 @@ export default function AdminPage() {
   useEffect(() => { if (tab === 'evlogs') fetchEvLogs() }, [tab, evPage, evQuery])
   useEffect(() => { setEvPage(1) }, [evQuery])
   useEffect(() => { if (tab === 'classification') fetchClsTasks() }, [tab, clsPage])
+  useEffect(() => { if (tab === 'classification') fetchAuditTasks() }, [tab, auditPage])
   useEffect(() => { promptAPI.categories().then(({ data }) => setClsCategories(data?.categories || data || [])).catch(() => {}) }, [])
 
   const fetchUsers = async () => {
@@ -218,6 +224,20 @@ export default function AdminPage() {
     try {
       const { data } = await adminAPI.createClassificationTask(itemType)
       fetchClsTasks()
+      return data
+    } catch (e) { dialog.alert(e.message || '创建失败'); throw e }
+  }
+  const fetchAuditTasks = async () => {
+    try {
+      const { data } = await adminAPI.listAuditTasks(auditPage, 20)
+      setAuditTasks(data?.items || [])
+      setAuditTotal(data?.total || 0)
+    } catch (e) { dialog.alert(e.message || '加载失败') }
+  }
+  const handleCreateAuditTask = async (itemType = 'prompt') => {
+    try {
+      const { data } = await adminAPI.createAuditTask(itemType, 200)
+      fetchAuditTasks()
       return data
     } catch (e) { dialog.alert(e.message || '创建失败'); throw e }
   }
@@ -1221,6 +1241,16 @@ export default function AdminPage() {
             onCreateTask={handleCreateClsTask}
             categories={clsCategories}
             onRefreshTasks={fetchClsTasks}
+            auditTasks={auditTasks}
+            auditTotal={auditTotal}
+            auditPage={auditPage}
+            setAuditPage={setAuditPage}
+            auditDetail={auditDetail}
+            setAuditDetail={setAuditDetail}
+            auditSelected={auditSelected}
+            setAuditSelected={setAuditSelected}
+            onCreateAuditTask={handleCreateAuditTask}
+            onRefreshAuditTasks={fetchAuditTasks}
           />
         ) : tab === 'config' ? (
           <div className="space-y-4">

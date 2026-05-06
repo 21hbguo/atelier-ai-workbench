@@ -423,6 +423,41 @@ def init_db():
             "CREATE INDEX IF NOT EXISTS idx_cls_results_task ON classification_results(task_id)",
             "CREATE INDEX IF NOT EXISTS idx_cls_results_status ON classification_results(status)",
             "ALTER TABLE classification_results ADD COLUMN IF NOT EXISTS confidence VARCHAR(16)",
+            """CREATE TABLE IF NOT EXISTS content_audit_tasks (
+                id SERIAL PRIMARY KEY,
+                status VARCHAR(32) NOT NULL DEFAULT 'processing',
+                item_type VARCHAR(32) NOT NULL DEFAULT 'prompt',
+                source_scope VARCHAR(32) NOT NULL DEFAULT 'square',
+                total_items INTEGER NOT NULL DEFAULT 0,
+                processed_items INTEGER NOT NULL DEFAULT 0,
+                created_by INTEGER REFERENCES users(id),
+                created_at TIMESTAMP DEFAULT NOW(),
+                completed_at TIMESTAMP
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_audit_tasks_status ON content_audit_tasks(status)",
+            """CREATE TABLE IF NOT EXISTS content_audit_results (
+                id SERIAL PRIMARY KEY,
+                task_id INTEGER NOT NULL REFERENCES content_audit_tasks(id) ON DELETE CASCADE,
+                item_id VARCHAR(64) NOT NULL,
+                item_type VARCHAR(32) NOT NULL DEFAULT 'prompt',
+                source_scope VARCHAR(32) NOT NULL DEFAULT 'square',
+                item_name TEXT,
+                item_prompt TEXT,
+                item_category VARCHAR(64),
+                item_author TEXT,
+                risk_level VARCHAR(16),
+                confidence VARCHAR(16),
+                suggested_action VARCHAR(32),
+                reason_summary TEXT,
+                reason_detail TEXT,
+                hit_rules JSONB DEFAULT '[]'::jsonb,
+                status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                reviewed_at TIMESTAMP,
+                applied_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_audit_results_task ON content_audit_results(task_id)",
+            "CREATE INDEX IF NOT EXISTS idx_audit_results_status ON content_audit_results(status)",
         ]
             for sql in statements:
                 conn.execute(sql)

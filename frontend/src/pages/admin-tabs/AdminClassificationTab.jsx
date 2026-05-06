@@ -22,11 +22,11 @@ const CONFIDENCE_MAP = { high: '高', medium: '中', low: '低' }
 
 export default function AdminClassificationTab({
   tasks, total, page, setPage, detail, setDetail, selected, setSelected,
-  onCreateTask, categories, onRefreshTasks,
+  onCreateTask, categories, onRefreshTasks,auditTasks,auditTotal,auditPage,setAuditPage,auditDetail,setAuditDetail,auditSelected,setAuditSelected,onCreateAuditTask,onRefreshAuditTasks,
 }) {
+  const [mode,setMode]=useState('classification')
   const [creating, setCreating] = useState(false)
   const [resultFilter, setResultFilter] = useState('all')
-  const [processingIds, setProcessingIds] = useState(new Set())
   const [createType, setCreateType] = useState('prompt')
   const [liveLogs, setLiveLogs] = useState([])
   const [liveTaskId, setLiveTaskId] = useState(null)
@@ -35,9 +35,17 @@ export default function AdminClassificationTab({
   const [reviewing, setReviewing] = useState(false)
   const logEndRef = useRef(null)
   const eventSourceRef = useRef(null)
+  const activeDetail=mode==='classification'?detail:auditDetail
+  const activeTasks=mode==='classification'?tasks:auditTasks
+  const activeTotal=mode==='classification'?total:auditTotal
+  const activePage=mode==='classification'?page:auditPage
+  const setActivePage=mode==='classification'?setPage:setAuditPage
+  const activeSelected=mode==='classification'?selected:auditSelected
+  const setActiveSelected=mode==='classification'?setSelected:setAuditSelected
+  const setActiveDetail=mode==='classification'?setDetail:setAuditDetail
 
   useEffect(() => {
-    if (detail?.status !== 'processing') return
+    if (mode!=='classification'||detail?.status !== 'processing') return
     const timer = setInterval(async () => {
       try {
         const { data } = await adminAPI.getClassificationTask(detail.id)
@@ -47,12 +55,26 @@ export default function AdminClassificationTab({
           onRefreshTasks()
         }
       } catch {}
-    }, 2000)
+    }, 1200)
     return () => clearInterval(timer)
-  }, [detail?.id, detail?.status])
+  }, [mode,detail?.id, detail?.status])
+  useEffect(() => {
+    if (mode!=='audit'||auditDetail?.status !== 'processing') return
+    const timer = setInterval(async () => {
+      try {
+        const { data } = await adminAPI.getAuditTask(auditDetail.id)
+        setAuditDetail(data)
+        if (data.status !== 'processing') {
+          clearInterval(timer)
+          onRefreshAuditTasks()
+        }
+      } catch {}
+    }, 1200)
+    return () => clearInterval(timer)
+  }, [mode,auditDetail?.id,auditDetail?.status])
 
   // 订阅任务日志
-  const subscribeLogs = (taskId) => {
+  const subscribeLogs = (taskId,taskMode=mode) => {
     if (eventSourceRef.current) {
       eventSourceRef.current.close()
     }
@@ -60,7 +82,7 @@ export default function AdminClassificationTab({
     setLiveTaskId(taskId)
     setShowLiveLogs(true)
 
-    const es = new EventSource(`/api/admin/classification/tasks/${taskId}/logs`)
+    const es = new EventSource(taskMode==='classification'?`/api/admin/classification/tasks/${taskId}/logs`:`/api/admin/audit/tasks/${taskId}/logs`)
     eventSourceRef.current = es
 
     es.onmessage = (e) => {
@@ -69,7 +91,8 @@ export default function AdminClassificationTab({
         setLiveLogs(prev => [...prev, log])
         if (log.type === 'complete') {
           es.close()
-          onRefreshTasks()
+          if (taskMode==='classification') onRefreshTasks()
+          else onRefreshAuditTasks()
         }
       } catch {}
     }
@@ -98,8 +121,16 @@ export default function AdminClassificationTab({
     try {
       const result = await onCreateTask(createType)
       if (result?.id) {
-        subscribeLogs(result.id)
+        subscribeLogs(result.id,'classification')
       }
+    } catch {}
+    setCreating(false)
+  }
+  const handleCreateAudit = async () => {
+    setCreating(true)
+    try {
+      const result = await onCreateAuditTask(createType)
+      if (result?.id) subscribeLogs(result.id,'audit')
     } catch {}
     setCreating(false)
   }
@@ -118,42 +149,61 @@ export default function AdminClassificationTab({
   }
 
   const handleApprove = async () => {
-    if (selected.size === 0) return
+    if (activeSelected.size === 0) return
     try {
-      await adminAPI.approveClassification(detail.id, [...selected])
-      setSelected(new Set())
-      const { data } = await adminAPI.getClassificationTask(detail.id)
-      setDetail(data)
-      onRefreshTasks()
+      if (mode==='classification') {
+        await adminAPI.approveClassification(detail.id, [...activeSelected])
+        setSelected(new Set())
+        const { data } = await adminAPI.getClassificationTask(detail.id)
+        setDetail(data)
+        onRefreshTasks()
+      } else {
+        await adminAPI.approveAudit(auditDetail.id, [...activeSelected])
+        setAuditSelected(new Set())
+        const { data } = await adminAPI.getAuditTask(auditDetail.id)
+        setAuditDetail(data)
+        onRefreshAuditTasks()
+      }
     } catch {}
   }
 
   const handleReject = async () => {
-    if (selected.size === 0) return
+    if (activeSelected.size === 0) return
     try {
-      await adminAPI.rejectClassification(detail.id, [...selected])
-      setSelected(new Set())
-      const { data } = await adminAPI.getClassificationTask(detail.id)
-      setDetail(data)
-      onRefreshTasks()
+      if (mode==='classification') {
+        await adminAPI.rejectClassification(detail.id, [...activeSelected])
+        setSelected(new Set())
+        const { data } = await adminAPI.getClassificationTask(detail.id)
+        setDetail(data)
+        onRefreshTasks()
+      } else {
+        await adminAPI.rejectAudit(auditDetail.id, [...activeSelected])
+        setAuditSelected(new Set())
+        const { data } = await adminAPI.getAuditTask(auditDetail.id)
+        setAuditDetail(data)
+        onRefreshAuditTasks()
+      }
     } catch {}
   }
 
   const toggleSelect = id => {
-    setSelected(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
+    setActiveSelected(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
   }
 
   const toggleSelectAll = () => {
     const filtered = getFilteredResults()
-    if (selected.size === filtered.length) setSelected(new Set())
-    else setSelected(new Set(filtered.map(r => r.id)))
+    if (activeSelected.size === filtered.length) setActiveSelected(new Set())
+    else setActiveSelected(new Set(filtered.map(r => r.id)))
   }
 
   const getFilteredResults = () => {
-    if (!detail?.results) return []
-    if (resultFilter === 'all') return detail.results
-    if (resultFilter === 'failed') return detail.results.filter(r => r.status === 'failed' || (r.status === 'pending' && r.suggested_category === '_error'))
-    return detail.results.filter(r => r.status === resultFilter)
+    const rows=activeDetail?.results||[]
+    if (resultFilter === 'all') return rows
+    if (mode==='classification') {
+      if (resultFilter === 'failed') return rows.filter(r => r.status === 'failed' || (r.status === 'pending' && r.suggested_category === '_error'))
+      return rows.filter(r => r.status === resultFilter)
+    }
+    return rows.filter(r => r.status === resultFilter)
   }
 
   const handleRemoveSuggestion = async resultId => {
@@ -190,25 +240,28 @@ export default function AdminClassificationTab({
     } catch {}
   }
 
-  if (!detail) {
-    const totalPages = Math.ceil(total / 20)
+  if (!activeDetail) {
+    const totalPages = Math.ceil(activeTotal / 20)
     return (
       <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          {[{k:'classification',l:'分类任务'},{k:'audit',l:'内容审核'}].map(i=><button key={i.k} onClick={()=>setMode(i.k)} className="px-3 py-1.5 rounded-lg text-xs font-medium border" style={mode===i.k?{background:'var(--accent)',color:'#fff',borderColor:'var(--accent)'}:{borderColor:'var(--border-color)',color:'var(--text-secondary)'}}>{i.l}</button>)}
+        </div>
         <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>AI 自动分类</h3>
+          <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{mode==='classification'?'AI 自动分类':'AI 内容审核'}</h3>
           <div className="flex gap-2 items-center flex-wrap">
             <select value={createType} onChange={e => setCreateType(e.target.value)} className="px-2 py-1.5 rounded-lg text-xs border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}>
               <option value="prompt">提示词</option>
               <option value="image">作品</option>
             </select>
-            <button onClick={onRefreshTasks} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover transition-colors" style={{ color: 'var(--text-secondary)' }}>
+            <button onClick={mode==='classification'?onRefreshTasks:onRefreshAuditTasks} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover transition-colors" style={{ color: 'var(--text-secondary)' }}>
               <RefreshCw size={14} /> 刷新
             </button>
-            <button onClick={handleCreate} disabled={creating} className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium text-white hover:opacity-90 transition-opacity disabled:opacity-50" style={{ background: 'var(--accent)' }}>
+            <button onClick={mode==='classification'?handleCreate:handleCreateAudit} disabled={creating} className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium text-white hover:opacity-90 transition-opacity disabled:opacity-50" style={{ background: 'var(--accent)' }}>
               {creating ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-              {creating ? '创建中...' : '开始新分类'}
+              {creating ? '创建中...' : mode==='classification'?'开始新分类':'开始新审核'}
             </button>
-            <div className="flex items-center gap-1.5">
+            {mode==='classification'&&<div className="flex items-center gap-1.5">
               <select value={reviewCategory} onChange={e => setReviewCategory(e.target.value)} className="px-2 py-1.5 rounded-lg text-xs border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}>
                 <option value="">选择分类审查...</option>
                 {categories.map(c => <option key={c.slug} value={c.slug}>{c.label}</option>)}
@@ -217,7 +270,7 @@ export default function AdminClassificationTab({
                 {reviewing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
                 {reviewing ? '审查中...' : '重新审查'}
               </button>
-            </div>
+            </div>}
           </div>
         </div>
         <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
@@ -234,9 +287,9 @@ export default function AdminClassificationTab({
               </tr>
             </thead>
             <tbody>
-              {tasks.length === 0 ? (
-                <tr><td colSpan={7} className="px-3 py-8 text-center" style={{ color: 'var(--text-secondary)' }}>暂无分类任务</td></tr>
-              ) : tasks.map(t => (
+              {activeTasks.length === 0 ? (
+                <tr><td colSpan={7} className="px-3 py-8 text-center" style={{ color: 'var(--text-secondary)' }}>暂无{mode==='classification'?'分类':'审核'}任务</td></tr>
+              ) : activeTasks.map(t => (
                 <tr key={t.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
                   <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>#{t.id}</td>
                   <td className="px-3 py-2">
@@ -253,7 +306,7 @@ export default function AdminClassificationTab({
                   <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{t.processed_items}</td>
                   <td className="px-3 py-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{t.created_at?.slice(0, 19)}</td>
                   <td className="px-3 py-2">
-                    <button onClick={() => { setDetail(null); adminAPI.getClassificationTask(t.id).then(r => setDetail(r.data)) }} className="text-xs font-medium hover:underline" style={{ color: 'var(--accent)' }}>
+                    <button onClick={() => { setActiveDetail(null); (mode==='classification'?adminAPI.getClassificationTask(t.id):adminAPI.getAuditTask(t.id)).then(r => setActiveDetail(r.data)) }} className="text-xs font-medium hover:underline" style={{ color: 'var(--accent)' }}>
                       查看详情
                     </button>
                   </td>
@@ -264,9 +317,9 @@ export default function AdminClassificationTab({
         </div>
         {totalPages > 1 && (
           <div className="flex justify-center gap-2">
-            <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1} className="px-3 py-1 rounded text-xs" style={{ color: 'var(--text-secondary)' }}>上一页</button>
-            <span className="text-xs px-2 py-1" style={{ color: 'var(--text-secondary)' }}>{page}/{totalPages}</span>
-            <button onClick={() => setPage(Math.min(totalPages, page + 1))} disabled={page === totalPages} className="px-3 py-1 rounded text-xs" style={{ color: 'var(--text-secondary)' }}>下一页</button>
+            <button onClick={() => setActivePage(Math.max(1, activePage - 1))} disabled={activePage === 1} className="px-3 py-1 rounded text-xs" style={{ color: 'var(--text-secondary)' }}>上一页</button>
+            <span className="text-xs px-2 py-1" style={{ color: 'var(--text-secondary)' }}>{activePage}/{totalPages}</span>
+            <button onClick={() => setActivePage(Math.min(totalPages, activePage + 1))} disabled={activePage === totalPages} className="px-3 py-1 rounded text-xs" style={{ color: 'var(--text-secondary)' }}>下一页</button>
           </div>
         )}
 
@@ -314,58 +367,61 @@ export default function AdminClassificationTab({
         )}
 
         {/* LLM 调试区域 */}
-        <LLMDebugPanel createType={createType} />
+        {mode==='classification'&&<LLMDebugPanel createType={createType} />}
       </div>
     )
   }
 
   const filteredResults = getFilteredResults()
-  const statusInfo = STATUS_MAP[detail.status]
+  const statusInfo = STATUS_MAP[activeDetail.status]
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        {[{k:'classification',l:'分类任务'},{k:'audit',l:'内容审核'}].map(i=><button key={i.k} onClick={()=>{setMode(i.k);setSelected(new Set());setAuditSelected(new Set())}} className="px-3 py-1.5 rounded-lg text-xs font-medium border" style={mode===i.k?{background:'var(--accent)',color:'#fff',borderColor:'var(--accent)'}:{borderColor:'var(--border-color)',color:'var(--text-secondary)'}}>{i.l}</button>)}
+      </div>
       <div className="flex items-center gap-3">
-        <button onClick={() => { setDetail(null); setSelected(new Set()) }} className="flex items-center gap-1 text-sm hover:underline" style={{ color: 'var(--accent)' }}>
+        <button onClick={() => { setActiveDetail(null); setActiveSelected(new Set()) }} className="flex items-center gap-1 text-sm hover:underline" style={{ color: 'var(--accent)' }}>
           <ArrowLeft size={16} /> 返回列表
         </button>
-        <span className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>任务 #{detail.id}</span>
+        <span className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{mode==='classification'?'分类':'审核'}任务 #{activeDetail.id}</span>
         <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: statusInfo?.color + '20', color: statusInfo?.color }}>
-          {statusInfo?.label || detail.status}
+          {statusInfo?.label || activeDetail.status}
         </span>
-        {detail.status === 'processing' && (
+        {activeDetail.status === 'processing' && (
           <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
-            <Loader2 size={14} className="animate-spin" /> {detail.processed_items}/{detail.total_items}
+            <Loader2 size={14} className="animate-spin" /> {activeDetail.processed_items}/{activeDetail.total_items}
           </div>
         )}
       </div>
 
-      {detail.status === 'processing' && (
+      {activeDetail.status === 'processing' && (
         <div className="w-full rounded-full h-2" style={{ background: 'var(--border-color)' }}>
-          <div className="h-2 rounded-full transition-all" style={{ width: `${(detail.processed_items / detail.total_items * 100)}%`, background: 'var(--accent)' }} />
+          <div className="h-2 rounded-full transition-all" style={{ width: `${(activeDetail.processed_items / activeDetail.total_items * 100)}%`, background: 'var(--accent)' }} />
         </div>
       )}
 
       <div className="flex items-center gap-2 flex-wrap">
-        {['all', 'pending', 'applied', 'rejected', 'failed'].map(f => (
+        {(mode==='classification'?['all', 'pending', 'applied', 'rejected', 'failed']:['all', 'pending', 'applied', 'rejected']).map(f => (
           <button key={f} onClick={() => setResultFilter(f)} className="px-3 py-1 rounded-full text-xs font-medium transition-colors"
             style={{ background: resultFilter === f ? 'var(--accent)' : 'var(--bg-ai-bubble)', color: resultFilter === f ? '#fff' : 'var(--text-secondary)', border: '1px solid', borderColor: resultFilter === f ? 'var(--accent)' : 'var(--border-color)' }}>
-            {f === 'all' ? '全部' : RESULT_STATUS_MAP[f]?.label} ({f === 'all' ? detail.results?.length || 0 : f === 'failed' ? (detail.results?.filter(r => r.status === 'failed' || (r.status === 'pending' && r.suggested_category === '_error')).length || 0) : (detail.results?.filter(r => r.status === f).length || 0)})
+            {f === 'all' ? '全部' : RESULT_STATUS_MAP[f]?.label} ({f === 'all' ? activeDetail.results?.length || 0 : f === 'failed' ? (activeDetail.results?.filter(r => r.status === 'failed' || (r.status === 'pending' && r.suggested_category === '_error')).length || 0) : (activeDetail.results?.filter(r => r.status === f).length || 0)})
           </button>
         ))}
       </div>
 
-      {(detail.status === 'pending_review' || detail.status === 'processing') && (
+      {(activeDetail.status === 'pending_review' || activeDetail.status === 'processing') && (
         <div className="flex items-center gap-2">
           <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
-            {selected.size === filteredResults.length ? '取消全选' : '全选'}
+            {activeSelected.size === filteredResults.length ? '取消全选' : '全选'}
           </button>
-          {selected.size > 0 && (
+          {activeSelected.size > 0 && (
             <>
               <button onClick={handleApprove} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-success)] text-white hover:opacity-90">
-                <Check size={14} /> 通过 {selected.size} 项
+                <Check size={14} /> 通过 {activeSelected.size} 项
               </button>
               <button onClick={handleReject} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-error)] text-white hover:opacity-90">
-                <X size={14} /> 拒绝 {selected.size} 项
+                <X size={14} /> 拒绝 {activeSelected.size} 项
               </button>
             </>
           )}
@@ -376,23 +432,23 @@ export default function AdminClassificationTab({
         <table className="w-full text-sm">
           <thead>
             <tr style={{ background: 'var(--bg-ai-bubble)' }}>
-              {(detail.status === 'pending_review' || detail.status === 'processing') && <th className="px-3 py-2 w-8"></th>}
+              {(activeDetail.status === 'pending_review' || activeDetail.status === 'processing') && <th className="px-3 py-2 w-8"></th>}
               <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>项目信息</th>
-              <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>当前分类</th>
-              <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>建议分类</th>
+              <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>{mode==='classification'?'当前分类':'当前分类/作者'}</th>
+              <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>{mode==='classification'?'建议分类':'风险建议'}</th>
               <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>置信度</th>
               <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>状态</th>
-              {(detail.status === 'pending_review' || detail.status === 'processing') && <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>操作</th>}
+              {(activeDetail.status === 'pending_review' || activeDetail.status === 'processing') && <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>操作</th>}
             </tr>
           </thead>
           <tbody>
             {filteredResults.length === 0 ? (
-              <tr><td colSpan={(detail.status === 'pending_review' || detail.status === 'processing') ? 7 : 5} className="px-3 py-8 text-center" style={{ color: 'var(--text-secondary)' }}>暂无数据</td></tr>
+              <tr><td colSpan={(activeDetail.status === 'pending_review' || activeDetail.status === 'processing') ? 7 : 5} className="px-3 py-8 text-center" style={{ color: 'var(--text-secondary)' }}>暂无数据</td></tr>
             ) : filteredResults.map(r => (
               <tr key={r.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
-                {(detail.status === 'pending_review' || detail.status === 'processing') && (
+                {(activeDetail.status === 'pending_review' || activeDetail.status === 'processing') && (
                   <td className="px-3 py-2">
-                    <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleSelect(r.id)} className="rounded" />
+                    <input type="checkbox" checked={activeSelected.has(r.id)} onChange={() => toggleSelect(r.id)} className="rounded" />
                   </td>
                 )}
                 <td className="px-3 py-2 max-w-xs">
@@ -400,18 +456,18 @@ export default function AdminClassificationTab({
                   <div className="text-xs truncate mt-0.5" style={{ color: 'var(--text-secondary)' }}>{r.item_prompt?.slice(0, 80)}</div>
                 </td>
                 <td className="px-3 py-2">
-                  {r.item_category ? (
+                  {mode==='classification' ? (r.item_category ? (
                     <span className="px-2 py-0.5 rounded-full text-xs" style={{ background: 'var(--bg-ai-bubble)', color: 'var(--text-secondary)' }}>{r.item_category}</span>
                   ) : (
                     <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>无</span>
-                  )}
+                  )) : <div className="space-y-1"><div>{r.item_category ? <span className="px-2 py-0.5 rounded-full text-xs" style={{ background: 'var(--bg-ai-bubble)', color: 'var(--text-secondary)' }}>{r.item_category}</span> : <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>无分类</span>}</div><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>{r.item_author || '-'}</div></div>}
                 </td>
                 <td className="px-3 py-2">
-                  {r.suggested_category && r.suggested_category !== '_error' && r.suggested_category !== '_removed' && r.status !== 'failed' ? (
+                  {mode==='classification' ? (r.suggested_category && r.suggested_category !== '_error' && r.suggested_category !== '_removed' && r.status !== 'failed' ? (
                     <CategorySuggestion
                       result={r}
                       categories={categories}
-                      canEdit={detail.status === 'pending_review' && r.status === 'pending' && r.suggested_category !== '_error'}
+                      canEdit={activeDetail.status === 'pending_review' && r.status === 'pending' && r.suggested_category !== '_error'}
                       onRemove={() => handleRemoveSuggestion(r.id)}
                       onChange={handleChangeCategory}
                     />
@@ -419,7 +475,7 @@ export default function AdminClassificationTab({
                     <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>已移除</span>
                   ) : (
                     <span className="text-xs" style={{ color: 'var(--color-error)' }}>分类失败</span>
-                  )}
+                  )):<AuditSuggestion result={r} canEdit={activeDetail.status==='pending_review'&&r.status==='pending'} onChange={async data=>{await adminAPI.updateAuditResult(r.id,data);const { data:next } = await adminAPI.getAuditTask(activeDetail.id);setAuditDetail(next)}}/>}
                 </td>
                 <td className="px-3 py-2">
                   <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{CONFIDENCE_MAP[r.confidence] || '-'}</span>
@@ -431,9 +487,9 @@ export default function AdminClassificationTab({
                     </span>
                   )})()}
                 </td>
-                {(detail.status === 'pending_review' || detail.status === 'processing') && (
+                {(activeDetail.status === 'pending_review' || activeDetail.status === 'processing') && (
                   <td className="px-3 py-2">
-                    {r.status === 'pending' && r.suggested_category !== '_error' && r.status !== 'failed' && (
+                    {mode==='classification'&&r.status === 'pending' && r.suggested_category !== '_error' && r.status !== 'failed' && (
                       <div className="flex gap-1">
                         <button onClick={() => handleApproveSingle(r.id)} className="p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--color-success)' }} title="通过">
                           <Check size={14} />
@@ -443,11 +499,12 @@ export default function AdminClassificationTab({
                         </button>
                       </div>
                     )}
-                    {(r.status === 'failed' || (r.status === 'pending' && r.suggested_category === '_error')) && (
+                    {mode==='classification'&&(r.status === 'failed' || (r.status === 'pending' && r.suggested_category === '_error')) && (
                       <button onClick={() => handleRejectSingle(r.id)} className="p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--color-error)' }} title="移除">
                         <X size={14} />
                       </button>
                     )}
+                    {mode==='audit'&&r.status==='pending'&&<div className="flex gap-1"><button onClick={async()=>{await adminAPI.approveAudit(activeDetail.id,[r.id]);const { data }=await adminAPI.getAuditTask(activeDetail.id);setAuditDetail(data);onRefreshAuditTasks()}} className="p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--color-success)' }} title="执行建议"><Check size={14} /></button><button onClick={async()=>{await adminAPI.rejectAudit(activeDetail.id,[r.id]);const { data }=await adminAPI.getAuditTask(activeDetail.id);setAuditDetail(data);onRefreshAuditTasks()}} className="p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--color-error)' }} title="忽略建议"><X size={14} /></button></div>}
                   </td>
                 )}
               </tr>
@@ -457,6 +514,12 @@ export default function AdminClassificationTab({
       </div>
     </div>
   )
+}
+
+function AuditSuggestion({ result, canEdit, onChange }) {
+  const [draft,setDraft]=useState({risk_level:result.risk_level||'medium',confidence:result.confidence||'medium',suggested_action:result.suggested_action||'review',reason_summary:result.reason_summary||'',reason_detail:result.reason_detail||'',hit_rules:Array.isArray(result.hit_rules)?result.hit_rules.join('、'):(result.hit_rules||'')})
+  if (!canEdit) return <div className="space-y-1"><div className="flex items-center gap-1 flex-wrap"><span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: (result.risk_level==='high'?'var(--color-error)':result.risk_level==='medium'?'var(--color-warning)':'var(--color-success)')+'20', color: result.risk_level==='high'?'var(--color-error)':result.risk_level==='medium'?'var(--color-warning)':'var(--color-success)' }}>{result.risk_level==='high'?'高风险':result.risk_level==='medium'?'中风险':'低风险'}</span><span className="px-2 py-0.5 rounded-full text-xs" style={{ background: 'var(--bg-ai-bubble)', color: 'var(--text-secondary)' }}>{result.suggested_action==='freeze'?'建议冻结':result.suggested_action==='delete'?'建议删除':result.suggested_action==='keep'?'建议保留':'建议复核'}</span></div><div className="text-xs" style={{ color:'var(--text-primary)' }}>{result.reason_summary||'-'}</div><div className="text-xs" style={{ color:'var(--text-secondary)' }}>{result.reason_detail||'-'}</div><div className="text-xs" style={{ color:'var(--text-secondary)' }}>{Array.isArray(result.hit_rules)&&result.hit_rules.length?`命中：${result.hit_rules.join('、')}`:'未命中规则'}</div></div>
+  return <div className="space-y-1 min-w-[260px]"><div className="flex gap-1 flex-wrap"><select value={draft.risk_level} onChange={e=>setDraft(prev=>({...prev,risk_level:e.target.value}))} className="px-1.5 py-0.5 rounded text-xs border" style={{ borderColor:'var(--border-color)',background:'var(--bg-card)',color:'var(--text-primary)' }}><option value="high">高风险</option><option value="medium">中风险</option><option value="low">低风险</option></select><select value={draft.suggested_action} onChange={e=>setDraft(prev=>({...prev,suggested_action:e.target.value}))} className="px-1.5 py-0.5 rounded text-xs border" style={{ borderColor:'var(--border-color)',background:'var(--bg-card)',color:'var(--text-primary)' }}><option value="freeze">冻结</option><option value="delete">删除</option><option value="review">复核</option><option value="keep">保留</option></select></div><input value={draft.reason_summary} onChange={e=>setDraft(prev=>({...prev,reason_summary:e.target.value}))} placeholder="摘要" className="w-full px-1.5 py-0.5 rounded text-xs border" style={{ borderColor:'var(--border-color)',background:'var(--bg-card)',color:'var(--text-primary)' }}/><input value={draft.reason_detail} onChange={e=>setDraft(prev=>({...prev,reason_detail:e.target.value}))} placeholder="原因" className="w-full px-1.5 py-0.5 rounded text-xs border" style={{ borderColor:'var(--border-color)',background:'var(--bg-card)',color:'var(--text-primary)' }}/><input value={draft.hit_rules} onChange={e=>setDraft(prev=>({...prev,hit_rules:e.target.value}))} placeholder="命中词，用、分隔" className="w-full px-1.5 py-0.5 rounded text-xs border" style={{ borderColor:'var(--border-color)',background:'var(--bg-card)',color:'var(--text-primary)' }}/><button onClick={()=>onChange({...draft,hit_rules:String(draft.hit_rules||'').split(/[、,，]/).map(s=>s.trim()).filter(Boolean)})} className="px-2 py-0.5 rounded text-xs text-white" style={{ background:'var(--accent)' }}>保存</button></div>
 }
 
 function CategorySuggestion({ result, categories, canEdit, onRemove, onChange }) {

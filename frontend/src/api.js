@@ -204,6 +204,12 @@ export const adminAPI = {
   approveClassification: (taskId, resultIds) => api.post(`/admin/classification/tasks/${taskId}/approve`, { result_ids: resultIds }),
   rejectClassification: (taskId, resultIds) => api.post(`/admin/classification/tasks/${taskId}/reject`, { result_ids: resultIds }),
   updateClassificationResult: (resultId, data) => api.post(`/admin/classification/results/${resultId}`, data),
+  createAuditTask: (itemType = 'prompt', limit = 200) => api.post('/admin/audit/tasks', { item_type: itemType, limit }),
+  listAuditTasks: (page = 1, size = 20) => api.get('/admin/audit/tasks', { params: { page, size } }),
+  getAuditTask: taskId => api.get(`/admin/audit/tasks/${taskId}`),
+  approveAudit: (taskId, resultIds) => api.post(`/admin/audit/tasks/${taskId}/approve`, { result_ids: resultIds }),
+  rejectAudit: (taskId, resultIds) => api.post(`/admin/audit/tasks/${taskId}/reject`, { result_ids: resultIds }),
+  updateAuditResult: (resultId, data) => api.post(`/admin/audit/results/${resultId}`, data),
 }
 export const configAPI = { get: () => api.get('/config'), admin: () => api.get('/config/admin'), update: data => api.post('/config', data), generationAdmin: () => api.get('/config/generation/admin'), models: () => api.get('/config/models') }
 

@@ -34,7 +34,7 @@ SYSTEM_TEMPLATE = """你是一名专业的AI绘画内容分类专家。你的任
 
 USER_TEMPLATE = "请对以下 {count} 个项目进行分类：\n{items}"
 
-BATCH_SIZE = 10
+BATCH_SIZE = 1
 
 
 class ClassificationService:

@@ -16,6 +16,7 @@ from backend.services.image_expiry import refresh_permanent_flags_by_filenames
 from backend.services.finance_service import FinanceService
 from backend.services.favorite_service import FavoriteService
 from backend.services.classification_service import ClassificationService
+from backend.services.content_audit_service import ContentAuditService
 from backend.config import get_generation_providers, get_generation_models, get_config
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -1412,3 +1413,60 @@ async def stream_classification_logs(task_id: int, admin=Depends(require_admin))
             yield f"data: {json.dumps(log, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.post("/audit/tasks")
+async def create_content_audit_task(body: dict = {}, admin=Depends(require_admin)):
+    item_type=body.get("item_type","prompt")
+    try:
+        task=ContentAuditService.create_task(admin_id=admin["user_id"],item_type=item_type,limit=int(body.get("limit") or 200))
+    except ValueError as e:
+        raise HTTPException(status_code=400,detail=str(e))
+    import asyncio
+    asyncio.create_task(ContentAuditService.run_audit(task["id"]))
+    return task
+
+
+@router.get("/audit/tasks")
+async def list_content_audit_tasks(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), admin=Depends(require_admin)):
+    return ContentAuditService.list_tasks(page=page,size=size)
+
+
+@router.get("/audit/tasks/{task_id}")
+async def get_content_audit_task(task_id: int, admin=Depends(require_admin)):
+    task=ContentAuditService.get_task(task_id)
+    if not task:raise HTTPException(status_code=404,detail="任务不存在")
+    return task
+
+
+@router.post("/audit/tasks/{task_id}/approve")
+async def approve_content_audit(task_id: int, body: dict, admin=Depends(require_admin)):
+    result_ids=body.get("result_ids",[])
+    if not result_ids:raise HTTPException(status_code=400,detail="请选择要通过的结果")
+    try:
+        return ContentAuditService.approve_results(task_id,result_ids)
+    except ValueError as e:
+        raise HTTPException(status_code=400,detail=str(e))
+
+
+@router.post("/audit/tasks/{task_id}/reject")
+async def reject_content_audit(task_id: int, body: dict, admin=Depends(require_admin)):
+    result_ids=body.get("result_ids",[])
+    if not result_ids:raise HTTPException(status_code=400,detail="请选择要拒绝的结果")
+    return ContentAuditService.reject_results(task_id,result_ids)
+
+
+@router.post("/audit/results/{result_id}")
+async def update_content_audit_result(result_id: int, body: dict, admin=Depends(require_admin)):
+    return ContentAuditService.update_result(result_id,body.get("risk_level",""),body.get("confidence",""),body.get("suggested_action","review"),body.get("reason_summary",""),body.get("reason_detail",""),body.get("hit_rules",[]))
+
+
+@router.get("/audit/tasks/{task_id}/logs")
+async def stream_content_audit_logs(task_id: int, admin=Depends(require_admin)):
+    from fastapi.responses import StreamingResponse
+    task=ContentAuditService.get_task(task_id)
+    if not task:raise HTTPException(status_code=404,detail="任务不存在")
+    async def event_stream():
+        async for log in ContentAuditService.get_task_logs(task_id):
+            yield f"data: {json.dumps(log, ensure_ascii=False)}\n\n"
+    return StreamingResponse(event_stream(),media_type="text/event-stream")

@@ -10,6 +10,7 @@ from backend.routers import generate, upload, tasks, images, prompts, stats, con
 from backend.services.image_gen import close_http_client
 from backend.services.prompt_optimizer import PromptOptimizer
 from backend.services.classification_service import ClassificationService
+from backend.services.content_audit_service import ContentAuditService
 from backend.services.task_manager import TaskManager
 from backend.services.image_expiry import expiry_cleanup_loop
 
@@ -31,6 +32,7 @@ async def lifespan(app: FastAPI):
     await close_http_client()
     await PromptOptimizer.close()
     await ClassificationService.close()
+    await ContentAuditService.close()
 
 
 app = FastAPI(title="AI Image Generator", version="1.0.0", lifespan=lifespan)
