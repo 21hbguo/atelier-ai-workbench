@@ -108,7 +108,7 @@ export default function SearchInput({ value, onChange, placeholder = '搜索...'
         className="h-8 w-full pl-9 pr-10 rounded-lg text-sm border outline-none focus:ring-1 focus:ring-accent/50"
         style={{ background: 'var(--bg-ai-bubble)', borderColor: hasValue ? 'color-mix(in srgb, var(--accent) 35%, var(--border-color))' : 'var(--border-color)', color: 'var(--text-primary)' }}
       />
-      {hasValue ? <button type="button" onPointerDown={e => e.preventDefault()} onClick={clear} className="absolute right-2 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-md" style={{ color: 'var(--accent)', background: 'color-mix(in srgb, var(--accent) 10%, transparent)' }} title="清空搜索"><X size={12} /></button> : null}
+      {hasValue ? <button type="button" onPointerDown={e => e.preventDefault()} onClick={clear} className="absolute right-2 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-lg" style={{ color: 'var(--accent)', background: 'color-mix(in srgb, var(--accent) 10%, transparent)' }} title="清空搜索"><X size={12} /></button> : null}
     </div>
   )
 }

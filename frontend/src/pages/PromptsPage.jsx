@@ -94,19 +94,19 @@ export default function PromptsPage() {
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="flex flex-wrap gap-2 mb-4">
           <button onClick={() => { setForm({ name: '', prompt: '', category: '' }); setShowNewForm(true) }}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}><Plus size={16} /> 新增</button>
+            className="flex items-center gap-1.5 px-3 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--accent)' }}><Plus size={16} /> 新增</button>
           <button onClick={handleExport} disabled={selected.size === 0}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-2xl text-sm font-medium hover:bg-bg-hover disabled:opacity-40 disabled:cursor-not-allowed"
             style={{ color: 'var(--text-primary)' }}><Download size={16} /> 导出{selected.size > 0 ? ` (${selected.size})` : ''}</button>
-          <button onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-primary)' }}><Upload size={16} /> 导入</button>
+          <button onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 px-3 py-2 rounded-2xl text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-primary)' }}><Upload size={16} /> 导入</button>
           <input ref={fileRef} type="file" accept=".json,.csv" className="hidden" onChange={handleImport} />
-          {selected.size > 0 && <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-[var(--color-error)]"><Trash2 size={16} /> 删除 ({selected.size})</button>}
+          {selected.size > 0 && <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-3 py-2 rounded-2xl text-sm font-medium text-[var(--color-error)]"><Trash2 size={16} /> 删除 ({selected.size})</button>}
           {cards.length > 0 && (
             <>
               {selected.size === cards.length ? (
-                <button onClick={handleDeselectAll} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-primary)' }}><CheckSquare size={16} /> 取消全选</button>
+                <button onClick={handleDeselectAll} className="flex items-center gap-1.5 px-3 py-2 rounded-2xl text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-primary)' }}><CheckSquare size={16} /> 取消全选</button>
               ) : (
-                <button onClick={handleSelectAll} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-primary)' }}><Square size={16} /> 全选</button>
+                <button onClick={handleSelectAll} className="flex items-center gap-1.5 px-3 py-2 rounded-2xl text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-primary)' }}><Square size={16} /> 全选</button>
               )}
             </>
           )}
@@ -116,21 +116,21 @@ export default function PromptsPage() {
         </div>
 
         {showNewForm && (
-          <div className="p-4 rounded-xl mb-4 shadow-md" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)', border: '1px solid var(--border-color)' }}>
+          <div className="p-4 rounded-2xl mb-4 shadow-md" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)', border: '1px solid var(--border-color)' }}>
             <div className="grid gap-3">
               <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="标题"
                 autoFocus
-                className="px-3 py-2 rounded-lg text-sm border outline-none focus:ring-1 focus:ring-accent/50" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
+                className="px-3 py-2 rounded-2xl text-sm border outline-none focus:ring-1 focus:ring-accent/50" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
               <textarea value={form.prompt} onChange={e => setForm(f => ({ ...f, prompt: e.target.value }))} placeholder="提示词内容" rows={4}
-                className="px-3 py-2 rounded-lg text-sm border outline-none resize-none focus:ring-1 focus:ring-accent/50" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
+                className="px-3 py-2 rounded-2xl text-sm border outline-none resize-none focus:ring-1 focus:ring-accent/50" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
               <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-                className="px-3 py-2 rounded-lg text-sm border outline-none focus:ring-1 focus:ring-accent/50" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
+                className="px-3 py-2 rounded-2xl text-sm border outline-none focus:ring-1 focus:ring-accent/50" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
                 <option value="">无分类</option>
                 {categories.map(c => <option key={c.slug} value={c.slug}>{c.label}</option>)}
               </select>
               <div className="flex justify-end gap-2">
-                <button onClick={() => { setShowNewForm(false); setForm({ name: '', prompt: '', category: '' }) }} className="px-4 py-2 rounded-lg text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>取消</button>
-                <button onClick={handleCreate} className="px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--accent)' }}>保存</button>
+                <button onClick={() => { setShowNewForm(false); setForm({ name: '', prompt: '', category: '' }) }} className="px-4 py-2 rounded-2xl text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>取消</button>
+                <button onClick={handleCreate} className="px-4 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--accent)' }}>保存</button>
               </div>
             </div>
           </div>

@@ -80,7 +80,7 @@ export default function Sidebar({ open, onClose }) {
         style={{ background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border-color)' }}>
         <div className="px-3 py-2 border-b flex items-center" style={{ borderColor: 'var(--border-color)' }}>
           <h1 className="flex-1 truncate" style={{ color: 'var(--text-primary)', fontFamily: "'Alex Brush', cursive", fontSize: '2.5rem', lineHeight: '1' }}>Atelier</h1>
-          <button className="lg:hidden p-1 rounded-md hover:bg-[var(--bg-hover)]" onClick={onClose}><X size={16} /></button>
+          <button className="lg:hidden p-1 rounded-lg hover:bg-[var(--bg-hover)]" onClick={onClose}><X size={16} /></button>
         </div>
         <nav className="flex-1 px-2 py-2 space-y-0.5 overflow-y-auto">
           {navItems.map(({ path, icon: Icon, label }) => {

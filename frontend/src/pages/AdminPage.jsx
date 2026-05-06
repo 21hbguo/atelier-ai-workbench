@@ -823,9 +823,9 @@ export default function AdminPage() {
     <>
     <MainLayout>
       <div className="admin-dense flex-1 overflow-y-auto p-3 sm:p-4">
-        <div className="flex gap-1 p-0.5 rounded-lg mb-4 overflow-x-auto scrollbar-hide" style={{ background: 'var(--border-color)', scrollbarWidth: 'none' }}>
+        <div className="flex gap-1 p-0.5 rounded-2xl mb-4 overflow-x-auto scrollbar-hide" style={{ background: 'var(--border-color)', scrollbarWidth: 'none' }}>
           {[{ k: 'stats', l: '系统统计', i: BarChart3 }, { k: 'finance', l: '财务中心', i: Wallet }, { k: 'users', l: '用户管理', i: Users }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'classification', l: 'AI分类', i: Tags }, { k: 'codes', l: '兑换码', i: Key }, { k: 'recharge_review', l: '充值审核', i: Ticket }, { k: 'announcements', l: '公告管理', i: Megaphone }, { k: 'evlogs', l: '邮件验证', i: Mail }, { k: 'config', l: '配置中心', i: SlidersHorizontal }].map(({ k, l, i: Icon }) => (
-            <button key={k} onClick={() => switchTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`}
+            <button key={k} onClick={() => switchTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${tab === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`}
               style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
               <Icon size={14} />{l}{k === 'recharge_review' && rechargePendingCount > 0 && <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] text-white" style={{ background: 'var(--color-error)' }}>{rechargePendingCount}</span>}
             </button>
@@ -847,22 +847,22 @@ export default function AdminPage() {
                     { v: '7d', l: '7天' },
                     { v: '30d', l: '30天' },
                   ].map(i => (
-                    <button key={i.v} onClick={() => { if (statsRange === i.v) return; setStatsRange(i.v); fetchSystemStats(i.v) }} className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${statsRange === i.v ? 'text-white border-transparent' : ''}`} style={statsRange === i.v ? { background: 'var(--accent)' } : { borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>{i.l}</button>
+                    <button key={i.v} onClick={() => { if (statsRange === i.v) return; setStatsRange(i.v); fetchSystemStats(i.v) }} className={`px-3 py-1.5 rounded-2xl text-xs font-medium border ${statsRange === i.v ? 'text-white border-transparent' : ''}`} style={statsRange === i.v ? { background: 'var(--accent)' } : { borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>{i.l}</button>
                   ))}
                   <div className="ml-auto text-xs" style={{ color: 'var(--text-secondary)' }}>{overviewStats?.start_date || '-'} ~ {overviewStats?.end_date || '-'}</div>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>请求数</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{overviewStats?.kpi?.requests ?? 0}</div></div>
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>成功数</div><div className="text-lg font-semibold" style={{ color: 'var(--color-success)' }}>{overviewStats?.kpi?.success ?? 0}</div></div>
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>成功率</div><div className="text-lg font-semibold" style={{ color: 'var(--color-success)' }}>{overviewStats?.kpi?.success_rate ?? 0}%</div></div>
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>平均耗时</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{overviewStats?.kpi?.avg_duration_seconds ?? 0}s</div></div>
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>新增用户</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{overviewStats?.kpi?.new_users ?? 0}</div></div>
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>活跃用户</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{overviewStats?.kpi?.active_users ?? 0}</div></div>
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>处理中</div><div className="text-lg font-semibold" style={{ color: 'var(--color-warning)' }}>{overviewStats?.kpi?.processing_tasks ?? 0}</div></div>
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>积分消耗</div><div className="text-lg font-semibold" style={{ color: 'var(--color-error)' }}>{(overviewStats?.trends || []).reduce((s, i) => s + Number(i.points_spent || 0), 0)}</div></div>
+                  <div className="p-3 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>请求数</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{overviewStats?.kpi?.requests ?? 0}</div></div>
+                  <div className="p-3 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>成功数</div><div className="text-lg font-semibold" style={{ color: 'var(--color-success)' }}>{overviewStats?.kpi?.success ?? 0}</div></div>
+                  <div className="p-3 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>成功率</div><div className="text-lg font-semibold" style={{ color: 'var(--color-success)' }}>{overviewStats?.kpi?.success_rate ?? 0}%</div></div>
+                  <div className="p-3 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>平均耗时</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{overviewStats?.kpi?.avg_duration_seconds ?? 0}s</div></div>
+                  <div className="p-3 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>新增用户</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{overviewStats?.kpi?.new_users ?? 0}</div></div>
+                  <div className="p-3 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>活跃用户</div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{overviewStats?.kpi?.active_users ?? 0}</div></div>
+                  <div className="p-3 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>处理中</div><div className="text-lg font-semibold" style={{ color: 'var(--color-warning)' }}>{overviewStats?.kpi?.processing_tasks ?? 0}</div></div>
+                  <div className="p-3 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>积分消耗</div><div className="text-lg font-semibold" style={{ color: 'var(--color-error)' }}>{(overviewStats?.trends || []).reduce((s, i) => s + Number(i.points_spent || 0), 0)}</div></div>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                  <div className="p-3 rounded-xl border lg:col-span-2" style={{ borderColor: 'var(--border-color)' }}>
+                  <div className="p-3 rounded-2xl border lg:col-span-2" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="flex items-center gap-2 mb-2">
                       <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>{{all:'总计',today:'今日','7d':'7天','30d':'30天'}[statsRange] || '7天'}趋势</div>
                       {[
@@ -872,7 +872,7 @@ export default function AdminPage() {
                         { v: 'revenue', l: '营收' },
                         { v: 'points_spent', l: '积分消耗' },
                       ].map(i => (
-                        <button key={i.v} onClick={() => setTrendMetric(i.v)} className={`px-2 py-1 rounded text-[11px] border ${trendMetric === i.v ? 'text-white border-transparent' : ''}`} style={trendMetric === i.v ? { background: 'var(--accent)' } : { borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>{i.l}</button>
+                        <button key={i.v} onClick={() => setTrendMetric(i.v)} className={`px-2 py-1 rounded-lg text-[11px] border ${trendMetric === i.v ? 'text-white border-transparent' : ''}`} style={trendMetric === i.v ? { background: 'var(--accent)' } : { borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>{i.l}</button>
                       ))}
                     </div>
                     <div className="h-56">
@@ -887,7 +887,7 @@ export default function AdminPage() {
                       </ResponsiveContainer>
                     </div>
                   </div>
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                  <div className="p-3 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>捐赠支持实收</div>
                     <div className="space-y-2 text-sm">
                       <div style={{ color: 'var(--text-primary)' }}>今日：¥{overviewStats?.revenue?.today_amount ?? 0} / {overviewStats?.revenue?.today_orders ?? 0}单</div>
@@ -903,13 +903,13 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                  <div className="p-3 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>{{all:'总计',today:'今日','7d':'近7天','30d':'近30天'}[statsRange] || '近7天'}生成Top用户</div>
                     <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
                       {(overviewStats?.leaderboards?.success_top || []).slice(0, 8).map((i, idx) => <div key={`s-${i.user_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.nickname || i.account || i.username}`} style={{ color: 'var(--text-primary)' }}>{idx + 1}. {i.nickname || i.account || i.username}</span><span className="shrink-0" style={{ color: 'var(--color-success)' }}>{i.success_count}</span></div>)}
                     </div>
                   </div>
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                  <div className="p-3 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>{{all:'总计',today:'今日','7d':'近7天','30d':'近30天'}[statsRange] || '近7天'}捐赠支持Top用户</div>
                     <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
                       {(overviewStats?.leaderboards?.recharge_top || []).slice(0, 8).map((i, idx) => <div key={`r-${i.user_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.nickname || i.account || i.username}`} style={{ color: 'var(--text-primary)' }}>{idx + 1}. {i.nickname || i.account || i.username}</span><span className="shrink-0" style={{ color: 'var(--color-warning)' }}>¥{i.amount}</span></div>)}
@@ -917,13 +917,13 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                  <div className="p-3 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>提示词分类（管理员全量）</div>
                     <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
                       {(overviewStats?.categories?.admin_all || []).slice(0, 10).map(i => <div key={`a-${i.category}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.category}`} style={{ color: 'var(--text-primary)' }}>{i.category}</span><span className="shrink-0" style={{ color: 'var(--text-secondary)' }}>{i.count}</span></div>)}
                     </div>
                   </div>
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                  <div className="p-3 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>提示词分类（用户可见，已排除冻结）</div>
                     <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
                       {(overviewStats?.categories?.user_visible || []).slice(0, 10).map(i => <div key={`u-${i.category}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.category}`} style={{ color: 'var(--text-primary)' }}>{i.category}</span><span className="shrink-0" style={{ color: 'var(--text-secondary)' }}>{i.count}</span></div>)}
@@ -931,13 +931,13 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                  <div className="p-3 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>模型调用分布</div>
                     <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
                       {(overviewStats?.generation?.models || []).slice(0, 12).map(i => <div key={`m-${i.model_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.model_label || modelLabelMap[i.model_id] || i.model_id}`} style={{ color: 'var(--text-primary)' }}>{i.model_label || modelLabelMap[i.model_id] || i.model_id}</span><span className="shrink-0" style={{ color: 'var(--text-secondary)' }}>{i.total} / {i.success_rate}%</span></div>)}
                     </div>
                   </div>
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                  <div className="p-3 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>渠道调用分布</div>
                     <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
                       {(overviewStats?.generation?.providers || []).slice(0, 12).map(i => <div key={`p-${i.provider_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.provider_id}`} style={{ color: 'var(--text-primary)' }}>{`${i.provider_id === 'unknown' ? 'unknown(历史缺失)' : i.provider_id} (${i.provider_type})`}</span><span className="shrink-0" style={{ color: 'var(--text-secondary)' }}>{i.total} / {i.success_rate}%</span></div>)}
@@ -945,20 +945,20 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                  <div className="p-3 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>渠道类型汇总</div>
                     <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
                       {(overviewStats?.generation?.provider_types || []).slice(0, 12).map(i => <div key={`t-${i.provider_type}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.provider_type}`} style={{ color: 'var(--text-primary)' }}>{i.provider_type}</span><span className="shrink-0" style={{ color: 'var(--text-secondary)' }}>{i.total} / {i.success_rate}%</span></div>)}
                     </div>
                   </div>
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                  <div className="p-3 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>Fallback 尝试</div>
                     <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
                       {(overviewStats?.generation?.fallback_attempts || []).slice(0, 12).map(i => <div key={`f-${i.provider_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.provider_id}`} style={{ color: 'var(--text-primary)' }}>{`${i.provider_id === 'unknown' ? 'unknown(历史缺失)' : i.provider_id} (${i.provider_type})`}</span><span className="shrink-0" style={{ color: 'var(--text-secondary)' }}>{i.attempts} / {i.attempt_ok_rate}%</span></div>)}
                     </div>
                   </div>
                 </div>
-                <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                <div className="p-3 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
                   <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>模型 × 渠道交叉矩阵（总量/成功率）</div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
@@ -983,7 +983,7 @@ export default function AdminPage() {
                   </div>
                 </div>
                 {systemStats?.limits && (
-                  <div className="p-3 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                  <div className="p-3 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>当前限制</div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
                       <div style={{ color: 'var(--text-primary)' }}>登录限流：{systemStats.limits.login_rate}</div>
@@ -1013,7 +1013,7 @@ export default function AdminPage() {
             {loading ? (
               <div className="flex justify-center py-20"><div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} /></div>
             ) : (
-              <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+              <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead><tr style={{ background: 'var(--bg-card)' }}>
@@ -1059,7 +1059,7 @@ export default function AdminPage() {
           <AdminBannedTab bannedWordsTotal={bannedWordsTotal} bannedWordsQuery={bannedWordsQuery} setBannedWordsQuery={setBannedWordsQuery} setShowBatchImport={setShowBatchImport} newBannedWord={newBannedWord} setNewBannedWord={setNewBannedWord} handleAddBannedWord={handleAddBannedWord} loading={loading} bannedWords={bannedWords} handleDeleteBannedWord={handleDeleteBannedWord} bannedWordsPage={bannedWordsPage} setBannedWordsPage={setBannedWordsPage} />
         ) : tab === 'codes' ? (
           <div className="space-y-6">
-            <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+            <div className="p-4 rounded-2xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
               <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>生成兑换码</h3>
               <div className="flex flex-wrap items-end gap-3">
                 <div>
@@ -1067,7 +1067,7 @@ export default function AdminPage() {
                   <div className="flex gap-1.5 mb-1.5">
                     {[10, 50, 100, 500].map(p => (
                       <button key={p} onClick={() => { setCodePoints(p); setCustomCode('') }}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${codePoints === p && !customCode ? 'bg-accent text-white shadow-sm' : 'border hover:border-accent/50'}`}
+                        className={`px-2.5 py-1 rounded-2xl text-xs font-semibold transition-all ${codePoints === p && !customCode ? 'bg-accent text-white shadow-sm' : 'border hover:border-accent/50'}`}
                         style={codePoints === p && !customCode ? {} : { borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
                         {p}
                       </button>
@@ -1075,23 +1075,23 @@ export default function AdminPage() {
                   </div>
                   <input type="number" value={customCode} onChange={e => { setCustomCode(e.target.value); setCodePoints(parseInt(e.target.value) || 0) }}
                     placeholder="自定义" min={1}
-                    className="w-24 px-2.5 py-1.5 rounded-lg text-xs border outline-none focus:border-accent/50 transition-colors"
+                    className="w-24 px-2.5 py-1.5 rounded-2xl text-xs border outline-none focus:border-accent/50 transition-colors"
                     style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
                   <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>数量</label>
                   <input type="number" value={codeCount} onChange={e => setCodeCount(Math.max(1, Math.min(100, parseInt(e.target.value) || 1)))}
                     min={1} max={100}
-                    className="w-20 px-2.5 py-1.5 rounded-lg text-xs border outline-none focus:border-accent/50 transition-colors"
+                    className="w-20 px-2.5 py-1.5 rounded-2xl text-xs border outline-none focus:border-accent/50 transition-colors"
                     style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <button onClick={handleGenerateCodes} disabled={generatingCodes || codePoints <= 0}
-                  className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-accent text-white hover:opacity-90 disabled:opacity-50 transition-all shadow-sm">
+                  className="px-4 py-1.5 rounded-2xl text-xs font-semibold bg-accent text-white hover:opacity-90 disabled:opacity-50 transition-all shadow-sm">
                   {generatingCodes ? '生成中...' : '生成'}
                 </button>
               </div>
               {generatedCodes.length > 0 && (
-                <div className="mt-3 p-2.5 rounded-lg text-xs" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }}>
+                <div className="mt-3 p-2.5 rounded-2xl text-xs" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }}>
                   <div className="flex items-center gap-2 mb-1">
                     <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium" style={{ background: 'color-mix(in srgb, var(--color-success) 12%, transparent)', color: 'var(--color-success)' }}>成功</span>
                     <span style={{ color: 'var(--text-secondary)' }}>已生成 {generatedCodes.length} 个兑换码</span>
@@ -1110,9 +1110,9 @@ export default function AdminPage() {
                   {rechargePendingCount > 0 && <span className="px-2 py-0.5 rounded-full text-[11px] text-white" style={{ background: 'var(--color-error)' }}>待审 {rechargePendingCount}</span>}
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {rechargePendingCount > 0 && rechargeStatusFilter !== 'pending' && <button onClick={() => { setRechargeStatusFilter('pending'); setCodesPage(1) }} className="px-2 py-1 rounded-lg text-xs font-medium text-white" style={{ background: 'var(--color-error)' }}>只看待审</button>}
+                  {rechargePendingCount > 0 && rechargeStatusFilter !== 'pending' && <button onClick={() => { setRechargeStatusFilter('pending'); setCodesPage(1) }} className="px-2 py-1 rounded-2xl text-xs font-medium text-white" style={{ background: 'var(--color-error)' }}>只看待审</button>}
                   <select value={rechargeStatusFilter} onChange={e => { setRechargeStatusFilter(e.target.value); setCodesPage(1) }}
-                    className="px-2 py-1 rounded-lg text-xs font-medium border outline-none cursor-pointer"
+                    className="px-2 py-1 rounded-2xl text-xs font-medium border outline-none cursor-pointer"
                     style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
                     <option value="all">全部</option>
                     <option value="pending">待审核</option>
@@ -1121,23 +1121,23 @@ export default function AdminPage() {
                     <option value="refunded">已回退</option>
                   </select>
                   <select value={codesSort} onChange={e => setCodesSort(e.target.value)}
-                    className="px-2 py-1 rounded-lg text-xs font-medium border outline-none cursor-pointer"
+                    className="px-2 py-1 rounded-2xl text-xs font-medium border outline-none cursor-pointer"
                     style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
                     <option value="created_at">按创建时间</option>
                     <option value="is_used">按使用状态</option>
                     <option value="points">按积分额度</option>
                   </select>
                   <button onClick={() => setCodesOrder(o => o === 'desc' ? 'asc' : 'desc')}
-                    className="px-2 py-1 rounded-lg text-xs font-medium border hover:bg-bg-hover transition-colors"
+                    className="px-2 py-1 rounded-2xl text-xs font-medium border hover:bg-bg-hover transition-colors"
                     style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
                     {codesOrder === 'desc' ? '↓' : '↑'}
                   </button>
                 </div>
               </div>
               {rechargePendingCount > 0 && (
-                <div className="mb-3 px-3 py-2 rounded-xl border text-sm flex items-center justify-between gap-3" style={{ borderColor: 'var(--color-warning)', background: 'color-mix(in srgb, var(--color-warning) 12%, transparent)', color: 'var(--color-warning)' }}>
+                <div className="mb-3 px-3 py-2 rounded-2xl border text-sm flex items-center justify-between gap-3" style={{ borderColor: 'var(--color-warning)', background: 'color-mix(in srgb, var(--color-warning) 12%, transparent)', color: 'var(--color-warning)' }}>
                   <span>当前有 {rechargePendingCount} 条捐赠凭证待审核。</span>
-                  <button onClick={() => { setRechargeStatusFilter('pending'); setCodesPage(1) }} className="px-2 py-1 rounded-lg text-xs font-medium text-white" style={{ background: 'var(--color-warning)' }}>直达待审</button>
+                  <button onClick={() => { setRechargeStatusFilter('pending'); setCodesPage(1) }} className="px-2 py-1 rounded-2xl text-xs font-medium text-white" style={{ background: 'var(--color-warning)' }}>直达待审</button>
                 </div>
               )}
               {loading ? (
@@ -1202,15 +1202,15 @@ export default function AdminPage() {
                               {c.status === 'pending' && (
                                 <div className="flex items-center justify-center gap-1">
                                   <button onClick={async () => { try { await adminAPI.approveRecharge(c.id, { points: Number(c.points) || 0, review_note: '快速审核通过' }); fetchRechargeRequests() } catch (e) { dialog.alert(e.message || '操作失败') } }}
-                                    className="px-2 py-1 rounded-lg text-[11px] font-medium bg-emerald-500 text-white hover:bg-emerald-600">
+                                    className="px-2 py-1 rounded-2xl text-[11px] font-medium bg-emerald-500 text-white hover:bg-emerald-600">
                                     快速通过
                                   </button>
                                   <button onClick={() => { setReviewModal({ ...c, action: 'approve' }); setReviewPoints(String(c.points || 10)); setReviewNote('') }}
-                                    className="px-2 py-1 rounded-lg text-[11px] font-medium bg-green-500 text-white hover:bg-green-600">
+                                    className="px-2 py-1 rounded-2xl text-[11px] font-medium bg-green-500 text-white hover:bg-green-600">
                                     通过
                                   </button>
                                   <button onClick={() => { setReviewModal({ ...c, action: 'reject' }); setReviewNote('') }}
-                                    className="px-2 py-1 rounded-lg text-[11px] font-medium bg-[var(--color-error)] text-white hover:opacity-90">
+                                    className="px-2 py-1 rounded-2xl text-[11px] font-medium bg-[var(--color-error)] text-white hover:opacity-90">
                                     拒绝
                                   </button>
                                 </div>
@@ -1218,7 +1218,7 @@ export default function AdminPage() {
                               {c.status === 'approved' && (
                                 <div className="flex items-center justify-center gap-1">
                                   {c.redeem_code && <span className="text-[10px] font-mono" style={{ color: 'var(--accent)' }}>{c.redeem_code}</span>}
-                                  <button onClick={() => handleRefundRecharge(c)} className="px-2 py-1 rounded-lg text-[11px] font-medium bg-[var(--color-error)] text-white hover:opacity-90">回退发放</button>
+                                  <button onClick={() => handleRefundRecharge(c)} className="px-2 py-1 rounded-2xl text-[11px] font-medium bg-[var(--color-error)] text-white hover:opacity-90">回退发放</button>
                                 </div>
                               )}
                               {c.status === 'refunded' && (
@@ -1268,16 +1268,16 @@ export default function AdminPage() {
         ) : tab === 'config' ? (
           <div className="space-y-4">
             <div className="flex items-center gap-2">
-              {[{ k: 'basic', l: '基础配置' }, { k: 'route', l: '模型路由' }].map(i => <button key={i.k} onClick={() => setConfigSubtab(i.k)} className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${configSubtab === i.k ? 'text-white border-transparent' : ''}`} style={configSubtab === i.k ? { background: 'var(--accent)' } : { borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>{i.l}</button>)}
+              {[{ k: 'basic', l: '基础配置' }, { k: 'route', l: '模型路由' }].map(i => <button key={i.k} onClick={() => setConfigSubtab(i.k)} className={`px-3 py-1.5 rounded-2xl text-xs font-medium border ${configSubtab === i.k ? 'text-white border-transparent' : ''}`} style={configSubtab === i.k ? { background: 'var(--accent)' } : { borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>{i.l}</button>)}
             </div>
             {configSubtab === 'basic' ? (
             <>
-            <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+            <div className="p-4 rounded-2xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>核心限制配置</h3>
-                <button onClick={handleSaveConfig} disabled={configSaving} className="px-4 py-2 rounded-lg text-xs font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50">{configSaving ? '保存中...' : '保存配置'}</button>
+                <button onClick={handleSaveConfig} disabled={configSaving} className="px-4 py-2 rounded-2xl text-xs font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50">{configSaving ? '保存中...' : '保存配置'}</button>
               </div>
-              <div className="mb-3 p-3 rounded-lg border flex items-center justify-between gap-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+              <div className="mb-3 p-3 rounded-2xl border flex items-center justify-between gap-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
                 <div>
                   <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>允许新用户注册</div>
                   <div className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>{runtimeConfig.register_enabled ? '开启后登录页显示注册入口，并允许新账号创建' : '关闭后登录页隐藏注册入口，注册接口同时拒绝请求'}</div>
@@ -1290,51 +1290,51 @@ export default function AdminPage() {
                 {[{ k: 'generate_concurrent_limit_per_user', l: '生成并发上限/用户', min: 1 }, { k: 'points_cost_per_generation', l: '默认生成扣分', min: 1 }, { k: 'points_cost_per_optimize', l: '每次优化扣分', min: 1 }, { k: 'points_cost_per_image_extend', l: '图片续期扣分/张', min: 1 }, { k: 'points_checkin_reward', l: '每日签到奖励', min: 0 }, { k: 'points_register_bonus', l: '注册送分', min: 0 }, { k: 'points_migration_amount', l: '补发积分值', min: 0 }, { k: 'invite_register_reward_points', l: '邀请注册奖励', min: 0 }, { k: 'invite_recharge_rebate_percent', l: '捐赠返利百分比', min: 0 }, { k: 'invite_recharge_bonus_percent', l: '捐赠加赠百分比', min: 0 }, { k: 'login_rate_limit_per_minute_per_ip', l: '登录限流/分钟/IP', min: 1 }, { k: 'register_rate_limit_per_minute_per_ip', l: '注册限流/分钟/IP', min: 1 }].map(item => (
                   <div key={item.k}>
                     <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>{item.l}</label>
-                    <input type="number" min={item.min} value={runtimeConfig[item.k]} onChange={e => onConfigInput(item.k, e.target.value)} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                    <input type="number" min={item.min} value={runtimeConfig[item.k]} onChange={e => onConfigInput(item.k, e.target.value)} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                   </div>
                 ))}
               </div>
-              <div className="mt-3 p-3 rounded-lg border flex items-center justify-between gap-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+              <div className="mt-3 p-3 rounded-2xl border flex items-center justify-between gap-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
                 <div><div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>启用邀请码系统</div><div className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>关闭后隐藏邀请权益，已有邀请关系保留但不再发放新奖励</div></div>
                 <button type="button" onClick={() => onConfigToggle('invite_enabled', !runtimeConfig.invite_enabled)} className="relative inline-flex h-7 w-12 items-center rounded-full transition-colors" style={{ background: runtimeConfig.invite_enabled ? 'var(--accent)' : 'var(--border-color)' }}>
                   <span className="inline-block h-5 w-5 transform rounded-full bg-white transition-transform" style={{ transform: runtimeConfig.invite_enabled ? 'translateX(22px)' : 'translateX(3px)' }} />
                 </button>
               </div>
             </div>
-            <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+            <div className="p-4 rounded-2xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
               <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>运行时配置</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {[{ k: 'api_url', l: '生成 API URL' }, { k: 'image_hosting_upload_url', l: '图床上传 URL' }, { k: 'image_hosting_base_url', l: '图床基础 URL' }, { k: 'image_hosting_referer', l: '图床 Referer' }, { k: 'wechat_pay_qr_url', l: '微信收款码 URL' }, { k: 'alipay_pay_qr_url', l: '支付宝收款码 URL' }, { k: 'donation_contact', l: '捐赠联系方式' }].map(item => (
                   <div key={item.k}>
                     <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>{item.l}</label>
-                    <input type="text" value={runtimeConfig[item.k]} onChange={e => onConfigInput(item.k, e.target.value)} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
-                    {(item.k === 'wechat_pay_qr_url' || item.k === 'alipay_pay_qr_url') && <label className="mt-2 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium cursor-pointer border hover:bg-bg-hover" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}><input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => { const file = e.target.files?.[0]; handleUploadQr(item.k, file); e.target.value = '' }} />{qrUploading === item.k ? '上传中...' : '上传二维码图片'}</label>}
+                    <input type="text" value={runtimeConfig[item.k]} onChange={e => onConfigInput(item.k, e.target.value)} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                    {(item.k === 'wechat_pay_qr_url' || item.k === 'alipay_pay_qr_url') && <label className="mt-2 inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-medium cursor-pointer border hover:bg-bg-hover" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}><input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => { const file = e.target.files?.[0]; handleUploadQr(item.k, file); e.target.value = '' }} />{qrUploading === item.k ? '上传中...' : '上传二维码图片'}</label>}
                   </div>
                 ))}
               </div>
               <div className="mt-3">
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>捐赠支持提示文案</label>
-                <textarea value={runtimeConfig.manual_recharge_notice} onChange={e => onConfigInput('manual_recharge_notice', e.target.value)} rows={3} className="w-full px-3 py-2 rounded-lg text-sm border resize-none outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                <textarea value={runtimeConfig.manual_recharge_notice} onChange={e => onConfigInput('manual_recharge_notice', e.target.value)} rows={3} className="w-full px-3 py-2 rounded-2xl text-sm border resize-none outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
               <div className="mt-3">
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-xs" style={{ color: 'var(--text-secondary)' }}>捐赠档位</label>
-                  <button type="button" onClick={handleAddRechargePackage} className="px-2 py-1 rounded text-xs font-medium border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>新增套餐</button>
+                  <button type="button" onClick={handleAddRechargePackage} className="px-2 py-1 rounded-lg text-xs font-medium border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>新增套餐</button>
                 </div>
                 <div className="space-y-2">
                   {(Array.isArray(runtimeConfig.recharge_packages) ? runtimeConfig.recharge_packages : []).map((item, idx) => (
                     <div key={`pkg:${idx}`} className="grid grid-cols-12 gap-2 items-center">
-                      <input type="text" value={item.label ?? ''} onChange={e => handleRechargePackageField(idx, 'label', e.target.value)} placeholder="套餐标题" className="col-span-4 px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
-                      <input type="number" min="0" step="0.01" value={item.amount ?? ''} onChange={e => handleRechargePackageField(idx, 'amount', e.target.value)} placeholder="金额" className="col-span-3 px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
-                      <input type="number" min="0" step="1" value={item.points ?? ''} onChange={e => handleRechargePackageField(idx, 'points', e.target.value)} placeholder="积分" className="col-span-4 px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
-                      <button type="button" onClick={() => handleDeleteRechargePackage(idx)} disabled={(Array.isArray(runtimeConfig.recharge_packages) ? runtimeConfig.recharge_packages.length : 0) <= 1} className="col-span-1 inline-flex items-center justify-center h-10 rounded-lg border disabled:opacity-40" style={{ borderColor: 'var(--border-color)', color: 'var(--color-error)' }}><Trash2 size={14} /></button>
+                      <input type="text" value={item.label ?? ''} onChange={e => handleRechargePackageField(idx, 'label', e.target.value)} placeholder="套餐标题" className="col-span-4 px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                      <input type="number" min="0" step="0.01" value={item.amount ?? ''} onChange={e => handleRechargePackageField(idx, 'amount', e.target.value)} placeholder="金额" className="col-span-3 px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                      <input type="number" min="0" step="1" value={item.points ?? ''} onChange={e => handleRechargePackageField(idx, 'points', e.target.value)} placeholder="积分" className="col-span-4 px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                      <button type="button" onClick={() => handleDeleteRechargePackage(idx)} disabled={(Array.isArray(runtimeConfig.recharge_packages) ? runtimeConfig.recharge_packages.length : 0) <= 1} className="col-span-1 inline-flex items-center justify-center h-10 rounded-2xl border disabled:opacity-40" style={{ borderColor: 'var(--border-color)', color: 'var(--color-error)' }}><Trash2 size={14} /></button>
                     </div>
                   ))}
                 </div>
                 <div className="text-[11px] mt-1" style={{ color: 'var(--text-secondary)' }}>每项填写：套餐标题、支付金额、到账积分。</div>
               </div>
             </div>
-            <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+            <div className="p-4 rounded-2xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>GitHub 图床（jsdelivr CDN）</h3>
                 <button type="button" onClick={() => onConfigToggle('github_hosting_enabled', !runtimeConfig.github_hosting_enabled)} className="relative inline-flex h-7 w-12 items-center rounded-full transition-colors" style={{ background: runtimeConfig.github_hosting_enabled ? 'var(--accent)' : 'var(--border-color)' }}>
@@ -1344,60 +1344,60 @@ export default function AdminPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>仓库（owner/repo）</label>
-                  <input type="text" value={runtimeConfig.github_hosting_repo} onChange={e => onConfigInput('github_hosting_repo', e.target.value)} placeholder="user/repo" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                  <input type="text" value={runtimeConfig.github_hosting_repo} onChange={e => onConfigInput('github_hosting_repo', e.target.value)} placeholder="user/repo" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
                   <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>Personal Access Token</label>
-                  <input type="password" value={runtimeConfig.github_hosting_token} onChange={e => onConfigInput('github_hosting_token', e.target.value)} placeholder="ghp_..." className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                  <input type="password" value={runtimeConfig.github_hosting_token} onChange={e => onConfigInput('github_hosting_token', e.target.value)} placeholder="ghp_..." className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
                   <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>分支</label>
-                  <input type="text" value={runtimeConfig.github_hosting_branch} onChange={e => onConfigInput('github_hosting_branch', e.target.value)} placeholder="main" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                  <input type="text" value={runtimeConfig.github_hosting_branch} onChange={e => onConfigInput('github_hosting_branch', e.target.value)} placeholder="main" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
               </div>
               <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>启用后参考图上传将通过 GitHub 仓库 + jsdelivr CDN 提供。Token 需要 contents:write 权限。</p>
             </div>
-            <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+            <div className="p-4 rounded-2xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
               <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>SMTP 邮件配置</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>发件人邮箱</label>
-                  <input type="email" value={runtimeConfig.smtp_sender} onChange={e => onConfigInput('smtp_sender', e.target.value)} placeholder="your@qq.com" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                  <input type="email" value={runtimeConfig.smtp_sender} onChange={e => onConfigInput('smtp_sender', e.target.value)} placeholder="your@qq.com" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
                   <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>发件人名称</label>
-                  <input type="text" value={runtimeConfig.smtp_sender_name} onChange={e => onConfigInput('smtp_sender_name', e.target.value)} placeholder="Atelier·AI造梦工坊" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                  <input type="text" value={runtimeConfig.smtp_sender_name} onChange={e => onConfigInput('smtp_sender_name', e.target.value)} placeholder="Atelier·AI造梦工坊" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
                   <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>授权码</label>
-                  <input type="password" value={runtimeConfig.smtp_password} onChange={e => onConfigInput('smtp_password', e.target.value)} placeholder="邮箱授权码" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                  <input type="password" value={runtimeConfig.smtp_password} onChange={e => onConfigInput('smtp_password', e.target.value)} placeholder="邮箱授权码" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
                   <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>SMTP 服务器</label>
-                  <input type="text" value={runtimeConfig.smtp_server} onChange={e => onConfigInput('smtp_server', e.target.value)} placeholder="smtp.qq.com" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                  <input type="text" value={runtimeConfig.smtp_server} onChange={e => onConfigInput('smtp_server', e.target.value)} placeholder="smtp.qq.com" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
                   <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>端口</label>
-                  <input type="number" min={1} max={65535} value={runtimeConfig.smtp_port} onChange={e => onConfigInput('smtp_port', e.target.value)} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                  <input type="number" min={1} max={65535} value={runtimeConfig.smtp_port} onChange={e => onConfigInput('smtp_port', e.target.value)} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
               </div>
               <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>填写发件人邮箱和授权码即可，服务器默认 smtp.qq.com:465。QQ 邮箱请在设置中开启 SMTP 并获取授权码。</p>
             </div>
-            <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+            <div className="p-4 rounded-2xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
               <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>SendGrid 邮件配置</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>SendGrid API Key</label>
-                  <input type="password" value={runtimeConfig.sendgrid_api_key || ''} onChange={e => onConfigInput('sendgrid_api_key', e.target.value)} placeholder="SG.xxxxx" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                  <input type="password" value={runtimeConfig.sendgrid_api_key || ''} onChange={e => onConfigInput('sendgrid_api_key', e.target.value)} placeholder="SG.xxxxx" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
                   <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>SendGrid 发件邮箱</label>
-                  <input type="email" value={runtimeConfig.sendgrid_sender || ''} onChange={e => onConfigInput('sendgrid_sender', e.target.value)} placeholder="noreply@atelier-ai.me" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                  <input type="email" value={runtimeConfig.sendgrid_sender || ''} onChange={e => onConfigInput('sendgrid_sender', e.target.value)} placeholder="noreply@atelier-ai.me" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
               </div>
               <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>系统会优先使用 SendGrid 发送验证码，发件邮箱需在 SendGrid 完成 Sender Identity 或域名验证。</p>
             </div>
-            <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+            <div className="p-4 rounded-2xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>AI 提示词优化（LLM）</h3>
                 <button type="button" onClick={() => onConfigToggle('prompt_optimize_enabled', !runtimeConfig.prompt_optimize_enabled)} className="relative inline-flex h-7 w-12 items-center rounded-full transition-colors" style={{ background: runtimeConfig.prompt_optimize_enabled ? 'var(--accent)' : 'var(--border-color)' }}>
@@ -1407,23 +1407,23 @@ export default function AdminPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>API Base URL</label>
-                  <input type="text" value={runtimeConfig.llm_base_url || ''} onChange={e => onConfigInput('llm_base_url', e.target.value)} placeholder="https://api.anthropic.com" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                  <input type="text" value={runtimeConfig.llm_base_url || ''} onChange={e => onConfigInput('llm_base_url', e.target.value)} placeholder="https://api.anthropic.com" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
                   <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>API Key</label>
-                  <input type="password" value={runtimeConfig.llm_api_key || ''} onChange={e => onConfigInput('llm_api_key', e.target.value)} placeholder="sk-..." className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                  <input type="password" value={runtimeConfig.llm_api_key || ''} onChange={e => onConfigInput('llm_api_key', e.target.value)} placeholder="sk-..." className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
                   <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>模型名称</label>
-                  <input type="text" value={runtimeConfig.llm_model || ''} onChange={e => onConfigInput('llm_model', e.target.value)} placeholder="mimo-v2.5" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                  <input type="text" value={runtimeConfig.llm_model || ''} onChange={e => onConfigInput('llm_model', e.target.value)} placeholder="mimo-v2.5" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
                   <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>Max Tokens</label>
-                  <input type="number" min={100} max={10000} value={runtimeConfig.llm_max_tokens || 2000} onChange={e => onConfigInput('llm_max_tokens', e.target.value)} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                  <input type="number" min={100} max={10000} value={runtimeConfig.llm_max_tokens || 2000} onChange={e => onConfigInput('llm_max_tokens', e.target.value)} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
                   <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>超时（秒）</label>
-                  <input type="number" min={5} max={120} value={runtimeConfig.llm_timeout_seconds || 30} onChange={e => onConfigInput('llm_timeout_seconds', e.target.value)} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                  <input type="number" min={5} max={120} value={runtimeConfig.llm_timeout_seconds || 30} onChange={e => onConfigInput('llm_timeout_seconds', e.target.value)} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
               </div>
               <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>用于提示词优化功能，调用 Anthropic 兼容 API。关闭开关将禁用优化按钮，用户输入直接进入生图流程。</p>
@@ -1431,40 +1431,40 @@ export default function AdminPage() {
             </>
             ) : configSubtab === 'route' ? (
             <>
-            <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+            <div className="p-4 rounded-2xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
               <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>模型路由配置</h3>
               <div className="mb-4">
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>默认模型ID</label>
-                <input type="text" value={defaultModelId} onChange={e => setDefaultModelId(e.target.value)} placeholder="例如：image-default（必须存在于模型列表）" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                <input type="text" value={defaultModelId} onChange={e => setDefaultModelId(e.target.value)} placeholder="例如：image-default（必须存在于模型列表）" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
 
               {/* 模型列表 */}
-              <div className="rounded-lg border p-3 mb-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+              <div className="rounded-2xl border p-3 mb-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium" style={{ color: 'var(--color-info)' }}>模型</span>
                     <span className="text-[11px] px-1.5 py-0.5 rounded-full" style={{ background: 'var(--color-info)', color: 'white', opacity: 0.8 }}>{Object.keys(genModelsObj).length}</span>
                   </div>
-                  <button onClick={handleAddModel} className="px-2 py-1 rounded text-xs font-medium bg-accent text-white">+ 新增模型</button>
+                  <button onClick={handleAddModel} className="px-2 py-1 rounded-lg text-xs font-medium bg-accent text-white">+ 新增模型</button>
                 </div>
                 <div className="space-y-2">
                   {Object.entries(genModelsObj).map(([mid, m]) => {
                     const isDefault = mid === defaultModelId
                     const boundProviders = Array.isArray(m?.providers) ? m.providers : []
                     return (
-                      <div key={mid} className="rounded-lg border p-3 flex items-center gap-3" style={{ borderColor: isDefault ? 'var(--color-info)' : 'var(--border-color)', background: isDefault ? 'color-mix(in srgb, var(--color-info) 5%, var(--bg-card))' : 'var(--bg-card)' }}>
+                      <div key={mid} className="rounded-2xl border p-3 flex items-center gap-3" style={{ borderColor: isDefault ? 'var(--color-info)' : 'var(--border-color)', background: isDefault ? 'color-mix(in srgb, var(--color-info) 5%, var(--bg-card))' : 'var(--bg-card)' }}>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <span className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{m?.label || mid}</span>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded font-mono" style={{ background: 'var(--color-info)', color: 'white', opacity: 0.8 }}>{m?.capability || 'image'}</span>
-                            {isDefault && <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'var(--accent)', color: 'white' }}>默认</span>}
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-mono" style={{ background: 'var(--color-info)', color: 'white', opacity: 0.8 }}>{m?.capability || 'image'}</span>
+                            {isDefault && <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: 'var(--accent)', color: 'white' }}>默认</span>}
                           </div>
                           <div className="text-[11px] font-mono truncate mb-1" style={{ color: 'var(--text-secondary)' }}>{mid}</div>
                           {boundProviders.length > 0 && (
                             <div className="flex items-center gap-1 flex-wrap">
                               <span className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>供应商:</span>
                               {boundProviders.map((pid, idx) => (
-                                <span key={pid} className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded font-mono" style={{ background: idx === 0 ? 'var(--color-success)' : 'var(--text-secondary)', color: 'white', opacity: idx === 0 ? 0.85 : 0.6 }}>
+                                <span key={pid} className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full font-mono" style={{ background: idx === 0 ? 'var(--color-success)' : 'var(--text-secondary)', color: 'white', opacity: idx === 0 ? 0.85 : 0.6 }}>
                                   {idx === 0 && '▶'}{pid}
                                 </span>
                               ))}
@@ -1481,8 +1481,8 @@ export default function AdminPage() {
                           >
                             <span className="inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform" style={{ transform: m?.enabled !== false ? 'translateX(14px)' : 'translateX(2px)' }} />
                           </button>
-                          <button onClick={() => openModelEditor(mid)} className="px-2 py-1 rounded text-xs border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>编辑</button>
-                          <button onClick={() => { if (mid === defaultModelId) { dialog.alert('不能删除默认模型'); return } handleDeleteModel(mid) }} className="px-2 py-1 rounded text-xs border text-[var(--color-error)]" style={{ borderColor: 'var(--border-color)' }}>删除</button>
+                          <button onClick={() => openModelEditor(mid)} className="px-2 py-1 rounded-lg text-xs border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>编辑</button>
+                          <button onClick={() => { if (mid === defaultModelId) { dialog.alert('不能删除默认模型'); return } handleDeleteModel(mid) }} className="px-2 py-1 rounded-lg text-xs border text-[var(--color-error)]" style={{ borderColor: 'var(--border-color)' }}>删除</button>
                         </div>
                       </div>
                     )
@@ -1492,20 +1492,20 @@ export default function AdminPage() {
               </div>
 
               {/* 供应商列表 */}
-              <div className="rounded-lg border p-3 mb-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+              <div className="rounded-2xl border p-3 mb-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-medium" style={{ color: '#8B7BA8' }}>供应商</span>
                     <span className="text-[11px] px-1.5 py-0.5 rounded-full" style={{ background: '#8B7BA8', color: 'white', opacity: 0.8 }}>{Object.keys(genProvidersObj).length}</span>
                   </div>
-                  <button onClick={handleAddProvider} className="px-2 py-1 rounded text-xs font-medium bg-accent text-white">+ 新增供应商</button>
+                  <button onClick={handleAddProvider} className="px-2 py-1 rounded-lg text-xs font-medium bg-accent text-white">+ 新增供应商</button>
                 </div>
                 <div className="space-y-2">
                   {Object.entries(genProvidersObj).map(([pid, p]) => (
-                    <div key={pid} className="rounded-lg border p-3 flex items-center gap-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
+                    <div key={pid} className="rounded-2xl border p-3 flex items-center gap-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: '#8B7BA8', color: 'white', opacity: 0.8 }}>{p?.type || 'wuyin'}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: '#8B7BA8', color: 'white', opacity: 0.8 }}>{p?.type || 'wuyin'}</span>
                           <span className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{pid}</span>
                         </div>
                         <div className="text-[11px] font-mono truncate mb-1" style={{ color: 'var(--text-secondary)' }}>
@@ -1526,8 +1526,8 @@ export default function AdminPage() {
                         >
                           <span className="inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform" style={{ transform: p?.enabled !== false ? 'translateX(14px)' : 'translateX(2px)' }} />
                         </button>
-                        <button onClick={() => openProviderEditor(pid)} className="px-2 py-1 rounded text-xs border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>编辑</button>
-                        <button onClick={() => handleDeleteProvider(pid)} className="px-2 py-1 rounded text-xs border text-[var(--color-error)]" style={{ borderColor: 'var(--border-color)' }}>删除</button>
+                        <button onClick={() => openProviderEditor(pid)} className="px-2 py-1 rounded-lg text-xs border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>编辑</button>
+                        <button onClick={() => handleDeleteProvider(pid)} className="px-2 py-1 rounded-lg text-xs border text-[var(--color-error)]" style={{ borderColor: 'var(--border-color)' }}>删除</button>
                       </div>
                     </div>
                   ))}
@@ -1535,31 +1535,31 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+              <div className="rounded-2xl border p-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>高级模式(JSON)</div>
-                  <button onClick={() => setShowAdvancedGenConfig(v => !v)} className="px-2 py-1 rounded text-xs border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>{showAdvancedGenConfig ? '收起' : '展开'}</button>
+                  <button onClick={() => setShowAdvancedGenConfig(v => !v)} className="px-2 py-1 rounded-lg text-xs border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>{showAdvancedGenConfig ? '收起' : '展开'}</button>
                 </div>
                 {showAdvancedGenConfig && (
                   <>
                   {jsonDirty && (
-                    <div className="mt-3 px-3 py-2 rounded-lg text-[11px]" style={{ background: 'var(--color-warning, #f59e0b)', color: '#000', opacity: 0.9 }}>
+                    <div className="mt-3 px-3 py-2 rounded-2xl text-[11px]" style={{ background: 'var(--color-warning, #f59e0b)', color: '#000', opacity: 0.9 }}>
                       JSON 已被修改，但尚未应用到表单。点击"应用到表单"使其生效，或直接保存配置。
                     </div>
                   )}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
                     <div>
                       <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>generation_models(JSON对象)</label>
-                      <textarea value={generationModelsText} onChange={e => { setGenerationModelsText(e.target.value); setJsonDirty(true) }} rows={14} className="w-full px-3 py-2 rounded-lg text-xs border resize-none outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                      <textarea value={generationModelsText} onChange={e => { setGenerationModelsText(e.target.value); setJsonDirty(true) }} rows={14} className="w-full px-3 py-2 rounded-2xl text-xs border resize-none outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                       <div className="text-[11px] mt-1 text-right tabular-nums" style={{ color: 'var(--text-secondary)' }}>{generationModelsText.length} chars</div>
                     </div>
                     <div>
                       <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>generation_providers(JSON对象)</label>
-                      <textarea value={generationProvidersText} onChange={e => { setGenerationProvidersText(e.target.value); setJsonDirty(true) }} rows={14} className="w-full px-3 py-2 rounded-lg text-xs border resize-none outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                      <textarea value={generationProvidersText} onChange={e => { setGenerationProvidersText(e.target.value); setJsonDirty(true) }} rows={14} className="w-full px-3 py-2 rounded-2xl text-xs border resize-none outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                       <div className="text-[11px] mt-1 text-right tabular-nums" style={{ color: 'var(--text-secondary)' }}>{generationProvidersText.length} chars</div>
                     </div>
                     <div className="md:col-span-2 flex justify-end">
-                      <button onClick={handleApplyAdvanced} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-accent text-white hover:opacity-90">应用到表单</button>
+                      <button onClick={handleApplyAdvanced} className="px-3 py-1.5 rounded-2xl text-xs font-medium bg-accent text-white hover:opacity-90">应用到表单</button>
                     </div>
                   </div>
                   </>
@@ -1585,26 +1585,26 @@ export default function AdminPage() {
             <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>模型ID</label>
-                <input type="text" value={editingModelId} readOnly className="w-full px-3 py-2 rounded-lg text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-secondary)' }} />
+                <input type="text" value={editingModelId} readOnly className="w-full px-3 py-2 rounded-2xl text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-secondary)' }} />
               </div>
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>显示名</label>
-                <input type="text" value={editingModelDraft.label || ''} onChange={e => setEditingModelDraft(prev => ({ ...prev, label: e.target.value }))} placeholder="如 默认模型" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                <input type="text" value={editingModelDraft.label || ''} onChange={e => setEditingModelDraft(prev => ({ ...prev, label: e.target.value }))} placeholder="如 默认模型" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>能力</label>
-                <select value={editingModelDraft.capability || 'image'} onChange={e => setEditingModelDraft(prev => ({ ...prev, capability: e.target.value }))} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}><option value="image">image</option><option value="video">video</option></select>
+                <select value={editingModelDraft.capability || 'image'} onChange={e => setEditingModelDraft(prev => ({ ...prev, capability: e.target.value }))} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}><option value="image">image</option><option value="video">video</option></select>
               </div>
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>模型扣分（留空走默认）</label>
-                <input type="number" min="1" value={editingModelDraft.points_cost ?? ''} onChange={e => setEditingModelDraft(prev => ({ ...prev, points_cost: e.target.value }))} placeholder={`默认 ${runtimeConfig.points_cost_per_generation}`} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                <input type="number" min="1" value={editingModelDraft.points_cost ?? ''} onChange={e => setEditingModelDraft(prev => ({ ...prev, points_cost: e.target.value }))} placeholder={`默认 ${runtimeConfig.points_cost_per_generation}`} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
               <div className="flex items-end">
                 <label className="inline-flex items-center gap-2 text-sm" style={{ color: 'var(--text-primary)' }}><input type="checkbox" checked={editingModelDraft.enabled !== false} onChange={e => setEditingModelDraft(prev => ({ ...prev, enabled: e.target.checked }))} />启用该模型</label>
               </div>
               <div className="md:col-span-2">
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>绑定供应商（按顺序优先级从高到低）</label>
-                <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
+                <div className="rounded-2xl border p-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
                   <div className="text-[11px] mb-2" style={{ color: 'var(--text-secondary)' }}>拖拽调整优先级（越靠前越优先）；点击下方按钮添加/移除。</div>
                   <div className="space-y-2 mb-3">
                     {(Array.isArray(editingModelDraft.providers) ? editingModelDraft.providers : []).map((pid, idx) => (
@@ -1615,18 +1615,18 @@ export default function AdminPage() {
                         onDragEnd={() => setDraggingModelProviderId('')}
                         onDragOver={e => e.preventDefault()}
                         onDrop={() => { reorderEditingModelProviders(draggingModelProviderId, pid); setDraggingModelProviderId('') }}
-                        className="flex items-center gap-2 px-3 py-2 rounded-lg border"
+                        className="flex items-center gap-2 px-3 py-2 rounded-2xl border"
                         style={{ borderColor: draggingModelProviderId === pid ? 'var(--accent)' : 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)', opacity: draggingModelProviderId === pid ? 0.6 : 1 }}
                       >
                         <span className="text-xs font-mono w-5 text-center shrink-0" style={{ color: 'var(--text-secondary)' }}>{idx + 1}</span>
                         <span className="text-[10px] cursor-grab select-none shrink-0" style={{ color: 'var(--text-secondary)' }}>⣿</span>
                         <span className="flex-1 font-mono text-sm truncate">{pid}</span>
                         <span className="text-[10px] shrink-0" style={{ color: 'var(--text-secondary)' }}>{genProvidersObj?.[pid]?.type || '?'}</span>
-                        <button type="button" onClick={() => toggleEditingModelProvider(pid)} className="px-2 py-1 rounded text-[11px] border shrink-0" style={{ borderColor: 'var(--border-color)', color: 'var(--color-error)' }}>移除</button>
+                        <button type="button" onClick={() => toggleEditingModelProvider(pid)} className="px-2 py-1 rounded-lg text-[11px] border shrink-0" style={{ borderColor: 'var(--border-color)', color: 'var(--color-error)' }}>移除</button>
                       </div>
                     ))}
                     {!(Array.isArray(editingModelDraft.providers) ? editingModelDraft.providers : []).length && (
-                      <div className="px-3 py-6 rounded-lg border text-center text-xs" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>未绑定任何供应商</div>
+                      <div className="px-3 py-6 rounded-2xl border text-center text-xs" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>未绑定任何供应商</div>
                     )}
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -1634,7 +1634,7 @@ export default function AdminPage() {
                       const active = (Array.isArray(editingModelDraft.providers) ? editingModelDraft.providers : []).includes(pid)
                       return (
                         <button key={pid} type="button" onClick={() => toggleEditingModelProvider(pid)}
-                          className={`px-2.5 py-1.5 rounded-lg text-xs border font-mono ${active ? 'text-white border-transparent' : ''}`}
+                          className={`px-2.5 py-1.5 rounded-2xl text-xs border font-mono ${active ? 'text-white border-transparent' : ''}`}
                           style={active ? { background: 'var(--accent)' } : { borderColor: 'var(--border-color)', color: 'var(--text-primary)', background: 'var(--bg-primary)' }}>
                           {pid}
                         </button>
@@ -1645,8 +1645,8 @@ export default function AdminPage() {
               </div>
             </div>
             <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
-              <button onClick={() => { setDraggingModelProviderId(''); setEditingModelId('') }} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
-              <button onClick={applyModelEditor} className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:opacity-90">保存</button>
+              <button onClick={() => { setDraggingModelProviderId(''); setEditingModelId('') }} className="px-4 py-2 rounded-2xl text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
+              <button onClick={applyModelEditor} className="px-4 py-2 rounded-2xl text-sm font-medium bg-accent text-white hover:opacity-90">保存</button>
             </div>
           </div>
         </div>
@@ -1664,47 +1664,47 @@ export default function AdminPage() {
             <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>供应商ID</label>
-                <input type="text" value={editingProviderId} readOnly className="w-full px-3 py-2 rounded-lg text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-secondary)' }} />
+                <input type="text" value={editingProviderId} readOnly className="w-full px-3 py-2 rounded-2xl text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-secondary)' }} />
               </div>
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>类型</label>
-                <input type="text" value={editingProviderDraft.type || ''} onChange={e => setEditingProviderDraft(prev => ({ ...prev, type: e.target.value }))} placeholder="如 wuyin" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                <input type="text" value={editingProviderDraft.type || ''} onChange={e => setEditingProviderDraft(prev => ({ ...prev, type: e.target.value }))} placeholder="如 wuyin" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>全局权重</label>
-                <input type="number" value={Number(editingProviderDraft.priority ?? 100)} onChange={e => setEditingProviderDraft(prev => ({ ...prev, priority: Number(e.target.value || 0) }))} placeholder="当前模型内顺序优先，这里仅作备用展示" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                <input type="number" value={Number(editingProviderDraft.priority ?? 100)} onChange={e => setEditingProviderDraft(prev => ({ ...prev, priority: Number(e.target.value || 0) }))} placeholder="当前模型内顺序优先，这里仅作备用展示" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>单位名称</label>
-                <input type="text" value={editingProviderDraft.unit_name || ''} onChange={e => setEditingProviderDraft(prev => ({ ...prev, unit_name: e.target.value }))} placeholder="如 供应商积分 / 点数" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                <input type="text" value={editingProviderDraft.unit_name || ''} onChange={e => setEditingProviderDraft(prev => ({ ...prev, unit_name: e.target.value }))} placeholder="如 供应商积分 / 点数" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>单位编码</label>
-                <input type="text" value={editingProviderDraft.unit_code || ''} onChange={e => setEditingProviderDraft(prev => ({ ...prev, unit_code: e.target.value }))} placeholder="如 vendor_points / credits" className="w-full px-3 py-2 rounded-lg text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                <input type="text" value={editingProviderDraft.unit_code || ''} onChange={e => setEditingProviderDraft(prev => ({ ...prev, unit_code: e.target.value }))} placeholder="如 vendor_points / credits" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>连续失败阈值</label>
-                <input type="number" value={Number(editingProviderDraft.circuit_fail_threshold ?? 3)} onChange={e => setEditingProviderDraft(prev => ({ ...prev, circuit_fail_threshold: Number(e.target.value || 0) }))} placeholder="达到阈值触发熔断" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                <input type="number" value={Number(editingProviderDraft.circuit_fail_threshold ?? 3)} onChange={e => setEditingProviderDraft(prev => ({ ...prev, circuit_fail_threshold: Number(e.target.value || 0) }))} placeholder="达到阈值触发熔断" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>熔断冷却秒数</label>
-                <input type="number" value={Number(editingProviderDraft.circuit_cooldown_seconds ?? 60)} onChange={e => setEditingProviderDraft(prev => ({ ...prev, circuit_cooldown_seconds: Number(e.target.value || 0) }))} placeholder="如 60" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                <input type="number" value={Number(editingProviderDraft.circuit_cooldown_seconds ?? 60)} onChange={e => setEditingProviderDraft(prev => ({ ...prev, circuit_cooldown_seconds: Number(e.target.value || 0) }))} placeholder="如 60" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
               <div className="flex items-end">
                 <label className="inline-flex items-center gap-2 text-sm" style={{ color: 'var(--text-primary)' }}><input type="checkbox" checked={editingProviderDraft.enabled !== false} onChange={e => setEditingProviderDraft(prev => ({ ...prev, enabled: e.target.checked }))} />启用该供应商</label>
               </div>
               <div className="md:col-span-2">
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>API URL</label>
-                <input type="text" value={editingProviderDraft.api_url || ''} onChange={e => setEditingProviderDraft(prev => ({ ...prev, api_url: e.target.value }))} placeholder="例如 https://xxx/api/async，留空则使用全局api_url" className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                <input type="text" value={editingProviderDraft.api_url || ''} onChange={e => setEditingProviderDraft(prev => ({ ...prev, api_url: e.target.value }))} placeholder="例如 https://xxx/api/async，留空则使用全局api_url" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
               <div className="md:col-span-2">
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>API Key</label>
-                <input type="text" value={editingProviderDraft.api_key || ''} onChange={e => setEditingProviderDraft(prev => ({ ...prev, api_key: e.target.value }))} placeholder="留空则使用全局api_key" className="w-full px-3 py-2 rounded-lg text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                <input type="text" value={editingProviderDraft.api_key || ''} onChange={e => setEditingProviderDraft(prev => ({ ...prev, api_key: e.target.value }))} placeholder="留空则使用全局api_key" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
             </div>
             <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
-              <button onClick={() => setEditingProviderId('')} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
-              <button onClick={applyProviderEditor} className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:opacity-90">保存</button>
+              <button onClick={() => setEditingProviderId('')} className="px-4 py-2 rounded-2xl text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
+              <button onClick={applyProviderEditor} className="px-4 py-2 rounded-2xl text-sm font-medium bg-accent text-white hover:opacity-90">保存</button>
             </div>
           </div>
         </div>
@@ -1721,7 +1721,7 @@ export default function AdminPage() {
             <div className="w-72 flex-shrink-0 p-4 overflow-y-auto border-l" style={{ borderColor: 'var(--border-color)' }}>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>图片详情</h3>
-                <button onClick={() => setHostingDetail(null)} className="p-1 rounded-lg hover:bg-bg-hover">
+                <button onClick={() => setHostingDetail(null)} className="p-1 rounded-2xl hover:bg-bg-hover">
                   <X size={16} style={{ color: 'var(--text-secondary)' }} />
                 </button>
               </div>
@@ -1745,14 +1745,14 @@ export default function AdminPage() {
                 <div>
                   <div style={{ color: 'var(--text-secondary)' }}>本地文件</div>
                   <div className="mt-0.5">
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${hostingDetail.exists ? 'bg-[var(--color-success)]/20 text-[var(--color-success)]' : 'bg-[var(--color-error)]/20 text-[var(--color-error)]'}`}>
+                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${hostingDetail.exists ? 'bg-[var(--color-success)]/20 text-[var(--color-success)]' : 'bg-[var(--color-error)]/20 text-[var(--color-error)]'}`}>
                       {hostingDetail.exists ? '存在' : '已丢失'}
                     </span>
                   </div>
                 </div>
                 <div className="pt-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
                   <a href={hostingDetail.url} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-[var(--color-info)] text-white text-xs font-medium hover:opacity-90">
+                    className="flex items-center justify-center gap-1.5 w-full py-2 rounded-2xl bg-[var(--color-info)] text-white text-xs font-medium hover:opacity-90">
                     <Download size={14} /> 打开原图
                   </a>
                 </div>
@@ -1763,7 +1763,7 @@ export default function AdminPage() {
                       await adminAPI.batchDeleteHosting([hostingDetail.url])
                       setHostingDetail(null); fetchHostingImages(); fetchHostingStats()
                     } catch (e) { dialog.alert(e.message || '删除失败') }
-                  }} className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-red-500 text-white text-xs font-medium hover:bg-red-600">
+                  }} className="flex items-center justify-center gap-1.5 w-full py-2 rounded-2xl bg-red-500 text-white text-xs font-medium hover:bg-red-600">
                     <Trash2 size={14} /> 删除映射
                   </button>
                 </div>
@@ -1786,21 +1786,21 @@ export default function AdminPage() {
                 <label className="block text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>积分数量（正数增加，负数扣除）</label>
                 <input type="number" value={adjustAmount} onChange={e => setAdjustAmount(e.target.value)}
                   placeholder="例如: 100 或 -50"
-                  className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
+                  className="w-full px-3 py-2 rounded-2xl text-sm border outline-none"
                   style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)', color: 'var(--text-primary)' }} />
               </div>
               <div>
                 <label className="block text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>备注</label>
                 <input type="text" value={adjustDesc} onChange={e => setAdjustDesc(e.target.value)}
                   placeholder="管理员调整"
-                  className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
+                  className="w-full px-3 py-2 rounded-2xl text-sm border outline-none"
                   style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)', color: 'var(--text-primary)' }} />
               </div>
             </div>
             <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
-              <button onClick={() => setAdjustUserId(null)} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
+              <button onClick={() => setAdjustUserId(null)} className="px-4 py-2 rounded-2xl text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
               <button onClick={() => handleAdjustPoints(adjustUserId)} disabled={!adjustAmount}
-                className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50">确认</button>
+                className="px-4 py-2 rounded-2xl text-sm font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50">确认</button>
             </div>
           </div>
         </div>
@@ -1823,7 +1823,7 @@ export default function AdminPage() {
                 onChange={e => setBatchImportText(e.target.value)}
                 placeholder="违禁词1&#10;违禁词2&#10;违禁词3"
                 rows={10}
-                className="w-full px-3 py-2 rounded-lg text-sm border resize-none"
+                className="w-full px-3 py-2 rounded-2xl text-sm border resize-none"
                 style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)', color: 'var(--text-primary)' }}
               />
               {batchImportText.trim() && (
@@ -1835,7 +1835,7 @@ export default function AdminPage() {
             <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
               <button
                 onClick={() => { setShowBatchImport(false); setBatchImportText('') }}
-                className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover"
+                className="px-4 py-2 rounded-2xl text-sm font-medium hover:bg-bg-hover"
                 style={{ color: 'var(--text-secondary)' }}
               >
                 取消
@@ -1843,7 +1843,7 @@ export default function AdminPage() {
               <button
                 onClick={handleBatchImport}
                 disabled={!batchImportText.trim() || batchImporting}
-                className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 rounded-2xl text-sm font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {batchImporting ? '导入中...' : '确认导入'}
               </button>
@@ -1869,7 +1869,7 @@ export default function AdminPage() {
                 <div>
                   <label className="block text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>发放积分</label>
                   <input type="number" value={reviewPoints} onChange={e => setReviewPoints(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
+                    className="w-full px-3 py-2 rounded-2xl text-sm border outline-none"
                     style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)', color: 'var(--text-primary)' }} />
                 </div>
               )}
@@ -1881,7 +1881,7 @@ export default function AdminPage() {
                   <div className="flex flex-wrap gap-1.5 mb-2">
                     {['凭证不清晰', '金额不符', '重复提交', '信息不完整'].map(text => (
                       <button key={text} onClick={() => setReviewNote(text)}
-                        className={`px-2 py-1 rounded-lg text-[11px] font-medium transition-colors ${reviewNote === text ? 'bg-[var(--color-error)] text-white' : 'border hover:border-[var(--color-error)]/50'}`}
+                        className={`px-2 py-1 rounded-2xl text-[11px] font-medium transition-colors ${reviewNote === text ? 'bg-[var(--color-error)] text-white' : 'border hover:border-[var(--color-error)]/50'}`}
                         style={reviewNote === text ? {} : { borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
                         {text}
                       </button>
@@ -1890,15 +1890,15 @@ export default function AdminPage() {
                 )}
                 <textarea value={reviewNote} onChange={e => setReviewNote(e.target.value)}
                   rows={3} placeholder={reviewModal.action === 'approve' ? '审核通过' : '请输入拒绝原因'}
-                  className="w-full px-3 py-2 rounded-lg text-sm border resize-none outline-none"
+                  className="w-full px-3 py-2 rounded-2xl text-sm border resize-none outline-none"
                   style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)', color: 'var(--text-primary)' }} />
               </div>
             </div>
             <div className="flex justify-end gap-2 p-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
-              <button onClick={() => setReviewModal(null)} className="px-4 py-2 rounded-lg text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
+              <button onClick={() => setReviewModal(null)} className="px-4 py-2 rounded-2xl text-sm font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
               <button onClick={() => reviewModal.action === 'approve' ? handleApproveRecharge(reviewModal.id) : handleRejectRecharge(reviewModal.id)}
                 disabled={reviewModal.action === 'reject' && !reviewNote.trim()}
-                className={`px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50 ${reviewModal.action === 'approve' ? 'bg-[var(--color-success)] hover:opacity-90' : 'bg-red-500 hover:bg-red-600'}`}>
+                className={`px-4 py-2 rounded-2xl text-sm font-medium text-white disabled:opacity-50 ${reviewModal.action === 'approve' ? 'bg-[var(--color-success)] hover:opacity-90' : 'bg-red-500 hover:bg-red-600'}`}>
                 {reviewModal.action === 'approve' ? '确认通过' : '确认拒绝'}
               </button>
             </div>
@@ -1909,7 +1909,7 @@ export default function AdminPage() {
     {proofLightbox && (
       <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={() => setProofLightbox(null)}>
         <button type="button" onClick={e => { e.stopPropagation(); setProofLightbox(null) }} className="absolute top-4 right-4 z-10 w-10 h-10 rounded-full bg-black/55 text-white flex items-center justify-center"><X size={18} /></button>
-        <img src={proofLightbox} alt="支付凭证" className="max-w-full max-h-full rounded-lg" onClick={e => e.stopPropagation()} />
+        <img src={proofLightbox} alt="支付凭证" className="max-w-full max-h-full rounded-2xl" onClick={e => e.stopPropagation()} />
       </div>
     )}
     </>

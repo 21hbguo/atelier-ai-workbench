@@ -266,7 +266,7 @@ export default function UnifiedDetailModal({
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }
-  const actionBaseClass = 'inline-flex h-11 w-full min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl border text-[10px] font-medium leading-none whitespace-nowrap transition-all hover:scale-[1.03] active:scale-95'
+  const actionBaseClass = 'inline-flex h-11 w-full min-w-0 flex-col items-center justify-center gap-0.5 rounded-2xl border text-[10px] font-medium leading-none whitespace-nowrap transition-all hover:scale-[1.03] active:scale-95'
   const actionNeutralStyle = { background: 'var(--bg-primary)', borderColor: 'color-mix(in srgb, var(--border-color) 60%, transparent)', color: 'var(--text-secondary)' }
   const actionPrimaryStyle = { background: 'var(--accent)', borderColor: 'transparent', color: '#fff' }
   const actionDangerStyle = { background: 'color-mix(in srgb, var(--color-error) 8%, transparent)', borderColor: 'color-mix(in srgb, var(--color-error) 18%, transparent)', color: 'var(--color-error)' }
@@ -284,7 +284,7 @@ export default function UnifiedDetailModal({
           <ImageIcon size={64} style={{ color: 'var(--accent)', opacity: 0.3 }} />
           {showUploadBtn && (
             <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
-              className="absolute bottom-4 right-4 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-white bg-black/60 hover:bg-black/80 transition-colors disabled:opacity-50">
+              className="absolute bottom-4 right-4 flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-medium text-white bg-black/60 hover:bg-black/80 transition-colors disabled:opacity-50">
               <Upload size={14} />{uploading ? '上传中...' : '上传图片'}
             </button>
           )}
@@ -301,7 +301,7 @@ export default function UnifiedDetailModal({
         )}
         {showUploadBtn && (
           <button onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click() }} disabled={uploading}
-            className="absolute bottom-4 right-4 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-white bg-black/60 hover:bg-black/80 transition-colors disabled:opacity-50 z-10">
+            className="absolute bottom-4 right-4 flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-medium text-white bg-black/60 hover:bg-black/80 transition-colors disabled:opacity-50 z-10">
             <Upload size={14} />{uploading ? '上传中...' : '更换图片'}
           </button>
         )}
@@ -320,12 +320,12 @@ export default function UnifiedDetailModal({
         <div className="space-y-2.5">
           <div>
             <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>提示词</label>
-            <textarea value={editForm.prompt || ''} onChange={e => setEditForm(f => ({ ...f, prompt: e.target.value }))} className="w-full px-3 py-2 rounded-lg text-sm border outline-none resize-none" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} rows={3} />
+            <textarea value={editForm.prompt || ''} onChange={e => setEditForm(f => ({ ...f, prompt: e.target.value }))} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none resize-none" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} rows={3} />
           </div>
           {(meta.size || editForm.size !== undefined) && (
             <div>
               <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>尺寸</label>
-              <input value={editForm.size || ''} onChange={e => setEditForm(f => ({ ...f, size: e.target.value }))} className="w-full px-3 py-2 rounded-lg text-sm border outline-none" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
+              <input value={editForm.size || ''} onChange={e => setEditForm(f => ({ ...f, size: e.target.value }))} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
             </div>
           )}
         </div>
@@ -337,8 +337,8 @@ export default function UnifiedDetailModal({
           <div>
             <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>提示词</label>
             <div className="relative">
-              <p className="text-sm p-2.5 rounded-lg pr-9 max-h-36 md:max-h-56 overflow-y-auto whitespace-pre-wrap break-words leading-5" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>{card.prompt}</p>
-              <button onClick={() => handleCopy(card.prompt)} className="absolute right-2 top-2 p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
+              <p className="text-sm p-2.5 rounded-2xl pr-9 max-h-36 md:max-h-56 overflow-y-auto whitespace-pre-wrap break-words leading-5" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>{card.prompt}</p>
+              <button onClick={() => handleCopy(card.prompt)} className="absolute right-2 top-2 p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
                 <Copy size={14} />
               </button>
             </div>
@@ -376,20 +376,20 @@ export default function UnifiedDetailModal({
           <div>
             <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>标题</label>
             <input value={editForm.name || ''} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
-              className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
+              className="w-full px-3 py-2 rounded-2xl text-sm border outline-none"
               style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
           </div>
           <div>
             <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>提示词</label>
             <textarea value={editForm.prompt || ''} onChange={e => setEditForm(f => ({ ...f, prompt: e.target.value }))}
-              className="w-full px-3 py-2 rounded-lg text-sm border outline-none resize-none"
+              className="w-full px-3 py-2 rounded-2xl text-sm border outline-none resize-none"
               style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
               rows={4} />
           </div>
           <div>
             <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>分类</label>
             <select value={editForm.category || ''} onChange={e => setEditForm(f => ({ ...f, category: e.target.value }))}
-              className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
+              className="w-full px-3 py-2 rounded-2xl text-sm border outline-none"
               style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
               <option value="">无分类</option>
               {categories.map(c => <option key={c.slug} value={c.slug}>{c.label}</option>)}
@@ -410,8 +410,8 @@ export default function UnifiedDetailModal({
           <div>
             <label className="text-xs font-medium mb-1 block leading-none" style={{ color: 'var(--text-secondary)' }}>提示词</label>
             <div className="relative">
-              <p className="text-sm p-2.5 rounded-lg pr-9 max-h-36 md:max-h-56 overflow-y-auto whitespace-pre-wrap break-words leading-5" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>{card.prompt}</p>
-              <button onClick={() => handleCopy(card.prompt)} className="absolute right-2 top-2 p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
+              <p className="text-sm p-2.5 rounded-2xl pr-9 max-h-36 md:max-h-56 overflow-y-auto whitespace-pre-wrap break-words leading-5" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>{card.prompt}</p>
+              <button onClick={() => handleCopy(card.prompt)} className="absolute right-2 top-2 p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
                 <Copy size={14} />
               </button>
             </div>
@@ -525,9 +525,9 @@ export default function UnifiedDetailModal({
             <div className="flex items-center justify-between mb-0.5 shrink-0">
               <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{title}</span>
               <div className="flex items-center gap-2">
-                {allowMetadataEdit && isImage && raw.filename && !detailExtra && (editing ? <button onClick={handleSaveMetadata} disabled={saving} className="p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--accent)' }}><Check size={16} /></button> : <button onClick={startEditing} className="p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}><Edit2 size={16} /></button>)}
-                {allowPromptEdit && !isImage && !detailExtra && (editing ? <button onClick={handleSavePrompt} disabled={saving} className="p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--accent)' }}><Check size={16} /></button> : <button onClick={startPromptEditing} className="p-1 rounded hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}><Edit2 size={16} /></button>)}
-                <button onClick={requestCloseModal} className="p-1 rounded hover:bg-bg-hover"><X size={18} /></button>
+                {allowMetadataEdit && isImage && raw.filename && !detailExtra && (editing ? <button onClick={handleSaveMetadata} disabled={saving} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--accent)' }}><Check size={16} /></button> : <button onClick={startEditing} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}><Edit2 size={16} /></button>)}
+                {allowPromptEdit && !isImage && !detailExtra && (editing ? <button onClick={handleSavePrompt} disabled={saving} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--accent)' }}><Check size={16} /></button> : <button onClick={startPromptEditing} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}><Edit2 size={16} /></button>)}
+                <button onClick={requestCloseModal} className="p-1 rounded-lg hover:bg-bg-hover"><X size={18} /></button>
               </div>
             </div>
 

@@ -738,13 +738,13 @@ export default function ChatPage() {
       {selectMode && checked.size > 0 && (
         <div className="px-4 py-3 flex items-center gap-3" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
           <span className="text-sm" style={{ color: 'var(--text-primary)' }}>已选 {checked.size} 项</span>
-          <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
+          <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
             {checked.size === visibleTasks.length ? '取消全选' : '全选'}
           </button>
           <div className="ml-auto flex items-center gap-2">
-            <button onClick={handleBatchExtend} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ background: 'var(--color-info)' }}>延长3天</button>
-            <button onClick={handleBatchDownload} disabled={downloadProgress.open} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50" style={{ background: 'var(--accent)' }}><Download size={14} /> {downloadProgress.open ? '处理中' : '下载'}</button>
-            <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-[var(--color-error)] hover:bg-[var(--color-error)]/10"><Trash2 size={14} /> 删除</button>
+            <button onClick={handleBatchExtend} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--color-info)' }}>延长3天</button>
+            <button onClick={handleBatchDownload} disabled={downloadProgress.open} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white disabled:opacity-50" style={{ background: 'var(--accent)' }}><Download size={14} /> {downloadProgress.open ? '处理中' : '下载'}</button>
+            <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-[var(--color-error)] hover:bg-[var(--color-error)]/10"><Trash2 size={14} /> 删除</button>
           </div>
         </div>
       )}
@@ -766,7 +766,7 @@ export default function ChatPage() {
         </div>
       )}
       <div className="flex-shrink-0 flex min-h-10 items-center gap-2 px-4 pt-3 pb-1 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
-        <button onClick={() => navigate('/wallet')} className="flex h-8 flex-shrink-0 items-center gap-1.5 px-3 rounded-lg text-sm font-semibold transition-all hover:scale-105" style={{ background: 'var(--accent)', color: '#fff' }}>
+        <button onClick={() => navigate('/wallet')} className="flex h-8 flex-shrink-0 items-center gap-1.5 px-3 rounded-2xl text-sm font-semibold transition-all hover:scale-105" style={{ background: 'var(--accent)', color: '#fff' }}>
           <Coins size={15} />
           <span className="tabular-nums">{points}</span>
         </button>
@@ -774,7 +774,7 @@ export default function ChatPage() {
           <select
             value={selectedUserId || ''}
             onChange={e => setSelectedUserId(e.target.value ? Number(e.target.value) : null)}
-            className="h-8 px-2 rounded-lg text-xs border-0 outline-none"
+            className="h-8 px-2 rounded-2xl text-xs border-0 outline-none"
             style={{ background: 'var(--border-color)', color: 'var(--text-primary)' }}
           >
             <option value="">全部用户</option>
@@ -785,22 +785,22 @@ export default function ChatPage() {
         )}
         <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="搜索提示词..." />
         <button onClick={handleRefresh} disabled={refreshing}
-          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg hover:bg-bg-hover transition-colors disabled:opacity-50"
+          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-2xl hover:bg-bg-hover transition-colors disabled:opacity-50"
           style={{ color: 'var(--text-secondary)' }}>
           <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
         </button>
-        <div className="flex h-8 flex-shrink-0 items-center gap-1 rounded-lg p-0.5" style={{ background: 'var(--bg-active)' }}>
+        <div className="flex h-8 flex-shrink-0 items-center gap-1 rounded-2xl p-0.5" style={{ background: 'var(--bg-active)' }}>
           {timeRangeOptions.map(({ k, l }) => (
-            <button key={k} onClick={() => setTimeRange(k)} className={`flex h-7 items-center px-3 rounded-md text-xs font-medium transition-colors ${timeRange === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`} style={{ color: timeRange === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{l}</button>
+            <button key={k} onClick={() => setTimeRange(k)} className={`flex h-7 items-center px-3 rounded-full text-xs font-medium transition-colors ${timeRange === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`} style={{ color: timeRange === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{l}</button>
           ))}
         </div>
         {selectMode ? (
-          <button onClick={exitSelectMode} className="ml-auto flex h-8 items-center px-3 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
+          <button onClick={exitSelectMode} className="ml-auto flex h-8 items-center px-3 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
         ) : (
-          <button onClick={() => setSelectMode(true)} className="ml-auto flex h-8 items-center px-3 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>选择</button>
+          <button onClick={() => setSelectMode(true)} className="ml-auto flex h-8 items-center px-3 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>选择</button>
         )}
       </div>
-      {loadError && <div className="mx-4 mt-2 px-3 py-2 rounded-lg text-xs" style={{ background: 'color-mix(in srgb, var(--color-warning) 12%, transparent)', color: 'var(--color-warning)' }}>{loadError}</div>}
+      {loadError && <div className="mx-4 mt-2 px-3 py-2 rounded-2xl text-xs" style={{ background: 'color-mix(in srgb, var(--color-warning) 12%, transparent)', color: 'var(--color-warning)' }}>{loadError}</div>}
       {downloadProgress.open && <div className="fixed left-4 right-4 bottom-24 sm:left-auto sm:right-4 sm:bottom-6 sm:w-80 z-40 pointer-events-none"><div className="rounded-2xl p-4 border shadow-lg" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}><div className="flex items-center justify-between gap-3"><div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{downloadProgress.phase === 'zip' ? '正在打包 ZIP' : downloadProgress.phase === 'single' ? '正在逐个下载' : downloadProgress.phase === 'done' ? '处理完成' : '正在准备下载'}</div><div className="text-xs tabular-nums" style={{ color: 'var(--accent)' }}>{downloadProgress.percent}%</div></div><div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{downloadProgress.phase === 'zip' ? `已下载 ${downloadProgress.total}/${downloadProgress.total} 张，正在压缩` : `已处理 ${downloadProgress.current}/${downloadProgress.total} 张`}</div>{downloadProgress.filename && <div className="mt-1 text-[11px] truncate" style={{ color: 'var(--text-secondary)', opacity: 0.8 }}>{downloadProgress.filename}</div>}<div className="mt-3 h-2 rounded-full overflow-hidden" style={{ background: 'var(--border-color)' }}><div className="h-full rounded-full transition-all duration-300" style={{ width: `${downloadProgress.percent}%`, background: 'var(--accent)' }} /></div></div></div>}
       <div ref={feedRef} className="flex-1 min-h-0 overflow-y-auto px-4 pb-56 lg:pb-6">
         {!loaded ? (

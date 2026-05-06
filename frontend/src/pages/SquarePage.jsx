@@ -128,7 +128,7 @@ export default function SquarePage() {
             {tab !== 'shared' && (
               <div className="square-search-wrap"><SearchInput value={query} onChange={setQuery} placeholder={tab === 'works' ? '搜索提示词/作者...' : '搜索提示词...'} /></div>
             )}
-            <button onClick={handleRefresh} className="inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-bg-hover transition-colors flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>
+            <button onClick={handleRefresh} className="inline-flex h-8 w-8 items-center justify-center rounded-2xl hover:bg-bg-hover transition-colors flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>
               <RefreshCw size={16} />
             </button>
           </div>
@@ -226,10 +226,10 @@ function WorksTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, i
     <>
       {isAdmin && (
         <>
-          <div className="flex items-center gap-1 mb-3 p-0.5 rounded-lg" style={{ background: 'var(--border-color)' }}>
+          <div className="flex items-center gap-1 mb-3 p-0.5 rounded-2xl" style={{ background: 'var(--border-color)' }}>
             {[{ k: 'all', l: '全部' }, { k: 'active', l: '正常' }, { k: 'frozen', l: '冻结' }].map(({ k, l }) => (
               <button key={k} onClick={() => setStatus(k)}
-                className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${status === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`}
+                className={`flex-1 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${status === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`}
                 style={{ color: status === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{l}</button>
             ))}
           </div>
@@ -237,27 +237,27 @@ function WorksTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, i
             <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>共 {total} 张图片</span>
             <div className="flex items-center gap-2">
               {selectMode && (
-                <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
+                <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
                   {checked.size === cards.length ? '取消全选' : '全选'}
                 </button>
               )}
               {selectMode && checked.size > 0 && (
                 <>
-                  <button onClick={() => handleBatchFreeze(false)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-info)] text-white hover:opacity-90">
+                  <button onClick={() => handleBatchFreeze(false)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-medium bg-[var(--color-info)] text-white hover:opacity-90">
                     <Sun size={14} /> 解冻 {checked.size} 项
                   </button>
-                  <button onClick={() => handleBatchFreeze(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-warning)] text-white hover:opacity-90">
+                  <button onClick={() => handleBatchFreeze(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-medium bg-[var(--color-warning)] text-white hover:opacity-90">
                     <Snowflake size={14} /> 冻结 {checked.size} 项
                   </button>
-                  <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-error)] text-white hover:opacity-90">
+                  <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-medium bg-[var(--color-error)] text-white hover:opacity-90">
                     <Trash2 size={14} /> 删除 {checked.size} 项
                   </button>
                 </>
               )}
               {selectMode ? (
-                <button onClick={() => { setSelectMode(false); setChecked(new Set()) }} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
+                <button onClick={() => { setSelectMode(false); setChecked(new Set()) }} className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
               ) : (
-                <button onClick={() => setSelectMode(true)} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>选择</button>
+                <button onClick={() => setSelectMode(true)} className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>选择</button>
               )}
             </div>
           </div>
@@ -293,7 +293,7 @@ function WorksTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, i
         renderOverlay={isAdmin ? (card) => (
           <>
             {card.isFrozen && (
-              <div className="absolute bottom-2 left-2 z-10 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/90 text-white">
+              <div className="absolute bottom-2 left-2 z-10 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-500/90 text-white">
                 <Snowflake size={10} className="inline mr-0.5" />冻结
               </div>
             )}
@@ -302,11 +302,11 @@ function WorksTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, i
                 <p className="text-white text-xs truncate flex-1">{card.prompt || '无提示词'}</p>
                 <div className="flex items-center gap-1 ml-2">
                   <button onClick={(e) => { e.stopPropagation(); handleSingleFreeze(card.id, !card.isFrozen) }}
-                    className="p-1 rounded bg-black/50 text-white hover:bg-blue-500" title={card.isFrozen ? '解冻' : '冻结'}>
+                    className="p-1 rounded-lg bg-black/50 text-white hover:bg-blue-500" title={card.isFrozen ? '解冻' : '冻结'}>
                     {card.isFrozen ? <Sun size={12} /> : <Snowflake size={12} />}
                   </button>
                   <button onClick={(e) => { e.stopPropagation(); handleSingleDelete(card.id) }}
-                    className="p-1 rounded bg-black/50 text-white hover:bg-red-500" title="删除">
+                    className="p-1 rounded-lg bg-black/50 text-white hover:bg-red-500" title="删除">
                     <Trash2 size={12} />
                   </button>
                 </div>
@@ -464,10 +464,10 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
     <>
       {isAdmin && (
         <>
-          <div className="flex items-center gap-1 mb-3 p-0.5 rounded-lg" style={{ background: 'var(--border-color)' }}>
+          <div className="flex items-center gap-1 mb-3 p-0.5 rounded-2xl" style={{ background: 'var(--border-color)' }}>
             {[{ k: 'all', l: '全部' }, { k: 'active', l: '正常' }, { k: 'frozen', l: '冻结' }].map(({ k, l }) => (
               <button key={k} onClick={() => setStatus(k)}
-                className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${status === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`}
+                className={`flex-1 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${status === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`}
                 style={{ color: status === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{l}</button>
             ))}
           </div>
@@ -475,37 +475,37 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
             <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>共 {total} 条提示词</span>
             <div className="flex items-center gap-2">
               {selectMode && (
-                <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
+                <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
                   {checked.size === cards.length ? '取消全选' : '全选'}
                 </button>
               )}
               {selectMode && checked.size > 0 && (
                 <>
-                  <button onClick={() => handleBatchFreeze(false)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-info)] text-white hover:opacity-90">
+                  <button onClick={() => handleBatchFreeze(false)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-medium bg-[var(--color-info)] text-white hover:opacity-90">
                     <Sun size={14} /> 解冻 {checked.size} 条
                   </button>
-                  <button onClick={() => handleBatchFreeze(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-warning)] text-white hover:opacity-90">
+                  <button onClick={() => handleBatchFreeze(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-medium bg-[var(--color-warning)] text-white hover:opacity-90">
                     <Snowflake size={14} /> 冻结 {checked.size} 条
                   </button>
-                  <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-error)] text-white hover:opacity-90">
+                  <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-medium bg-[var(--color-error)] text-white hover:opacity-90">
                     <Trash2 size={14} /> 删除 {checked.size} 条
                   </button>
                 </>
               )}
               {selectMode ? (
-                <button onClick={() => { setSelectMode(false); setChecked(new Set()) }} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
+                <button onClick={() => { setSelectMode(false); setChecked(new Set()) }} className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
               ) : (
                 <>
                   <button onClick={handleCreate}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-white"
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-2xl text-xs font-medium text-white"
                     style={{ background: 'var(--accent)' }}>
                     <Plus size={14} /> 新增
                   </button>
-                  <label className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer hover:bg-bg-hover transition-colors" style={{ color: 'var(--text-secondary)' }}>
+                  <label className="flex items-center gap-1 px-3 py-1.5 rounded-2xl text-xs font-medium cursor-pointer hover:bg-bg-hover transition-colors" style={{ color: 'var(--text-secondary)' }}>
                     <Upload size={14} /> 导入
                     <input type="file" accept=".json,.csv" className="hidden" onChange={handleImport} />
                   </label>
-                  <button onClick={() => setSelectMode(true)} className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>选择</button>
+                  <button onClick={() => setSelectMode(true)} className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>选择</button>
                 </>
               )}
             </div>
@@ -543,18 +543,18 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
         renderOverlay={isAdmin ? (card) => (
           <>
             {card.isFrozen && (
-              <div className="absolute bottom-2 left-2 z-10 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/90 text-white">
+              <div className="absolute bottom-2 left-2 z-10 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-500/90 text-white">
                 <Snowflake size={10} className="inline mr-0.5" />冻结
               </div>
             )}
             {!selectMode ? (
               <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-end gap-1">
                 <button onClick={(e) => { e.stopPropagation(); handleTogglePromptFreeze(card.id, !card.isFrozen) }}
-                  className="p-1 rounded bg-black/50 text-white hover:bg-blue-500" title={card.isFrozen ? '解冻' : '冻结'}>
+                  className="p-1 rounded-lg bg-black/50 text-white hover:bg-blue-500" title={card.isFrozen ? '解冻' : '冻结'}>
                   {card.isFrozen ? <Sun size={12} /> : <Snowflake size={12} />}
                 </button>
                 <button onClick={(e) => { e.stopPropagation(); handleDeletePrompt(card.id) }}
-                  className="p-1 rounded bg-black/50 text-white hover:bg-red-500" title="删除">
+                  className="p-1 rounded-lg bg-black/50 text-white hover:bg-red-500" title="删除">
                   <Trash2 size={12} />
                 </button>
               </div>
@@ -641,9 +641,9 @@ function SharedTab({ refreshTrigger, layoutMode }) {
 
   return (
     <>
-      <div className="flex items-center gap-1 mb-3 p-0.5 rounded-lg max-w-sm" style={{ background: 'var(--bg-active)' }}>
+      <div className="flex items-center gap-1 mb-3 p-0.5 rounded-2xl max-w-sm" style={{ background: 'var(--bg-active)' }}>
         {[{ k: 'all', l: '全部' }, { k: 'my-shares', l: '我的分享', i: Share2 }, { k: 'image', l: '图片', i: Image }, { k: 'prompt', l: '提示词', i: BookOpen }].map(({ k, l, i: Icon }) => (
-          <button key={k} onClick={() => { setSubTab(k); setDetailIdx(null) }} className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors flex items-center justify-center gap-1 ${subTab === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`} style={{ color: subTab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{Icon ? <Icon size={12} /> : null}{l}</button>
+          <button key={k} onClick={() => { setSubTab(k); setDetailIdx(null) }} className={`flex-1 px-3 py-1.5 rounded-full text-xs font-medium transition-colors flex items-center justify-center gap-1 ${subTab === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`} style={{ color: subTab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{Icon ? <Icon size={12} /> : null}{l}</button>
         ))}
       </div>
       <CardGrid cards={cards} layoutMode={subTab === 'prompt' ? 'grid' : layoutMode} showTotal totalUnit={subTab === 'prompt' ? '条' : '项'} loading={loading} paging={paging} refreshing={refreshing} onRefresh={refresh} hideRefresh total={total} page={page} totalPages={totalPages} onPageChange={setPage} paginationScrollTargetId="square-scroll-container" scrollAfterPaging onCardClick={(_, idx) => setDetailIdx(idx)} onFavorite={handleFavorite} onUsePrompt={handleUsePromptWithLike} onUseImage={handleUseImageWithLike} showAuthor showLike={false} emptyText="暂无内容" />

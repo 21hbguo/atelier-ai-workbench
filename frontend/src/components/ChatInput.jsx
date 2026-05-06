@@ -552,7 +552,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
                 </div>
                 <div className="p-2 space-y-1.5 max-h-56 overflow-y-auto">
                   {displayVersions.map((v, i) => (
-                    <div key={i} className="group rounded-xl border p-3 transition-all hover:border-[var(--accent)]" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+                    <div key={i} className="group rounded-2xl border p-3 transition-all hover:border-[var(--accent)]" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
                       <div className="flex items-start gap-2">
                         <span className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold mt-0.5" style={{ background: 'var(--accent)', color: '#fff' }}>{i + 1}</span>
                         <p className="flex-1 text-xs leading-relaxed min-w-0" style={{ color: 'var(--text-primary)', wordBreak: 'break-word' }}>
@@ -582,7 +582,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
                 <div className="flex gap-2">
                   {[1, 2, 3].map(n => (
                     <button key={n} onClick={() => setOptimizeCount(n)}
-                      className="flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors"
+                      className="flex-1 py-1.5 rounded-2xl text-xs font-medium border transition-colors"
                       style={{
                         background: optimizeCount === n ? 'var(--accent)' : 'transparent',
                         borderColor: optimizeCount === n ? 'var(--accent)' : 'var(--border-color)',
@@ -596,8 +596,8 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
                 <span className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>{optimizeCost * optimizeCount}</span>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => setShowOptimizeModal(false)} className="flex-1 py-2 rounded-lg text-xs font-medium border transition-colors" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>取消</button>
-                <button onClick={handleConfirmOptimize} className="flex-1 py-2 rounded-lg text-xs font-medium text-white transition-colors" style={{ background: 'var(--accent)' }}>确认优化</button>
+                <button onClick={() => setShowOptimizeModal(false)} className="flex-1 py-2 rounded-2xl text-xs font-medium border transition-colors" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>取消</button>
+                <button onClick={handleConfirmOptimize} className="flex-1 py-2 rounded-2xl text-xs font-medium text-white transition-colors" style={{ background: 'var(--accent)' }}>确认优化</button>
               </div>
             </div>
           </div>
@@ -714,8 +714,8 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
               <div className="min-w-0 flex items-center justify-end gap-1 flex-1">
                 {loading && <span className="inline-flex items-center gap-1 text-[10px] flex-shrink-0" style={{ color: 'var(--accent)' }}><Loader2 size={11} className="animate-spin" /><span>{images.length > 0 ? '上传并提交中' : '提交中'}</span></span>}
                 {prompt.length > 0 && <span className="text-[10px] tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{prompt.length}</span>}
-                <button onClick={() => handleSend(true)} disabled={!canSend || loading} title={`批量生成 ${batchCount} 张`} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white disabled:opacity-40 flex-shrink-0" style={{ background: canSend && !loading ? 'var(--accent)' : 'var(--border-color)' }}>{loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}<span className="text-xs font-medium leading-none">×{batchCount}</span></button>
-                <button onClick={() => handleSend(false)} disabled={!canSend || loading} title="生成 1 张" className="px-2.5 py-1.5 rounded-lg transition-all duration-150 disabled:opacity-40 flex-shrink-0" style={{ background: canSend && !loading ? 'var(--accent)' : 'var(--border-color)', color: '#fff' }}>{loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}</button>
+                <button onClick={() => handleSend(true)} disabled={!canSend || loading} title={`批量生成 ${batchCount} 张`} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-white disabled:opacity-40 flex-shrink-0" style={{ background: canSend && !loading ? 'var(--accent)' : 'var(--border-color)' }}>{loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}<span className="text-xs font-medium leading-none">×{batchCount}</span></button>
+                <button onClick={() => handleSend(false)} disabled={!canSend || loading} title="生成 1 张" className="px-2.5 py-1.5 rounded-2xl transition-all duration-150 disabled:opacity-40 flex-shrink-0" style={{ background: canSend && !loading ? 'var(--accent)' : 'var(--border-color)', color: '#fff' }}>{loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}</button>
               </div>
             </div>
           </div>

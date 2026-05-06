@@ -14,21 +14,21 @@ export default function AdminHostingTab({
     <div>
       {hostingStats && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <div className="px-3 py-2 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="px-3 py-2 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
             <div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{hostingStats.total_count}</div>
             <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>全部图片</div>
           </div>
-          <div className="px-3 py-2 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="px-3 py-2 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
             <div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{hostingStats.total_size_fmt}</div>
             <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>本地文件大小</div>
           </div>
           {hostingStats.type_stats && Object.entries(hostingStats.type_stats).map(([k, v]) => (
-            <div key={k} className="px-3 py-2 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+            <div key={k} className="px-3 py-2 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
               <div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{v.count}</div>
               <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>{TYPE_LABELS[k] || k}</div>
             </div>
           ))}
-          <button onClick={handleCleanDuplicates} className="px-3 py-2 rounded-xl border hover:bg-bg-hover transition-colors" style={{ borderColor: 'var(--border-color)' }}>
+          <button onClick={handleCleanDuplicates} className="px-3 py-2 rounded-2xl border hover:bg-bg-hover transition-colors" style={{ borderColor: 'var(--border-color)' }}>
             <div className="text-sm font-medium" style={{ color: 'var(--accent)' }}>清理重复</div>
             <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>基于URL去重</div>
           </button>
@@ -37,7 +37,7 @@ export default function AdminHostingTab({
       <div className="flex items-center gap-2 mb-4">
         {Object.entries(TYPE_LABELS).map(([k, label]) => (
           <button key={k} onClick={() => { setHostingTypeFilter(k); setHostingPage(1); setHostingChecked(new Set()) }}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+            className="px-3 py-1.5 rounded-2xl text-xs font-medium transition-colors"
             style={{
               background: hostingTypeFilter === k ? 'var(--accent)' : 'var(--bg-primary)',
               color: hostingTypeFilter === k ? 'white' : 'var(--text-secondary)',
@@ -52,21 +52,21 @@ export default function AdminHostingTab({
         <div className="flex items-center gap-2">
           {hostingSelectMode && (
             <button onClick={() => { if (hostingChecked.size === hostingImages.length) setHostingChecked(new Set()); else setHostingChecked(new Set(hostingImages.map(i => i.url))) }}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
+              className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
               {hostingChecked.size === hostingImages.length ? '取消全选' : '全选'}
             </button>
           )}
           {hostingSelectMode && hostingChecked.size > 0 && (
-            <button onClick={handleHostingBatchDelete} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--color-error)] text-white hover:opacity-90">
+            <button onClick={handleHostingBatchDelete} className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-medium bg-[var(--color-error)] text-white hover:opacity-90">
               <Trash2 size={14} /> 删除 {hostingChecked.size} 项
             </button>
           )}
           {hostingSelectMode ? (
             <button onClick={() => { setHostingSelectMode(false); setHostingChecked(new Set()) }}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
+              className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
           ) : (
             <button onClick={() => setHostingSelectMode(true)}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>选择</button>
+              className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>选择</button>
           )}
         </div>
       </div>
@@ -96,7 +96,7 @@ export default function AdminHostingTab({
                 }
                 selectNode={hostingSelectMode ? (
                   <>
-                    <div className={`absolute top-2 left-2 z-20 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${hostingChecked.has(img.url) ? 'bg-accent border-accent' : 'bg-[var(--bg-card)]/80 border-[var(--border-color)]'}`}>
+                    <div className={`absolute top-2 left-2 z-20 w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-colors ${hostingChecked.has(img.url) ? 'bg-accent border-accent' : 'bg-[var(--bg-card)]/80 border-[var(--border-color)]'}`}>
                       {hostingChecked.has(img.url) && <Check size={12} className="text-white" />}
                     </div>
                     {hostingChecked.has(img.url) && <div className="absolute inset-0 bg-accent/10 pointer-events-none z-10" />}

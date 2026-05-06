@@ -17,7 +17,7 @@ export default function AdminBannedTab({
           </span>
           <SearchInput value={bannedWordsQuery} onChange={setBannedWordsQuery} placeholder="搜索违禁词..." />
         </div>
-        <button onClick={() => setShowBatchImport(true)} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-accent text-white hover:opacity-90">
+        <button onClick={() => setShowBatchImport(true)} className="px-3 py-1.5 rounded-2xl text-xs font-medium bg-accent text-white hover:opacity-90">
           批量导入
         </button>
       </div>
@@ -28,7 +28,7 @@ export default function AdminBannedTab({
           onChange={e => setNewBannedWord(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleAddBannedWord()}
           placeholder="输入新违禁词..."
-          className="flex-1 px-3 py-2 rounded-lg text-sm border"
+          className="flex-1 px-3 py-2 rounded-2xl text-sm border"
           style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
           maxLength={50}
         />
@@ -36,7 +36,7 @@ export default function AdminBannedTab({
         <button
           onClick={handleAddBannedWord}
           disabled={!newBannedWord.trim()}
-          className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-4 py-2 rounded-2xl text-sm font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           添加
         </button>
@@ -49,9 +49,9 @@ export default function AdminBannedTab({
         <>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
             {bannedWords.map(item => (
-              <div key={item.id} className="flex items-center justify-between px-3 py-2 rounded-lg border hover:bg-bg-hover" style={{ borderColor: 'var(--border-color)' }}>
+              <div key={item.id} className="flex items-center justify-between px-3 py-2 rounded-2xl border hover:bg-bg-hover" style={{ borderColor: 'var(--border-color)' }}>
                 <span className="text-sm truncate" title={item.word} style={{ color: 'var(--text-primary)' }}>{item.word}</span>
-                <button onClick={() => handleDeleteBannedWord(item.id, item.word)} className="p-1 rounded hover:bg-[var(--color-error)]/10 text-[var(--color-error)]" title="删除">
+                <button onClick={() => handleDeleteBannedWord(item.id, item.word)} className="p-1 rounded-lg hover:bg-[var(--color-error)]/10 text-[var(--color-error)]" title="删除">
                   <Trash2 size={12} />
                 </button>
               </div>

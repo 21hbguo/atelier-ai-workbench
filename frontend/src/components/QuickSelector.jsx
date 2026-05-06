@@ -36,7 +36,7 @@ export default function QuickSelector({ title, options, selected, onSelect, onCl
     >
       <div className="flex items-center justify-between px-4 py-2.5 border-b flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
         <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</span>
-        <button onClick={onClose} className="p-1 rounded-lg hover:bg-bg-hover transition-colors" style={{ color: 'var(--text-secondary)' }}>
+        <button onClick={onClose} className="p-1 rounded-2xl hover:bg-bg-hover transition-colors" style={{ color: 'var(--text-secondary)' }}>
           <X size={16} />
         </button>
       </div>
@@ -51,7 +51,7 @@ export default function QuickSelector({ title, options, selected, onSelect, onCl
                   <button
                     key={opt.label}
                     onClick={() => handleSelect(opt.label)}
-                    className="relative flex flex-col items-center gap-1 p-2.5 rounded-xl border transition-all duration-150 hover:scale-[1.03] active:scale-[0.97]"
+                    className="relative flex flex-col items-center gap-1 p-2.5 rounded-2xl border transition-all duration-150 hover:scale-[1.03] active:scale-[0.97]"
                     style={{
                       background: isSelected ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'var(--bg-card)',
                       borderColor: isSelected ? 'var(--accent)' : 'var(--border-color)',
@@ -59,7 +59,7 @@ export default function QuickSelector({ title, options, selected, onSelect, onCl
                     }}
                   >
                     {opt.gradient && (
-                      <div className="w-full h-5 rounded-lg" style={{ background: opt.gradient }} />
+                      <div className="w-full h-5 rounded-2xl" style={{ background: opt.gradient }} />
                     )}
                     <span className="text-sm font-medium leading-tight text-center" style={{ color: isSelected ? 'var(--accent)' : 'var(--text-primary)' }}>
                       {opt.label}
