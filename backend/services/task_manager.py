@@ -276,7 +276,7 @@ class TaskManager:
             cls._save_to_db(task_id, task)
         else:
             changed_fields = []
-            for f in ("status", "progress", "error", "started_at", "completed_at", "params", "external_result", "result_urls"):
+            for f in ("status", "progress", "error", "started_at", "completed_at", "params", "external_result", "result_urls", "points_cost", "points_balance_after"):
                 if f in kwargs and task.get(f) != prev.get(f):
                     changed_fields.append(f)
             if changed_fields:

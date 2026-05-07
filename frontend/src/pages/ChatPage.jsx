@@ -520,6 +520,15 @@ export default function ChatPage() {
       window.dispatchEvent(new Event('points-updated'))
     }).catch(() => {})
   }, [])
+  const consumeLocalPointsOnce = useCallback((item, submissionId, taskId, modelCost, params) => {
+    if (item?.points_consumed) return
+    setPoints(p => Math.max(0, p - modelCost))
+    const u = readUser()
+    if (u) { u.points = Math.max(0, (u.points ?? 0) - modelCost); localStorage.setItem('user', JSON.stringify(u)) }
+    window.dispatchEvent(new Event('points-updated'))
+    finalizeSubmissionQueueItem(submissionId, current => current ? { ...current, real_task_id: taskId, points_consumed: true, params: params || current.params } : null)
+    updateTask(taskId, { _points_consumed: true })
+  }, [finalizeSubmissionQueueItem, updateTask])
   const finalizeSubmissionQueueItem = useCallback((clientRequestId, updater) => {
     if (!clientRequestId) return
     syncPendingSubmissions(prev => prev.flatMap(item => {
@@ -707,19 +716,14 @@ export default function ChatPage() {
     try {
       const data = await submitGenerationWithRecovery({ hasImages, prompt, imageUrls, baseParams, realTaskId, submissionId, shareToSquare: !!item.shareToSquare, localImageUrls })
       const modelCost = baseParams?._points_cost || requestCost
-      if (!item.points_consumed) {
-        setPoints(p => Math.max(0, p - modelCost))
-        const u = readUser()
-        if (u) { u.points = Math.max(0, (u.points ?? 0) - modelCost); localStorage.setItem('user', JSON.stringify(u)) }
-        window.dispatchEvent(new Event('points-updated'))
-      }
       const finalTaskId = data.task_id || realTaskId
+      consumeLocalPointsOnce(item, submissionId, finalTaskId, modelCost, requestParams)
       setTasks(prev => {
         const next = prev.map(task => task.task_id === realTaskId || task.task_id === item.temp_task_id ? { ...task, task_id: finalTaskId, status: data.status || 'processing', params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: data.status !== 'completed', _points_consumed: true } : task)
         saveCachedActiveTasks(next)
         return next
       })
-      if (!item.points_consumed) finalizeSubmissionQueueItem(submissionId, current => current ? { ...current, real_task_id: finalTaskId, points_consumed: true, status: data.status || 'processing' } : null)
+      finalizeSubmissionQueueItem(submissionId, current => current ? { ...current, real_task_id: finalTaskId, points_consumed: !!(current.points_consumed || item.points_consumed), status: data.status || 'processing', params: requestParams } : null)
       syncPendingSubmissions(prev => prev.filter(queueItem => queueItem.client_request_id !== submissionId))
       if (data.status === 'completed') {
         updateTask(finalTaskId, { status: 'completed', result_urls: data.result_urls || [], params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: false })
@@ -758,11 +762,11 @@ export default function ChatPage() {
         } catch (se) {
           const sm = (se?.message || '').toLowerCase()
           if (sm.includes('404') || sm.includes('任务不存在') || sm.includes('not found')) {
-            finalizeSubmissionQueueItem(submissionId, current => current ? { ...current, real_task_id: realTaskId, status: 'processing', started_at: startedAt } : null)
+            finalizeSubmissionQueueItem(submissionId, current => current ? { ...current, real_task_id: realTaskId, status: 'processing', started_at: startedAt, params: requestParams, points_consumed: !!(current.points_consumed || item.points_consumed) } : null)
             submissionProcessingRef.current.delete(submissionId)
             setTimeout(() => {
               const latest = pendingSubmissions.find(queueItem => queueItem.client_request_id === submissionId)
-              void processSubmission(latest || { ...item, real_task_id: realTaskId, started_at: startedAt })
+              void processSubmission(latest || { ...item, real_task_id: realTaskId, started_at: startedAt, params: requestParams, points_consumed: item.points_consumed })
             }, 1500)
             return
           }
@@ -771,12 +775,13 @@ export default function ChatPage() {
         pollTask(realTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages, submissionId, confirmDeadlineTs)
       } else {
         if (shouldRetryNetworkError(msg)) {
-          finalizeSubmissionQueueItem(submissionId, current => current ? { ...current, real_task_id: realTaskId, status: 'processing', started_at: startedAt, params: requestParams } : null)
+          consumeLocalPointsOnce(item, submissionId, realTaskId, modelCost, requestParams)
+          finalizeSubmissionQueueItem(submissionId, current => current ? { ...current, real_task_id: realTaskId, status: 'processing', started_at: startedAt, params: requestParams, points_consumed: !!(current.points_consumed || item.points_consumed) } : null)
           updateTask(realTaskId, { status: 'processing', error: '提交结果确认中', params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: true })
           submissionProcessingRef.current.delete(submissionId)
           window.setTimeout(() => {
             const latest = pendingSubmissions.find(queueItem => queueItem.client_request_id === submissionId)
-            void processSubmission(latest || { ...item, real_task_id: realTaskId, started_at: startedAt, params: requestParams })
+            void processSubmission(latest || { ...item, real_task_id: realTaskId, started_at: startedAt, params: requestParams, points_consumed: true })
           }, 2000)
           return
         }
@@ -784,7 +789,7 @@ export default function ChatPage() {
       }
     }
     submissionProcessingRef.current.delete(submissionId)
-  }, [finalizeSubmissionQueueItem, getTaskStatusWithRecovery, markSubmissionFailed, pendingSubmissions, pollTask, refreshPointsOnFailed, requestCost, saveCachedActiveTasks, submitGenerationWithRecovery, syncPendingSubmissions, updateTask, uploadSubmissionImage])
+  }, [consumeLocalPointsOnce, finalizeSubmissionQueueItem, getTaskStatusWithRecovery, markSubmissionFailed, pendingSubmissions, pollTask, refreshPointsOnFailed, requestCost, saveCachedActiveTasks, submitGenerationWithRecovery, syncPendingSubmissions, updateTask, uploadSubmissionImage])
 
   const handleSubmit = useCallback(async ({ prompt, images, params, shareToSquare, rollCount = 1, clearInput }) => {
     const batchCount = Math.min(5, Math.max(1, Number(rollCount) || 1))

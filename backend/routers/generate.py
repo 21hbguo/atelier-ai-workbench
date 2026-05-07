@@ -83,6 +83,55 @@ def _reserve_generation_slot(task_id: str, task_type: str, task_params: dict, us
             raise HTTPException(status_code=402, detail=f"积分不足，需要 {cost} 积分")
         TaskManager.create_task(task_id, task_type, task_params, user_id=user_id, points_cost=cost, points_balance_after=points_balance_after, conn=conn)
         return points_balance_after
+def _consume_generation_slot_for_existing_task(task_id: str, user_id: int, cost: int, consume_request_key: str):
+    limit = get_limit_config()["generate_concurrent_limit_per_user"]
+    with get_db() as conn:
+        user = conn.execute("SELECT id,is_admin FROM users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
+        if not user:
+            raise HTTPException(status_code=401, detail="用户不存在")
+        active_all = conn.execute("SELECT COUNT(*) AS cnt FROM tasks WHERE LOWER(status) IN ('pending','queued','processing','running','generating') AND completed_at IS NULL AND COALESCE(updated_at,created_at,NOW()) >= NOW() - interval '30 minute'").fetchone()["cnt"]
+        if active_all >= GLOBAL_GENERATE_ACTIVE_LIMIT:
+            raise HTTPException(status_code=429, detail=f"当前全站生成任务已满，请稍后再试（最多同时 {GLOBAL_GENERATE_ACTIVE_LIMIT} 张）")
+        count = conn.execute("SELECT COUNT(*) AS cnt FROM tasks WHERE user_id = %s AND LOWER(status) IN ('pending','queued','processing','running','generating') AND completed_at IS NULL AND COALESCE(updated_at,created_at,NOW()) >= NOW() - interval '30 minute'", (user_id,)).fetchone()["cnt"]
+        if count >= limit:
+            raise HTTPException(status_code=429, detail="生成请求过于频繁，请稍后再试")
+        try:
+            points_balance_after = PointsService.consume(user_id, cost, "生成重试消耗", request_key=consume_request_key, conn=conn)
+        except ValueError:
+            raise HTTPException(status_code=402, detail=f"积分不足，需要 {cost} 积分")
+        return {"points_balance_after": points_balance_after, "is_admin": bool(user["is_admin"])}
+def _build_task_meta(task_id: str, task_type: str, params: dict):
+    meta = {"prompt": params.get("prompt") or "", "size": params.get("size"), "type": task_type, "task_id": task_id, "model_id": params.get("model_id"), "share_to_square": bool(params.get("share_to_square")), "client_request_id": params.get("client_request_id")}
+    if task_type == "text_image":
+        meta["input_urls"] = params.get("image_urls") or []
+    return meta
+def _build_submit_payload(task_type: str, params: dict, cost: int, refund_request_key: str = None):
+    payload = {"prompt": params.get("prompt") or "", "size": params.get("size") or "auto", "quality": params.get("quality"), "model_id": params.get("model_id"), "share_to_square": bool(params.get("share_to_square")), "client_request_id": params.get("client_request_id"), "_cost": cost}
+    if task_type == "text_image":
+        payload["image_urls"] = params.get("image_urls") or []
+    if refund_request_key:
+        payload["_refund_request_key"] = refund_request_key
+    return payload
+def retry_generation_task(task_id: str):
+    task = TaskManager.get_task(task_id)
+    if not task or task.get("status") != "failed":
+        return None
+    params = dict(task.get("params") or {})
+    retry_count = int(params.get("_retry_count") or 0) + 1
+    cost = int(task.get("points_cost") or _get_model_cost(params.get("model_id")))
+    consume_request_key = f"consume:{task_id}:retry:{retry_count}"
+    refund_request_key = f"refund:{task_id}:retry:{retry_count}"
+    slot = _consume_generation_slot_for_existing_task(task_id, task["user_id"], cost, consume_request_key)
+    clean_params = {k: v for k, v in params.items() if k not in {"external_task_id", "provider_id", "provider_trace", "cost_unit", "cost_amount", "_refund_request_key", "_consume_request_key"}}
+    clean_params["_retry_count"] = retry_count
+    clean_params["_consume_request_key"] = consume_request_key
+    clean_params["_refund_request_key"] = refund_request_key
+    TaskManager.retry_task(task_id)
+    TaskManager.update_task(task_id, status="processing", progress=10, error=None, result_urls=[], external_result=None, params=clean_params, points_cost=cost, points_balance_after=slot["points_balance_after"])
+    submit_payload = _build_submit_payload(task.get("type") or "text", clean_params, cost, refund_request_key=refund_request_key)
+    meta = _build_task_meta(task_id, task.get("type") or "text", clean_params)
+    asyncio.create_task(_run_generation(task_id, task.get("type") or "text", submit_payload, meta, task["user_id"], slot["is_admin"]))
+    return {"task_id": task_id, "status": "processing", "message": "任务已重新提交"}
 
 def _share_to_square(user_id: int, file_path: str, prompt: str, size: str, task_type: str, input_urls: list = None):
     filename = os.path.basename(str(file_path or ""))
@@ -150,7 +199,7 @@ async def _run_generation(task_id: str, task_type: str, submit_payload: dict, me
         StatsService.record_failed()
         record_request(user_id, "failed")
         try:
-            PointsService.refund(user_id, submit_payload.get("_cost") or PointsService.cost_per_generation(), "生成失败退还", request_key=f"refund:{task_id}")
+            PointsService.refund(user_id, submit_payload.get("_cost") or PointsService.cost_per_generation(), "生成失败退还", request_key=submit_payload.get("_refund_request_key") or f"refund:{task_id}")
         except Exception:
             logger.exception(f"[submit.refund.fail] type={task_type} task={task_id} user={user_id}")
 

@@ -3,6 +3,7 @@ import time
 from fastapi import APIRouter, HTTPException, Depends, Query
 
 from backend.services.task_manager import TaskManager
+from backend.routers.generate import retry_generation_task
 from backend.models.schemas import TaskStatusResponse
 from backend.auth import get_current_user
 from backend.database import get_db
@@ -75,6 +76,7 @@ async def get_active_task_summary(user=Depends(get_current_user)):
 
 @router.get("/tasks/by-client/{client_request_id}", response_model=TaskStatusResponse)
 async def get_task_status_by_client_request_id(client_request_id: str, user=Depends(get_current_user)):
+    TaskManager.fail_stale_active_tasks(ACTIVE_TASK_TIMEOUT_MINUTES)
     task = TaskManager.get_task_by_client_request_id(user["user_id"], client_request_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
@@ -83,6 +85,7 @@ async def get_task_status_by_client_request_id(client_request_id: str, user=Depe
 
 @router.get("/tasks/{task_id}", response_model=TaskStatusResponse)
 async def get_task_status(task_id: str, user=Depends(get_current_user)):
+    TaskManager.fail_stale_active_tasks(ACTIVE_TASK_TIMEOUT_MINUTES)
     task = TaskManager.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
@@ -99,10 +102,10 @@ async def retry_task(task_id: str, user=Depends(get_current_user)):
     if not user.get("is_admin") and task.get("user_id") != user["user_id"]:
         raise HTTPException(status_code=403, detail="无权操作此任务")
 
-    task = TaskManager.retry_task(task_id)
+    task = retry_generation_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在或状态不允许重试")
-    return {"task_id": task_id, "status": "retried", "message": "任务已重置为待处理状态"}
+    return task
 
 
 @router.delete("/tasks/{task_id}")
