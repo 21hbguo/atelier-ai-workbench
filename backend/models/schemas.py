@@ -36,6 +36,12 @@ class TaskStatusResponse(BaseModel):
     progress: Optional[int] = None
     result_urls: Optional[List[str]] = None
     error: Optional[str] = None
+    params: Optional[dict] = None
+    prompt: Optional[str] = None
+    type: Optional[str] = None
+    created_at: Optional[str] = None
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
 
 class UploadResponse(BaseModel):
     url: str

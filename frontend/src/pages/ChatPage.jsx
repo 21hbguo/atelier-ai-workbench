@@ -87,6 +87,8 @@ function normalizeUploadName(name, type, url = '') {
   const base = (raw.replace(/\.[^.]+$/, '') || 'reference').replace(/[^\w.-]/g, '_').replace(/^\.+/, '') || 'reference'
   return `${base}.${getUploadExt(type, raw)}`
 }
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)) }
+function shouldRetryNetworkError(message = '') { const s = String(message || '').toLowerCase(); return !!s && ['timeout', 'network error', 'fetch', 'socket', 'econn', 'etimedout', 'abort', 'connection', 'not found', '502', '503', '504'].some(k => s.includes(k)) }
 function formatSubmitSettings(params, shareToSquare, imageCount) {
   const modelLabel = params?._model_label || params?.model_id || '默认模型'
   const lines = [`模型：${modelLabel}`]
@@ -530,8 +532,42 @@ export default function ChatPage() {
     finalizeSubmissionQueueItem(item.client_request_id, { ...item, status: 'failed', error: message || '提交失败', real_task_id: item.real_task_id || null, completed_at: formatLocalTime(new Date()) })
     updateTask(item.real_task_id || item.temp_task_id, { status: 'failed', error: message || '提交失败', _active: false, _local_submission: false })
   }, [finalizeSubmissionQueueItem, updateTask])
+  const getTaskStatusWithRecovery = useCallback(async (taskId, clientRequestId) => {
+    try { return (await taskAPI.get(taskId)).data } catch (e) { const msg = e?.message || ''; if (clientRequestId && (msg.includes('404') || msg.includes('任务不存在') || msg.toLowerCase().includes('not found'))) return (await taskAPI.getByClientRequestId(clientRequestId)).data; throw e }
+  }, [])
+  const submitGenerationWithRecovery = useCallback(async ({ hasImages, prompt, imageUrls, baseParams, realTaskId, submissionId, shareToSquare, localImageUrls }) => {
+    let lastError = null
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const req = hasImages ? generateAPI.submitTextImage({ prompt, image_urls: imageUrls, size: baseParams?.size || 'auto', quality: baseParams?.quality || undefined, model_id: baseParams?.model_id, task_id: realTaskId, client_request_id: submissionId, share_to_square: !!shareToSquare, local_image_urls: localImageUrls }) : generateAPI.submitText({ prompt, size: baseParams?.size || 'auto', quality: baseParams?.quality || undefined, model_id: baseParams?.model_id, task_id: realTaskId, client_request_id: submissionId, share_to_square: !!shareToSquare })
+        return (await req).data
+      } catch (e) {
+        lastError = e
+        try { return await getTaskStatusWithRecovery(realTaskId, submissionId) } catch (reconcileError) { lastError = reconcileError }
+        if (!shouldRetryNetworkError(lastError?.message || lastError) || attempt >= 2) break
+        await sleep(1200 * (attempt + 1))
+      }
+    }
+    throw lastError || new Error('提交失败')
+  }, [getTaskStatusWithRecovery])
+  const uploadSubmissionImage = useCallback(async (img) => {
+    let lastError = null
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (img.file) { const type = img.file.type || img.type || 'image/png'; return await uploadAPI.upload(new File([img.file], normalizeUploadName(img.name || img.file.name, type), { type })) }
+        if (img.url && img.url.startsWith('http')) return { data: { url: img.url, storage_name: img.url } }
+        if (img.url) { const r = await fetch(img.url); if (!r.ok) throw new Error(`fetch ${r.status}`); const blob = await r.blob(); const type = blob.type || r.headers.get('content-type') || img.type || 'image/png'; return await uploadAPI.upload(new File([blob], normalizeUploadName(img.name, type, img.url), { type })) }
+        return { data: { url: '', storage_name: '' } }
+      } catch (e) {
+        lastError = e
+        if (!shouldRetryNetworkError(e?.message || e) || attempt >= 2) break
+        await sleep(800 * (attempt + 1))
+      }
+    }
+    throw lastError || new Error('图片上传失败')
+  }, [])
 
-  const pollTask = useCallback(async (taskId, startTime, shareToSquare, prompt, params, hasImages) => {
+  const pollTask = useCallback(async (taskId, startTime, shareToSquare, prompt, params, hasImages, clientRequestId) => {
     const maxWaitMs = 15 * 60 * 1000
     const getDelay = (elapsed) => {
       if (elapsed >= 50_000 && elapsed < 120_000) return 6000
@@ -545,7 +581,7 @@ export default function ChatPage() {
       const elapsed = Date.now() - startTime
       await new Promise(r => setTimeout(r, getDelay(elapsed)))
       try {
-        const { data: st } = await taskAPI.get(taskId)
+        const st = await getTaskStatusWithRecovery(taskId, clientRequestId)
         missingCount = 0
         errorCount = 0
         if (st.status === 'completed') {
@@ -580,7 +616,7 @@ export default function ChatPage() {
         const msg = (e?.message || '').toLowerCase()
         if (msg.includes('404') || msg.includes('任务不存在') || msg.includes('not found')) {
           missingCount += 1
-          if (missingCount >= 3) {
+          if (missingCount >= 8) {
             updateTask(taskId, { status: 'failed', error: '后端未找到任务，提交可能失败', _active: false })
             refreshPointsOnFailed()
             syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
@@ -588,7 +624,7 @@ export default function ChatPage() {
           }
         } else {
           errorCount += 1
-          if (errorCount >= 5) {
+          if (errorCount >= 10 && !shouldRetryNetworkError(msg)) {
             updateTask(taskId, { status: 'failed', error: '任务状态查询失败，请重试', _active: false })
             syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
             return
@@ -599,7 +635,7 @@ export default function ChatPage() {
     updateTask(taskId, { status: 'failed', error: '生成超时（已等待15分钟）', _active: false })
     refreshPointsOnFailed()
     syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
-  }, [updateTask, shareImageToSquare, refreshPointsOnFailed, syncPendingSubmissions])
+  }, [getTaskStatusWithRecovery, updateTask, shareImageToSquare, refreshPointsOnFailed, syncPendingSubmissions])
 
   const processSubmission = useCallback(async (item) => {
     const submissionId = item?.client_request_id
@@ -623,27 +659,24 @@ export default function ChatPage() {
       updateTask(realTaskId, { status: 'processing', started_at: startedAt, _active: true })
     }
     const images = buildSubmissionImages(item.images)
-    let imageUrls = []
-    let localImageUrls = []
-    let hasImages = false
+    let imageUrls = Array.isArray(baseParams.image_urls) ? baseParams.image_urls.filter(Boolean) : []
+    let localImageUrls = Array.isArray(baseParams.local_image_urls) ? baseParams.local_image_urls.filter(Boolean) : []
+    let hasImages = imageUrls.length > 0
     try {
-      const uploaded = images.length > 0 ? await Promise.all(images.map(async img => {
-        if (img.file) { const type = img.file.type || img.type || 'image/png'; return uploadAPI.upload(new File([img.file], normalizeUploadName(img.name || img.file.name, type), { type })) }
-        if (img.url && img.url.startsWith('http')) return Promise.resolve({ data: { url: img.url, storage_name: img.url } })
-        if (img.url) { const r = await fetch(img.url); if (!r.ok) throw new Error(`fetch ${r.status}`); const blob = await r.blob(); const type = blob.type || r.headers.get('content-type') || img.type || 'image/png'; return uploadAPI.upload(new File([blob], normalizeUploadName(img.name, type, img.url), { type })) }
-        return { data: { url: '', storage_name: '' } }
-      })) : []
-      imageUrls = uploaded.map(r => r.data.url).filter(Boolean)
-      localImageUrls = uploaded.map(r => r.data.storage_name || r.data.url).filter(Boolean)
-      hasImages = imageUrls.length > 0
+      if (!hasImages && images.length > 0) {
+        const uploaded = await Promise.all(images.map(uploadSubmissionImage))
+        imageUrls = uploaded.map(r => r.data.url).filter(Boolean)
+        localImageUrls = uploaded.map(r => r.data.storage_name || r.data.url).filter(Boolean)
+        hasImages = imageUrls.length > 0
+      }
     } catch (e) {
       markSubmissionFailed({ ...item, real_task_id: realTaskId }, '图片上传失败: ' + (e?.message || '未知错误'))
       submissionProcessingRef.current.delete(submissionId)
       return
     }
-    const requestParams = { ...baseParams, image_urls: imageUrls, local_image_urls: localImageUrls }
+    const requestParams = { ...baseParams, image_urls: imageUrls, local_image_urls: localImageUrls, client_request_id: submissionId }
     try {
-      const data = hasImages ? (await generateAPI.submitTextImage({ prompt, image_urls: imageUrls, size: baseParams?.size || 'auto', quality: baseParams?.quality || undefined, model_id: baseParams?.model_id, task_id: realTaskId, client_request_id: submissionId, share_to_square: !!item.shareToSquare, local_image_urls: localImageUrls })).data : (await generateAPI.submitText({ prompt, size: baseParams?.size || 'auto', quality: baseParams?.quality || undefined, model_id: baseParams?.model_id, task_id: realTaskId, client_request_id: submissionId, share_to_square: !!item.shareToSquare })).data
+      const data = await submitGenerationWithRecovery({ hasImages, prompt, imageUrls, baseParams, realTaskId, submissionId, shareToSquare: !!item.shareToSquare, localImageUrls })
       const modelCost = baseParams?._points_cost || requestCost
       if (!item.points_consumed) {
         setPoints(p => Math.max(0, p - modelCost))
@@ -667,7 +700,7 @@ export default function ChatPage() {
         }
         if (!!item.shareToSquare && data.result_urls?.length) shareImageToSquare(data.result_urls[0].split('/').pop(), prompt, requestParams, hasImages, localImageUrls)
       } else {
-        pollTask(finalTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages)
+        pollTask(finalTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages, submissionId)
       }
     } catch (e) {
       const msg = e?.message || ''
@@ -681,7 +714,7 @@ export default function ChatPage() {
       const isTimeout = msg.includes('timeout') || msg.includes('超时')
       if (isTimeout) {
         try {
-          const { data: st } = await taskAPI.get(realTaskId)
+          const st = await getTaskStatusWithRecovery(realTaskId, submissionId)
           syncPendingSubmissions(prev => prev.filter(queueItem => queueItem.client_request_id !== submissionId))
           if (st.status === 'completed') {
             updateTask(realTaskId, { ...st, params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: false, _points_consumed: true })
@@ -691,7 +724,7 @@ export default function ChatPage() {
             refreshPointsOnFailed()
           } else {
             updateTask(realTaskId, { ...st, params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: true, _points_consumed: true })
-            pollTask(realTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages)
+            pollTask(realTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages, submissionId)
           }
           submissionProcessingRef.current.delete(submissionId)
           return
@@ -708,13 +741,13 @@ export default function ChatPage() {
           }
         }
         syncPendingSubmissions(prev => prev.filter(queueItem => queueItem.client_request_id !== submissionId))
-        pollTask(realTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages)
+        pollTask(realTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages, submissionId)
       } else {
         markSubmissionFailed({ ...item, real_task_id: realTaskId }, '提交失败: ' + msg)
       }
     }
     submissionProcessingRef.current.delete(submissionId)
-  }, [finalizeSubmissionQueueItem, markSubmissionFailed, pendingSubmissions, pollTask, refreshPointsOnFailed, requestCost, saveCachedActiveTasks, shareImageToSquare, syncPendingSubmissions, updateTask])
+  }, [finalizeSubmissionQueueItem, getTaskStatusWithRecovery, markSubmissionFailed, pendingSubmissions, pollTask, refreshPointsOnFailed, requestCost, saveCachedActiveTasks, shareImageToSquare, submitGenerationWithRecovery, syncPendingSubmissions, updateTask, uploadSubmissionImage])
 
   const handleSubmit = useCallback(async ({ prompt, images, params, shareToSquare, rollCount = 1, clearInput }) => {
     const batchCount = Math.min(5, Math.max(1, Number(rollCount) || 1))
@@ -741,7 +774,14 @@ export default function ChatPage() {
     try {
       const now = formatLocalTime(new Date())
       const baseImages = buildSubmissionImages(images || [])
-      const submissions = Array.from({ length: batchCount }, (_, index) => ({ client_request_id: makeTaskId(), temp_task_id: `pending-${Date.now()}-${index}-${Math.random().toString(16).slice(2, 8)}`, real_task_id: null, prompt, images: baseImages, params: { ...params, prompt, share_to_square: !!shareToSquare }, shareToSquare: !!shareToSquare, type: baseImages.length ? 'text_image' : 'text', status: 'processing', created_at: now, started_at: now, error: null }))
+      let sharedUploadParams = {}
+      if (baseImages.length > 0 && batchCount > 1) {
+        const uploaded = await Promise.all(baseImages.map(uploadSubmissionImage))
+        const image_urls = uploaded.map(r => r.data.url).filter(Boolean)
+        const local_image_urls = uploaded.map(r => r.data.storage_name || r.data.url).filter(Boolean)
+        sharedUploadParams = { image_urls, local_image_urls }
+      }
+      const submissions = Array.from({ length: batchCount }, (_, index) => ({ client_request_id: makeTaskId(), temp_task_id: `pending-${Date.now()}-${index}-${Math.random().toString(16).slice(2, 8)}`, real_task_id: null, prompt, images: baseImages, params: { ...params, ...sharedUploadParams, prompt, share_to_square: !!shareToSquare }, shareToSquare: !!shareToSquare, type: baseImages.length ? 'text_image' : 'text', status: 'processing', created_at: now, started_at: now, error: null }))
       const stagedTasks = submissions.map(buildPendingTaskFromSubmission)
       setTasks(prev => {
         const next = mergeTasksById([...prev, ...stagedTasks])
@@ -757,7 +797,7 @@ export default function ChatPage() {
       dialog.alert('提交失败: ' + (e?.message || '未知错误'))
       return false
     }
-  }, [dialog, points, processSubmission, requestCost, saveCachedActiveTasks, scroll, syncPendingSubmissions])
+  }, [dialog, points, processSubmission, requestCost, saveCachedActiveTasks, scroll, syncPendingSubmissions, uploadSubmissionImage])
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true)

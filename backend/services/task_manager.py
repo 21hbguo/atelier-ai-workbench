@@ -216,6 +216,17 @@ class TaskManager:
             return cls._load_task_from_db(task_id)
         except Exception:
             return None
+    @classmethod
+    def get_task_by_client_request_id(cls, user_id: int, client_request_id: str) -> Optional[Dict[str, Any]]:
+        if not client_request_id or user_id is None:
+            return None
+        with get_db() as conn:
+            row = conn.execute("SELECT * FROM tasks WHERE user_id = %s AND params->>'client_request_id' = %s ORDER BY created_at DESC LIMIT 1", (user_id, client_request_id)).fetchone()
+        if not row:
+            return None
+        task = cls._normalize_task(row)
+        cls._tasks[task["task_id"]] = task
+        return task
 
     @classmethod
     def list_tasks(cls, limit: int = 50, offset: int = 0, user_id: int = None, query: str = None, include_deleted: bool = False) -> List[Dict[str, Any]]:

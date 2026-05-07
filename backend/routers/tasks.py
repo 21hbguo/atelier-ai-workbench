@@ -30,6 +30,9 @@ def _enrich_tasks_with_username(tasks: list) -> list:
         t["username"] = account
         t["account"] = account
     return tasks
+def _to_task_status_response(task: dict) -> TaskStatusResponse:
+    params = task.get("params") or {}
+    return TaskStatusResponse(task_id=task["task_id"], status=task["status"], progress=task.get("progress"), result_urls=task.get("result_urls"), error=task.get("error"), params=params, prompt=params.get("prompt") or task.get("prompt"), type=task.get("type"), created_at=task.get("created_at"), started_at=task.get("started_at"), completed_at=task.get("completed_at"))
 
 
 @router.get("/tasks", response_model=list)
@@ -70,6 +73,13 @@ async def get_active_task_summary(user=Depends(get_current_user)):
         active = conn.execute("SELECT COUNT(*) AS cnt FROM tasks WHERE LOWER(status) IN ('pending','queued','processing','running','generating') AND completed_at IS NULL AND COALESCE(updated_at,created_at,NOW()) >= NOW() - (%s || ' minutes')::interval", (str(ACTIVE_TASK_TIMEOUT_MINUTES),)).fetchone()["cnt"]
     return {"active_count": active, "global_limit": GLOBAL_GENERATE_ACTIVE_LIMIT, "available_slots": max(0, GLOBAL_GENERATE_ACTIVE_LIMIT - active)}
 
+@router.get("/tasks/by-client/{client_request_id}", response_model=TaskStatusResponse)
+async def get_task_status_by_client_request_id(client_request_id: str, user=Depends(get_current_user)):
+    task = TaskManager.get_task_by_client_request_id(user["user_id"], client_request_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return _to_task_status_response(task)
+
 
 @router.get("/tasks/{task_id}", response_model=TaskStatusResponse)
 async def get_task_status(task_id: str, user=Depends(get_current_user)):
@@ -78,14 +88,7 @@ async def get_task_status(task_id: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="任务不存在")
     if not user.get("is_admin") and task.get("user_id") != user["user_id"]:
         raise HTTPException(status_code=403, detail="无权访问此任务")
-
-    return TaskStatusResponse(
-        task_id=task["task_id"],
-        status=task["status"],
-        progress=task.get("progress"),
-        result_urls=task.get("result_urls"),
-        error=task.get("error"),
-    )
+    return _to_task_status_response(task)
 
 
 @router.post("/tasks/{task_id}/retry")
