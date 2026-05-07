@@ -9,6 +9,7 @@ from backend.database import get_db
 logger=logging.getLogger(__name__)
 _task_logs:Dict[int,List[Dict]]={}
 _task_log_events:Dict[int,asyncio.Event]={}
+_running_tasks:set[int]=set()
 SYSTEM_TEMPLATE="""你是一名AI内容安全审核助手。你的任务是根据提示词或作品描述，对广场内容进行风险审核，并给出人工管理建议。
 
 风险等级规则：
@@ -33,7 +34,7 @@ SYSTEM_TEMPLATE="""你是一名AI内容安全审核助手。你的任务是根�
 示例输出：
 [{{"item_id":"1","risk_level":"high","confidence":"high","suggested_action":"freeze","reason_summary":"包含未成年性暗示","reason_detail":"提示词出现未成年人和性化描述组合，存在严重违规风险。","hit_rules":["未成年人","性暗示"]}}]"""
 USER_TEMPLATE="请审核以下 {count} 个项目：\n{items}"
-BATCH_SIZE=1
+BATCH_SIZE=5
 
 class ContentAuditService:
     _client:httpx.AsyncClient|None=None
@@ -99,6 +100,8 @@ class ContentAuditService:
             return {"id":task["id"],"status":task["status"],"item_type":task["item_type"],"source_scope":task["source_scope"],"total_items":task["total_items"],"created_at":str(task["created_at"])}
     @classmethod
     async def run_audit(cls,task_id:int):
+        if task_id in _running_tasks:return
+        _running_tasks.add(task_id)
         try:
             cls._push_log(task_id,"info","开始审核任务")
             with get_db() as conn:
@@ -143,6 +146,17 @@ class ContentAuditService:
             logger.exception("[content_audit] task failed")
             with get_db() as conn:
                 conn.execute("UPDATE content_audit_tasks SET status = 'error', completed_at = NOW() WHERE id = %s",(task_id,))
+        finally:
+            _running_tasks.discard(task_id)
+    @classmethod
+    def resume_processing_tasks(cls):
+        with get_db() as conn:
+            rows=conn.execute("SELECT id FROM content_audit_tasks WHERE status = 'processing' ORDER BY id ASC").fetchall()
+        for row in rows:
+            task_id=int(row["id"])
+            if task_id in _running_tasks:continue
+            try:asyncio.create_task(cls.run_audit(task_id))
+            except RuntimeError:logger.exception("[content_audit] resume create_task failed")
     @classmethod
     async def _audit_batch(cls,items:List[Dict])->List[Dict]:
         llm_cfg=get_llm_config()

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 export default function Pagination({ page, totalPages, onPageChange, scrollTargetId, scrollBeforeChange = true }) {
   const [draft, setDraft] = useState(String(page))
-  if (totalPages <= 1) return null
   useEffect(() => { setDraft(String(page)) }, [page])
+  if (totalPages <= 1) return null
   const scrollParentToTop = el => {
     if (scrollTargetId) {
       const t = document.getElementById(scrollTargetId)

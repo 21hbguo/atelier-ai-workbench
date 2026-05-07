@@ -97,7 +97,7 @@ export default function AdminPage() {
   const [creatingAnnouncement, setCreatingAnnouncement] = useState(false)
   const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', register_enabled: true, image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', recharge_packages: defaultRechargePackages, generate_concurrent_limit_per_user: 10, points_cost_per_generation: 10, points_cost_per_optimize: 10, points_cost_per_image_extend: 2, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, invite_enabled: true, invite_register_reward_points: 20, invite_recharge_rebate_percent: 10, invite_recharge_bonus_percent: 10, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3, github_hosting_enabled: false, github_hosting_repo: '', github_hosting_token: '', github_hosting_branch: 'main', smtp_server: 'smtp.qq.com', smtp_port: 465, smtp_password: '', smtp_sender: '', smtp_sender_name: 'Atelier·AI造梦工坊', sendgrid_api_key: '', sendgrid_sender: '' })
   const [configSaving, setConfigSaving] = useState(false)
-  const [defaultModelId, setDefaultModelId] = useState('image-default')
+  const [defaultModelId, setDefaultModelId] = useState('gpt-image-2')
   const [generationModelsText, setGenerationModelsText] = useState('{}')
   const [generationProvidersText, setGenerationProvidersText] = useState('{}')
   const [evLogs, setEvLogs] = useState([])
@@ -232,9 +232,9 @@ export default function AdminPage() {
       setClsTotal(data?.total || 0)
     } catch (e) { dialog.alert(e.message || '加载失败') }
   }
-  const handleCreateClsTask = async (itemType = 'prompt') => {
+  const handleCreateClsTask = async (itemType = 'prompt', limit = 200) => {
     try {
-      const { data } = await adminAPI.createClassificationTask(itemType)
+      const { data } = await adminAPI.createClassificationTask(itemType, limit)
       fetchClsTasks()
       return data
     } catch (e) { dialog.alert(e.message || '创建失败'); throw e }
@@ -246,9 +246,9 @@ export default function AdminPage() {
       setAuditTotal(data?.total || 0)
     } catch (e) { dialog.alert(e.message || '加载失败') }
   }
-  const handleCreateAuditTask = async (itemType = 'prompt') => {
+  const handleCreateAuditTask = async (itemType = 'prompt', limit = 200) => {
     try {
-      const { data } = await adminAPI.createAuditTask(itemType, 200)
+      const { data } = await adminAPI.createAuditTask(itemType, limit)
       fetchAuditTasks()
       return data
     } catch (e) { dialog.alert(e.message || '创建失败'); throw e }
@@ -317,7 +317,7 @@ export default function AdminPage() {
         llm_timeout_seconds: Number(data.llm_timeout_seconds || 30),
         prompt_optimize_enabled: data.prompt_optimize_enabled !== false,
       })
-      setDefaultModelId(gen.default_model_id || 'image-default')
+      setDefaultModelId(gen.default_model_id || 'gpt-image-2')
       const modelsObj = gen.generation_models || {}
       const providersObj = gen.generation_providers || {}
       setGenModelsObj(modelsObj)
@@ -440,7 +440,7 @@ export default function AdminPage() {
   const handleSaveConfig = async () => {
     const n = ['generate_concurrent_limit_per_user', 'points_cost_per_generation', 'points_cost_per_optimize', 'points_cost_per_image_extend', 'points_checkin_reward', 'points_register_bonus', 'points_migration_amount', 'invite_register_reward_points', 'invite_recharge_rebate_percent', 'invite_recharge_bonus_percent', 'login_rate_limit_per_minute_per_ip', 'register_rate_limit_per_minute_per_ip', 'smtp_port', 'llm_max_tokens', 'llm_timeout_seconds']
     const payload = { ...runtimeConfig }
-    payload.default_model_id = (defaultModelId || '').trim() || 'image-default'
+    payload.default_model_id = (defaultModelId || '').trim() || 'gpt-image-2'
     let recharge_packages = []
     for (const k of n) payload[k] = Number(payload[k])
     if (payload.generate_concurrent_limit_per_user < 1 || payload.points_cost_per_generation < 1 || payload.points_cost_per_optimize < 1 || payload.points_cost_per_image_extend < 1 || payload.login_rate_limit_per_minute_per_ip < 1 || payload.register_rate_limit_per_minute_per_ip < 1 || payload.points_checkin_reward < 0 || payload.points_register_bonus < 0 || payload.points_migration_amount < 0 || payload.invite_register_reward_points < 0 || payload.invite_recharge_rebate_percent < 0 || payload.invite_recharge_bonus_percent < 0) { dialog.alert('限制配置不合法'); return }
@@ -494,7 +494,7 @@ export default function AdminPage() {
     const next = { ...genModelsObj }
     delete next[id]
     setGenModelsObj(next)
-    if (defaultModelId === id) setDefaultModelId(Object.keys(next)[0] || 'image-default')
+    if (defaultModelId === id) setDefaultModelId(Object.keys(next)[0] || 'gpt-image-2')
     syncGenJsonFromForm(next, genProvidersObj)
   }
   const handleModelField = (id, key, value) => {
@@ -1435,7 +1435,7 @@ export default function AdminPage() {
               <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>模型路由配置</h3>
               <div className="mb-4">
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>默认模型ID</label>
-                <input type="text" value={defaultModelId} onChange={e => setDefaultModelId(e.target.value)} placeholder="例如：image-default（必须存在于模型列表）" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                <input type="text" value={defaultModelId} onChange={e => setDefaultModelId(e.target.value)} placeholder="例如：gpt-image-2（必须存在于模型列表）" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
 
               {/* 模型列表 */}

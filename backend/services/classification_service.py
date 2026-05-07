@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 # 任务日志缓冲区：task_id -> list of log entries
 _task_logs: Dict[int, List[Dict]] = {}
 _task_log_events: Dict[int, asyncio.Event] = {}
+_running_tasks: set[int] = set()
 
 SYSTEM_TEMPLATE = """你是一名专业的AI绘画内容分类专家。你的任务是根据作品的提示词内容，将其归类到最合适的分类中。
 
@@ -35,7 +36,7 @@ SYSTEM_TEMPLATE = """你是一名专业的AI绘画内容分类专家。你的任
 
 USER_TEMPLATE = "请对以下 {count} 个项目进行分类：\n{items}"
 
-BATCH_SIZE = 1
+BATCH_SIZE = 5
 
 
 class ClassificationService:
@@ -102,17 +103,20 @@ class ClassificationService:
                 pass
 
     @classmethod
-    def create_task(cls, admin_id: int, item_type: str = "prompt") -> Dict[str, Any]:
+    def create_task(cls, admin_id: int, item_type: str = "prompt", limit: int = 200) -> Dict[str, Any]:
+        limit = max(1, min(int(limit or 200), 500))
         with get_db() as conn:
             if item_type == "image":
                 rows = conn.execute(
-                    "SELECT id, filename, prompt, category FROM square_images WHERE (category IS NULL OR category = '') AND COALESCE(is_frozen, FALSE) = FALSE"
+                    "SELECT id, filename, prompt, category FROM square_images WHERE (category IS NULL OR category = '') AND COALESCE(is_frozen, FALSE) = FALSE ORDER BY created_at DESC,id DESC LIMIT %s",
+                    (limit,),
                 ).fetchall()
                 if not rows:
                     raise ValueError("没有需要分类的作品")
             else:
                 rows = conn.execute(
-                    "SELECT id, name, prompt, category FROM prompts WHERE (category IS NULL OR category = '') AND COALESCE(is_frozen, FALSE) = FALSE"
+                    "SELECT id, name, prompt, category FROM prompts WHERE (category IS NULL OR category = '') AND COALESCE(is_frozen, FALSE) = FALSE ORDER BY created_at DESC,id DESC LIMIT %s",
+                    (limit,),
                 ).fetchall()
                 if not rows:
                     raise ValueError("没有需要分类的提示词")
@@ -132,19 +136,20 @@ class ClassificationService:
             return {"id": task["id"], "status": task["status"], "item_type": item_type, "total_items": task["total_items"], "created_at": str(task["created_at"])}
 
     @classmethod
-    def create_review_task(cls, admin_id: int, item_type: str, category_slug: str) -> Dict[str, Any]:
+    def create_review_task(cls, admin_id: int, item_type: str, category_slug: str, limit: int = 200) -> Dict[str, Any]:
+        limit = max(1, min(int(limit or 200), 500))
         """创建分类审查任务，重新审查指定分类下的项目或全部项目"""
         with get_db() as conn:
             review_all = category_slug == "all"
             if item_type == "image":
                 rows = conn.execute(
-                    "SELECT id, filename, prompt, category FROM square_images WHERE COALESCE(is_frozen, FALSE) = FALSE" if review_all else "SELECT id, filename, prompt, category FROM square_images WHERE category = %s AND COALESCE(is_frozen, FALSE) = FALSE",
-                    () if review_all else (category_slug,)
+                    "SELECT id, filename, prompt, category FROM square_images WHERE COALESCE(is_frozen, FALSE) = FALSE ORDER BY created_at DESC,id DESC LIMIT %s" if review_all else "SELECT id, filename, prompt, category FROM square_images WHERE category = %s AND COALESCE(is_frozen, FALSE) = FALSE ORDER BY created_at DESC,id DESC LIMIT %s",
+                    (limit,) if review_all else (category_slug, limit)
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT id, name, prompt, category FROM prompts WHERE COALESCE(is_frozen, FALSE) = FALSE" if review_all else "SELECT id, name, prompt, category FROM prompts WHERE category = %s AND COALESCE(is_frozen, FALSE) = FALSE",
-                    () if review_all else (category_slug,)
+                    "SELECT id, name, prompt, category FROM prompts WHERE COALESCE(is_frozen, FALSE) = FALSE ORDER BY created_at DESC,id DESC LIMIT %s" if review_all else "SELECT id, name, prompt, category FROM prompts WHERE category = %s AND COALESCE(is_frozen, FALSE) = FALSE ORDER BY created_at DESC,id DESC LIMIT %s",
+                    (limit,) if review_all else (category_slug, limit)
                 ).fetchall()
 
             if not rows:
@@ -166,6 +171,9 @@ class ClassificationService:
 
     @classmethod
     async def run_classification(cls, task_id: int):
+        if task_id in _running_tasks:
+            return
+        _running_tasks.add(task_id)
         try:
             cls._push_log(task_id, "info", "开始分类任务")
 
@@ -248,6 +256,21 @@ class ClassificationService:
                     "UPDATE classification_tasks SET status = 'error', completed_at = NOW() WHERE id = %s",
                     (task_id,),
                 )
+        finally:
+            _running_tasks.discard(task_id)
+
+    @classmethod
+    def resume_processing_tasks(cls):
+        with get_db() as conn:
+            rows = conn.execute("SELECT id FROM classification_tasks WHERE status = 'processing' ORDER BY id ASC").fetchall()
+        for row in rows:
+            task_id = int(row["id"])
+            if task_id in _running_tasks:
+                continue
+            try:
+                asyncio.create_task(cls.run_classification(task_id))
+            except RuntimeError:
+                logger.exception("[classification] resume create_task failed")
 
     @classmethod
     async def _classify_batch(cls, system_prompt: str, items: List[Dict]) -> List[Dict]:

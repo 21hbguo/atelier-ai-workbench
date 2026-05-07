@@ -109,7 +109,7 @@ class FinanceService:
                 trace=params.get("provider_trace") or []
                 if isinstance(trace,list) and trace:
                     provider_id=((trace[0] or {}).get("provider_id") or "").strip()
-            model_id=(params.get("model_id") or "image-default").strip() or "image-default"
+            model_id=(params.get("model_id") or "gpt-image-2").strip() or "gpt-image-2"
             if not provider_id:
                 return None
             existing=conn.execute("SELECT * FROM generation_finance_entries WHERE task_id=%s FOR UPDATE",(task_id,)).fetchone()

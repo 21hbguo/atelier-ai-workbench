@@ -109,7 +109,7 @@ _runtime_config = {
     "invite_recharge_bonus_percent": float(os.getenv("INVITE_RECHARGE_BONUS_PERCENT", "10")),
     "login_rate_limit_per_minute_per_ip": int(os.getenv("LOGIN_RATE_LIMIT_PER_MINUTE_PER_IP", "5")),
     "register_rate_limit_per_minute_per_ip": int(os.getenv("REGISTER_RATE_LIMIT_PER_MINUTE_PER_IP", "3")),
-    "default_model_id": os.getenv("GEN_DEFAULT_MODEL_ID", "image-default"),
+    "default_model_id": os.getenv("GEN_DEFAULT_MODEL_ID", "gpt-image-2"),
     "generation_models": _safe_json_obj(os.getenv("GENERATION_MODELS_JSON", ""), {}),
     "generation_providers": _safe_json_obj(os.getenv("GENERATION_PROVIDERS_JSON", ""), {}),
     "cost_profit_config": _safe_json_obj(os.getenv("COST_PROFIT_CONFIG_JSON", ""), {}),
@@ -136,7 +136,7 @@ _runtime_config = {
 }
 _runtime_config_defaults = dict(_runtime_config)
 if not _runtime_config["generation_models"]:
-    _runtime_config["generation_models"]={"image-default":{"label":"默认模型","capability":"image","enabled":True,"providers":["wuyin-main"]}}
+    _runtime_config["generation_models"]={"gpt-image-2":{"label":"默认模型","capability":"image","enabled":True,"providers":["wuyin-main"]}}
 if not _runtime_config["generation_providers"]:
     _runtime_config["generation_providers"]={"wuyin-main":{"type":"wuyin","enabled":True,"priority":100,"api_url":"","api_key":"","circuit_fail_threshold":3,"circuit_cooldown_seconds":60,"unit_name":"供应商积分","unit_code":"vendor_points"}}
 
@@ -272,7 +272,7 @@ def GITHUB_HOSTING_BRANCH():
 
 
 def get_default_model_id():
-    return (_runtime_config.get("default_model_id") or "image-default").strip() or "image-default"
+    return (_runtime_config.get("default_model_id") or "gpt-image-2").strip() or "gpt-image-2"
 
 
 def get_generation_models():

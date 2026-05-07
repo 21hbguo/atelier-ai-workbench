@@ -129,16 +129,8 @@ async def create_user(body: dict, admin=Depends(require_admin)):
 
 @router.get("/users")
 async def list_users(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), query: str = Query(None), admin=Depends(require_admin)):
+    TaskManager.fail_stale_active_tasks(ACTIVE_TASK_TIMEOUT_MINUTES)
     with get_db() as conn:
-        conn.execute(
-            """
-            UPDATE tasks
-            SET status='failed', error=COALESCE(NULLIF(error,''),'任务超时未完成'), completed_at=COALESCE(completed_at,NOW()), updated_at=NOW()
-            WHERE LOWER(status) IN ('pending','queued','processing','running','generating')
-              AND COALESCE(updated_at,created_at,NOW()) < NOW() - (%s || ' minutes')::interval
-            """,
-            (str(ACTIVE_TASK_TIMEOUT_MINUTES),),
-        )
         offset = (page - 1) * size
         if query:
             q = f"%{query}%"
@@ -1028,7 +1020,8 @@ async def admin_stats_overview(time_range: str = Query("7d", alias="range"), adm
         suc = conn.execute("SELECT COUNT(*) cnt FROM image_metadata WHERE created_at >= %s AND created_at <= %s", (start_s, end_s)).fetchone()["cnt"]
         fail = conn.execute("SELECT COUNT(*) cnt FROM user_requests WHERE status='failed' AND created_at >= %s AND created_at <= %s", (start_s, end_s)).fetchone()["cnt"]
         avg_latency_row = conn.execute("SELECT AVG(EXTRACT(EPOCH FROM (completed_at-started_at))) avg_sec FROM tasks WHERE status='completed' AND started_at IS NOT NULL AND completed_at IS NOT NULL AND completed_at >= %s AND completed_at <= %s", (start_s, end_s)).fetchone()
-        processing = conn.execute("SELECT COUNT(*) cnt FROM tasks WHERE LOWER(status) IN ('pending','queued','processing','running','generating')").fetchone()["cnt"]
+        TaskManager.fail_stale_active_tasks(ACTIVE_TASK_TIMEOUT_MINUTES)
+        processing = conn.execute("SELECT COUNT(*) cnt FROM tasks WHERE LOWER(status) IN ('pending','queued','processing','running','generating') AND completed_at IS NULL AND COALESCE(updated_at,created_at,NOW()) >= NOW() - (%s || ' minutes')::interval", (str(ACTIVE_TASK_TIMEOUT_MINUTES),)).fetchone()["cnt"]
         new_users = conn.execute("SELECT COUNT(*) cnt FROM users WHERE created_at >= %s AND created_at <= %s", (start_s, end_s)).fetchone()["cnt"]
         active_users = conn.execute("SELECT COUNT(DISTINCT user_id) cnt FROM tasks WHERE user_id IS NOT NULL AND created_at >= %s AND created_at <= %s", (start_s, end_s)).fetchone()["cnt"]
         total_users = conn.execute("SELECT COUNT(*) cnt FROM users").fetchone()["cnt"]
@@ -1044,13 +1037,13 @@ async def admin_stats_overview(time_range: str = Query("7d", alias="range"), adm
         points_rows = conn.execute("SELECT to_char(created_at,'YYYY-MM-DD') d, COALESCE(SUM(ABS(amount)),0) amt FROM point_transactions WHERE type='generate_consume' AND created_at >= %s AND created_at <= %s GROUP BY d", (start_s, end_s)).fetchall()
         model_rows = conn.execute(
             """
-            SELECT COALESCE(NULLIF(params->>'model_id',''),'image-default') model_id, COUNT(*) total_cnt,
+            SELECT COALESCE(NULLIF(params->>'model_id',''),'gpt-image-2') model_id, COUNT(*) total_cnt,
                    COUNT(*) FILTER (WHERE status='completed') success_cnt,
                    COUNT(*) FILTER (WHERE status='failed') failed_cnt,
                    AVG(EXTRACT(EPOCH FROM (completed_at-started_at))) FILTER (WHERE status='completed' AND started_at IS NOT NULL AND completed_at IS NOT NULL) avg_sec
             FROM tasks
             WHERE created_at >= %s AND created_at <= %s
-            GROUP BY COALESCE(NULLIF(params->>'model_id',''),'image-default')
+            GROUP BY COALESCE(NULLIF(params->>'model_id',''),'gpt-image-2')
             ORDER BY total_cnt DESC, model_id ASC
             """,
             (start_s, end_s),
@@ -1082,12 +1075,12 @@ async def admin_stats_overview(time_range: str = Query("7d", alias="range"), adm
         ).fetchall()
         matrix_rows = conn.execute(
             """
-            SELECT COALESCE(NULLIF(params->>'model_id',''),'image-default') model_id, COALESCE(NULLIF(params->>'provider_id',''),NULLIF(params->'provider_trace'->0->>'provider_id',''),'unknown') provider_id, COUNT(*) total_cnt,
+            SELECT COALESCE(NULLIF(params->>'model_id',''),'gpt-image-2') model_id, COALESCE(NULLIF(params->>'provider_id',''),NULLIF(params->'provider_trace'->0->>'provider_id',''),'unknown') provider_id, COUNT(*) total_cnt,
                    COUNT(*) FILTER (WHERE status='completed') success_cnt,
                    COUNT(*) FILTER (WHERE status='failed') failed_cnt
             FROM tasks
             WHERE created_at >= %s AND created_at <= %s
-            GROUP BY COALESCE(NULLIF(params->>'model_id',''),'image-default'), COALESCE(NULLIF(params->>'provider_id',''),NULLIF(params->'provider_trace'->0->>'provider_id',''),'unknown')
+            GROUP BY COALESCE(NULLIF(params->>'model_id',''),'gpt-image-2'), COALESCE(NULLIF(params->>'provider_id',''),NULLIF(params->'provider_trace'->0->>'provider_id',''),'unknown')
             ORDER BY total_cnt DESC, model_id ASC, provider_id ASC
             """,
             (start_s, end_s),
@@ -1183,7 +1176,7 @@ async def admin_stats_cost_profit(time_range: str = Query("30d", alias="range"),
         rev = conn.execute("SELECT COALESCE(SUM(amount),0) amt, COUNT(*) cnt FROM recharge_requests WHERE status='approved' AND created_at >= %s AND created_at <= %s", (start_s, end_s)).fetchone()
         rows = conn.execute(
             """
-            SELECT COALESCE(NULLIF(params->>'model_id',''),'image-default') model_id,
+            SELECT COALESCE(NULLIF(params->>'model_id',''),'gpt-image-2') model_id,
                    COALESCE(NULLIF(params->>'provider_id',''),NULLIF(params->'provider_trace'->0->>'provider_id',''),'unknown') provider_id,
                    COUNT(*) cnt,
                    COUNT(*) FILTER (WHERE status='completed') success_cnt,
@@ -1192,7 +1185,7 @@ async def admin_stats_cost_profit(time_range: str = Query("30d", alias="range"),
             FROM tasks
             WHERE created_at >= %s AND created_at <= %s
               AND COALESCE(NULLIF(params->>'provider_id',''),NULLIF(params->'provider_trace'->0->>'provider_id',''),'') <> ''
-            GROUP BY COALESCE(NULLIF(params->>'model_id',''),'image-default'), COALESCE(NULLIF(params->>'provider_id',''),NULLIF(params->'provider_trace'->0->>'provider_id',''),'unknown')
+            GROUP BY COALESCE(NULLIF(params->>'model_id',''),'gpt-image-2'), COALESCE(NULLIF(params->>'provider_id',''),NULLIF(params->'provider_trace'->0->>'provider_id',''),'unknown')
             ORDER BY cnt DESC, model_id ASC, provider_id ASC
             """,
             (start_s, end_s),
@@ -1279,10 +1272,11 @@ async def list_email_verifications(
 @router.post("/classification/tasks")
 async def create_classification_task(body: dict = {}, admin=Depends(require_admin)):
     item_type = body.get("item_type", "prompt")
+    limit = int(body.get("limit") or 200)
     if item_type not in ("prompt", "image"):
         raise HTTPException(status_code=400, detail="item_type 必须是 prompt 或 image")
     try:
-        task = ClassificationService.create_task(admin_id=admin["user_id"], item_type=item_type)
+        task = ClassificationService.create_task(admin_id=admin["user_id"], item_type=item_type, limit=limit)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     import asyncio
@@ -1295,6 +1289,7 @@ async def create_review_task(body: dict, admin=Depends(require_admin)):
     """创建分类审查任务，重新审查指定分类下的项目"""
     item_type = body.get("item_type", "prompt")
     category_slug = body.get("category_slug", "")
+    limit = int(body.get("limit") or 200)
     if not category_slug:
         raise HTTPException(status_code=400, detail="category_slug 不能为空")
     if item_type not in ("prompt", "image"):
@@ -1304,6 +1299,7 @@ async def create_review_task(body: dict, admin=Depends(require_admin)):
             admin_id=admin["user_id"],
             item_type=item_type,
             category_slug=category_slug,
+            limit=limit,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1361,6 +1357,83 @@ async def test_title_generation(body: dict, admin=Depends(require_admin)):
         raise HTTPException(status_code=400, detail="prompt 或 raw_name 至少填写一项")
     title = await TitleGenerator.generate(prompt, raw_name)
     return {"title": title, "prompt": prompt, "raw_name": raw_name}
+
+@router.get("/title/items")
+async def list_title_items(item_type: str = Query("prompt"), query: str = Query(""), page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), only_missing: bool = Query(True), admin=Depends(require_admin)):
+    if item_type not in {"prompt", "image"}:
+        raise HTTPException(status_code=400, detail="item_type 仅支持 prompt 或 image")
+    offset = (page - 1) * size
+    q = f"%{query.strip()}%" if query and query.strip() else ""
+    with get_db() as conn:
+        if item_type == "prompt":
+            where = ["COALESCE(is_deleted,FALSE)=FALSE"]
+            params = []
+            if only_missing:
+                where.append("(name IS NULL OR BTRIM(name) = '' OR CHAR_LENGTH(BTRIM(name)) <= 2)")
+            if q:
+                where.append("(COALESCE(name,'') ILIKE %s OR COALESCE(prompt,'') ILIKE %s OR COALESCE(author,'') ILIKE %s)")
+                params.extend([q, q, q])
+            where_sql = " AND ".join(where)
+            total = conn.execute(f"SELECT COUNT(*) AS cnt FROM prompts WHERE {where_sql}", params).fetchone()["cnt"]
+            rows = conn.execute(f"SELECT id,name,prompt,author,category,image_path,created_at FROM prompts WHERE {where_sql} ORDER BY created_at DESC,id DESC LIMIT %s OFFSET %s", [*params, size, offset]).fetchall()
+            items = [{"id": str(r["id"]), "item_type": "prompt", "name": r["name"] or "", "prompt": r["prompt"] or "", "author": r["author"] or "", "category": r["category"] or "", "image_path": r["image_path"] or "", "thumb_url": (f"/api/prompts/evo-thumb/{r['image_path']}?size=400" if r["image_path"] and "/" in str(r["image_path"]) else (f"/api/prompts/image/{r['image_path']}" if r["image_path"] else "")), "created_at": str(r["created_at"]) if r["created_at"] else ""} for r in rows]
+        else:
+            where = ["COALESCE(si.is_frozen,FALSE)=FALSE"]
+            params = []
+            if only_missing:
+                where.append("(si.metadata->>'title' IS NULL OR BTRIM(si.metadata->>'title') = '' OR CHAR_LENGTH(BTRIM(si.metadata->>'title')) <= 2)")
+            if q:
+                where.append("(COALESCE(si.filename,'') ILIKE %s OR COALESCE(si.prompt,'') ILIKE %s OR COALESCE(u.username,'') ILIKE %s OR COALESCE(u.nickname,'') ILIKE %s OR COALESCE(si.metadata->>'title','') ILIKE %s)")
+                params.extend([q, q, q, q, q])
+            where_sql = " AND ".join(where)
+            total = conn.execute(f"SELECT COUNT(*) AS cnt FROM square_images si LEFT JOIN users u ON si.user_id = u.id WHERE {where_sql}", params).fetchone()["cnt"]
+            rows = conn.execute(f"SELECT si.id,si.filename,si.prompt,si.metadata,si.category,si.created_at,u.username,u.nickname FROM square_images si LEFT JOIN users u ON si.user_id = u.id WHERE {where_sql} ORDER BY si.created_at DESC,si.id DESC LIMIT %s OFFSET %s", [*params, size, offset]).fetchall()
+            items = []
+            for r in rows:
+                meta = r["metadata"] if isinstance(r["metadata"], dict) else (json.loads(r["metadata"]) if r["metadata"] else {})
+                items.append({"id": str(r["id"]), "item_type": "image", "name": (meta.get("title") or r["filename"] or ""), "prompt": r["prompt"] or "", "author": (r["nickname"] or r["username"] or ""), "category": r["category"] or "", "filename": r["filename"] or "", "thumb_url": f"/api/images/thumb/{r['filename']}?size=400" if r["filename"] else "", "created_at": str(r["created_at"]) if r["created_at"] else ""})
+    return {"items": items, "total": total, "page": page, "size": size}
+
+@router.post("/title/apply")
+async def apply_titles(body: dict, admin=Depends(require_admin)):
+    item_type = (body.get("item_type") or "prompt").strip()
+    item_ids = [str(x).strip() for x in (body.get("item_ids") or []) if str(x).strip()]
+    force = bool(body.get("force"))
+    if item_type not in {"prompt", "image"}:
+        raise HTTPException(status_code=400, detail="item_type 仅支持 prompt 或 image")
+    if not item_ids:
+        raise HTTPException(status_code=400, detail="请选择要处理的项目")
+    updated = []
+    skipped = []
+    with get_db() as conn:
+        for item_id in item_ids:
+            if item_type == "prompt":
+                row = conn.execute("SELECT id,name,prompt FROM prompts WHERE id = %s AND COALESCE(is_deleted,FALSE)=FALSE", (item_id,)).fetchone()
+                if not row:
+                    skipped.append({"id": item_id, "reason": "记录不存在"})
+                    continue
+                raw_name = (row["name"] or "").strip()
+                if raw_name and not force and not (len(raw_name) <= 2):
+                    skipped.append({"id": item_id, "reason": "已有标题"})
+                    continue
+                title = await TitleGenerator.generate(row["prompt"] or "", raw_name)
+                conn.execute("UPDATE prompts SET name = %s WHERE id = %s", (title, item_id))
+                updated.append({"id": item_id, "title": title})
+            else:
+                row = conn.execute("SELECT id,filename,prompt,metadata FROM square_images WHERE id = %s", (item_id,)).fetchone()
+                if not row:
+                    skipped.append({"id": item_id, "reason": "记录不存在"})
+                    continue
+                meta = row["metadata"] if isinstance(row["metadata"], dict) else (json.loads(row["metadata"]) if row["metadata"] else {})
+                raw_name = str(meta.get("title") or row["filename"] or "").strip()
+                if meta.get("title") and not force and not (len(str(meta.get("title") or "").strip()) <= 2):
+                    skipped.append({"id": item_id, "reason": "已有标题"})
+                    continue
+                title = await TitleGenerator.generate(row["prompt"] or "", raw_name)
+                meta["title"] = title
+                conn.execute("UPDATE square_images SET metadata = %s WHERE id = %s", (json.dumps(meta, ensure_ascii=False), item_id))
+                updated.append({"id": item_id, "title": title})
+    return {"updated": updated, "skipped": skipped, "count": len(updated)}
 
 
 @router.post("/classification/test")

@@ -10,6 +10,7 @@ from backend.database import get_db
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["tasks"])
 GLOBAL_GENERATE_ACTIVE_LIMIT = 20
+ACTIVE_TASK_TIMEOUT_MINUTES = 20
 
 
 def _enrich_tasks_with_username(tasks: list) -> list:
@@ -41,6 +42,7 @@ async def list_tasks(
 ):
     started = time.perf_counter()
     try:
+        TaskManager.fail_stale_active_tasks(ACTIVE_TASK_TIMEOUT_MINUTES)
         is_admin = bool(user.get("is_admin"))
         requester_uid = user.get("user_id")
         if is_admin:
@@ -63,8 +65,9 @@ async def list_tasks(
 
 @router.get("/tasks/active-summary")
 async def get_active_task_summary(user=Depends(get_current_user)):
+    TaskManager.fail_stale_active_tasks(ACTIVE_TASK_TIMEOUT_MINUTES)
     with get_db() as conn:
-        active = conn.execute("SELECT COUNT(*) AS cnt FROM tasks WHERE LOWER(status) IN ('pending','queued','processing','running','generating') AND completed_at IS NULL AND COALESCE(updated_at,created_at,NOW()) >= NOW() - interval '30 minute'").fetchone()["cnt"]
+        active = conn.execute("SELECT COUNT(*) AS cnt FROM tasks WHERE LOWER(status) IN ('pending','queued','processing','running','generating') AND completed_at IS NULL AND COALESCE(updated_at,created_at,NOW()) >= NOW() - (%s || ' minutes')::interval", (str(ACTIVE_TASK_TIMEOUT_MINUTES),)).fetchone()["cnt"]
     return {"active_count": active, "global_limit": GLOBAL_GENERATE_ACTIVE_LIMIT, "available_slots": max(0, GLOBAL_GENERATE_ACTIVE_LIMIT - active)}
 
 

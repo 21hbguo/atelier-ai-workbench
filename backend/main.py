@@ -21,6 +21,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 async def lifespan(app: FastAPI):
     app.state.expiry_cleanup_task = asyncio.create_task(expiry_cleanup_loop(int(os.getenv("IMAGE_EXPIRY_CLEANUP_INTERVAL_SECONDS", "3600"))))
     await TaskManager.recover_orphaned_tasks()
+    ClassificationService.resume_processing_tasks()
+    ContentAuditService.resume_processing_tasks()
     yield
     t = getattr(app.state, "expiry_cleanup_task", None)
     if t:

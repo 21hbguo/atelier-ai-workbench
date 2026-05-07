@@ -8,7 +8,7 @@ class GenerateTextRequest(BaseModel):
     prompt: str = Field(..., max_length=4000)
     size: str = Field("auto", max_length=20)
     quality: Optional[str] = Field(None, max_length=10)
-    model_id: str = Field("image-default", max_length=64)
+    model_id: str = Field("gpt-image-2", max_length=64)
     task_id: Optional[str] = Field(None, max_length=50)
     client_request_id: Optional[str] = Field(None, max_length=64)
     share_to_square: bool = False
@@ -19,7 +19,7 @@ class GenerateTextImageRequest(BaseModel):
     image_urls: List[str] = Field(..., max_length=5)
     size: str = Field("auto", max_length=20)
     quality: Optional[str] = Field(None, max_length=10)
-    model_id: str = Field("image-default", max_length=64)
+    model_id: str = Field("gpt-image-2", max_length=64)
     task_id: Optional[str] = Field(None, max_length=50)
     client_request_id: Optional[str] = Field(None, max_length=64)
     share_to_square: bool = False

@@ -14,7 +14,7 @@ import { useAppDialog } from '../components/AppDialogProvider'
 import { useLayoutMode } from '../LayoutModeContext'
 import { generateAPI, uploadAPI, taskAPI, imageAPI, squareAPI, adminAPI, pointsAPI, configAPI, promptAPI } from '../api'
 import { readUser } from '../auth'
-import { getSubmissionQueue, setSubmissionQueue } from '../utils/imageDB'
+import { getPrunedSubmissionQueue, pruneSubmissionQueueItems, setSubmissionQueue } from '../utils/imageDB'
 
 function formatLocalTime(d) {
   const pad = n => String(n).padStart(2, '0')
@@ -160,6 +160,7 @@ export default function ChatPage() {
   const timeRangeMenuRef = useRef(null)
   const timeRangeButtonRef = useRef(null)
   const timeRangePanelRef = useRef(null)
+  const prevUserCacheKeyRef = useRef(activeCacheKey)
   const navigate = useNavigate()
   const timeRangeOptions = useMemo(() => ([{ k: '1d', l: '近1天' }, { k: '3d', l: '近3天' }, { k: '7d', l: '近7天' }, { k: 'all', l: '全部' }]), [])
   const visibleTasks = useMemo(() => {
@@ -218,11 +219,14 @@ export default function ChatPage() {
       return
     }
     const cachedActive = loadCachedActiveTasks()
-    if (cachedActive.length > 0) {
+    const serverHasActive = allTasks.some(t => activeStatuses.includes(t?.status))
+    if (cachedActive.length > 0 && serverHasActive) {
       const ids = new Set(allTasks.map(t => t.task_id))
       for (const t of cachedActive) {
         if (!ids.has(t.task_id)) allTasks.push(t)
       }
+    } else if (cachedActive.length > 0 && !serverHasActive) {
+      saveCachedActiveTasks([])
     }
     try {
       const imgRes = await withTimeout(imageAPI.list(1, 100, uid), 12000, '图片列表加载超时，已仅显示任务列表')
@@ -278,7 +282,7 @@ export default function ChatPage() {
     setTasks(merged)
     const completedMerged = merged.filter(t => t.status === 'completed' && t.result_urls?.length)
     setDetailCards(completedMerged.flatMap(task => buildDetailCardsFromTask(task, expiryByFilename, squareIdMapRef.current)))
-    saveCachedActiveTasks(merged)
+    saveCachedActiveTasks(merged.filter(t => activeStatuses.includes(t?.status)))
     if (!loaded) setLoaded(true)
   }, [loaded, isAdmin, selectedUserId, searchQuery, loadCachedActiveTasks, saveCachedActiveTasks])
 
@@ -292,15 +296,21 @@ export default function ChatPage() {
     let cancelled = false
     ;(async () => {
       try {
-        const list = await getSubmissionQueue(submissionQueueKey)
+        const list = await getPrunedSubmissionQueue(submissionQueueKey)
         if (!cancelled) setPendingSubmissions(Array.isArray(list) ? list : [])
       } catch {}
     })()
     return () => { cancelled = true }
   }, [submissionQueueKey])
   useEffect(() => {
-    if (!pendingSubmissions.length) return
-    const localTasks = pendingSubmissions.map(buildPendingTaskFromSubmission)
+    const cleaned = pruneSubmissionQueueItems(pendingSubmissions)
+    if (cleaned.length !== pendingSubmissions.length) {
+      setPendingSubmissions(cleaned)
+      void savePendingSubmissions(cleaned)
+      return
+    }
+    if (!cleaned.length) return
+    const localTasks = cleaned.map(buildPendingTaskFromSubmission)
     if (!localTasks.length) return
     setTasks(prev => {
       const existingIds = new Set(prev.map(t => t.task_id))
@@ -326,6 +336,12 @@ export default function ChatPage() {
   useEffect(() => {
     setPoints(currentUser?.points ?? 0)
   }, [currentUser])
+  useEffect(() => {
+    if (prevUserCacheKeyRef.current !== activeCacheKey) {
+      try { localStorage.removeItem(prevUserCacheKeyRef.current) } catch {}
+      prevUserCacheKeyRef.current = activeCacheKey
+    }
+  }, [activeCacheKey])
   useEffect(() => {
     setThumbnailBlurMap(getThumbnailBlurMap(currentUser))
   }, [currentUser?.id,currentUser?.user_id,currentUser?.username])

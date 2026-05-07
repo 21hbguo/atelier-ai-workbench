@@ -123,6 +123,12 @@ async def _run_generation(task_id: str, task_type: str, submit_payload: dict, me
         TaskManager.update_task(task_id, params=task_params)
         urls = await _poll_and_download(provider_id, external_task_id, task_id, meta, user_id=user_id)
         if urls:
+            if is_admin:
+                for url in urls:
+                    try:
+                        mark_image_permanent(os.path.basename(str(url or "")))
+                    except Exception:
+                        logger.exception(f"[submit.mark_permanent.fail] type={task_type} task={task_id} user={user_id}")
             if submit_payload.get("share_to_square") and len(urls) > 0:
                 try:
                     _share_to_square(user_id, urls[0], submit_payload.get("prompt") or "", submit_payload.get("size") or "auto", task_type, input_urls=meta.get("input_urls"))

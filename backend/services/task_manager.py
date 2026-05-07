@@ -16,6 +16,32 @@ class TaskManager:
     _active_status = {"pending", "queued", "processing", "running", "generating"}
 
     @classmethod
+    def fail_stale_active_tasks(cls, timeout_minutes: int = 20) -> int:
+        timeout_minutes = max(1, int(timeout_minutes or 20))
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with get_db() as conn:
+            rows = conn.execute(
+                """
+                UPDATE tasks
+                SET status='failed', error=COALESCE(NULLIF(error,''),'任务超时未完成'), completed_at=COALESCE(completed_at,NOW()), updated_at=NOW()
+                WHERE LOWER(status) IN ('pending','queued','processing','running','generating')
+                  AND completed_at IS NULL
+                  AND COALESCE(updated_at,created_at,NOW()) < NOW() - (%s || ' minutes')::interval
+                RETURNING task_id
+                """,
+                (str(timeout_minutes),),
+            ).fetchall()
+        for row in rows:
+            task_id = row["task_id"]
+            task = cls._tasks.get(task_id)
+            if task:
+                task["status"] = "failed"
+                task["error"] = task.get("error") or "任务超时未完成"
+                task["completed_at"] = task.get("completed_at") or now
+                task["updated_at"] = now
+        return len(rows)
+
+    @classmethod
     def _normalize_task(cls, raw: Dict[str, Any]) -> Dict[str, Any]:
         d = dict(raw or {})
         val = d.get("params")

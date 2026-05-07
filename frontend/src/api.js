@@ -202,8 +202,8 @@ export const adminAPI = {
   deleteFinanceQuotaRule: ruleId => api.post(`/admin/finance/quota-rules/${ruleId}/delete`),
   financeTasks: (range = '30d', page = 1, size = 20, provider_id, model_id, status) => { const params = { range, page, size }; if (provider_id) params.provider_id = provider_id; if (model_id) params.model_id = model_id; if (status) params.status = status; return api.get('/admin/finance/tasks', { params }) },
   emailVerifications: (page = 1, size = 20, query) => { const params = { page, size }; if (query) params.query = query; return api.get('/admin/email-verifications', { params }) },
-  createClassificationTask: (itemType = 'prompt') => api.post('/admin/classification/tasks', { item_type: itemType }),
-  reviewClassification: (itemType, categorySlug) => api.post('/admin/classification/review', { item_type: itemType, category_slug: categorySlug }),
+  createClassificationTask: (itemType = 'prompt', limit = 200) => api.post('/admin/classification/tasks', { item_type: itemType, limit }),
+  reviewClassification: (itemType, categorySlug, limit = 200) => api.post('/admin/classification/review', { item_type: itemType, category_slug: categorySlug, limit }),
   listClassificationTasks: (page = 1, size = 20) => api.get('/admin/classification/tasks', { params: { page, size } }),
   getClassificationTask: taskId => api.get(`/admin/classification/tasks/${taskId}`),
   approveClassification: (taskId, resultIds) => api.post(`/admin/classification/tasks/${taskId}/approve`, { result_ids: resultIds }),
@@ -215,6 +215,8 @@ export const adminAPI = {
   approveAudit: (taskId, resultIds) => api.post(`/admin/audit/tasks/${taskId}/approve`, { result_ids: resultIds }),
   rejectAudit: (taskId, resultIds) => api.post(`/admin/audit/tasks/${taskId}/reject`, { result_ids: resultIds }),
   updateAuditResult: (resultId, data) => api.post(`/admin/audit/results/${resultId}`, data),
+  titleItems: (itemType = 'prompt', query = '', page = 1, size = 20, onlyMissing = true) => api.get('/admin/title/items', { params: { item_type: itemType, query, page, size, only_missing: onlyMissing } }),
+  applyTitles: data => api.post('/admin/title/apply', data),
   testTitle: data => api.post('/admin/title/test', data),
 }
 export const configAPI = { get: () => api.get('/config'), admin: () => api.get('/config/admin'), update: data => api.post('/config', data), generationAdmin: () => api.get('/config/generation/admin'), models: () => api.get('/config/models') }
