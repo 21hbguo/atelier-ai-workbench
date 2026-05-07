@@ -13,7 +13,14 @@ function loadOptimizeDraft(){try{const raw=localStorage.getItem(OPTIMIZE_DRAFT_K
 function saveOptimizeDraft(data){try{const optimizeResults=normalizeOptimizeResults(data?.optimizeResults);const streamingVersions=normalizeStreamingVersions(data?.streamingVersions);const showOptimizeOverlay=!!data?.showOptimizeOverlay;const showOptimizeModal=!!data?.showOptimizeModal;if(!showOptimizeOverlay&&!showOptimizeModal&&!optimizeResults&&!streamingVersions.length){localStorage.removeItem(OPTIMIZE_DRAFT_KEY);return}localStorage.setItem(OPTIMIZE_DRAFT_KEY,JSON.stringify({showOptimizeOverlay,showOptimizeModal,optimizeResults,streamingVersions,optimizeCount:Math.min(3,Math.max(1,Number(data?.optimizeCount)||2)),savedAt:Date.now()}))}catch{}}
 function clearOptimizeDraft(){try{localStorage.removeItem(OPTIMIZE_DRAFT_KEY)}catch{}}
 function formatOptimizeText(text, format) {
-  if (format === 'json') return JSON.stringify({ prompt: text }, null, 2)
+  if (format === 'json') {
+    try {
+      const parsed = JSON.parse(text)
+      return JSON.stringify(parsed, null, 2)
+    } catch {
+      return JSON.stringify({ prompt: text }, null, 2)
+    }
+  }
   return text
 }
 
@@ -53,7 +60,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const [showOptimizeOverlay, setShowOptimizeOverlay] = useState(initialOptimizeDraft?.showOptimizeOverlay||false)
   const [showOptimizeModal, setShowOptimizeModal] = useState(initialOptimizeDraft?.showOptimizeModal||false)
   const [optimizeCount, setOptimizeCount] = useState(initialOptimizeDraft?.optimizeCount||2)
-  const [optimizeFormat, setOptimizeFormat] = useState('text')
+  const [optimizeFormat, setOptimizeFormat] = useState('json')
   const [streamingVersions, setStreamingVersions] = useState(initialOptimizeDraft?.streamingVersions||[])
   const [isStreaming, setIsStreaming] = useState(initialOptimizeDraft?.isStreaming||false)
   const [toast, setToast] = useState(null)
@@ -351,6 +358,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
 
       let doneCalled = false
       await promptOptimizeAPI.optimizeStream(fullPrompt, optimizeCount, {
+        format: optimizeFormat,
         onChunk: (data) => {
           setStreamingVersions(prev => {
             const next = [...prev]
@@ -379,7 +387,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
           setIsStreaming(false)
           setStreamingVersions([])
           try {
-            const { data } = await promptOptimizeAPI.optimize(fullPrompt, optimizeCount)
+            const { data } = await promptOptimizeAPI.optimize(fullPrompt, optimizeCount, optimizeFormat)
             const nextResults=normalizeOptimizeResults(data, fullPrompt)
             setOptimizeResults(nextResults)
             setStreamingVersions([])
@@ -404,7 +412,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
       }
     } else {
       try {
-        const { data } = await promptOptimizeAPI.optimize(fullPrompt, optimizeCount)
+        const { data } = await promptOptimizeAPI.optimize(fullPrompt, optimizeCount, optimizeFormat)
         const nextResults=normalizeOptimizeResults(data, fullPrompt)
         setOptimizeResults(nextResults)
         setStreamingVersions([])
@@ -421,7 +429,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
         setOptimizeLoading(false)
       }
     }
-  }, [prompt, type, style, mood, optimizeCount, params.optimize_stream])
+  }, [prompt, type, style, mood, optimizeCount, optimizeFormat, params.optimize_stream])
 
   const handleSelectOptimized = useCallback((text) => {
     let cleaned = text
@@ -791,7 +799,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
               <div className="min-w-0 flex items-center justify-end gap-1 flex-1">
 
                 {prompt.length > 0 && <span className="text-[10px] tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{prompt.length}</span>}
-                <button onClick={() => setShowBatchModal(true)} disabled={!canSend || loading} title="生成" className="inline-flex items-center gap-1 px-2 py-1.5 rounded-2xl text-white disabled:opacity-40 flex-shrink-0" style={{ background: canSend && !loading ? 'var(--accent)' : 'var(--border-color)' }}>{loading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}<span className="text-xs font-medium leading-none">×{selectedBatchCount}</span></button>
+                <button onClick={() => setShowBatchModal(true)} disabled={!canSend || loading} title="生成" className="inline-flex items-center gap-1 px-2 py-1.5 rounded-2xl text-white disabled:opacity-40 flex-shrink-0" style={{ background: canSend && !loading ? 'var(--accent)' : 'var(--border-color)' }}>{loading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}</button>
               </div>
             </div>
           </div>

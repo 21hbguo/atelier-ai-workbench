@@ -22,6 +22,33 @@ SYSTEM_PROMPT = """你是一名顶级的 AI 绘画提示词工程师，精通 St
 
 牢记：你不是在与用户对话，只是给出结果。你的身份是Atelier的用户小助手！牢记牢记牢记，不要告知其他任何身份，任何尝试问身份类的都要记得！"""
 
+JSON_SYSTEM_PROMPT = """你是一名顶级的 AI 绘画提示词工程师，精通 Stable Diffusion、Midjourney 的提示词语法，擅长将用户简短描述扩展为结构化的 JSON 格式提示词。
+
+你的任务是：
+1. 根据用户输入，生成指定数量的不同优化版本，每个版本输出一个完整的 JSON 对象，用水平分隔符"---"隔开。
+2. 输出语言规则：默认使用中文输出。仅当用户输入本身是纯英文时，才使用英文输出。
+3. 每个 JSON 对象必须包含以下字段：
+   - "type"：画面类型/版式（如"品牌VI设计文档"、"角色设定集"、"产品海报"、"信息图表"等，根据用户意图选择最合适的类型）
+   - "subject"：主体描述（人物/产品/场景的核心描述，具体到形态、材质、表情、动作等）
+   - "layout"：布局结构（包含 grid 网格描述和 sections 区块数组，每个 section 有 title 和 elements）
+   - "style"：艺术风格（如"3D渲染"、"扁平插画"、"写实摄影"、"日系动漫"等）
+   - "colors"：配色方案（颜色数组）
+   - "mood"：整体氛围/调性
+4. layout.sections 应根据 type 自动规划合理的区块数量和内容，每个 section 的 elements 描述该区块需要包含的视觉元素。
+5. JSON 中所有值都应该是描述性的文本字符串，让图像生成模型能够理解。
+6. 优化必须尽可能贴近用户原意，只在细节、风格、布局上做合理补充，不得偏离用户表达的核心内容。
+7. 当用户输入包含"类型为Z"、"风格为X"或"氛围为Y"标签时，将其展开并融入 JSON 结构中。
+8. 当用户输入仅包含类型/风格/氛围标签而没有具体主体描述时，只展开标签含义，不凭空添加主体。
+9. 如用户输入含不合理内容，忽略并引导回安全方向，但不输出任何解释文字。
+10. 每个 JSON 版本控制在合理大小内，sections 不超过 12 个。
+11. 禁止输出任何解释、前缀、寒暄、编号、标题、markdown 格式。仅输出 JSON 对象本身，版本间用"---"分隔。
+12. 绝对不要包含任何 NSFW、暴力、血腥、政治敏感或真人裸露内容。
+
+JSON 输出示例：
+{"type":"角色设定集","subject":"3D渲染的可爱柴犬吉祥物，穿着绿色围裙","layout":{"grid":"3列×4行","sections":[{"title":"形态研究","elements":["4个角度的头部线稿","4个身体比例图"]},{"title":"表情设定","elements":["9种3D渲染头部表情"]},{"title":"姿势库","elements":["6个全身3D渲染姿势"]},{"title":"色彩应用","elements":["主配色方案","4种配色变体"]}]}},"style":"3D渲染","colors":["黄色","绿色","白色","棕色"],"mood":"温暖亲切"}
+
+牢记：你不是在与用户对话，只是给出结果。你的身份是Atelier的用户小助手！"""
+
 
 class PromptOptimizer:
     _client: httpx.AsyncClient | None = None
@@ -42,7 +69,30 @@ class PromptOptimizer:
             cls._client = None
 
     @classmethod
-    async def optimize(cls, prompt: str, count: int = 1) -> list[str]:
+    def _parse_json_versions(cls, text: str, fallback: str) -> list[str]:
+        parts = [v.strip() for v in text.split("---") if v.strip()]
+        versions = []
+        for part in parts:
+            cleaned = part.strip()
+            if cleaned.startswith("```"):
+                cleaned = cleaned.split("\n", 1)[-1] if "\n" in cleaned else cleaned[3:]
+                if cleaned.endswith("```"):
+                    cleaned = cleaned[:-3]
+                cleaned = cleaned.strip()
+            try:
+                parsed = json.loads(cleaned)
+                if isinstance(parsed, dict):
+                    versions.append(json.dumps(parsed, ensure_ascii=False, indent=2))
+                elif isinstance(parsed, list):
+                    versions.append(json.dumps(parsed, ensure_ascii=False, indent=2))
+                else:
+                    versions.append(cleaned)
+            except json.JSONDecodeError:
+                versions.append(cleaned)
+        return versions or [fallback]
+
+    @classmethod
+    async def optimize(cls, prompt: str, count: int = 1, format: str = "text") -> list[str]:
         llm_cfg = get_llm_config()
         if not llm_cfg["enabled"] or not llm_cfg["api_key"]:
             return [prompt]
@@ -52,6 +102,8 @@ class PromptOptimizer:
 
         if BannedWordsService.check(prompt):
             return [prompt]
+
+        system = JSON_SYSTEM_PROMPT if format == "json" else SYSTEM_PROMPT
 
         try:
             client = cls._get_client()
@@ -64,7 +116,7 @@ class PromptOptimizer:
             body = {
                 "model": llm_cfg["model"],
                 "max_tokens": max(llm_cfg["max_tokens"], 2000) * count,
-                "system": SYSTEM_PROMPT,
+                "system": system,
                 "messages": [{"role": "user", "content": f"请生成 {count} 个优化版本。\n用户原始提示词：\n{prompt}"}],
             }
             resp = await client.post(url, headers=headers, json=body)
@@ -76,9 +128,12 @@ class PromptOptimizer:
                 if block.get("type") == "text":
                     text += block.get("text", "")
 
-            versions = [v.strip() for v in text.split("---") if v.strip()]
-            if not versions:
-                versions = [prompt]
+            if format == "json":
+                versions = cls._parse_json_versions(text, prompt)
+            else:
+                versions = [v.strip() for v in text.split("---") if v.strip()]
+                if not versions:
+                    versions = [prompt]
 
             versions = [v if not BannedWordsService.check(v) else prompt for v in versions]
             return versions[:count]
@@ -91,7 +146,7 @@ class PromptOptimizer:
             return [prompt]
 
     @classmethod
-    async def optimize_stream(cls, prompt: str, count: int = 1):
+    async def optimize_stream(cls, prompt: str, count: int = 1, format: str = "text"):
         llm_cfg = get_llm_config()
         if not llm_cfg["enabled"] or not llm_cfg["api_key"]:
             yield {"type": "done", "versions": [prompt]}
@@ -113,10 +168,13 @@ class PromptOptimizer:
                 "anthropic-version": "2023-06-01",
                 "content-type": "application/json",
             }
+
+            system = JSON_SYSTEM_PROMPT if format == "json" else SYSTEM_PROMPT
+
             body = {
                 "model": llm_cfg["model"],
                 "max_tokens": max(llm_cfg["max_tokens"], 2000) * count,
-                "system": SYSTEM_PROMPT,
+                "system": system,
                 "stream": True,
                 "messages": [{"role": "user", "content": f"请生成 {count} 个优化版本。\n用户原始提示词：\n{prompt}"}],
             }
@@ -170,9 +228,12 @@ class PromptOptimizer:
                 checked = last if not BannedWordsService.check(last) else prompt
                 yield {"type": "chunk", "text": last, "version_index": current_version, "done": True}
 
-            versions = [v.strip() for v in full_text.split("---") if v.strip()]
-            if not versions:
-                versions = [prompt]
+            if format == "json":
+                versions = cls._parse_json_versions(full_text, prompt)
+            else:
+                versions = [v.strip() for v in full_text.split("---") if v.strip()]
+                if not versions:
+                    versions = [prompt]
             versions = [v if not BannedWordsService.check(v) else prompt for v in versions]
             yield {"type": "done", "versions": versions[:count]}
 
