@@ -417,15 +417,38 @@ export default function ChatPage() {
     if (!isAdmin) return
     const promptText=String(task?.params?.prompt||task?.prompt||'').trim()
     if (!promptText) { dialog.alert('该作品没有可入库的提示词'); return }
-    if (!await dialog.confirm('确定将该作品的提示词加入广场 Tab 的提示词库子 Tab 吗？\n作者将留空。')) return
+    if (!await dialog.confirm('确定将该作品的提示词加入提示词库吗？\n作者将显示为 system。')) return
+    const filename = task?.result_urls?.[0]?.split('/').pop() || task?.filename || task?._raw?.filename
     try {
-      const imagePath = task?.filename || task?._raw?.filename || null
+      const imagePath = filename || null
       await promptAPI.createPublic({ name: makePromptLibraryName(promptText), prompt: promptText, negative_prompt: '', tags: [], category: null, image_path: imagePath })
-      dialog.alert('已加入广场提示词库')
+      dialog.alert('已加入提示词库')
     } catch (e) {
+      try {
+        const { data } = await promptAPI.listPublic(promptText, 'time', null, 1, 10)
+        const exists = (data?.prompts || []).some(item => String(item?.prompt || '').trim() === promptText)
+        if (exists) {
+          dialog.alert('已加入提示词库')
+          return
+        }
+      } catch {}
       dialog.alert(e?.message || '加入提示词库失败')
     }
   }, [dialog,isAdmin])
+  const handleBatchAddToPromptLibrary = useCallback(async () => {
+    if (!isAdmin) return
+    const targets = visibleTasks.filter(t => checked.has(t.task_id) && (t.result_urls || []).length > 0 && String(t.params?.prompt || t.prompt || '').trim())
+    if (targets.length === 0) { dialog.alert('没有可入库的提示词'); return }
+    if (!await dialog.confirm(`确定将选中的 ${targets.length} 条提示词加入提示词库吗？`)) return
+    let ok = 0
+    for (const task of targets) {
+      try { await handleAddToPromptLibrary(task); ok += 1 } catch {}
+    }
+    await refreshTasks()
+    window.dispatchEvent(new Event('gallery-updated'))
+    setTimeout(() => window.dispatchEvent(new Event('gallery-updated')), 2500)
+    dialog.alert(`已处理 ${ok} 条`)
+  }, [checked, visibleTasks, isAdmin, dialog, handleAddToPromptLibrary, refreshTasks])
   const markSquareShared = useCallback((filename, shareId) => {
     if (!filename || !shareId) return
     squareIdMapRef.current[filename] = shareId
@@ -447,8 +470,27 @@ export default function ChatPage() {
         metadata: { size: params?.size, type: hasImages ? 'image' : 'text', input_urls: imageUrls?.length ? imageUrls : undefined },
       })
       markSquareShared(filename, data?.id)
+      setTimeout(() => window.dispatchEvent(new Event('gallery-updated')), 2500)
     } catch {}
   }, [markSquareShared])
+  const handleBatchShareToSquare = useCallback(async () => {
+    const targets = visibleTasks.filter(t => checked.has(t.task_id) && (t.result_urls || []).length > 0)
+    if (targets.length === 0) { dialog.alert('没有可分享的作品'); return }
+    if (!await dialog.confirm(`确定将选中的 ${targets.length} 项分享到广场吗？`)) return
+    let ok = 0
+    for (const task of targets) {
+      try {
+        const filename = task.result_urls?.[0]?.split('/').pop()
+        if (!filename) continue
+        await shareImageToSquare(filename, task.params?.prompt || task.prompt || '', task.params || {}, !!task.params?.image_urls?.length, task.params?.local_image_urls || task.params?.image_urls)
+        ok += 1
+      } catch {}
+    }
+    await refreshTasks()
+    window.dispatchEvent(new Event('gallery-updated'))
+    setTimeout(() => window.dispatchEvent(new Event('gallery-updated')), 2500)
+    dialog.alert(`已分享 ${ok} 项`)
+  }, [checked, visibleTasks, dialog, shareImageToSquare, refreshTasks])
   const refreshPointsOnFailed = useCallback(() => {
     pointsAPI.balance().then(res => {
       setPoints(res.data.points)
@@ -786,6 +828,7 @@ export default function ChatPage() {
       const { data } = await squareAPI.share({ filename: card.filename, prompt: card.prompt || '', metadata: { size: card?._raw?.metadata?.size, type: card?._raw?.metadata?.type || 'text', input_urls: card?._raw?.metadata?.input_urls } })
       markSquareShared(card.filename, data?.id)
       window.dispatchEvent(new Event('gallery-updated'))
+      setTimeout(() => window.dispatchEvent(new Event('gallery-updated')), 2500)
     } catch (e) {
       dialog.alert(e?.response?.data?.detail || e.message || '分享失败')
     }
@@ -980,6 +1023,8 @@ export default function ChatPage() {
             {checked.size === visibleTasks.length ? '取消全选' : '全选'}
           </button>
           <div className="ml-auto flex items-center gap-2">
+            {isAdmin && <button onClick={handleBatchAddToPromptLibrary} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--accent)' }}>批量入库</button>}
+            <button onClick={handleBatchShareToSquare} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--color-success)' }}>批量分享</button>
             <button onClick={handleBatchExtend} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--color-info)' }}>延长3天</button>
             <button onClick={handleBatchDownload} disabled={downloadProgress.open} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white disabled:opacity-50" style={{ background: 'var(--accent)' }}><Download size={14} /> {downloadProgress.open ? '处理中' : '下载'}</button>
             <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-[var(--color-error)] hover:bg-[var(--color-error)]/10"><Trash2 size={14} /> 删除</button>

@@ -116,13 +116,23 @@ class PromptService:
 
     @classmethod
     def create(cls, name: str, prompt: str, negative_prompt: Optional[str] = None,
-               tags: Optional[List[str]] = None, user_id: int = None, category: Optional[str] = None, image_path: Optional[str] = None) -> Dict[str, Any]:
+               tags: Optional[List[str]] = None, user_id: int = None, category: Optional[str] = None, image_path: Optional[str] = None, author: Optional[str] = None, allow_existing: bool = False) -> Dict[str, Any]:
         with get_db() as conn:
-            existing = conn.execute("SELECT id FROM prompts WHERE prompt = %s AND user_id IS NOT DISTINCT FROM %s", (prompt, user_id)).fetchone()
+            existing = conn.execute("SELECT * FROM prompts WHERE prompt = %s AND user_id IS NOT DISTINCT FROM %s", (prompt, user_id)).fetchone()
             if existing:
+                if allow_existing:
+                    if image_path and not existing.get("image_path"):
+                        if not image_path.startswith(("http://", "https://")):
+                            image_path = cls._copy_image_to_uploads(image_path)
+                        conn.execute("UPDATE prompts SET image_path = COALESCE(image_path, %s), author = COALESCE(NULLIF(author,''), %s), category = COALESCE(category, %s) WHERE id = %s", (image_path, (author or "").strip() or ("system" if user_id is None else ""), category, existing["id"]))
+                    if name and (not existing.get("name") or len(str(existing.get("name") or "")) > 16 or str(existing.get("name") or "").lower() == str(prompt or "").lower()):
+                        conn.execute("UPDATE prompts SET name = %s WHERE id = %s", (name, existing["id"]))
+                    existing = conn.execute("SELECT * FROM prompts WHERE id = %s", (existing["id"],)).fetchone()
+                    return cls._row_to_dict(existing)
                 raise ValueError("相同内容的提示词已存在")
         if image_path and not image_path.startswith(("http://", "https://")):
             image_path = cls._copy_image_to_uploads(image_path)
+        author = (author or "").strip() or ("system" if user_id is None else "")
         item = {
             "id": str(uuid4()),
             "name": name,
@@ -133,12 +143,13 @@ class PromptService:
             "user_id": user_id,
             "category": category,
             "image_path": image_path,
+            "author": author,
         }
         with get_db() as conn:
             conn.execute(
-                "INSERT INTO prompts (id, name, prompt, negative_prompt, tags, created_at, user_id, category, image_path) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                "INSERT INTO prompts (id, name, prompt, negative_prompt, tags, created_at, user_id, category, image_path, author) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (item["id"], item["name"], item["prompt"], item["negative_prompt"],
-                 json.dumps(item["tags"], ensure_ascii=False), item["created_at"], item["user_id"], item["category"], item["image_path"]),
+                 json.dumps(item["tags"], ensure_ascii=False), item["created_at"], item["user_id"], item["category"], item["image_path"], item["author"]),
             )
         return item
 

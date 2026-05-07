@@ -83,7 +83,7 @@ class FavoriteService:
             prompt_map={}
             if image_ids:
                 placeholders=",".join("%s" for _ in image_ids)
-                rows=conn.execute(f"SELECT si.*,u.username,u.nickname FROM square_images si JOIN users u ON si.user_id=u.id WHERE si.id IN ({placeholders}) AND COALESCE(si.is_frozen,FALSE)=FALSE",image_ids).fetchall()
+                rows=conn.execute(f"SELECT si.*,u.username,u.nickname,cat.label AS category_label FROM square_images si JOIN users u ON si.user_id=u.id LEFT JOIN categories cat ON si.category=cat.slug WHERE si.id IN ({placeholders}) AND COALESCE(si.is_frozen,FALSE)=FALSE",image_ids).fetchall()
                 image_map={str(r["id"]):dict(r) for r in rows}
                 for k,v in image_map.items():
                     v["is_liked"]=k in image_liked_ids

@@ -168,8 +168,8 @@ export default function SquarePage() {
           {showBackToTop && (
             <button
               onClick={() => document.getElementById('square-scroll-container')?.scrollTo({ top: 0, behavior: 'smooth' })}
-              className="fixed bottom-6 right-6 z-50 w-10 h-10 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 hover:scale-110 active:scale-95"
-              style={{ background: 'var(--accent)', color: '#fff' }}
+              className="fixed right-6 z-50 w-10 h-10 rounded-full flex items-center justify-center shadow-lg backdrop-blur-sm transition-all duration-300 hover:scale-110 hover:opacity-100 active:scale-95"
+              style={{ bottom: 'calc(6.5rem + env(safe-area-inset-bottom))', background: 'color-mix(in srgb, var(--accent) 60%, transparent)', color: '#fff', opacity: 0.75 }}
             >
               <ChevronUp size={20} />
             </button>
@@ -242,6 +242,8 @@ function WorksTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, i
     try { await adminAPI.batchDeleteSquare([id]); refresh() }
     catch (e) { dialog.alert(e?.response?.data?.detail || e.message || '删除失败') }
   }, [refresh, dialog])
+  const exitSelectMode = useCallback(() => { setSelectMode(false); setChecked(new Set()) }, [])
+  const bottomDock = isAdmin && selectMode && checked.size > 0 ? <div className="fixed inset-x-0 bottom-0 z-40 border-t" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', paddingBottom: 'env(safe-area-inset-bottom)' }}><div className="px-4 py-3 flex items-center gap-3"><span className="text-sm" style={{ color: 'var(--text-primary)' }}>已选 {checked.size} 项</span><button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>{checked.size === cards.length ? '取消全选' : '全选'}</button><div className="ml-auto flex items-center gap-2"><button onClick={() => handleBatchFreeze(false)} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--color-info)' }}><Sun size={14} /> 解冻</button><button onClick={() => handleBatchFreeze(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--color-warning)' }}><Snowflake size={14} /> 冻结</button><button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-[var(--color-error)] hover:bg-[var(--color-error)]/10"><Trash2 size={14} /> 删除</button></div></div></div> : null
 
   return (
     <>
@@ -257,26 +259,8 @@ function WorksTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, i
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>共 {total} 张图片</span>
             <div className="flex items-center gap-2">
-              {selectMode && (
-                <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
-                  {checked.size === cards.length ? '取消全选' : '全选'}
-                </button>
-              )}
-              {selectMode && checked.size > 0 && (
-                <>
-                  <button onClick={() => handleBatchFreeze(false)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-medium bg-[var(--color-info)] text-white hover:opacity-90">
-                    <Sun size={14} /> 解冻 {checked.size} 项
-                  </button>
-                  <button onClick={() => handleBatchFreeze(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-medium bg-[var(--color-warning)] text-white hover:opacity-90">
-                    <Snowflake size={14} /> 冻结 {checked.size} 项
-                  </button>
-                  <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-medium bg-[var(--color-error)] text-white hover:opacity-90">
-                    <Trash2 size={14} /> 删除 {checked.size} 项
-                  </button>
-                </>
-              )}
               {selectMode ? (
-                <button onClick={() => { setSelectMode(false); setChecked(new Set()) }} className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
+                <button onClick={exitSelectMode} className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
               ) : (
                 <button onClick={() => setSelectMode(true)} className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>选择</button>
               )}
@@ -353,6 +337,7 @@ function WorksTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, i
           hideDownload
         />
       )}
+      {bottomDock}
     </>
   )
 }
@@ -423,6 +408,8 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
     try { await adminAPI.freezePrompts([id], frozen); refresh() }
     catch (e) { dialog.alert(e?.response?.data?.detail || e.message || '操作失败') }
   }, [refresh, dialog])
+  const exitSelectMode = useCallback(() => { setSelectMode(false); setChecked(new Set()) }, [])
+  const bottomDock = isAdmin && selectMode && checked.size > 0 ? <div className="fixed inset-x-0 bottom-0 z-40 border-t" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', paddingBottom: 'env(safe-area-inset-bottom)' }}><div className="px-4 py-3 flex items-center gap-3"><span className="text-sm" style={{ color: 'var(--text-primary)' }}>已选 {checked.size} 条</span><button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>{checked.size === cards.length ? '取消全选' : '全选'}</button><div className="ml-auto flex items-center gap-2"><button onClick={() => handleBatchFreeze(false)} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--color-info)' }}><Sun size={14} /> 解冻</button><button onClick={() => handleBatchFreeze(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--color-warning)' }}><Snowflake size={14} /> 冻结</button><button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-[var(--color-error)] hover:bg-[var(--color-error)]/10"><Trash2 size={14} /> 删除</button></div></div></div> : null
 
   const [newCard, setNewCard] = useState(null)
   const newCardRef = useRef(null)
@@ -496,26 +483,8 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>共 {total} 条提示词</span>
             <div className="flex items-center gap-2">
-              {selectMode && (
-                <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
-                  {checked.size === cards.length ? '取消全选' : '全选'}
-                </button>
-              )}
-              {selectMode && checked.size > 0 && (
-                <>
-                  <button onClick={() => handleBatchFreeze(false)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-medium bg-[var(--color-info)] text-white hover:opacity-90">
-                    <Sun size={14} /> 解冻 {checked.size} 条
-                  </button>
-                  <button onClick={() => handleBatchFreeze(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-medium bg-[var(--color-warning)] text-white hover:opacity-90">
-                    <Snowflake size={14} /> 冻结 {checked.size} 条
-                  </button>
-                  <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-medium bg-[var(--color-error)] text-white hover:opacity-90">
-                    <Trash2 size={14} /> 删除 {checked.size} 条
-                  </button>
-                </>
-              )}
               {selectMode ? (
-                <button onClick={() => { setSelectMode(false); setChecked(new Set()) }} className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
+                <button onClick={exitSelectMode} className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
               ) : (
                 <>
                   <button onClick={handleCreate}
@@ -605,6 +574,7 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
           initialEditing={initialEditing && !!newCard}
         />
       )}
+      {bottomDock}
     </>
   )
 }

@@ -177,6 +177,17 @@ class ContentAuditService:
         except Exception:
             logger.exception("[content_audit] audit batch failed")
             return []
+
+    @classmethod
+    async def auto_audit_single(cls, item_type:str, item_id:str, prompt:str="", name:str="", category:str="", author:str="")->Dict[str,Any]:
+        if item_type not in ("prompt","image"):return {}
+        llm_cfg=get_llm_config()
+        if not llm_cfg["enabled"] or not llm_cfg["api_key"]:
+            return {"risk_level":"low","confidence":"low","suggested_action":"keep","reason_summary":"LLM不可用","reason_detail":"当前未启用内容审核模型，已跳过自动审核。","hit_rules":["LLM不可用"]}
+        item={"item_id":str(item_id),"name":name or "","prompt":prompt or "","category":category or "","author":author or "","item_type":item_type}
+        results=await cls._audit_batch([item])
+        if not results:return {"risk_level":"medium","confidence":"low","suggested_action":"review","reason_summary":"模型未返回结果","reason_detail":"本条未获得有效审核结果，建议人工复核。","hit_rules":["模型无结果"]}
+        return results[0] or {}
     @classmethod
     def list_tasks(cls,page:int=1,size:int=20)->Dict[str,Any]:
         with get_db() as conn:

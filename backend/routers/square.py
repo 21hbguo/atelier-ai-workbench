@@ -1,11 +1,19 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
+import asyncio
+import json
+import logging
+import re
 from pydantic import BaseModel
 from typing import Optional
 from backend.database import get_db
 from backend.auth import get_current_user, get_optional_user
 from backend.services.image_expiry import mark_image_permanent
 from backend.services.favorite_service import FavoriteService
-from backend.config import GENERATED_IMAGES_DIR, EVO_IMAGES_DIR, EVO_IMPORTED_DIR, UPLOAD_DIR
+from backend.services.classification_service import ClassificationService
+from backend.services.content_audit_service import ContentAuditService
+from backend.services.notification_service import NotificationService
+from backend.services.title_generator import TitleGenerator
+from backend.config import GENERATED_IMAGES_DIR, EVO_IMAGES_DIR, EVO_IMPORTED_DIR
 from backend.services.image_dimensions import get_image_dimensions
 
 
@@ -15,7 +23,22 @@ def _get_evo_image_path(image_path: str):
         return p
     return EVO_IMAGES_DIR / image_path
 
+def _quick_title(prompt:str,filename:str)->str:
+    s=str(prompt or "").strip().replace("\n"," ").replace("\r"," ")
+    if s:
+        for part in [x.strip() for x in re.split(r"[，,。；;、】【：:!?！？\s]+",s) if x.strip()]:
+            part=re.sub(r"^(把|将|请|生成|制作|转化|设计|优化|提升|调整|改成|输出|做|用|让)\s*","",part)
+            if 2<=len(part)<=10 and re.search(r"[\u4e00-\u9fff]",part) and not re.search(r"[A-Za-z]{3,}|\d",part):
+                return part[:12]
+        m=re.search(r"[\u4e00-\u9fff]{2,12}",s)
+        if m:return m.group(0)[:12]
+    f=str(filename or "").rsplit(".",1)[0].strip()
+    return "广场作品" if not f else "广场作品"
+
 router = APIRouter(prefix="/api/square", tags=["square"])
+def _bg_task(coro):
+    try:asyncio.create_task(coro)
+    except Exception:logger.exception("后台任务创建失败")
 
 _SQUARE_ORDER_MAP = {
     "likes": "si.likes_count DESC, si.id DESC",
@@ -39,13 +62,60 @@ async def share_to_square(req: ShareRequest, user=Depends(get_current_user)):
         if existing:
             raise HTTPException(status_code=400, detail="该图片已分享到广场")
 
-        import json
         cursor = conn.execute(
             "INSERT INTO square_images (user_id, filename, prompt, metadata) VALUES (%s, %s, %s, %s) RETURNING id",
             (user["user_id"], req.filename, req.prompt, json.dumps(req.metadata) if req.metadata else None),
         )
         mark_image_permanent(req.filename, conn=conn)
-        return {"id": cursor.fetchone()["id"], "message": "分享成功"}
+        image_id = cursor.fetchone()["id"]
+        title = _quick_title(req.prompt or "", req.filename)
+        row = conn.execute("SELECT metadata FROM square_images WHERE id = %s", (image_id,)).fetchone()
+        meta = row["metadata"] if row else {}
+        if isinstance(meta, str):
+            try: meta = json.loads(meta) if meta else {}
+            except Exception: meta = {}
+        meta = meta if isinstance(meta, dict) else {}
+        meta["title"] = title
+        conn.execute("UPDATE square_images SET metadata = %s WHERE id = %s", (json.dumps(meta, ensure_ascii=False), image_id))
+    _bg_task(_auto_square_postprocess(image_id, req.filename, req.prompt or "", str(user.get("username") or user.get("nickname") or ""), user["user_id"]))
+    return {"id": image_id, "message": "分享成功"}
+
+async def _auto_square_postprocess(image_id:int, filename:str, prompt:str, author:str, user_id:int):
+    try:
+        title=await TitleGenerator.generate(prompt, filename)
+        with get_db() as conn:
+            row=conn.execute("SELECT metadata FROM square_images WHERE id = %s",(image_id,)).fetchone()
+            if row:
+                meta=row["metadata"]
+                if isinstance(meta,str):
+                    try:meta=json.loads(meta) if meta else {}
+                    except Exception:meta={}
+                meta=meta if isinstance(meta,dict) else {}
+                meta["title"]=title
+                conn.execute("UPDATE square_images SET metadata = %s WHERE id = %s",(json.dumps(meta,ensure_ascii=False),image_id))
+    except Exception:
+        logger.exception("广场标题生成失败")
+        NotificationService.create(user_id, "square_auto_title_failed", "广场标题生成失败", f"作品 {filename} 中文标题生成失败，已保留原内容", str(image_id))
+    try:
+        await ClassificationService.auto_classify_single("image", str(image_id))
+    except Exception:
+        logger.exception("广场自动分类失败")
+        NotificationService.create(user_id, "square_auto_classify_failed", "广场自动分类失败", f"作品 {filename} 自动分类失败，已保留原分享", str(image_id))
+    try:
+        audit=await ContentAuditService.auto_audit_single("image", str(image_id), prompt=prompt, author=author)
+        if audit.get("risk_level")=="high":
+            with get_db() as conn:
+                conn.execute("DELETE FROM favorites WHERE target_type = 'image' AND target_id = %s", (str(image_id),))
+                conn.execute("DELETE FROM square_likes WHERE image_id = %s", (image_id,))
+                conn.execute("DELETE FROM square_images WHERE id = %s", (image_id,))
+                from backend.services.image_expiry import refresh_permanent_flags_by_filenames
+                refresh_permanent_flags_by_filenames([filename], conn=conn)
+            NotificationService.create(user_id, "square_auto_high_risk", "广场内容高风险", f"作品 {filename} 命中高风险，已自动撤回分享", str(image_id))
+        elif audit.get("risk_level") in ("medium","low") and audit.get("suggested_action") in ("review","keep","freeze","delete"):
+            pass
+    except Exception:
+        logger.exception("广场自动审核失败")
+        NotificationService.create(user_id, "square_auto_audit_failed", "广场自动审核失败", f"作品 {filename} 自动审核失败，已保留原分享", str(image_id))
 
 
 @router.post("/unshare")
@@ -313,3 +383,4 @@ async def my_shares(
             images.append(item)
 
         return {"images": images, "total": total, "page": page, "size": size}
+logger=logging.getLogger(__name__)

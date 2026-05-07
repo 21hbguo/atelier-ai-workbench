@@ -2,7 +2,9 @@ import json
 import csv
 import io
 import logging
+import asyncio
 from typing import List, Optional
+from backend.services.title_generator import TitleGenerator
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query, Depends
 from fastapi.responses import Response
@@ -10,6 +12,9 @@ from fastapi.responses import Response
 from backend.services.prompt_service import PromptService
 from backend.services.category_service import CategoryService
 from backend.services.favorite_service import FavoriteService
+from backend.services.classification_service import ClassificationService
+from backend.services.content_audit_service import ContentAuditService
+from backend.services.notification_service import NotificationService
 from backend.database import get_db
 from backend.auth import get_current_user, require_admin, get_optional_user
 from backend.models.schemas import (
@@ -24,6 +29,10 @@ from backend.models.schemas import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/prompts", tags=["prompts"])
+
+def _bg_task(coro):
+    try:asyncio.create_task(coro)
+    except Exception:logger.exception("后台任务创建失败")
 
 
 def _check_ownership(prompt_id: int, user: dict):
@@ -187,7 +196,7 @@ async def serve_prompt_image(storage_name: str):
 @router.post("", response_model=PromptItem)
 async def create_prompt(request: PromptCreateRequest, user=Depends(get_current_user)):
     try:
-        return PromptService.create(
+        result = PromptService.create(
             name=request.name,
             prompt=request.prompt,
             negative_prompt=request.negative_prompt,
@@ -196,6 +205,8 @@ async def create_prompt(request: PromptCreateRequest, user=Depends(get_current_u
             category=request.category,
             image_path=request.image_path,
         )
+        _bg_task(_auto_prompt_postprocess(str(result["id"]), request.prompt, result.get("name") or request.name, result.get("category") or "", str(user.get("nickname") or user.get("username") or ""), user["user_id"]))
+        return result
     except Exception as e:
         logger.exception("创建提示词失败")
         raise HTTPException(status_code=500, detail="创建提示词失败")
@@ -204,18 +215,40 @@ async def create_prompt(request: PromptCreateRequest, user=Depends(get_current_u
 @router.post("/public", response_model=PromptItem)
 async def create_public_prompt(request: PromptCreateRequest, admin=Depends(require_admin)):
     try:
-        return PromptService.create(
-            name=request.name,
+        auto_name = await TitleGenerator.generate(request.prompt, request.name)
+        result = PromptService.create(
+            name=auto_name,
             prompt=request.prompt,
             negative_prompt=request.negative_prompt,
             tags=request.tags,
             user_id=None,
             category=request.category,
             image_path=request.image_path,
+            author="system",
+            allow_existing=True,
         )
+        _bg_task(_auto_prompt_postprocess(str(result["id"]), request.prompt, result.get("name") or auto_name, result.get("category") or "", "system", admin["user_id"]))
+        return result
     except Exception as e:
         logger.exception("创建提示词失败")
         raise HTTPException(status_code=500, detail="创建提示词失败")
+
+async def _auto_prompt_postprocess(prompt_id:str, prompt:str, name:str, category:str, author:str, user_id:int):
+    try:
+        await ClassificationService.auto_classify_single("prompt", prompt_id)
+    except Exception:
+        logger.exception("提示词自动分类失败")
+        NotificationService.create(user_id, "prompt_auto_classify_failed", "提示词自动分类失败", f"提示词“{name or prompt[:20]}”自动分类失败，已保留原记录", prompt_id)
+    try:
+        audit=await ContentAuditService.auto_audit_single("prompt", prompt_id, prompt=prompt, name=name, category=category, author=author)
+        if audit.get("risk_level")=="high":
+            with get_db() as conn:
+                conn.execute("UPDATE prompts SET is_frozen = TRUE WHERE id = %s", (prompt_id,))
+            NotificationService.create(user_id, "prompt_auto_high_risk", "提示词高风险", f"提示词“{name or prompt[:20]}”命中高风险，已自动冻结", prompt_id)
+    except Exception:
+        logger.exception("提示词自动审核失败")
+        NotificationService.create(user_id, "prompt_auto_audit_failed", "提示词自动审核失败", f"提示词“{name or prompt[:20]}”自动审核失败，已保留原记录", prompt_id)
+        NotificationService.create(user_id, "prompt_auto_audit_failed", "提示词自动审核失败", f"提示词“{name or prompt[:20]}”自动审核失败，已保留原记录", prompt_id)
 
 
 @router.put("/{prompt_id}", response_model=PromptItem)

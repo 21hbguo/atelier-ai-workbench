@@ -215,6 +215,7 @@ export const adminAPI = {
   approveAudit: (taskId, resultIds) => api.post(`/admin/audit/tasks/${taskId}/approve`, { result_ids: resultIds }),
   rejectAudit: (taskId, resultIds) => api.post(`/admin/audit/tasks/${taskId}/reject`, { result_ids: resultIds }),
   updateAuditResult: (resultId, data) => api.post(`/admin/audit/results/${resultId}`, data),
+  testTitle: data => api.post('/admin/title/test', data),
 }
 export const configAPI = { get: () => api.get('/config'), admin: () => api.get('/config/admin'), update: data => api.post('/config', data), generationAdmin: () => api.get('/config/generation/admin'), models: () => api.get('/config/models') }
 

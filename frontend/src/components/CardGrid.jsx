@@ -3,10 +3,11 @@ import { Heart, User, Plus, Image as ImageIcon, RefreshCw, Check, Star, ArrowUpR
 import Pagination from './Pagination'
 import UnifiedCard from './UnifiedCard'
 import { useDragSelection } from '../hooks/useDragSelection'
+import { promptAPI } from '../api'
 function trimCardText(v='',n=36){const s=String(v||'').replace(/\s+/g,' ').trim();return s.length>n?`${s.slice(0,n)}...`:s}
-function getCardTag(card){return card.categoryLabel||card.category||card.metadataType==='image'?'图生图':card.metadataType==='text'?'文生图':card._type==='prompt'?'提示词':'作品'}
+function getCardTag(card,categoryMap={}){if(card.category&&categoryMap[card.category])return categoryMap[card.category];if(card.categoryLabel)return card.categoryLabel;if(card.category)return card.category;if(card.metadataType==='image'||(card._type==='prompt'&&card.imagePath))return'图生图';if(card.metadataType==='text'||card._type==='prompt')return'文生图';return'作品'}
 function getCardTitle(card){return trimCardText(card.title||card.name||card.prompt||card.subtitle||'未命名作品',18)}
-function getCardMeta(card){return trimCardText(card.author||card.authorName||card.metadataSize||card.createdAt?.slice(0,10)||'',24)}
+function getCardMeta(card){return trimCardText(card.author||card.authorName||card.metadataSize||'',24)}
 
 export function CardGridSkeleton({ layoutMode = 'grid', count = 10, label = '加载中...', className = '' }) {
   return <div className={className}><div className="card-feed-blank-stage" /></div>
@@ -31,6 +32,7 @@ export default function CardGrid({
   const [failedUrls, setFailedUrls] = useState(new Set())
   const [layoutReady, setLayoutReady] = useState(true)
   const [gridMinHeight, setGridMinHeight] = useState(0)
+  const [categoryMap, setCategoryMap] = useState({})
   const gridRef = useRef(null)
   const { selectionRect, dragSelected, wasDraggedRef } = useDragSelection({
     enabled: selectable,
@@ -69,6 +71,11 @@ export default function CardGrid({
       return next.size === prev.size ? prev : next
     })
   }, [layoutSignature, useMasonry, cards.length])
+  useEffect(() => {
+    let dead=false
+    promptAPI.categories().then(({data})=>{if(dead)return;const rows=data?.categories||[];setCategoryMap(Object.fromEntries(rows.map(c=>[c.slug,c.label])))}).catch(()=>{})
+    return()=>{dead=true}
+  }, [])
   useEffect(() => {
     if (loading || paging || cards.length === 0) { setLayoutReady(false); return }
     const el = gridRef.current
@@ -119,7 +126,7 @@ export default function CardGrid({
 
       <div ref={gridRef} className={useMasonry ? 'card-feed-masonry' : 'card-feed-grid'} style={{ position: 'relative', ...((loading || paging) && gridMinHeight > 0 ? { minHeight: `${gridMinHeight}px` } : undefined) }}>
         {!layoutReady && <div className="card-feed-loading-mask" />}
-        {cards.map((card, idx) => { const ratio = card.width && card.height ? `${card.width} / ${card.height}` : '1 / 1'; const text = card.title || card.subtitle || '无提示词'; const len = text.length; const fontSize = len <= 4 ? '2rem' : len <= 8 ? '1.5rem' : len <= 16 ? '1.125rem' : '0.875rem'; const squareTag = getCardTag(card); const squareTitle = getCardTitle(card); const squareMeta = getCardMeta(card); const squareBody = trimCardText(card.prompt || card.subtitle || card.title || '', 64); const imageNode = card.thumbUrl && !failedUrls.has(card.thumbUrl) ? (useMasonry ? <img src={card.thumbUrl} srcSet={card.thumbUrl2x ? `${card.thumbUrl} 1x, ${card.thumbUrl2x} 2x` : undefined} sizes="(min-width: 1024px) 20vw, (min-width: 768px) 25vw, (min-width: 640px) 33vw, 50vw" width={card.width || undefined} height={card.height || undefined} alt="" draggable={false} className={mediaClassName} loading={idx < 8 ? 'eager' : 'lazy'} onError={(e) => { e.target.onerror = null; setFailedUrls(prev => new Set(prev).add(card.thumbUrl)) }} /> : <div className="card-feed-media-shell" style={{ aspectRatio: ratio }}><img src={card.thumbUrl} srcSet={card.thumbUrl2x ? `${card.thumbUrl} 1x, ${card.thumbUrl2x} 2x` : undefined} sizes="(min-width: 1024px) 20vw, (min-width: 768px) 25vw, (min-width: 640px) 33vw, 50vw" width={card.width || undefined} height={card.height || undefined} alt="" draggable={false} className={mediaClassName} loading={idx < 8 ? 'eager' : 'lazy'} onError={(e) => { e.target.onerror = null; setFailedUrls(prev => new Set(prev).add(card.thumbUrl)) }} /></div>) : <div className="w-full flex items-center justify-center p-3" style={{ aspectRatio: ratio, background: 'linear-gradient(145deg,color-mix(in srgb,var(--accent) 22%,transparent),color-mix(in srgb,var(--bg-card) 88%,#fff))' }}><p className="text-center font-bold leading-tight line-clamp-4" style={{ color: 'var(--accent)', fontSize }}>{text}</p></div>; const squareMedia = <div className="px-2.5 pt-2.5"><div className="w-full overflow-hidden rounded-[1.35rem] border border-black/6 bg-[var(--bg-ai-bubble)] shadow-[0_18px_40px_rgba(18,30,24,0.12)]"><div className="relative">{imageNode}<div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.18),rgba(255,255,255,0.02)_26%,rgba(14,18,17,0.03)_54%,rgba(14,18,17,0.54)_100%)]" /><div className="pointer-events-none absolute inset-x-[14%] top-[8%] h-[18%] rounded-full bg-white/18 blur-2xl" /></div></div></div>; return <UnifiedCard
+        {cards.map((card, idx) => { const ratio = card.width && card.height ? `${card.width} / ${card.height}` : '1 / 1'; const text = card.title || card.subtitle || '无提示词'; const len = text.length; const fontSize = len <= 4 ? '2rem' : len <= 8 ? '1.5rem' : len <= 16 ? '1.125rem' : '0.875rem'; const squareTag = getCardTag(card,categoryMap); const squareTitle = getCardTitle(card); const squareMeta = getCardMeta(card); const squareBody = trimCardText(card.prompt || card.subtitle || card.title || '', 64); const imageNode = card.thumbUrl && !failedUrls.has(card.thumbUrl) ? (useMasonry ? <img src={card.thumbUrl} srcSet={card.thumbUrl2x ? `${card.thumbUrl} 1x, ${card.thumbUrl2x} 2x` : undefined} sizes="(min-width: 1024px) 20vw, (min-width: 768px) 25vw, (min-width: 640px) 33vw, 50vw" width={card.width || undefined} height={card.height || undefined} alt="" draggable={false} className={mediaClassName} loading={idx < 8 ? 'eager' : 'lazy'} onError={(e) => { e.target.onerror = null; setFailedUrls(prev => new Set(prev).add(card.thumbUrl)) }} /> : <div className="card-feed-media-shell" style={{ aspectRatio: ratio }}><img src={card.thumbUrl} srcSet={card.thumbUrl2x ? `${card.thumbUrl} 1x, ${card.thumbUrl2x} 2x` : undefined} sizes="(min-width: 1024px) 20vw, (min-width: 768px) 25vw, (min-width: 640px) 33vw, 50vw" width={card.width || undefined} height={card.height || undefined} alt="" draggable={false} className={mediaClassName} loading={idx < 8 ? 'eager' : 'lazy'} onError={(e) => { e.target.onerror = null; setFailedUrls(prev => new Set(prev).add(card.thumbUrl)) }} /></div>) : <div className="w-full flex items-center justify-center p-3" style={{ aspectRatio: ratio, background: 'linear-gradient(145deg,color-mix(in srgb,var(--accent) 22%,transparent),color-mix(in srgb,var(--bg-card) 88%,#fff))' }}><p className="text-center font-bold leading-tight line-clamp-4" style={{ color: 'var(--accent)', fontSize }}>{text}</p></div>; const squareMedia = <div className="px-2.5 pt-2.5"><div className="w-full overflow-hidden rounded-[1.35rem] border border-black/6 bg-[var(--bg-ai-bubble)] shadow-[0_18px_40px_rgba(18,30,24,0.12)]"><div className="relative">{imageNode}<div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.18),rgba(255,255,255,0.02)_26%,rgba(14,18,17,0.03)_54%,rgba(14,18,17,0.54)_100%)]" /><div className="pointer-events-none absolute inset-x-[14%] top-[8%] h-[18%] rounded-full bg-white/18 blur-2xl" /></div></div></div>; return <UnifiedCard
             key={card.id}
             data-card-id={String(card.id)}
             className={`${useMasonry ? 'card-feed-item-masonry' : ''} ${isSquareMode ? 'rounded-[1.75rem] border border-[color:color-mix(in_srgb,var(--accent)_14%,var(--border-color))] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--bg-card)_84%,#fff_16%),color-mix(in_srgb,var(--bg-primary)_92%,var(--bg-card)))] shadow-[0_18px_45px_rgba(26,39,32,0.08)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(26,39,32,0.14)]' : ''}`}

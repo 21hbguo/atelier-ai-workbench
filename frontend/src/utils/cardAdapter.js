@@ -4,7 +4,7 @@ export function normalizeImage(raw) {
     _type: 'image',
     _raw: raw,
     id: String(raw.id),
-    title: '',
+    title: metadata.title || raw.title || raw.name || '',
     subtitle: raw.prompt || '',
     prompt: raw.prompt || '',
     thumbUrl: `/api/images/thumb/${raw.filename}?size=400`,

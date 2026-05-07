@@ -17,6 +17,7 @@ from backend.services.finance_service import FinanceService
 from backend.services.favorite_service import FavoriteService
 from backend.services.classification_service import ClassificationService
 from backend.services.content_audit_service import ContentAuditService
+from backend.services.title_generator import TitleGenerator
 from backend.config import get_generation_providers, get_generation_models, get_config
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -1330,7 +1331,7 @@ async def approve_classification(task_id: int, body: dict, admin=Depends(require
     if not result_ids:
         raise HTTPException(status_code=400, detail="请选择要通过的结果")
     try:
-        return ClassificationService.approve_results(task_id, result_ids)
+        return await ClassificationService.approve_results(task_id, result_ids)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -1351,6 +1352,15 @@ async def update_classification_result(result_id: int, body: dict, admin=Depends
     if not slug:
         raise HTTPException(status_code=400, detail="分类标识不能为空")
     return ClassificationService.update_result(result_id, slug, label, is_new)
+
+@router.post("/title/test")
+async def test_title_generation(body: dict, admin=Depends(require_admin)):
+    prompt = (body.get("prompt") or "").strip()
+    raw_name = (body.get("raw_name") or "").strip()
+    if not prompt and not raw_name:
+        raise HTTPException(status_code=400, detail="prompt 或 raw_name 至少填写一项")
+    title = await TitleGenerator.generate(prompt, raw_name)
+    return {"title": title, "prompt": prompt, "raw_name": raw_name}
 
 
 @router.post("/classification/test")

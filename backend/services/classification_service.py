@@ -6,6 +6,7 @@ from typing import List, Dict, Any, Optional
 from backend.config import get_llm_config
 from backend.database import get_db
 from backend.services.category_service import CategoryService
+from backend.services.title_generator import TitleGenerator, needs_title_generation
 
 logger = logging.getLogger(__name__)
 
@@ -353,7 +354,7 @@ class ClassificationService:
             }
 
     @classmethod
-    def approve_results(cls, task_id: int, result_ids: List[int]) -> Dict[str, Any]:
+    async def approve_results(cls, task_id: int, result_ids: List[int]) -> Dict[str, Any]:
         with get_db() as conn:
             task = conn.execute("SELECT id, status, item_type FROM classification_tasks WHERE id = %s", (task_id,)).fetchone()
             if not task:
@@ -361,7 +362,7 @@ class ClassificationService:
 
             placeholders = ",".join(["%s"] * len(result_ids))
             results = conn.execute(
-                f"SELECT id, item_id, item_type, suggested_category, suggested_category_label, is_new_category FROM classification_results WHERE task_id = %s AND id IN ({placeholders}) AND status = 'pending'",
+                f"SELECT id, item_id, item_type, item_name, item_prompt, suggested_category, suggested_category_label, is_new_category FROM classification_results WHERE task_id = %s AND id IN ({placeholders}) AND status = 'pending'",
                 (task_id, *result_ids),
             ).fetchall()
 
@@ -383,9 +384,12 @@ class ClassificationService:
                         (r["suggested_category"], r["item_id"]),
                     )
                 else:
+                    next_name = r["item_name"] or ""
+                    if needs_title_generation(next_name, r["item_prompt"] or ""):
+                        next_name = await TitleGenerator.generate(r["item_prompt"] or "", next_name)
                     conn.execute(
-                        "UPDATE prompts SET category = %s WHERE id = %s",
-                        (r["suggested_category"], r["item_id"]),
+                        "UPDATE prompts SET category = %s, name = %s WHERE id = %s",
+                        (r["suggested_category"], next_name, r["item_id"]),
                     )
                 conn.execute(
                     "UPDATE classification_results SET status = 'applied', applied_at = NOW() WHERE id = %s",
@@ -404,6 +408,47 @@ class ClassificationService:
                 )
 
             return {"approved": approved, "remaining_pending": remaining}
+
+    @classmethod
+    async def auto_classify_single(cls, item_type: str, item_id: str) -> Dict[str, Any]:
+        if item_type not in ("prompt", "image"):
+            return {}
+        with get_db() as conn:
+            if item_type == "image":
+                row = conn.execute("SELECT si.id, si.filename, si.prompt, si.category FROM square_images si WHERE si.id = %s", (item_id,)).fetchone()
+            else:
+                row = conn.execute("SELECT p.id, p.name, p.prompt, p.category FROM prompts p WHERE p.id = %s", (item_id,)).fetchone()
+            if not row:
+                return {}
+            if row.get("category"):
+                return dict(row)
+        categories = CategoryService.get_all_as_dict()
+        cat_text = "\n".join(f"- {slug}: {label}" for slug, label in categories.items())
+        system_prompt = SYSTEM_TEMPLATE.format(categories=cat_text)
+        name = row.get("filename") or row.get("name") or ""
+        items = [{"item_id": str(row["id"]), "name": name, "prompt": row.get("prompt") or ""}]
+        results = await cls._classify_batch(system_prompt, items)
+        if not results:
+            return {}
+        match = results[0] or {}
+        slug = match.get("category_slug") or ""
+        label = match.get("category_label") or slug
+        if not slug:
+            return {}
+        with get_db() as conn:
+            if match.get("is_new"):
+                existing = conn.execute("SELECT id FROM categories WHERE slug = %s", (slug,)).fetchone()
+                if not existing:
+                    max_order = conn.execute("SELECT COALESCE(MAX(sort_order), 0) AS cnt FROM categories").fetchone()["cnt"]
+                    conn.execute("INSERT INTO categories (slug, label, sort_order) VALUES (%s, %s, %s)", (slug, label or slug, max_order + 1))
+            if item_type == "image":
+                conn.execute("UPDATE square_images SET category = %s WHERE id = %s", (slug, item_id))
+            else:
+                next_name = row.get("name") or ""
+                if needs_title_generation(next_name, row.get("prompt") or ""):
+                    next_name = await TitleGenerator.generate(row.get("prompt") or "", next_name)
+                conn.execute("UPDATE prompts SET category = %s, name = %s WHERE id = %s", (slug, next_name, item_id))
+        return {"category_slug": slug, "category_label": label, "is_new": bool(match.get("is_new"))}
 
     @classmethod
     def reject_results(cls, task_id: int, result_ids: List[int]) -> Dict[str, Any]:

@@ -12,6 +12,10 @@ function normalizeMessage(value,fallback='操作失败'){if(Array.isArray(value)
 function loadOptimizeDraft(){try{const raw=localStorage.getItem(OPTIMIZE_DRAFT_KEY);if(!raw)return null;const data=JSON.parse(raw);if(!data||typeof data!=='object')return null;const optimizeResults=normalizeOptimizeResults(data.optimizeResults);const streamingVersions=normalizeStreamingVersions(data.streamingVersions);const showOptimizeOverlay=!!(data.showOptimizeOverlay&&(optimizeResults||streamingVersions.length));const showOptimizeModal=!!data.showOptimizeModal;const optimizeCount=Math.min(3,Math.max(1,Number(data.optimizeCount)||2));return{optimizeResults,streamingVersions,isStreaming:false,showOptimizeOverlay,showOptimizeModal,optimizeCount,restored:showOptimizeOverlay||showOptimizeModal}}catch{return null}}
 function saveOptimizeDraft(data){try{const optimizeResults=normalizeOptimizeResults(data?.optimizeResults);const streamingVersions=normalizeStreamingVersions(data?.streamingVersions);const showOptimizeOverlay=!!data?.showOptimizeOverlay;const showOptimizeModal=!!data?.showOptimizeModal;if(!showOptimizeOverlay&&!showOptimizeModal&&!optimizeResults&&!streamingVersions.length){localStorage.removeItem(OPTIMIZE_DRAFT_KEY);return}localStorage.setItem(OPTIMIZE_DRAFT_KEY,JSON.stringify({showOptimizeOverlay,showOptimizeModal,optimizeResults,streamingVersions,optimizeCount:Math.min(3,Math.max(1,Number(data?.optimizeCount)||2)),savedAt:Date.now()}))}catch{}}
 function clearOptimizeDraft(){try{localStorage.removeItem(OPTIMIZE_DRAFT_KEY)}catch{}}
+function formatOptimizeText(text, format) {
+  if (format === 'json') return JSON.stringify({ prompt: text }, null, 2)
+  return text
+}
 
 function getImageExt(type, name = '') {
   const mime = String(type || '').split(';')[0].trim().toLowerCase()
@@ -49,6 +53,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const [showOptimizeOverlay, setShowOptimizeOverlay] = useState(initialOptimizeDraft?.showOptimizeOverlay||false)
   const [showOptimizeModal, setShowOptimizeModal] = useState(initialOptimizeDraft?.showOptimizeModal||false)
   const [optimizeCount, setOptimizeCount] = useState(initialOptimizeDraft?.optimizeCount||2)
+  const [optimizeFormat, setOptimizeFormat] = useState('text')
   const [streamingVersions, setStreamingVersions] = useState(initialOptimizeDraft?.streamingVersions||[])
   const [isStreaming, setIsStreaming] = useState(initialOptimizeDraft?.isStreaming||false)
   const [toast, setToast] = useState(null)
@@ -56,6 +61,8 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const [style, setStyle] = useState(() => localStorage.getItem('cached_style') || '')
   const [mood, setMood] = useState(() => localStorage.getItem('cached_mood') || '')
   const [showSelector, setShowSelector] = useState(null)
+  const [showBatchModal, setShowBatchModal] = useState(false)
+  const [selectedBatchCount, setSelectedBatchCount] = useState(1)
   const fileRef = useRef(null)
   const textareaRef = useRef(null)
   const paramsStatePushedRef = useRef(false)
@@ -215,7 +222,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
-      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px'
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 80) + 'px'
     }
   }, [prompt])
   const openParams = useCallback(() => { setShowParams(true) }, [])
@@ -522,15 +529,14 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     localStorage.removeItem('ref_image_name')
     setCachedImages([]).catch(() => {})
   }, [])
-  const handleSend = async (batch = false) => {
+  const handleSend = async (batchCount = 1) => {
     if (!canSend || loading) return
     const fullPrompt = `${type ? `类型为${type} ` : ''}${style ? `风格为${style} ` : ''}${mood ? `氛围为${mood} ` : ''}${prompt.trim()}`.trim()
     const inputImages = snapshotInputImages(images)
-    const ok = await onSubmit({ prompt: fullPrompt, images: inputImages, params, shareToSquare, rollCount: batch ? Math.min(5, Math.max(2, Number(params.roll_count) || 5)) : 1, clearInput: clearComposer })
+    const ok = await onSubmit({ prompt: fullPrompt, images: inputImages, params, shareToSquare, rollCount: batchCount, clearInput: clearComposer })
     if (ok === false) return
     if (ok !== 'cleared') clearComposer()
   }
-  const batchCount = Math.min(5, Math.max(2, Number(params.roll_count) || 5))
 
   const removeImage = (idx) => {
     setImages(prev => {
@@ -563,18 +569,21 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
                   {!(isStreaming||(!optimizeResults&&streamingVersions.some(v=>!v.done))) && <button onClick={handleDismissOptimize} className="p-1 rounded-lg hover:bg-bg-hover transition-colors"><X size={14} style={{ color: 'var(--text-secondary)' }} /></button>}
                 </div>
                 <div className="p-2 space-y-1.5 max-h-56 overflow-y-auto">
-                  {displayVersions.map((v, i) => (
+                  {displayVersions.map((v, i) => {
+                    const displayText = v.done && optimizeFormat === 'json' ? formatOptimizeText(v.text, 'json') : v.text
+                    return (
                     <div key={i} className="group rounded-2xl border p-3 transition-all hover:border-[var(--accent)]" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
                       <div className="flex items-start gap-2">
                         <span className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold mt-0.5" style={{ background: 'var(--accent)', color: '#fff' }}>{i + 1}</span>
-                        <p className="flex-1 text-xs leading-relaxed min-w-0" style={{ color: 'var(--text-primary)', wordBreak: 'break-word' }}>
-                          {v.text}
+                        <p className="flex-1 text-xs leading-relaxed min-w-0 whitespace-pre-wrap" style={{ color: 'var(--text-primary)', wordBreak: 'break-word', fontFamily: optimizeFormat === 'json' ? 'monospace' : undefined }}>
+                          {displayText}
                           {isStreaming && !v.done && <span className="inline-block w-0.5 h-3.5 ml-0.5 align-middle animate-pulse" style={{ background: 'var(--accent)' }} />}
                         </p>
                         {v.done && <button onClick={() => handleSelectOptimized(v.text)} className="flex-shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-medium opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" style={{ background: 'var(--accent)', color: '#fff' }}>使用</button>}
                       </div>
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             </div>
@@ -603,6 +612,20 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
                   ))}
                 </div>
               </div>
+              <div className="mb-4">
+                <span className="text-xs mb-2 block" style={{ color: 'var(--text-secondary)' }}>输出格式</span>
+                <div className="flex gap-2">
+                  {[{ key: 'text', label: '文本' }, { key: 'json', label: 'JSON' }].map(f => (
+                    <button key={f.key} onClick={() => setOptimizeFormat(f.key)}
+                      className="flex-1 py-1.5 rounded-2xl text-xs font-medium border transition-colors"
+                      style={{
+                        background: optimizeFormat === f.key ? 'var(--accent)' : 'transparent',
+                        borderColor: optimizeFormat === f.key ? 'var(--accent)' : 'var(--border-color)',
+                        color: optimizeFormat === f.key ? '#fff' : 'var(--text-secondary)',
+                      }}>{f.label}</button>
+                  ))}
+                </div>
+              </div>
               <div className="flex items-center justify-between mb-4 px-1">
                 <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>消耗积分</span>
                 <span className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>{optimizeCost * optimizeCount}</span>
@@ -610,6 +633,48 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
               <div className="flex gap-2">
                 <button onClick={() => setShowOptimizeModal(false)} className="flex-1 py-2 rounded-2xl text-xs font-medium border transition-colors" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>取消</button>
                 <button onClick={handleConfirmOptimize} className="flex-1 py-2 rounded-2xl text-xs font-medium text-white transition-colors" style={{ background: 'var(--accent)' }}>确认优化</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {showBatchModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowBatchModal(false)}>
+            <div className="absolute inset-0 bg-black/50" />
+            <div className="relative w-full max-w-xs rounded-2xl p-5" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }} onClick={e => e.stopPropagation()}>
+              <div className="flex items-center gap-2 mb-3">
+                <Send size={16} style={{ color: 'var(--accent)' }} />
+                <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>批量生成</span>
+              </div>
+              <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>选择生成张数，每张消耗 {requestCost} 积分。</p>
+              <div className="mb-3 p-2.5 rounded-xl" style={{ background: 'var(--bg-ai-bubble)' }}>
+                <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+                  <span style={{ color: 'var(--text-secondary)' }}>模型: <span style={{ color: 'var(--text-primary)' }}>{params._model_label || params.model_id}</span></span>
+                  <span style={{ color: 'var(--text-secondary)' }}>尺寸: <span style={{ color: 'var(--text-primary)' }}>{params.size || 'auto'}</span></span>
+                  {type && <span style={{ color: 'var(--text-secondary)' }}>类型: <span style={{ color: 'var(--accent)' }}>{type}</span></span>}
+                  {style && <span style={{ color: 'var(--text-secondary)' }}>风格: <span style={{ color: 'var(--accent)' }}>{style}</span></span>}
+                  {mood && <span style={{ color: 'var(--text-secondary)' }}>氛围: <span style={{ color: 'var(--accent)' }}>{mood}</span></span>}
+                </div>
+              </div>
+              <div className="mb-4">
+                <div className="flex gap-1">
+                  {[1, 2, 3, 4, 5].map(n => (
+                    <button key={n} onClick={() => setSelectedBatchCount(n)}
+                      className="flex-1 py-1.5 rounded-2xl text-xs font-medium border transition-colors"
+                      style={{
+                        background: selectedBatchCount === n ? 'var(--accent)' : 'transparent',
+                        borderColor: selectedBatchCount === n ? 'var(--accent)' : 'var(--border-color)',
+                        color: selectedBatchCount === n ? '#fff' : 'var(--text-secondary)',
+                      }}>{n}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center justify-between mb-4 px-1">
+                <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>消耗积分</span>
+                <span className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>{requestCost * selectedBatchCount}</span>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setShowBatchModal(false)} className="flex-1 py-2 rounded-2xl text-xs font-medium border transition-colors" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>取消</button>
+                <button onClick={() => { setShowBatchModal(false); handleSend(selectedBatchCount) }} className="flex-1 py-2 rounded-2xl text-xs font-medium text-white transition-colors" style={{ background: 'var(--accent)' }}>确认生成</button>
               </div>
             </div>
           </div>
@@ -713,21 +778,20 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
             )}
             <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)} onPaste={handlePaste}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(false) } }}
-              placeholder="把脑洞变成画✨ 支持粘贴图片或图片链接做参考图"
+              placeholder="把脑洞变成画✨ 支持文生图+图生图"
               className="block w-full resize-none bg-transparent outline-none py-2"
-              rows={1} style={{ color: 'var(--text-primary)', minHeight: '40px', maxHeight: '120px', fontSize: '15px', paddingLeft: '10px' }} />
+              rows={1} style={{ color: 'var(--text-primary)', minHeight: '40px', maxHeight: '80px', fontSize: '15px', paddingLeft: '10px' }} />
             <div className="mt-2 flex items-center justify-between gap-3">
-              <div className="flex items-center flex-shrink-0 whitespace-nowrap -ml-0.5">
-                <button onClick={toggleParams} title="参数设置" className="inline-flex items-center p-1.5 rounded-lg hover:bg-bg-hover transition-colors" style={{ color: showParams ? 'var(--accent)' : 'var(--text-secondary)' }}><Settings size={15} /></button>
-                <button type="button" onClick={openFilePicker} title="上传参考图" className="inline-flex items-center p-1.5 rounded-lg hover:bg-bg-hover transition-colors" style={{ color: 'var(--text-secondary)' }}><Paperclip size={16} /></button>
-                <button onClick={() => { const next = !shareToSquare; setShareToSquare(next); setToast({ message: next ? '已开启分享到广场，作品将长久保存' : '已关闭分享到广场', type: 'success' }) }} className="inline-flex items-center gap-0.5 px-2 py-1 rounded-lg hover:bg-bg-hover transition-colors relative" style={{ color: shareToSquare ? 'var(--color-success)' : 'var(--text-secondary)' }} title={shareToSquare ? '已开启分享到广场' : '已关闭分享到广场'}><Share2 size={14} /><span className="text-[11px] leading-none">分享</span><span className="absolute -right-0.5 -top-0.5 w-2.5 h-2.5 rounded-full" style={{ background: shareToSquare ? 'var(--color-success)' : 'var(--border-color)' }} /></button>
-                <button onClick={handleOptimize} disabled={!prompt.trim() || loading || optimizeLoading} title="AI 优化提示词" className="inline-flex items-center gap-0.5 px-2 py-1 rounded-lg hover:bg-bg-hover transition-colors disabled:opacity-40" style={{ color: 'var(--accent)' }}>{optimizeLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}<span className="text-[11px] leading-none">AI优化</span></button>
+              <div className="flex items-center flex-shrink-0 whitespace-nowrap gap-0.5">
+                <button onClick={toggleParams} title="参数设置" className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors" style={{ color: showParams ? 'var(--accent)' : 'var(--text-secondary)' }}><Settings size={14} /><span className="text-[11px] leading-none">设置</span></button>
+                <button type="button" onClick={openFilePicker} title="上传参考图" className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors" style={{ color: 'var(--text-secondary)' }}><Paperclip size={15} /><span className="text-[11px] leading-none">上传</span></button>
+                <button onClick={() => { const next = !shareToSquare; setShareToSquare(next); setToast({ message: next ? '已开启分享到广场，作品将长久保存' : '已关闭分享到广场', type: 'success' }) }} className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors relative" style={{ color: shareToSquare ? 'var(--color-success)' : 'var(--text-secondary)' }} title={shareToSquare ? '已开启分享到广场' : '已关闭分享到广场'}><Share2 size={13} /><span className="text-[11px] leading-none">分享</span><span className="absolute -right-0.5 -top-0.5 w-2.5 h-2.5 rounded-full" style={{ background: shareToSquare ? 'var(--color-success)' : 'var(--border-color)' }} /></button>
+                <button onClick={handleOptimize} disabled={!prompt.trim() || loading || optimizeLoading} title="AI 优化提示词" className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors disabled:opacity-40" style={{ color: 'var(--accent)' }}>{optimizeLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}<span className="text-[11px] leading-none">AI优化</span></button>
               </div>
               <div className="min-w-0 flex items-center justify-end gap-1 flex-1">
 
                 {prompt.length > 0 && <span className="text-[10px] tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{prompt.length}</span>}
-                <button onClick={() => handleSend(true)} disabled={!canSend || loading} title={`批量生成 ${batchCount} 张`} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-white disabled:opacity-40 flex-shrink-0" style={{ background: canSend && !loading ? 'var(--accent)' : 'var(--border-color)' }}>{loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}<span className="text-xs font-medium leading-none">×{batchCount}</span></button>
-                <button onClick={() => handleSend(false)} disabled={!canSend || loading} title="生成 1 张" className="px-2.5 py-1.5 rounded-2xl transition-all duration-150 disabled:opacity-40 flex-shrink-0" style={{ background: canSend && !loading ? 'var(--accent)' : 'var(--border-color)', color: '#fff' }}>{loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}</button>
+                <button onClick={() => setShowBatchModal(true)} disabled={!canSend || loading} title="生成" className="inline-flex items-center gap-1 px-2 py-1.5 rounded-2xl text-white disabled:opacity-40 flex-shrink-0" style={{ background: canSend && !loading ? 'var(--accent)' : 'var(--border-color)' }}>{loading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}<span className="text-xs font-medium leading-none">×{selectedBatchCount}</span></button>
               </div>
             </div>
           </div>
