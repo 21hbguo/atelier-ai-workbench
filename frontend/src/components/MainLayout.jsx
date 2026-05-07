@@ -16,7 +16,7 @@ export default function MainLayout({ children, dragProps }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [unreadNoticeCount, setUnreadNoticeCount] = useState(0)
   const location = useLocation()
-  useEffect(()=>{const load=()=>Promise.allSettled([notificationAPI.unreadCount(),announcementAPI.getUnread()]).then(([noticeRes,annRes])=>setUnreadNoticeCount((noticeRes.status==='fulfilled'?(noticeRes.value.data.count||0):0)+(annRes.status==='fulfilled'?((annRes.value.data.items||[]).length):0))).catch(()=>{});load();window.addEventListener('notifications-updated',load);return()=>window.removeEventListener('notifications-updated',load)},[])
+  useEffect(()=>{let timer=0;const load=()=>Promise.allSettled([notificationAPI.unreadCount(),announcementAPI.getUnread()]).then(([noticeRes,annRes])=>setUnreadNoticeCount((noticeRes.status==='fulfilled'?(noticeRes.value.data.count||0):0)+(annRes.status==='fulfilled'?((annRes.value.data.items||[]).length):0))).catch(()=>{});timer=window.setTimeout(load,180);window.addEventListener('notifications-updated',load);return()=>{window.clearTimeout(timer);window.removeEventListener('notifications-updated',load)}},[])
 
   return (
     <div className="flex h-[100dvh] overflow-hidden safe-area-bottom" {...dragProps}>

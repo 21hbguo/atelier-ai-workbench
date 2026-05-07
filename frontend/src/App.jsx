@@ -9,7 +9,7 @@ import AnnouncementModal from './components/AnnouncementModal'
 import WelcomeModal from './components/WelcomeModal'
 import { announcementAPI, authAPI } from './api'
 import { clearUser, readUser, writeUser } from './auth'
-const ChatPage = lazy(() => import('./pages/ChatPage'))
+import ChatPage from './pages/ChatPage'
 const PromptsPage = lazy(() => import('./pages/PromptsPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
@@ -23,14 +23,14 @@ const WalletPage = lazy(() => import('./pages/WalletPage'))
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
 const SharesPage = lazy(() => import('./pages/SharesPage'))
 
-function ProtectedRoute({ children, authReady, user }) {
-  if (!authReady) return null
+function ProtectedRoute({ children, authReady, user, fallback }) {
+  if (!authReady) return fallback || null
   if (!user) return <Navigate to="/login" replace />
   return children
 }
 
-function AdminRoute({ children, authReady, user }) {
-  if (!authReady) return null
+function AdminRoute({ children, authReady, user, fallback }) {
+  if (!authReady) return fallback || null
   if (!user) return <Navigate to="/login" replace />
   if (!user?.is_admin) return <Navigate to="/" replace />
   return children
@@ -70,8 +70,9 @@ function AnnouncementManager({ user }) {
 }
 
 function AppContent() {
-  const [user, setUser] = useState(readUser())
-  const [authReady, setAuthReady] = useState(false)
+  const cachedUser = readUser()
+  const [user, setUser] = useState(cachedUser)
+  const [authReady, setAuthReady] = useState(!!cachedUser)
   const [welcomePoints, setWelcomePoints] = useState(null)
   useUserSync()
   useEffect(() => {
@@ -110,7 +111,7 @@ function AppContent() {
       }
     } catch { localStorage.removeItem('just_registered') }
   }, [authReady, user])
-  const routeFallback = <div className="min-h-screen flex items-center justify-center text-sm" style={{ color: 'var(--text-secondary)' }}>加载中...</div>
+  const routeFallback = <div className="min-h-screen flex items-center justify-center text-sm app-route-loading" style={{ color: 'var(--text-secondary)' }}>加载中...</div>
   return (
     <ErrorBoundary>
     <ThemeProvider>
@@ -124,17 +125,17 @@ function AppContent() {
           <Route path="/agreement" element={<AgreementPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/refund" element={<RefundPage />} />
-          <Route path="/redeem" element={<ProtectedRoute authReady={authReady} user={user}><RedeemPage /></ProtectedRoute>} />
-          <Route path="/wallet" element={<ProtectedRoute authReady={authReady} user={user}><WalletPage /></ProtectedRoute>} />
-          <Route path="/notifications" element={<ProtectedRoute authReady={authReady} user={user}><NotificationsPage /></ProtectedRoute>} />
+          <Route path="/redeem" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><RedeemPage /></ProtectedRoute>} />
+          <Route path="/wallet" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><WalletPage /></ProtectedRoute>} />
+          <Route path="/notifications" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><NotificationsPage /></ProtectedRoute>} />
           <Route path="/announcements" element={<Navigate to="/notifications" replace />} />
-          <Route path="/" element={<ProtectedRoute authReady={authReady} user={user}><ChatPage /></ProtectedRoute>} />
-          <Route path="/square" element={<ProtectedRoute authReady={authReady} user={user}><SquarePage /></ProtectedRoute>} />
-          <Route path="/prompts" element={<ProtectedRoute authReady={authReady} user={user}><PromptsPage /></ProtectedRoute>} />
-          <Route path="/favorites" element={<ProtectedRoute authReady={authReady} user={user}><Navigate to="/square" state={{ tab: 'favorites' }} replace /></ProtectedRoute>} />
+          <Route path="/" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><ChatPage /></ProtectedRoute>} />
+          <Route path="/square" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><SquarePage /></ProtectedRoute>} />
+          <Route path="/prompts" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><PromptsPage /></ProtectedRoute>} />
+          <Route path="/favorites" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><Navigate to="/square" state={{ tab: 'favorites' }} replace /></ProtectedRoute>} />
           {/* <Route path="/shares" element={<ProtectedRoute authReady={authReady} user={user}><SharesPage /></ProtectedRoute>} /> */}
           {/* <Route path="/settings" element={<ProtectedRoute authReady={authReady} user={user}><SettingsPage /></ProtectedRoute>} /> */}
-          <Route path="/admin" element={<AdminRoute authReady={authReady} user={user}><AdminPage /></AdminRoute>} />
+          <Route path="/admin" element={<AdminRoute authReady={authReady} user={user} fallback={routeFallback}><AdminPage /></AdminRoute>} />
         </Routes></Suspense>
       </BrowserRouter>
       </AppDialogProvider>

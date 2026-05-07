@@ -139,7 +139,7 @@ export default function ChatPage() {
   const [thumbnailBlurMap, setThumbnailBlurMap] = useState({})
   const [expiryNowTs, setExpiryNowTs] = useState(() => Date.now())
   const [expiryByFilenameMap, setExpiryByFilenameMap] = useState({})
-  const [feedLayoutReady, setFeedLayoutReady] = useState(false)
+  const [feedLayoutReady, setFeedLayoutReady] = useState(layoutMode !== 'masonry')
   const [pendingSubmissions, setPendingSubmissions] = useState([])
   const feedRef = useRef(null)
   const cardGridRef = useRef(null)
@@ -204,11 +204,12 @@ export default function ChatPage() {
   const refreshTasks = useCallback(async () => {
     const uid = isAdmin ? selectedUserId : undefined
     const q = searchQuery || undefined
-    let allTasks
-    let allImages
-    let myShares = []
+    let allTasks = []
+    let allImages = []
+    const taskPromise = withTimeout(taskAPI.list(50, 0, uid, q), 10000, '任务列表加载超时，请重试')
+    const imagePromise = withTimeout(imageAPI.list(1, 100, uid), 12000, '图片列表加载超时，已仅显示任务列表')
     try {
-      const taskRes = await withTimeout(taskAPI.list(50, 0, uid, q), 10000, '任务列表加载超时，请重试')
+      const taskRes = await taskPromise
       allTasks = taskRes.data || []
     } catch (e) {
       setLoadError(e.message || '任务列表加载失败')
@@ -229,25 +230,16 @@ export default function ChatPage() {
       saveCachedActiveTasks([])
     }
     try {
-      const imgRes = await withTimeout(imageAPI.list(1, 100, uid), 12000, '图片列表加载超时，已仅显示任务列表')
+      const imgRes = await imagePromise
       allImages = imgRes.data.images || []
       setLoadError('')
     } catch (e) {
       allImages = []
       setLoadError(e.message || '图片列表加载失败，已仅显示任务列表')
     }
-    if (!isAdmin || !uid) {
-      try {
-        const shareRes = await withTimeout(squareAPI.my(1, 200), 10000, '我的分享加载超时')
-        myShares = shareRes.data?.images || []
-      } catch {}
-    }
     const latestMap = {}
     for (const img of allImages || []) {
       if (img?.filename && img?.square_image_id) latestMap[img.filename] = img.square_image_id
-    }
-    for (const s of myShares) {
-      if (s?.filename && s?.id) latestMap[s.filename] = s.id
     }
     squareIdMapRef.current = { ...squareIdMapRef.current, ...latestMap }
     const taskImageFiles = new Set()
@@ -284,6 +276,15 @@ export default function ChatPage() {
     setDetailCards(completedMerged.flatMap(task => buildDetailCardsFromTask(task, expiryByFilename, squareIdMapRef.current)))
     saveCachedActiveTasks(merged.filter(t => activeStatuses.includes(t?.status)))
     if (!loaded) setLoaded(true)
+    if (!isAdmin || !uid) {
+      squareAPI.my(1, 200).then(({ data }) => {
+        const shareMap = Object.fromEntries((data?.images || []).filter(s => s?.filename && s?.id).map(s => [s.filename, s.id]))
+        if (!Object.keys(shareMap).length) return
+        squareIdMapRef.current = { ...squareIdMapRef.current, ...shareMap }
+        setTasks(prev => prev.map(t => { const filename = t.result_urls?.[0]?.split('/').pop(); return filename && shareMap[filename] && !t.square_image_id ? { ...t, square_image_id: shareMap[filename] } : t }))
+        setDetailCards(prev => prev.map(c => c.filename && shareMap[c.filename] && !c.square_image_id ? { ...c, square_image_id: shareMap[c.filename] } : c))
+      }).catch(() => {})
+    }
   }, [loaded, isAdmin, selectedUserId, searchQuery, loadCachedActiveTasks, saveCachedActiveTasks])
 
   useEffect(() => { refreshTasks() }, [refreshTasks])
@@ -386,11 +387,12 @@ export default function ChatPage() {
     return () => { window.removeEventListener('pointerdown', handlePointerDown); window.removeEventListener('resize', updateTimeRangeMenuPos); window.removeEventListener('scroll', updateTimeRangeMenuPos, true) }
   }, [timeRangeOpen])
   useEffect(() => {
+    if (layoutMode !== 'masonry') { feedLayoutInitializedRef.current = false; setFeedLayoutReady(true); return }
     if (!loaded || visibleTasks.length === 0 || feedLayoutInitializedRef.current) return
     const el = cardGridRef.current
     if (!el) return
     let observer = null
-    const reveal = () => { if (feedRevealTimerRef.current) clearTimeout(feedRevealTimerRef.current); feedRevealTimerRef.current = setTimeout(() => { observer?.disconnect(); feedLayoutInitializedRef.current = true; setFeedLayoutReady(true) }, 180) }
+    const reveal = () => { if (feedRevealTimerRef.current) clearTimeout(feedRevealTimerRef.current); feedRevealTimerRef.current = setTimeout(() => { observer?.disconnect(); feedLayoutInitializedRef.current = true; setFeedLayoutReady(true) }, 60) }
     setFeedLayoutReady(false)
     reveal()
     observer = new ResizeObserver(() => reveal())
@@ -399,7 +401,7 @@ export default function ChatPage() {
       observer?.disconnect()
       if (feedRevealTimerRef.current) { clearTimeout(feedRevealTimerRef.current); feedRevealTimerRef.current = null }
     }
-  }, [loaded, visibleTasks.length])
+  }, [layoutMode, loaded, visibleTasks.length])
   useEffect(() => {
     const tick = () => setExpiryNowTs(Date.now())
     tick()
@@ -1111,7 +1113,7 @@ export default function ChatPage() {
           showPortfolioEmptyState ? <div className="flex min-h-full items-center justify-center py-8 sm:py-12"><PortfolioShowcaseCard onUsePrompt={handleAddPrompt} /></div> : <div className="flex flex-col items-center justify-center h-full text-center py-20"><h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>当前筛选下没有记录</h2><p className="text-sm" style={{ color: 'var(--text-secondary)' }}>换个时间范围，或者直接开始下一次生成</p></div>
         ) : (
           <div ref={cardGridRef} className={`${layoutMode === 'masonry' ? 'card-feed-masonry' : 'card-feed-grid'} pt-4`} style={{ position: 'relative' }}>
-            {!feedLayoutReady && <div className="card-feed-loading-mask" />}
+            {layoutMode === 'masonry' && !feedLayoutReady && <div className="card-feed-loading-mask" />}
             {visibleTasks.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onAddPrompt={handleAddPrompt} onAddToPromptLibrary={isAdmin?handleAddToPromptLibrary:undefined} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id) || dragSelected.has(String(task.task_id))} onToggleCheck={() => toggleCheck(task.task_id)} wasDraggedRef={wasDraggedRef} showUsername={isAdmin} username={task.username} thumbnailBlurred={!!thumbnailBlurMap[getThumbnailBlurItemKey(task)]} onToggleThumbnailBlur={() => { const k=getThumbnailBlurItemKey(task); setThumbnailBlurMap(prev => ({ ...prev, [k]: !prev[k] })) }} onViewDetail={() => handleCardViewDetail(task.task_id)} masonry={layoutMode === 'masonry'} nowTs={expiryNowTs} data-card-id={String(task.task_id)} />)}
             {selectionRect && selectionRect.width > 5 && selectionRect.height > 5 && (
               <div className="drag-selection-rect" style={{ position: 'fixed', left: selectionRect.left, top: selectionRect.top, width: selectionRect.width, height: selectionRect.height }} />

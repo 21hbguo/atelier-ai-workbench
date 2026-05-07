@@ -10,7 +10,8 @@ function getCardTitle(card){return String(card.title||card.name||card.prompt||ca
 function getCardMeta(card){return trimCardText(card.author||card.authorName||card.metadataSize||'',24)}
 
 export function CardGridSkeleton({ layoutMode = 'grid', count = 10, label = '加载中...', className = '' }) {
-  return <div className={className}><div className="card-feed-blank-stage" /></div>
+  const useMasonry = layoutMode === 'masonry'
+  return <div className={className}><div className={useMasonry ? 'card-feed-masonry' : 'card-feed-grid'}>{Array.from({ length: count }).map((_, idx) => <div key={idx} className={useMasonry ? 'card-feed-item-masonry' : ''}><div className="card-feed-skeleton-card" style={{ aspectRatio: useMasonry ? (idx % 3 === 0 ? '4 / 5' : idx % 3 === 1 ? '1 / 1' : '3 / 4') : '1 / 1' }}><div className="card-feed-skeleton-shimmer" /></div></div>)}</div><div className="pt-3 text-center text-xs" style={{ color: 'var(--text-secondary)' }}>{label}</div></div>
 }
 
 export default function CardGrid({
@@ -77,11 +78,12 @@ export default function CardGrid({
     return()=>{dead=true}
   }, [])
   useEffect(() => {
+    if (!useMasonry) { setLayoutReady(true); return }
     if (loading || paging || cards.length === 0) { setLayoutReady(false); return }
     const el = gridRef.current
     if (!el) return
     let observer = null
-    const reveal = () => { if (revealTimerRef.current) clearTimeout(revealTimerRef.current); revealTimerRef.current = setTimeout(() => { observer?.disconnect(); setLayoutReady(true) }, 180) }
+    const reveal = () => { if (revealTimerRef.current) clearTimeout(revealTimerRef.current); revealTimerRef.current = setTimeout(() => { observer?.disconnect(); setLayoutReady(true) }, 60) }
     setLayoutReady(false)
     reveal()
     observer = new ResizeObserver(() => reveal())
@@ -90,7 +92,7 @@ export default function CardGrid({
       observer?.disconnect()
       if (revealTimerRef.current) { clearTimeout(revealTimerRef.current); revealTimerRef.current = null }
     }
-  }, [loading, paging, layoutSignature, cards.length, page])
+  }, [useMasonry, loading, paging, layoutSignature, cards.length, page])
   useEffect(() => {
     if (!loading && !paging && gridRef.current) {
       const h = gridRef.current.offsetHeight || 0
@@ -125,7 +127,7 @@ export default function CardGrid({
       )}
 
       <div ref={gridRef} className={useMasonry ? 'card-feed-masonry' : 'card-feed-grid'} style={{ position: 'relative', ...((loading || paging) && gridMinHeight > 0 ? { minHeight: `${gridMinHeight}px` } : undefined) }}>
-        {!layoutReady && <div className="card-feed-loading-mask" />}
+        {useMasonry && !layoutReady && <div className="card-feed-loading-mask" />}
         {cards.map((card, idx) => { const ratio = card.width && card.height ? `${card.width} / ${card.height}` : '1 / 1'; const text = card.title || card.subtitle || '无提示词'; const len = text.length; const fontSize = len <= 4 ? '2rem' : len <= 8 ? '1.5rem' : len <= 16 ? '1.125rem' : '0.875rem'; const squareTag = getCardTag(card,categoryMap); const squareTitle = getCardTitle(card); const squareMeta = getCardMeta(card); const squareBody = trimCardText(card.prompt || card.subtitle || card.title || '', 64); const imageNode = card.thumbUrl && !failedUrls.has(card.thumbUrl) ? (useMasonry ? <img src={card.thumbUrl} srcSet={card.thumbUrl2x ? `${card.thumbUrl} 1x, ${card.thumbUrl2x} 2x` : undefined} sizes="(min-width: 1024px) 20vw, (min-width: 768px) 25vw, (min-width: 640px) 33vw, 50vw" width={card.width || undefined} height={card.height || undefined} alt="" draggable={false} className={mediaClassName} loading={idx < 8 ? 'eager' : 'lazy'} onError={(e) => { e.target.onerror = null; setFailedUrls(prev => new Set(prev).add(card.thumbUrl)) }} /> : <div className="card-feed-media-shell" style={{ aspectRatio: ratio }}><img src={card.thumbUrl} srcSet={card.thumbUrl2x ? `${card.thumbUrl} 1x, ${card.thumbUrl2x} 2x` : undefined} sizes="(min-width: 1024px) 20vw, (min-width: 768px) 25vw, (min-width: 640px) 33vw, 50vw" width={card.width || undefined} height={card.height || undefined} alt="" draggable={false} className={mediaClassName} loading={idx < 8 ? 'eager' : 'lazy'} onError={(e) => { e.target.onerror = null; setFailedUrls(prev => new Set(prev).add(card.thumbUrl)) }} /></div>) : <div className="w-full flex items-center justify-center p-3" style={{ aspectRatio: ratio, background: 'linear-gradient(145deg,color-mix(in srgb,var(--accent) 22%,transparent),color-mix(in srgb,var(--bg-card) 88%,#fff))' }}><p className="text-center font-bold leading-tight line-clamp-4" style={{ color: 'var(--accent)', fontSize }}>{text}</p></div>; const squareMedia = <div className="px-2.5 pt-2.5"><div className="w-full overflow-hidden rounded-[1.35rem] border border-black/6 bg-[var(--bg-ai-bubble)] shadow-[0_18px_40px_rgba(18,30,24,0.12)]"><div className="relative">{imageNode}<div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.18),rgba(255,255,255,0.02)_26%,rgba(14,18,17,0.03)_54%,rgba(14,18,17,0.54)_100%)]" /><div className="pointer-events-none absolute inset-x-[14%] top-[8%] h-[18%] rounded-full bg-white/18 blur-2xl" /></div></div></div>; return <UnifiedCard
             key={card.id}
             data-card-id={String(card.id)}
