@@ -576,6 +576,7 @@ export default function ChatPage() {
     }
     let missingCount = 0
     let errorCount = 0
+    const releaseRecovery = () => { recoveringRef.current.delete(taskId) }
 
     for (let attempt = 0; Date.now() - startTime < maxWaitMs; attempt++) {
       const elapsed = Date.now() - startTime
@@ -599,14 +600,13 @@ export default function ChatPage() {
               return toAdd.length ? [...prev, ...toAdd] : prev
             })
           }
-          if (shareToSquare && st.result_urls?.length) {
-            shareImageToSquare(st.result_urls[0].split('/').pop(), prompt, params, hasImages, params?.local_image_urls || params?.image_urls)
-          }
+          releaseRecovery()
           syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
           return
         }
         if (st.status === 'failed') {
           updateTask(taskId, { ...st, _active: false })
+          releaseRecovery()
           refreshPointsOnFailed()
           syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
           return
@@ -617,25 +617,23 @@ export default function ChatPage() {
         if (msg.includes('404') || msg.includes('任务不存在') || msg.includes('not found')) {
           missingCount += 1
           if (missingCount >= 8) {
-            updateTask(taskId, { status: 'failed', error: '后端未找到任务，提交可能失败', _active: false })
-            refreshPointsOnFailed()
-            syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
+            updateTask(taskId, { error: '状态同步延迟，正在继续确认', _active: true })
+            window.setTimeout(() => { void pollTask(taskId, Date.now(), shareToSquare, prompt, params, hasImages, clientRequestId) }, 30000)
             return
           }
         } else {
           errorCount += 1
           if (errorCount >= 10 && !shouldRetryNetworkError(msg)) {
-            updateTask(taskId, { status: 'failed', error: '任务状态查询失败，请重试', _active: false })
-            syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
+            updateTask(taskId, { error: '任务状态同步异常，正在继续确认', _active: true })
+            window.setTimeout(() => { void pollTask(taskId, Date.now(), shareToSquare, prompt, params, hasImages, clientRequestId) }, 45000)
             return
           }
         }
       }
     }
-    updateTask(taskId, { status: 'failed', error: '生成超时（已等待15分钟）', _active: false })
-    refreshPointsOnFailed()
-    syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
-  }, [getTaskStatusWithRecovery, updateTask, shareImageToSquare, refreshPointsOnFailed, syncPendingSubmissions])
+    updateTask(taskId, { error: '生成耗时较长，正在继续确认', _active: true })
+    window.setTimeout(() => { void pollTask(taskId, Date.now(), shareToSquare, prompt, params, hasImages, clientRequestId) }, 60000)
+  }, [getTaskStatusWithRecovery, updateTask, refreshPointsOnFailed, syncPendingSubmissions])
 
   const processSubmission = useCallback(async (item) => {
     const submissionId = item?.client_request_id
@@ -698,7 +696,6 @@ export default function ChatPage() {
           const newCards = data.result_urls.map((url, idx) => { const filename = url.split('/').pop(); return { _type: 'image', _raw: { filename, metadata: { prompt, task_id: finalTaskId, created_at: createdAt, started_at: startedAt, completed_at: formatLocalTime(new Date()), type: hasImages ? 'image' : 'text', size: baseParams?.size, input_urls: localImageUrls.length ? localImageUrls : imageUrls } }, id: `${finalTaskId}-${idx}`, prompt, fullUrl: `/api/images/file/${filename}`, filename, expired: false } })
           setDetailCards(prev => { const existing = new Set(prev.map(card => card.id)); const toAdd = newCards.filter(card => !existing.has(card.id)); return toAdd.length ? [...prev, ...toAdd] : prev })
         }
-        if (!!item.shareToSquare && data.result_urls?.length) shareImageToSquare(data.result_urls[0].split('/').pop(), prompt, requestParams, hasImages, localImageUrls)
       } else {
         pollTask(finalTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages, submissionId)
       }
@@ -718,7 +715,6 @@ export default function ChatPage() {
           syncPendingSubmissions(prev => prev.filter(queueItem => queueItem.client_request_id !== submissionId))
           if (st.status === 'completed') {
             updateTask(realTaskId, { ...st, params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: false, _points_consumed: true })
-            if (!!item.shareToSquare && st.result_urls?.length) shareImageToSquare(st.result_urls[0].split('/').pop(), prompt, requestParams, hasImages, localImageUrls)
           } else if (st.status === 'failed') {
             updateTask(realTaskId, { ...st, params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: false, _points_consumed: true })
             refreshPointsOnFailed()
@@ -743,11 +739,21 @@ export default function ChatPage() {
         syncPendingSubmissions(prev => prev.filter(queueItem => queueItem.client_request_id !== submissionId))
         pollTask(realTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages, submissionId)
       } else {
+        if (shouldRetryNetworkError(msg)) {
+          finalizeSubmissionQueueItem(submissionId, current => current ? { ...current, real_task_id: realTaskId, status: 'processing', started_at: startedAt, params: requestParams } : null)
+          updateTask(realTaskId, { status: 'processing', error: '提交结果确认中', params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: true })
+          submissionProcessingRef.current.delete(submissionId)
+          window.setTimeout(() => {
+            const latest = pendingSubmissions.find(queueItem => queueItem.client_request_id === submissionId)
+            void processSubmission(latest || { ...item, real_task_id: realTaskId, started_at: startedAt, params: requestParams })
+          }, 2000)
+          return
+        }
         markSubmissionFailed({ ...item, real_task_id: realTaskId }, '提交失败: ' + msg)
       }
     }
     submissionProcessingRef.current.delete(submissionId)
-  }, [finalizeSubmissionQueueItem, getTaskStatusWithRecovery, markSubmissionFailed, pendingSubmissions, pollTask, refreshPointsOnFailed, requestCost, saveCachedActiveTasks, shareImageToSquare, submitGenerationWithRecovery, syncPendingSubmissions, updateTask, uploadSubmissionImage])
+  }, [finalizeSubmissionQueueItem, getTaskStatusWithRecovery, markSubmissionFailed, pendingSubmissions, pollTask, refreshPointsOnFailed, requestCost, saveCachedActiveTasks, submitGenerationWithRecovery, syncPendingSubmissions, updateTask, uploadSubmissionImage])
 
   const handleSubmit = useCallback(async ({ prompt, images, params, shareToSquare, rollCount = 1, clearInput }) => {
     const batchCount = Math.min(5, Math.max(1, Number(rollCount) || 1))
@@ -819,7 +825,7 @@ export default function ChatPage() {
         recoveringRef.current.add(t.task_id)
         updateTask(t.task_id, { _active: true })
         const p = t.params || {}
-        pollTask(t.task_id, Date.now(), !!p.share_to_square, p.prompt || '', p, t.type === 'text_image')
+        pollTask(t.task_id, Date.now(), !!p.share_to_square, p.prompt || '', p, t.type === 'text_image', p.client_request_id)
       }
     }
   }, [tasks, pollTask, updateTask])
