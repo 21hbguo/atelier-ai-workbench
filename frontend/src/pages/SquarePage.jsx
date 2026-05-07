@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { ChevronUp } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Image, BookOpen, Share2, Trash2, Snowflake, Sun, RefreshCw, Star, X, Plus, Upload } from 'lucide-react'
 import { squareAPI, promptAPI, adminAPI, favoriteAPI } from '../api'
@@ -87,6 +88,14 @@ export default function SquarePage() {
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   const isAdmin = Boolean(readUser()?.is_admin)
   useEffect(() => { setLayoutMode('masonry') }, [setLayoutMode])
+  const [showBackToTop, setShowBackToTop] = useState(false)
+  useEffect(() => {
+    const el = document.getElementById('square-scroll-container')
+    if (!el) return
+    const onScroll = () => setShowBackToTop(el.scrollTop > 400)
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [])
   const activeCategory = tab === 'works' ? activeCategories.works : tab === 'prompts' ? activeCategories.prompts : null
 
   const handleTabChange = (newTab) => {
@@ -148,7 +157,7 @@ export default function SquarePage() {
             </div>
           )}
         </div>
-        <div id="square-scroll-container" className="flex-1 overflow-y-auto px-4 sm:px-6 pb-6">
+        <div id="square-scroll-container" className="flex-1 overflow-y-auto px-4 sm:px-6 pb-6 relative">
           {tab === 'works' ? (
             <WorksTab query={query} sort={sort} activeCategory={activeCategory} authorFilter={authorFilter} onAuthorFilter={handleAuthorFilter} isAdmin={isAdmin} dialog={dialog} refreshTrigger={refreshTrigger} layoutMode={layoutMode} />
           ) : tab === 'prompts' ? (
@@ -156,6 +165,15 @@ export default function SquarePage() {
           ) : tab === 'shared' ? (
             <SharedTab refreshTrigger={refreshTrigger} layoutMode={layoutMode} />
           ) : null}
+          {showBackToTop && (
+            <button
+              onClick={() => document.getElementById('square-scroll-container')?.scrollTo({ top: 0, behavior: 'smooth' })}
+              className="fixed bottom-6 right-6 z-50 w-10 h-10 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 hover:scale-110 active:scale-95"
+              style={{ background: 'var(--accent)', color: '#fff' }}
+            >
+              <ChevronUp size={20} />
+            </button>
+          )}
         </div>
       </div>
     </MainLayout>
@@ -302,7 +320,7 @@ function WorksTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, i
               </div>
             )}
             {!selectMode && (
-              <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-between">
+              <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-between">
                 <p className="text-white text-xs truncate flex-1">{card.prompt || '无提示词'}</p>
                 <div className="flex items-center gap-1 ml-2">
                   <button onClick={(e) => { e.stopPropagation(); handleSingleFreeze(card.id, !card.isFrozen) }}
@@ -553,7 +571,7 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
               </div>
             )}
             {!selectMode ? (
-              <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-end gap-1">
+              <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-end gap-1">
                 <button onClick={(e) => { e.stopPropagation(); handleTogglePromptFreeze(card.id, !card.isFrozen) }}
                   className="p-1 rounded-lg bg-black/50 text-white hover:bg-blue-500" title={card.isFrozen ? '解冻' : '冻结'}>
                   {card.isFrozen ? <Sun size={12} /> : <Snowflake size={12} />}

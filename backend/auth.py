@@ -202,8 +202,6 @@ def require_admin(user: dict = Depends(get_current_user)) -> dict:
 
 def record_request(user_id: int, status: str):
     with get_db() as conn:
-        if status in ("success", "failed"):
-            conn.execute("DELETE FROM user_requests WHERE user_id = %s AND status = 'processing' AND id = (SELECT id FROM user_requests WHERE user_id = %s AND status = 'processing' ORDER BY id DESC LIMIT 1)", (user_id, user_id))
         conn.execute("INSERT INTO user_requests (user_id, status) VALUES (%s, %s)", (user_id, status))
 
 

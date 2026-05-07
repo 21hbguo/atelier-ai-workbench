@@ -20,7 +20,7 @@ const navItems = [
 export default function Sidebar({ open, onClose }) {
   const dialog = useAppDialog()
   const { dark, toggle } = useTheme()
-  const { layoutMode, toggleLayoutMode } = useLayoutMode()
+  const { layoutMode, toggleLayoutMode, currentCols, currentBreakpointLabel, toggleCurrentCols } = useLayoutMode()
   const location = useLocation()
   const navigate = useNavigate()
   const user = readUser()
@@ -125,6 +125,10 @@ export default function Sidebar({ open, onClose }) {
           <button onClick={toggleLayoutMode} className="sidebar-control-btn hover:bg-bg-hover"
             style={{ color: 'var(--text-primary)' }}>
             <LayoutGrid size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">{layoutMode === 'masonry' ? '切换为网格' : '切换为瀑布流'}</span>
+          </button>
+          <button onClick={toggleCurrentCols} className="sidebar-control-btn hover:bg-bg-hover"
+            style={{ color: 'var(--text-primary)' }}>
+            <LayoutGrid size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">{currentBreakpointLabel}列数 {currentCols}列</span>
           </button>
           <button onClick={handleLogout} className="sidebar-control-btn hover:bg-bg-hover"
             style={{ color: 'var(--text-primary)' }}>

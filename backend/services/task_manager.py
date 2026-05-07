@@ -122,7 +122,7 @@ class TaskManager:
             conn.execute("DELETE FROM tasks WHERE task_id = %s", (task_id,))
 
     @classmethod
-    def create_task(cls, task_id: str, task_type: str, params: Dict[str, Any], user_id: int = None, points_cost: int = 0, points_balance_after: Optional[int] = None) -> Dict[str, Any]:
+    def create_task(cls, task_id: str, task_type: str, params: Dict[str, Any], user_id: int = None, points_cost: int = 0, points_balance_after: Optional[int] = None, conn=None) -> Dict[str, Any]:
         task = {
             "task_id": task_id,
             "type": task_type,
@@ -143,7 +143,42 @@ class TaskManager:
             "deleted_by_role": None,
         }
         cls._tasks[task_id] = task
-        cls._save_to_db(task_id, task)
+        if conn is not None:
+            conn.execute(
+                """INSERT INTO tasks
+                   (task_id, type, status, params, created_at, updated_at,
+                    started_at, completed_at, progress, result_urls, error, external_result, user_id, points_cost, points_balance_after, is_deleted, deleted_at, deleted_by_role)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT(task_id) DO UPDATE SET
+                    type=EXCLUDED.type, status=EXCLUDED.status, params=EXCLUDED.params,
+                    created_at=EXCLUDED.created_at, updated_at=EXCLUDED.updated_at,
+                    started_at=EXCLUDED.started_at, completed_at=EXCLUDED.completed_at,
+                    progress=EXCLUDED.progress, result_urls=EXCLUDED.result_urls,
+                    error=EXCLUDED.error, external_result=EXCLUDED.external_result,
+                    user_id=EXCLUDED.user_id, points_cost=EXCLUDED.points_cost, points_balance_after=EXCLUDED.points_balance_after, is_deleted=EXCLUDED.is_deleted, deleted_at=EXCLUDED.deleted_at, deleted_by_role=EXCLUDED.deleted_by_role""",
+                (
+                    task_id,
+                    task.get("type", "text"),
+                    task.get("status", "pending"),
+                    json.dumps(task.get("params", {}), ensure_ascii=False),
+                    task.get("created_at"),
+                    task.get("updated_at"),
+                    task.get("started_at"),
+                    task.get("completed_at"),
+                    task.get("progress", 0),
+                    json.dumps(task.get("result_urls", []), ensure_ascii=False),
+                    task.get("error"),
+                    json.dumps(task.get("external_result"), ensure_ascii=False) if task.get("external_result") else None,
+                    task.get("user_id"),
+                    task.get("points_cost", 0),
+                    task.get("points_balance_after"),
+                    bool(task.get("is_deleted", False)),
+                    task.get("deleted_at"),
+                    task.get("deleted_by_role"),
+                ),
+            )
+        else:
+            cls._save_to_db(task_id, task)
         return task
 
     @classmethod

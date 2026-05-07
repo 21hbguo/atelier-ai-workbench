@@ -27,6 +27,7 @@ from backend.services.image_expiry import RETENTION_DAYS, mark_image_permanent
 from backend.config import get_config
 
 router = APIRouter(prefix="/api/generate", tags=["generate"])
+GLOBAL_GENERATE_ACTIVE_LIMIT = 20
 
 
 def _get_model_cost(model_id: str) -> int:
@@ -46,8 +47,8 @@ def _check_generate_rate(user_id: int):
     limit = get_limit_config()["generate_concurrent_limit_per_user"]
     with get_db() as conn:
         count = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM user_requests WHERE user_id = %s AND status = 'processing' AND created_at > NOW() - interval '1 minute'",
-            (user_id,)
+            "SELECT COUNT(*) AS cnt FROM tasks WHERE user_id = %s AND LOWER(status) IN ('pending','queued','processing','running','generating') AND completed_at IS NULL AND COALESCE(updated_at,created_at,NOW()) >= NOW() - interval '30 minute'",
+            (user_id,),
         ).fetchone()["cnt"]
         if count >= limit:
             raise HTTPException(status_code=429, detail="生成请求过于频繁，请稍后再试")
@@ -58,6 +59,30 @@ def _find_idempotent_task(user_id: int, client_request_id: str):
         return None
     with get_db() as conn:
         return conn.execute("SELECT task_id,status FROM tasks WHERE user_id = %s AND params->>'client_request_id' = %s ORDER BY created_at DESC LIMIT 1", (user_id, client_request_id)).fetchone()
+
+def _reserve_generation_slot(task_id: str, task_type: str, task_params: dict, user_id: int, cost: int):
+    limit = get_limit_config()["generate_concurrent_limit_per_user"]
+    with get_db() as conn:
+        user = conn.execute("SELECT id FROM users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
+        if not user:
+            raise HTTPException(status_code=401, detail="用户不存在")
+        active_all = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM tasks WHERE LOWER(status) IN ('pending','queued','processing','running','generating') AND completed_at IS NULL AND COALESCE(updated_at,created_at,NOW()) >= NOW() - interval '30 minute'"
+        ).fetchone()["cnt"]
+        if active_all >= GLOBAL_GENERATE_ACTIVE_LIMIT:
+            raise HTTPException(status_code=429, detail=f"当前全站生成任务已满，请稍后再试（最多同时 {GLOBAL_GENERATE_ACTIVE_LIMIT} 张）")
+        count = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM tasks WHERE user_id = %s AND LOWER(status) IN ('pending','queued','processing','running','generating') AND completed_at IS NULL AND COALESCE(updated_at,created_at,NOW()) >= NOW() - interval '30 minute'",
+            (user_id,),
+        ).fetchone()["cnt"]
+        if count >= limit:
+            raise HTTPException(status_code=429, detail="生成请求过于频繁，请稍后再试")
+        try:
+            points_balance_after = PointsService.consume(user_id, cost, "生成消耗", request_key=f"consume:{task_id}", conn=conn)
+        except ValueError:
+            raise HTTPException(status_code=402, detail=f"积分不足，需要 {cost} 积分")
+        TaskManager.create_task(task_id, task_type, task_params, user_id=user_id, points_cost=cost, points_balance_after=points_balance_after, conn=conn)
+        return points_balance_after
 
 def _share_to_square(user_id: int, file_path: str, prompt: str, size: str, task_type: str, input_urls: list = None):
     filename = os.path.basename(str(file_path or ""))
@@ -133,15 +158,10 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
             return GenerateResponse(task_id=existing["task_id"], status=existing["status"], message="请求已存在，返回历史任务")
     task_id = request.task_id or str(uuid.uuid4())
     logger.info(f"[submit.start] type=text task={task_id} user={user_id} prompt_len={len(request.prompt or '')}")
-    _check_generate_rate(user_id)
-
     is_admin = user.get("is_admin")
     cost = _get_model_cost(request.model_id)
-    points_balance_after = None
-    try:
-        points_balance_after = PointsService.consume(user_id, cost, "生成消耗", request_key=f"consume:{task_id}")
-    except ValueError:
-        raise HTTPException(status_code=402, detail=f"积分不足，需要 {cost} 积分")
+    task_params = {"prompt": request.prompt, "size": request.size, "quality": request.quality, "model_id": request.model_id, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}
+    points_balance_after = _reserve_generation_slot(task_id, "text", task_params, user_id, cost)
 
     update_user_ip(user_id, get_client_ip(req))
     record_request(user_id, "processing")
@@ -158,7 +178,6 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
             raise HTTPException(status_code=400, detail="提示词包含违禁词，请修改后重试")
 
         submit_dict = {"prompt": request.prompt, "size": request.size, "quality": request.quality, "model_id": request.model_id, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id, "_cost": cost}
-        TaskManager.create_task(task_id, "text", {"prompt": request.prompt, "size": request.size, "quality": request.quality, "model_id": request.model_id, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}, user_id=user_id, points_cost=cost, points_balance_after=points_balance_after)
         TaskManager.update_task(task_id, status="processing", progress=10)
         logger.info(f"[submit.task_created] type=text task={task_id} user={user_id}")
         meta = {"prompt": request.prompt, "size": request.size, "type": "text", "task_id": task_id, "model_id": request.model_id, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}
@@ -185,15 +204,10 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
             return GenerateResponse(task_id=existing["task_id"], status=existing["status"], message="请求已存在，返回历史任务")
     task_id = request.task_id or str(uuid.uuid4())
     logger.info(f"[submit.start] type=text_image task={task_id} user={user_id} prompt_len={len(request.prompt or '')} images={len(request.image_urls or [])}")
-    _check_generate_rate(user_id)
-
     is_admin = user.get("is_admin")
     cost = _get_model_cost(request.model_id)
-    points_balance_after = None
-    try:
-        points_balance_after = PointsService.consume(user_id, cost, "生成消耗", request_key=f"consume:{task_id}")
-    except ValueError:
-        raise HTTPException(status_code=402, detail=f"积分不足，需要 {cost} 积分")
+    task_params = {"prompt": request.prompt, "size": request.size, "quality": request.quality, "model_id": request.model_id, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}
+    points_balance_after = _reserve_generation_slot(task_id, "text_image", task_params, user_id, cost)
 
     update_user_ip(user_id, get_client_ip(req))
     record_request(user_id, "processing")
@@ -210,7 +224,6 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
             raise HTTPException(status_code=400, detail="提示词包含违禁词，请修改后重试")
 
         submit_dict = {"prompt": request.prompt, "size": request.size, "quality": request.quality, "model_id": request.model_id, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id, "_cost": cost}
-        TaskManager.create_task(task_id, "text_image", {"prompt": request.prompt, "size": request.size, "quality": request.quality, "model_id": request.model_id, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}, user_id=user_id, points_cost=cost, points_balance_after=points_balance_after)
         TaskManager.update_task(task_id, status="processing", progress=10)
         logger.info(f"[submit.task_created] type=text_image task={task_id} user={user_id}")
         meta = {"prompt": request.prompt, "size": request.size, "type": "text_image", "task_id": task_id, "model_id": request.model_id, "input_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}

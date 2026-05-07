@@ -613,6 +613,8 @@ export default function ChatPage() {
       const msg = e?.message || ''
       if (msg.includes('积分不足') || msg.includes('402')) {
         markSubmissionFailed({ ...item, real_task_id: realTaskId }, '积分不足，请先获取更多积分后重试')
+        dialog.alert(msg.includes('积分不足') ? msg : '积分不足，请先获取更多积分后重试')
+        refreshPointsOnFailed()
         submissionProcessingRef.current.delete(submissionId)
         return
       }
@@ -657,7 +659,24 @@ export default function ChatPage() {
   const handleSubmit = useCallback(async ({ prompt, images, params, shareToSquare, rollCount = 1, clearInput }) => {
     const batchCount = Math.min(5, Math.max(1, Number(rollCount) || 1))
     const modelCost = params?._points_cost || requestCost
-    const submitMessage = batchCount > 1 ? `本次将提交 ${batchCount} 次生成，预计消耗 ${batchCount * modelCost} 积分，是否继续？` : `本次将提交 1 次生成，预计消耗 ${modelCost} 积分，是否继续？`
+    const totalCost = batchCount * modelCost
+    if (points < totalCost) {
+      dialog.alert(`积分不足，当前仅剩 ${points} 积分，本次需要 ${totalCost} 积分。`)
+      return false
+    }
+    try {
+      const { data } = await taskAPI.activeSummary()
+      const activeCount = Math.max(0, Number(data?.active_count) || 0)
+      const globalLimit = Math.max(1, Number(data?.global_limit) || 20)
+      if (activeCount + batchCount > globalLimit) {
+        dialog.alert(`当前全站正在生成 ${activeCount} 张，最多同时 ${globalLimit} 张。请稍后再试。`)
+        return false
+      }
+    } catch (e) {
+      dialog.alert(e?.message || '提交前检查失败，请稍后再试')
+      return false
+    }
+    const submitMessage = batchCount > 1 ? `本次将提交 ${batchCount} 次生成，预计消耗 ${totalCost} 积分，是否继续？` : `本次将提交 1 次生成，预计消耗 ${modelCost} 积分，是否继续？`
     if (!await dialog.confirm(`${submitMessage}\n\n当前设置\n${formatSubmitSettings(params, shareToSquare, images?.length || 0)}`)) return false
     try {
       const now = formatLocalTime(new Date())
@@ -678,7 +697,7 @@ export default function ChatPage() {
       dialog.alert('提交失败: ' + (e?.message || '未知错误'))
       return false
     }
-  }, [dialog, processSubmission, requestCost, saveCachedActiveTasks, scroll, syncPendingSubmissions])
+  }, [dialog, points, processSubmission, requestCost, saveCachedActiveTasks, scroll, syncPendingSubmissions])
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true)

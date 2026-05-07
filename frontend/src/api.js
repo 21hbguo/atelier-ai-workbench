@@ -54,6 +54,7 @@ export const uploadAPI = {
 
 export const taskAPI = {
   list: (limit = 50, offset = 0, userId, query) => { const params = { limit, offset }; if (userId) params.user_id = userId; if (query) params.query = query; return api.get('/tasks', { params }) },
+  activeSummary: () => api.get('/tasks/active-summary'),
   get: id => api.get(`/tasks/${id}`),
   retry: id => api.post(`/tasks/${id}/retry`),
   delete: id => api.post(`/tasks/${id}/delete`),
