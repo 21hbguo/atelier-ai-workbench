@@ -27,6 +27,7 @@ export default function UnifiedDetailModal({
   onShare,
   onUnshare,
   onExtend,
+  onAddToPromptLibrary,
   onMetadataSaved,
   detailExtra,
   title = '详情',
@@ -498,10 +499,9 @@ export default function UnifiedDetailModal({
       )
     }
     if (onLike) {
-      const likeText = card.isLiked ? `${Math.max(1, card.likesCount || 0)}赞` : card.likesCount > 0 ? `${card.likesCount}赞` : '点赞'
       actions.push(
         <button key="like" onClick={() => onLike(card.id)} className={actionBaseClass} style={card.isLiked ? actionLikedStyle : actionNeutralStyle} title={card.isLiked ? '取消点赞' : '点赞'}>
-          <Heart size={15} className={card.isLiked ? 'fill-current' : ''} /><span>{likeText}</span>
+          <Heart size={15} className={card.isLiked ? 'fill-current' : ''} />
         </button>
       )
     }
@@ -537,6 +537,13 @@ export default function UnifiedDetailModal({
       actions.push(
         <button key="extend" onClick={() => onExtend(card)} className={actionBaseClass} style={actionNeutralStyle} title="延长3天(-2积分)">
           <Plus size={15} /><span>延3天</span>
+        </button>
+      )
+    }
+    if (onAddToPromptLibrary && isImage && card.prompt) {
+      actions.push(
+        <button key="add-lib" onClick={() => { onAddToPromptLibrary(card); requestCloseModal() }} className={actionBaseClass} style={actionNeutralStyle} title="加入提示词库">
+          <Star size={15} /><span>加库</span>
         </button>
       )
     }

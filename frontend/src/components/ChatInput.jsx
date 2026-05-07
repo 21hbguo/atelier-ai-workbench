@@ -27,6 +27,7 @@ function normalizeImageName(name, type, fallback = 'reference') {
   const base = (raw.replace(/\.[^.]+$/, '') || fallback).replace(/[^\w.-]/g, '_').replace(/^\.+/, '') || fallback
   return `${base}.${getImageExt(type, raw)}`
 }
+function snapshotInputImages(list=[]){return list.map((img,i)=>({name:img?.name||img?.file?.name||`reference-${i}`,type:img?.file?.type||'image/png',preview:img?.preview||img?.url||'',url:img?.url||'',file:img?.file||null}))}
 const MAX_IMAGES=5
 function normalizeInputFile(file,fallback=`reference-${Date.now()}`){const type=String(file?.type||'').split(';')[0].trim().toLowerCase();if(!['image/png','image/jpeg','image/webp'].includes(type))return null;if((file?.size||0)>10*1024*1024)return null;const name=normalizeImageName(file?.name||fallback,type,fallback);return file instanceof File&&file.name===name?file:new File([file],name,{type:type||'image/png'})}
 function getClipboardImageFiles(event){const items=Array.from(event?.clipboardData?.items||[]);return items.filter(item=>item.kind==='file'&&String(item.type||'').startsWith('image/')).map((item,i)=>item.getAsFile&&normalizeInputFile(item.getAsFile(),`pasted-${Date.now()}-${i}`)).filter(Boolean)}
@@ -503,20 +504,31 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   }, [appendImages,images.length])
 
   const canSend = prompt.trim() || type || style || mood
-  const handleSend = async (batch = false) => {
-    if (!canSend || loading) return
-    const fullPrompt = `${type ? `类型为${type} ` : ''}${style ? `风格为${style} ` : ''}${mood ? `氛围为${mood} ` : ''}${prompt.trim()}`.trim()
-    const ok = await onSubmit({ prompt: fullPrompt, images, params, shareToSquare, rollCount: batch ? Math.min(5, Math.max(2, Number(params.roll_count) || 5)) : 1 })
-    if (ok === false) return
+  const clearComposer = useCallback(() => {
+    for (const img of imagesRef.current) {
+      if (img?.file && img.preview) URL.revokeObjectURL(img.preview)
+    }
     setPrompt('')
     setImages([])
     setType('')
     setStyle('')
     setMood('')
+    localStorage.removeItem('cached_prompt')
+    localStorage.removeItem('cached_type')
+    localStorage.removeItem('cached_style')
+    localStorage.removeItem('cached_mood')
     localStorage.removeItem('ref_images')
     localStorage.removeItem('ref_image_url')
     localStorage.removeItem('ref_image_name')
     setCachedImages([]).catch(() => {})
+  }, [])
+  const handleSend = async (batch = false) => {
+    if (!canSend || loading) return
+    const fullPrompt = `${type ? `类型为${type} ` : ''}${style ? `风格为${style} ` : ''}${mood ? `氛围为${mood} ` : ''}${prompt.trim()}`.trim()
+    const inputImages = snapshotInputImages(images)
+    const ok = await onSubmit({ prompt: fullPrompt, images: inputImages, params, shareToSquare, rollCount: batch ? Math.min(5, Math.max(2, Number(params.roll_count) || 5)) : 1, clearInput: clearComposer })
+    if (ok === false) return
+    if (ok !== 'cleared') clearComposer()
   }
   const batchCount = Math.min(5, Math.max(2, Number(params.roll_count) || 5))
 
@@ -708,11 +720,11 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
               <div className="flex items-center flex-shrink-0 whitespace-nowrap -ml-0.5">
                 <button onClick={toggleParams} title="参数设置" className="inline-flex items-center p-1.5 rounded-lg hover:bg-bg-hover transition-colors" style={{ color: showParams ? 'var(--accent)' : 'var(--text-secondary)' }}><Settings size={15} /></button>
                 <button type="button" onClick={openFilePicker} title="上传参考图" className="inline-flex items-center p-1.5 rounded-lg hover:bg-bg-hover transition-colors" style={{ color: 'var(--text-secondary)' }}><Paperclip size={16} /></button>
-                <button onClick={() => { const next = !shareToSquare; setShareToSquare(next); setToast({ message: next ? '已开启分享到广场，作品将长久保存' : '已关闭分享到广场', type: 'success' }) }} className="inline-flex items-center p-1.5 rounded-lg hover:bg-bg-hover transition-colors relative" style={{ color: shareToSquare ? 'var(--color-success)' : 'var(--text-secondary)' }} title={shareToSquare ? '已开启分享到广场' : '已关闭分享到广场'}><Share2 size={15} /><span className="absolute -right-0.5 -top-0.5 w-2.5 h-2.5 rounded-full" style={{ background: shareToSquare ? 'var(--color-success)' : 'var(--border-color)' }} /></button>
-                <button onClick={handleOptimize} disabled={!prompt.trim() || loading || optimizeLoading} title="AI 优化提示词" className="inline-flex items-center p-1.5 rounded-lg hover:bg-bg-hover transition-colors disabled:opacity-40" style={{ color: 'var(--accent)' }}>{optimizeLoading ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}</button>
+                <button onClick={() => { const next = !shareToSquare; setShareToSquare(next); setToast({ message: next ? '已开启分享到广场，作品将长久保存' : '已关闭分享到广场', type: 'success' }) }} className="inline-flex items-center gap-0.5 px-2 py-1 rounded-lg hover:bg-bg-hover transition-colors relative" style={{ color: shareToSquare ? 'var(--color-success)' : 'var(--text-secondary)' }} title={shareToSquare ? '已开启分享到广场' : '已关闭分享到广场'}><Share2 size={14} /><span className="text-[11px] leading-none">分享</span><span className="absolute -right-0.5 -top-0.5 w-2.5 h-2.5 rounded-full" style={{ background: shareToSquare ? 'var(--color-success)' : 'var(--border-color)' }} /></button>
+                <button onClick={handleOptimize} disabled={!prompt.trim() || loading || optimizeLoading} title="AI 优化提示词" className="inline-flex items-center gap-0.5 px-2 py-1 rounded-lg hover:bg-bg-hover transition-colors disabled:opacity-40" style={{ color: 'var(--accent)' }}>{optimizeLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}<span className="text-[11px] leading-none">AI优化</span></button>
               </div>
               <div className="min-w-0 flex items-center justify-end gap-1 flex-1">
-                {loading && <span className="inline-flex items-center gap-1 text-[10px] flex-shrink-0" style={{ color: 'var(--accent)' }}><Loader2 size={11} className="animate-spin" /><span>{images.length > 0 ? '上传并提交中' : '提交中'}</span></span>}
+
                 {prompt.length > 0 && <span className="text-[10px] tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{prompt.length}</span>}
                 <button onClick={() => handleSend(true)} disabled={!canSend || loading} title={`批量生成 ${batchCount} 张`} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-white disabled:opacity-40 flex-shrink-0" style={{ background: canSend && !loading ? 'var(--accent)' : 'var(--border-color)' }}>{loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}<span className="text-xs font-medium leading-none">×{batchCount}</span></button>
                 <button onClick={() => handleSend(false)} disabled={!canSend || loading} title="生成 1 张" className="px-2.5 py-1.5 rounded-2xl transition-all duration-150 disabled:opacity-40 flex-shrink-0" style={{ background: canSend && !loading ? 'var(--accent)' : 'var(--border-color)', color: '#fff' }}>{loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}</button>

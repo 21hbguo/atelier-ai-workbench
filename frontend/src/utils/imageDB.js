@@ -3,6 +3,7 @@ const DB_VERSION = 1
 const STORE_NAME = 'images'
 const CACHED_IMAGES_KEY = '__cached_images__'
 const PENDING_IMAGE_KEY = '__pending_image__'
+const SUBMISSION_QUEUE_PREFIX = '__submission_queue__'
 
 let _dbPromise = null
 
@@ -89,4 +90,13 @@ export async function setPendingImage(item) {
 
 export async function clearPendingImage() {
   await clearCachedImage(PENDING_IMAGE_KEY)
+}
+
+export async function getSubmissionQueue(key = 'default') {
+  const list = await getCachedImage(`${SUBMISSION_QUEUE_PREFIX}_${key}`)
+  return Array.isArray(list) ? list : []
+}
+
+export async function setSubmissionQueue(key = 'default', items) {
+  await setCachedImage(`${SUBMISSION_QUEUE_PREFIX}_${key}`, Array.isArray(items) ? items : [])
 }

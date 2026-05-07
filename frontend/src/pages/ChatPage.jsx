@@ -6,6 +6,7 @@ import { Download, Trash2, RefreshCw, Coins, ChevronDown } from 'lucide-react'
 import ChatInput from '../components/ChatInput'
 import { CardGridSkeleton } from '../components/CardGrid'
 import GenerationCard from '../components/GenerationCard'
+import PortfolioShowcaseCard from '../components/PortfolioShowcaseCard'
 import SearchInput from '../components/SearchInput'
 import MainLayout from '../components/MainLayout'
 import UnifiedDetailModal from '../components/UnifiedDetailModal'
@@ -13,6 +14,7 @@ import { useAppDialog } from '../components/AppDialogProvider'
 import { useLayoutMode } from '../LayoutModeContext'
 import { generateAPI, uploadAPI, taskAPI, imageAPI, squareAPI, adminAPI, pointsAPI, configAPI, promptAPI } from '../api'
 import { readUser } from '../auth'
+import { getSubmissionQueue, setSubmissionQueue } from '../utils/imageDB'
 
 function formatLocalTime(d) {
   const pad = n => String(n).padStart(2, '0')
@@ -99,7 +101,10 @@ function makePromptLibraryName(prompt=''){const clean=String(prompt||'').replace
 function getThumbnailBlurStorageKey(user){const id=user?.id??user?.user_id??user?.username??'guest';return`chat_thumbnail_blur_${id}`}
 function getThumbnailBlurMap(user){try{return JSON.parse(localStorage.getItem(getThumbnailBlurStorageKey(user))||'{}')}catch{return {}}}
 function getThumbnailBlurItemKey(task){return String(task?.result_urls?.[0]?.split('/').pop()||task?.task_id||'')}
-function buildDetailCardsFromTask(task, expiryByFilename = {}, squareIdMap = {}) { const prompt = task?.params?.prompt || task?.prompt || ''; return (task?.result_urls || []).map((url, idx) => { const filename = url.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, filename); const known = filename in expiryByFilename; const expired = typeof exp.expired === 'boolean' ? exp.expired : !known ? true : !!task.expired; return { _type: 'image', _raw: { filename, metadata: { prompt, task_id: task.task_id, created_at: task.created_at, started_at: task.started_at, completed_at: task.completed_at, type: task?.params?.image_urls?.length ? 'image' : 'text', size: task?.params?.size, input_urls: task?.params?.image_urls } }, id: `${task.task_id}-${idx}`, prompt, fullUrl: `/api/images/file/${filename}`, filename, expiresAt: exp.expires_at || task.expires_at || null, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : !!task.is_permanent, daysLeft: typeof exp.days_left === 'number' ? exp.days_left : task.days_left, expired, square_image_id: squareIdMap[filename] || exp.square_image_id || task.square_image_id || null } }) }
+function buildDetailCardsFromTask(task, expiryByFilename = {}, squareIdMap = {}) { const prompt = task?.params?.prompt || task?.prompt || ''; return (task?.result_urls || []).map((url, idx) => { const filename = url.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, filename); const expired = typeof exp.expired === 'boolean' ? exp.expired : !!task.expired; return { _type: 'image', _raw: { filename, metadata: { prompt, task_id: task.task_id, created_at: task.created_at, started_at: task.started_at, completed_at: task.completed_at, type: task?.params?.image_urls?.length ? 'image' : 'text', size: task?.params?.size, input_urls: task?.params?.image_urls } }, id: `${task.task_id}-${idx}`, prompt, fullUrl: `/api/images/file/${filename}`, filename, expiresAt: exp.expires_at || task.expires_at || null, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : !!task.is_permanent, daysLeft: typeof exp.days_left === 'number' ? exp.days_left : task.days_left, expired, square_image_id: squareIdMap[filename] || exp.square_image_id || task.square_image_id || null } }) }
+function mergeTasksById(list = []) { const map = new Map(); for (const task of list) { if (!task?.task_id) continue; map.set(task.task_id, { ...(map.get(task.task_id) || {}), ...task }) } return Array.from(map.values()) }
+function buildSubmissionImages(items = []) { return items.map((img, idx) => ({ name: img?.name || img?.file?.name || `reference-${idx}`, type: img?.type || img?.file?.type || 'image/png', url: img?.url || '', preview: img?.preview || img?.url || '', file: img?.file || null })) }
+function buildPendingTaskFromSubmission(item) { const prompt = item?.prompt || item?.params?.prompt || ''; return { task_id: item.real_task_id || item.temp_task_id, status: item.status || 'processing', prompt, params: { ...(item.params || {}), prompt }, previewImages: (item.images || []).map(img => img?.preview || img?.url).filter(Boolean), created_at: item.created_at || formatLocalTime(new Date()), started_at: item.started_at || item.created_at || formatLocalTime(new Date()), completed_at: item.completed_at || null, error: item.error || null, _active: false, _local_submission: true, _points_consumed: !!item.points_consumed, type: item.type || ((item.images || []).length ? 'text_image' : 'text') } }
 
 export default function ChatPage() {
   const dialog = useAppDialog()
@@ -109,7 +114,7 @@ export default function ChatPage() {
   const activeStatuses = ['pending', 'queued', 'processing', 'running', 'generating']
   const activeCacheKey = currentUser?.id ? `active_tasks_${currentUser.id}` : 'active_tasks_guest'
   const [tasks, setTasks] = useState([])
-  const [loading, setLoading] = useState(false)
+  const loading = false
   const [loaded, setLoaded] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
@@ -134,6 +139,7 @@ export default function ChatPage() {
   const [expiryNowTs, setExpiryNowTs] = useState(() => Date.now())
   const [expiryByFilenameMap, setExpiryByFilenameMap] = useState({})
   const [feedLayoutReady, setFeedLayoutReady] = useState(false)
+  const [pendingSubmissions, setPendingSubmissions] = useState([])
   const feedRef = useRef(null)
   const cardGridRef = useRef(null)
   const feedRevealTimerRef = useRef(null)
@@ -148,6 +154,7 @@ export default function ChatPage() {
   const dragCounter = useRef(0)
   const downloadLockRef = useRef(false)
   const recoveringRef = useRef(new Set())
+  const submissionProcessingRef = useRef(new Set())
   const squareIdMapRef = useRef({})
   const timeRangeMenuRef = useRef(null)
   const timeRangeButtonRef = useRef(null)
@@ -164,23 +171,33 @@ export default function ChatPage() {
       return ts > 0 ? now - ts <= limit : true
     })
   }, [tasks, timeRange])
+  const showPortfolioEmptyState = visibleTasks.length === 0 && !searchQuery && (!isAdmin || !selectedUserId)
   const loadCachedActiveTasks = useCallback(() => {
     try {
       const raw = localStorage.getItem(activeCacheKey)
       if (!raw) return []
       const arr = JSON.parse(raw)
       if (!Array.isArray(arr)) return []
-      return arr.filter(t => t?.task_id && !String(t.task_id).startsWith('pending-') && activeStatuses.includes(t.status))
+      return arr.filter(t => t?.task_id && activeStatuses.includes(t.status))
     } catch {
       return []
     }
   }, [activeCacheKey])
   const saveCachedActiveTasks = useCallback((taskList) => {
     try {
-      const arr = (Array.isArray(taskList) ? taskList : []).filter(t => t?.task_id && !String(t.task_id).startsWith('pending-') && activeStatuses.includes(t.status)).map(t => ({ task_id: t.task_id, status: t.status, progress: t.progress ?? 0, error: t.error || null, type: t.type || 'text', params: t.params || {}, prompt: t.prompt || '', created_at: t.created_at || '', started_at: t.started_at || '', completed_at: t.completed_at || null, result_urls: t.result_urls || [], _active: true }))
+      const arr = (Array.isArray(taskList) ? taskList : []).filter(t => t?.task_id && activeStatuses.includes(t.status)).map(t => ({ task_id: t.task_id, status: t.status, progress: t.progress ?? 0, error: t.error || null, type: t.type || 'text', params: t.params || {}, prompt: t.prompt || '', created_at: t.created_at || '', started_at: t.started_at || '', completed_at: t.completed_at || null, result_urls: t.result_urls || [], previewImages: t.previewImages || [], _active: !!t._active, _local_submission: !!t._local_submission, _points_consumed: !!t._points_consumed }))
       localStorage.setItem(activeCacheKey, JSON.stringify(arr.slice(0, 100)))
     } catch {}
   }, [activeCacheKey])
+  const submissionQueueKey = currentUser?.id ? `submission_queue_${currentUser.id}` : 'submission_queue_guest'
+  const savePendingSubmissions = useCallback(async (list) => { try { await setSubmissionQueue(submissionQueueKey, list) } catch {} }, [submissionQueueKey])
+  const syncPendingSubmissions = useCallback((updater) => {
+    setPendingSubmissions(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater
+      void savePendingSubmissions(next)
+      return next
+    })
+  }, [savePendingSubmissions])
 
   const refreshTasks = useCallback(async () => {
     const uid = isAdmin ? selectedUserId : undefined
@@ -255,7 +272,7 @@ export default function ChatPage() {
       const lower = q.toLowerCase()
       orphans = orphans.filter(o => ((o.params?.prompt || '').toLowerCase().includes(lower)))
     }
-    const merged = [...orphans, ...allTasks.map(t => { const fn = t.result_urls?.[0]?.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, fn); const allExpired = (t.result_urls || []).every(u => { const f = u.split('/').pop(); const e = getExpiryByFilename(expiryByFilename, f); return (typeof e.expired === 'boolean' ? e.expired : false) || !(f in expiryByFilename) }); return { ...t, expires_at: exp.expires_at || t.expires_at, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : t.is_permanent, days_left: typeof exp.days_left === 'number' ? exp.days_left : t.days_left, expired: allExpired ? true : typeof exp.expired === 'boolean' ? exp.expired : t.expired, width: exp.width || t.width || null, height: exp.height || t.height || null, square_image_id: exp.square_image_id || t.square_image_id || null } })].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
+    const merged = [...orphans, ...allTasks.map(t => { const fn = t.result_urls?.[0]?.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, fn); const allExpired = (t.result_urls || []).length > 0 && (t.result_urls || []).every(u => { const f = u.split('/').pop(); const e = getExpiryByFilename(expiryByFilename, f); return typeof e.expired === 'boolean' ? e.expired : false }); return { ...t, expires_at: exp.expires_at || t.expires_at, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : t.is_permanent, days_left: typeof exp.days_left === 'number' ? exp.days_left : t.days_left, expired: allExpired ? true : typeof exp.expired === 'boolean' ? exp.expired : !!t.expired, width: exp.width || t.width || null, height: exp.height || t.height || null, square_image_id: exp.square_image_id || t.square_image_id || null } })].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
     setTasks(merged)
     const completedMerged = merged.filter(t => t.status === 'completed' && t.result_urls?.length)
     setDetailCards(completedMerged.flatMap(task => buildDetailCardsFromTask(task, expiryByFilename, squareIdMapRef.current)))
@@ -269,6 +286,29 @@ export default function ChatPage() {
     const cached = loadCachedActiveTasks()
     if (cached.length > 0) setTasks(prev => prev.length ? prev : cached)
   }, [loaded, loadCachedActiveTasks])
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const list = await getSubmissionQueue(submissionQueueKey)
+        if (!cancelled) setPendingSubmissions(Array.isArray(list) ? list : [])
+      } catch {}
+    })()
+    return () => { cancelled = true }
+  }, [submissionQueueKey])
+  useEffect(() => {
+    if (!pendingSubmissions.length) return
+    const localTasks = pendingSubmissions.map(buildPendingTaskFromSubmission)
+    if (!localTasks.length) return
+    setTasks(prev => {
+      const existingIds = new Set(prev.map(t => t.task_id))
+      const merged = [...prev]
+      for (const task of localTasks) if (!existingIds.has(task.task_id)) merged.push(task)
+      const next = mergeTasksById(merged)
+      saveCachedActiveTasks(next)
+      return next
+    })
+  }, [pendingSubmissions, saveCachedActiveTasks])
 
   useEffect(() => {
     if (!isAdmin) return
@@ -377,7 +417,8 @@ export default function ChatPage() {
     if (!promptText) { dialog.alert('该作品没有可入库的提示词'); return }
     if (!await dialog.confirm('确定将该作品的提示词加入广场 Tab 的提示词库子 Tab 吗？\n作者将留空。')) return
     try {
-      await promptAPI.createPublic({ name: makePromptLibraryName(promptText), prompt: promptText, negative_prompt: '', tags: [], category: null, image_path: null })
+      const imagePath = task?.filename || task?._raw?.filename || null
+      await promptAPI.createPublic({ name: makePromptLibraryName(promptText), prompt: promptText, negative_prompt: '', tags: [], category: null, image_path: imagePath })
       dialog.alert('已加入广场提示词库')
     } catch (e) {
       dialog.alert(e?.message || '加入提示词库失败')
@@ -396,7 +437,6 @@ export default function ChatPage() {
       return next
     })
   }, [saveCachedActiveTasks])
-
   const shareImageToSquare = useCallback(async (filename, prompt, params, hasImages, imageUrls) => {
     try {
       const { data } = await squareAPI.share({
@@ -415,6 +455,19 @@ export default function ChatPage() {
       window.dispatchEvent(new Event('points-updated'))
     }).catch(() => {})
   }, [])
+  const finalizeSubmissionQueueItem = useCallback((clientRequestId, updater) => {
+    if (!clientRequestId) return
+    syncPendingSubmissions(prev => prev.flatMap(item => {
+      if (item.client_request_id !== clientRequestId) return [item]
+      const next = typeof updater === 'function' ? updater(item) : { ...item, ...(updater || {}) }
+      return next ? [next] : []
+    }))
+  }, [syncPendingSubmissions])
+  const markSubmissionFailed = useCallback((item, message) => {
+    if (!item) return
+    finalizeSubmissionQueueItem(item.client_request_id, { ...item, status: 'failed', error: message || '提交失败', real_task_id: item.real_task_id || null, completed_at: formatLocalTime(new Date()) })
+    updateTask(item.real_task_id || item.temp_task_id, { status: 'failed', error: message || '提交失败', _active: false, _local_submission: false })
+  }, [finalizeSubmissionQueueItem, updateTask])
 
   const pollTask = useCallback(async (taskId, startTime, shareToSquare, prompt, params, hasImages) => {
     const maxWaitMs = 15 * 60 * 1000
@@ -451,11 +504,13 @@ export default function ChatPage() {
           if (shareToSquare && st.result_urls?.length) {
             shareImageToSquare(st.result_urls[0].split('/').pop(), prompt, params, hasImages, params?.local_image_urls || params?.image_urls)
           }
+          syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
           return
         }
         if (st.status === 'failed') {
           updateTask(taskId, { ...st, _active: false })
           refreshPointsOnFailed()
+          syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
           return
         }
         updateTask(taskId, { ...st, _active: true })
@@ -466,12 +521,14 @@ export default function ChatPage() {
           if (missingCount >= 3) {
             updateTask(taskId, { status: 'failed', error: '后端未找到任务，提交可能失败', _active: false })
             refreshPointsOnFailed()
+            syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
             return
           }
         } else {
           errorCount += 1
           if (errorCount >= 5) {
             updateTask(taskId, { status: 'failed', error: '任务状态查询失败，请重试', _active: false })
+            syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
             return
           }
         }
@@ -479,99 +536,147 @@ export default function ChatPage() {
     }
     updateTask(taskId, { status: 'failed', error: '生成超时（已等待15分钟）', _active: false })
     refreshPointsOnFailed()
-  }, [updateTask, shareImageToSquare, refreshPointsOnFailed])
+    syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
+  }, [updateTask, shareImageToSquare, refreshPointsOnFailed, syncPendingSubmissions])
 
-  const handleSubmit = useCallback(async ({ prompt, images, params, shareToSquare, rollCount = 1 }) => {
+  const processSubmission = useCallback(async (item) => {
+    const submissionId = item?.client_request_id
+    if (!submissionId || submissionProcessingRef.current.has(submissionId)) return
+    if (item.status === 'failed' || item.status === 'completed') return
+    submissionProcessingRef.current.add(submissionId)
+    const createdAt = item.created_at || formatLocalTime(new Date())
+    const startedAt = item.started_at || formatLocalTime(new Date())
+    const prompt = item.prompt || item?.params?.prompt || ''
+    const baseParams = { ...(item.params || {}), prompt, share_to_square: !!item.shareToSquare }
+    const realTaskId = item.real_task_id || makeTaskId()
+    const hasExistingRealTask = !!item.real_task_id
+    if (!hasExistingRealTask) {
+      finalizeSubmissionQueueItem(submissionId, current => current ? { ...current, real_task_id: realTaskId, status: 'processing', started_at: startedAt } : null)
+      setTasks(prev => {
+        const next = prev.map(task => task.task_id === item.temp_task_id ? { ...task, task_id: realTaskId, started_at: startedAt, _local_submission: false } : task)
+        saveCachedActiveTasks(next)
+        return next
+      })
+    } else {
+      updateTask(realTaskId, { status: 'processing', started_at: startedAt, _active: true })
+    }
+    const images = buildSubmissionImages(item.images)
+    let imageUrls = []
+    let localImageUrls = []
+    let hasImages = false
+    try {
+      const uploaded = images.length > 0 ? await Promise.all(images.map(async img => {
+        if (img.file) { const type = img.file.type || img.type || 'image/png'; return uploadAPI.upload(new File([img.file], normalizeUploadName(img.name || img.file.name, type), { type })) }
+        if (img.url && img.url.startsWith('http')) return Promise.resolve({ data: { url: img.url, storage_name: img.url } })
+        if (img.url) { const r = await fetch(img.url); if (!r.ok) throw new Error(`fetch ${r.status}`); const blob = await r.blob(); const type = blob.type || r.headers.get('content-type') || img.type || 'image/png'; return uploadAPI.upload(new File([blob], normalizeUploadName(img.name, type, img.url), { type })) }
+        return { data: { url: '', storage_name: '' } }
+      })) : []
+      imageUrls = uploaded.map(r => r.data.url).filter(Boolean)
+      localImageUrls = uploaded.map(r => r.data.storage_name || r.data.url).filter(Boolean)
+      hasImages = imageUrls.length > 0
+    } catch (e) {
+      markSubmissionFailed({ ...item, real_task_id: realTaskId }, '图片上传失败: ' + (e?.message || '未知错误'))
+      submissionProcessingRef.current.delete(submissionId)
+      return
+    }
+    const requestParams = { ...baseParams, image_urls: imageUrls, local_image_urls: localImageUrls }
+    try {
+      const data = hasImages ? (await generateAPI.submitTextImage({ prompt, image_urls: imageUrls, size: baseParams?.size || 'auto', quality: baseParams?.quality || undefined, model_id: baseParams?.model_id, task_id: realTaskId, client_request_id: submissionId, share_to_square: !!item.shareToSquare, local_image_urls: localImageUrls })).data : (await generateAPI.submitText({ prompt, size: baseParams?.size || 'auto', quality: baseParams?.quality || undefined, model_id: baseParams?.model_id, task_id: realTaskId, client_request_id: submissionId, share_to_square: !!item.shareToSquare })).data
+      const modelCost = baseParams?._points_cost || requestCost
+      if (!item.points_consumed) {
+        setPoints(p => Math.max(0, p - modelCost))
+        const u = readUser()
+        if (u) { u.points = Math.max(0, (u.points ?? 0) - modelCost); localStorage.setItem('user', JSON.stringify(u)) }
+        window.dispatchEvent(new Event('points-updated'))
+      }
+      const finalTaskId = data.task_id || realTaskId
+      setTasks(prev => {
+        const next = prev.map(task => task.task_id === realTaskId || task.task_id === item.temp_task_id ? { ...task, task_id: finalTaskId, status: data.status || 'processing', params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: data.status !== 'completed', _points_consumed: true } : task)
+        saveCachedActiveTasks(next)
+        return next
+      })
+      if (!item.points_consumed) finalizeSubmissionQueueItem(submissionId, current => current ? { ...current, real_task_id: finalTaskId, points_consumed: true, status: data.status || 'processing' } : null)
+      syncPendingSubmissions(prev => prev.filter(queueItem => queueItem.client_request_id !== submissionId))
+      if (data.status === 'completed') {
+        updateTask(finalTaskId, { status: 'completed', result_urls: data.result_urls || [], params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: false })
+        if (data.result_urls?.length) {
+          const newCards = data.result_urls.map((url, idx) => { const filename = url.split('/').pop(); return { _type: 'image', _raw: { filename, metadata: { prompt, task_id: finalTaskId, created_at: createdAt, started_at: startedAt, completed_at: formatLocalTime(new Date()), type: hasImages ? 'image' : 'text', size: baseParams?.size, input_urls: localImageUrls.length ? localImageUrls : imageUrls } }, id: `${finalTaskId}-${idx}`, prompt, fullUrl: `/api/images/file/${filename}`, filename, expired: false } })
+          setDetailCards(prev => { const existing = new Set(prev.map(card => card.id)); const toAdd = newCards.filter(card => !existing.has(card.id)); return toAdd.length ? [...prev, ...toAdd] : prev })
+        }
+        if (!!item.shareToSquare && data.result_urls?.length) shareImageToSquare(data.result_urls[0].split('/').pop(), prompt, requestParams, hasImages, localImageUrls)
+      } else {
+        pollTask(finalTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages)
+      }
+    } catch (e) {
+      const msg = e?.message || ''
+      if (msg.includes('积分不足') || msg.includes('402')) {
+        markSubmissionFailed({ ...item, real_task_id: realTaskId }, '积分不足，请先获取更多积分后重试')
+        submissionProcessingRef.current.delete(submissionId)
+        return
+      }
+      const isTimeout = msg.includes('timeout') || msg.includes('超时')
+      if (isTimeout) {
+        try {
+          const { data: st } = await taskAPI.get(realTaskId)
+          syncPendingSubmissions(prev => prev.filter(queueItem => queueItem.client_request_id !== submissionId))
+          if (st.status === 'completed') {
+            updateTask(realTaskId, { ...st, params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: false, _points_consumed: true })
+            if (!!item.shareToSquare && st.result_urls?.length) shareImageToSquare(st.result_urls[0].split('/').pop(), prompt, requestParams, hasImages, localImageUrls)
+          } else if (st.status === 'failed') {
+            updateTask(realTaskId, { ...st, params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: false, _points_consumed: true })
+            refreshPointsOnFailed()
+          } else {
+            updateTask(realTaskId, { ...st, params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: true, _points_consumed: true })
+            pollTask(realTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages)
+          }
+          submissionProcessingRef.current.delete(submissionId)
+          return
+        } catch (se) {
+          const sm = (se?.message || '').toLowerCase()
+          if (sm.includes('404') || sm.includes('任务不存在') || sm.includes('not found')) {
+            finalizeSubmissionQueueItem(submissionId, current => current ? { ...current, real_task_id: realTaskId, status: 'processing', started_at: startedAt } : null)
+            submissionProcessingRef.current.delete(submissionId)
+            setTimeout(() => {
+              const latest = pendingSubmissions.find(queueItem => queueItem.client_request_id === submissionId)
+              void processSubmission(latest || { ...item, real_task_id: realTaskId, started_at: startedAt })
+            }, 1500)
+            return
+          }
+        }
+        syncPendingSubmissions(prev => prev.filter(queueItem => queueItem.client_request_id !== submissionId))
+        pollTask(realTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages)
+      } else {
+        markSubmissionFailed({ ...item, real_task_id: realTaskId }, '提交失败: ' + msg)
+      }
+    }
+    submissionProcessingRef.current.delete(submissionId)
+  }, [finalizeSubmissionQueueItem, markSubmissionFailed, pendingSubmissions, pollTask, refreshPointsOnFailed, requestCost, saveCachedActiveTasks, shareImageToSquare, syncPendingSubmissions, updateTask])
+
+  const handleSubmit = useCallback(async ({ prompt, images, params, shareToSquare, rollCount = 1, clearInput }) => {
     const batchCount = Math.min(5, Math.max(1, Number(rollCount) || 1))
     const modelCost = params?._points_cost || requestCost
     const submitMessage = batchCount > 1 ? `本次将提交 ${batchCount} 次生成，预计消耗 ${batchCount * modelCost} 积分，是否继续？` : `本次将提交 1 次生成，预计消耗 ${modelCost} 积分，是否继续？`
     if (!await dialog.confirm(`${submitMessage}\n\n当前设置\n${formatSubmitSettings(params, shareToSquare, images?.length || 0)}`)) return false
-    setLoading(true)
     try {
-      const previewImages = images?.map(i => i.preview) || []
-      const tempIds = Array.from({ length: batchCount }, (_, i) => `pending-${Date.now()}-${i}`)
-      for (const tempId of tempIds) {
-        const tempTask = { task_id: tempId, status: 'processing', prompt, params: { prompt, size: params?.size || 'auto', share_to_square: !!shareToSquare }, previewImages, created_at: formatLocalTime(new Date()), started_at: formatLocalTime(new Date()), _active: true }
-        setTasks(prev => { const next = [...prev, tempTask]; saveCachedActiveTasks(next); return next })
-      }
+      const now = formatLocalTime(new Date())
+      const baseImages = buildSubmissionImages(images || [])
+      const submissions = Array.from({ length: batchCount }, (_, index) => ({ client_request_id: makeTaskId(), temp_task_id: `pending-${Date.now()}-${index}-${Math.random().toString(16).slice(2, 8)}`, real_task_id: null, prompt, images: baseImages, params: { ...params, prompt, share_to_square: !!shareToSquare }, shareToSquare: !!shareToSquare, type: baseImages.length ? 'text_image' : 'text', status: 'processing', created_at: now, started_at: now, error: null }))
+      const stagedTasks = submissions.map(buildPendingTaskFromSubmission)
+      setTasks(prev => {
+        const next = mergeTasksById([...prev, ...stagedTasks])
+        saveCachedActiveTasks(next)
+        return next
+      })
+      syncPendingSubmissions(prev => [...prev, ...submissions])
+      clearInput?.()
       scroll()
-      let imageUrls = []
-      let localImageUrls = []
-      let hasImages = false
-      try {
-        const uploaded = images?.length > 0 ? await Promise.all(images.map(async img => {
-          if (img.file) { const type = img.file.type || 'image/png'; return uploadAPI.upload(new File([img.file], normalizeUploadName(img.file.name, type), { type })) }
-          if (img.url && img.url.startsWith('http')) return Promise.resolve({ data: { url: img.url } })
-          if (img.url) { const r = await fetch(img.url); if (!r.ok) throw new Error(`fetch ${r.status}`); const blob = await r.blob(); const type = blob.type || r.headers.get('content-type') || 'image/png'; return uploadAPI.upload(new File([blob], normalizeUploadName(img.name, type, img.url), { type })) }
-          return { data: { url: '' } }
-        })) : []
-        imageUrls = uploaded.map(r => r.data.url)
-        localImageUrls = uploaded.map(r => r.data.storage_name || r.data.url).filter(Boolean)
-        hasImages = imageUrls.length > 0
-      } catch (e) {
-        for (const tempId of tempIds) updateTask(tempId, { status: 'failed', error: '图片上传失败: ' + (e?.message || '未知错误'), _active: false })
-        return false
-      }
-      const submitOne = async (index) => {
-        const tempId = tempIds[index]
-        const taskId = makeTaskId()
-        try {
-          const data = hasImages ? (await generateAPI.submitTextImage({ prompt, image_urls: imageUrls, size: params?.size || 'auto', quality: params?.quality || undefined, model_id: params?.model_id, task_id: taskId, share_to_square: !!shareToSquare, local_image_urls: localImageUrls })).data : (await generateAPI.submitText({ prompt, size: params?.size || 'auto', quality: params?.quality || undefined, model_id: params?.model_id, task_id: taskId, share_to_square: !!shareToSquare })).data
-          setPoints(p => Math.max(0, p - modelCost))
-          const u = readUser()
-          if (u) { u.points = Math.max(0, (u.points ?? 0) - modelCost); localStorage.setItem('user', JSON.stringify(u)) }
-          window.dispatchEvent(new Event('points-updated'))
-          const realId = data.task_id
-          setTasks(prev => { const next = prev.map(t => t.task_id === tempId ? { ...t, task_id: realId } : t); saveCachedActiveTasks(next); return next })
-          if (data.status === 'completed') {
-            updateTask(realId, { status: 'completed', result_urls: data.result_urls, _active: false })
-            if (shareToSquare && data.result_urls?.length) shareImageToSquare(data.result_urls[0].split('/').pop(), prompt, params, hasImages, localImageUrls)
-            return { ok: true }
-          }
-          pollTask(realId, Date.now(), shareToSquare, prompt, params, hasImages)
-          return { ok: true }
-        } catch (e) {
-          const msg = e.message || ''
-          if (msg.includes('积分不足') || msg.includes('402')) {
-            updateTask(tempId, { status: 'failed', error: '积分不足，请先获取更多积分后重试', _active: false })
-            return { ok: false, stop: true, message: '积分不足，请先获取更多积分后重试' }
-          }
-          const isTimeout = msg.includes('timeout') || msg.includes('超时')
-          if (isTimeout) {
-            setTasks(prev => { const next = prev.map(t => t.task_id === tempId ? { ...t, task_id: taskId } : t); saveCachedActiveTasks(next); return next })
-            try {
-              const { data: st } = await taskAPI.get(taskId)
-              if (st.status === 'completed') { updateTask(taskId, { ...st, _active: false }); if (shareToSquare && st.result_urls?.length) shareImageToSquare(st.result_urls[0].split('/').pop(), prompt, params, hasImages, localImageUrls); return { ok: true } }
-              if (st.status === 'failed') { updateTask(taskId, { ...st, _active: false }); refreshPointsOnFailed(); return { ok: false, message: st.error || '生成失败' } }
-              updateTask(taskId, { ...st, _active: true }); pollTask(taskId, Date.now(), shareToSquare, prompt, params, hasImages); return { ok: true }
-            } catch (se) {
-              const sm = (se?.message || '').toLowerCase()
-              if (sm.includes('404') || sm.includes('任务不存在') || sm.includes('not found')) { updateTask(taskId, { status: 'failed', error: '提交失败：后端未创建任务', _active: false }); return { ok: false, stop: true, message: '提交失败：后端未创建任务' } }
-            }
-            pollTask(taskId, Date.now(), shareToSquare, prompt, params, hasImages)
-            return { ok: true }
-          }
-          updateTask(tempId, { status: 'failed', error: '提交失败: ' + msg, _active: false })
-          return { ok: false, stop: false, message: msg }
-        }
-      }
-      let success = 0
-      let failed = 0
-      for (let i = 0; i < batchCount; i++) {
-        const r = await submitOne(i)
-        if (r?.ok) success += 1
-        else failed += 1
-        if (r?.stop) break
-      }
-      if (batchCount > 1) dialog.alert(`已提交 ${success} 次${failed > 0 ? `，失败 ${failed} 次` : ''}`)
-      return true
+      for (const submission of submissions) void processSubmission(submission)
+      return 'cleared'
     } catch (e) {
       dialog.alert('提交失败: ' + (e?.message || '未知错误'))
       return false
-    } finally {
-      setLoading(false)
     }
-  }, [dialog, pollTask, refreshPointsOnFailed, requestCost, scroll, shareImageToSquare, updateTask, saveCachedActiveTasks])
+  }, [dialog, processSubmission, requestCost, saveCachedActiveTasks, scroll, syncPendingSubmissions])
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true)
@@ -597,6 +702,13 @@ export default function ChatPage() {
       }
     }
   }, [tasks, pollTask, updateTask])
+  useEffect(() => {
+    for (const item of pendingSubmissions) {
+      if (!item?.client_request_id || item.status === 'failed' || item.status === 'completed') continue
+      if (item.real_task_id && tasks.some(t => t.task_id === item.real_task_id && ['pending', 'queued', 'processing', 'running', 'generating'].includes(t.status) && t._active)) continue
+      void processSubmission(item)
+    }
+  }, [pendingSubmissions, processSubmission, tasks])
 
   const allDetailCards = useMemo(() => {
     const result = []
@@ -914,10 +1026,7 @@ export default function ChatPage() {
         {!loaded ? (
           <div className="pt-4"><CardGridSkeleton layoutMode={layoutMode} label="加载中..." /></div>
         ) : visibleTasks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center py-20">
-            <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>开始生成你的图像</h2>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{tasks.length === 0 ? '输入提示词或上传参考图，AI 为你创作' : '当前时间筛选下没有记录'}</p>
-          </div>
+          showPortfolioEmptyState ? <div className="flex min-h-full items-center justify-center py-8 sm:py-12"><PortfolioShowcaseCard onUsePrompt={handleAddPrompt} /></div> : <div className="flex flex-col items-center justify-center h-full text-center py-20"><h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>当前筛选下没有记录</h2><p className="text-sm" style={{ color: 'var(--text-secondary)' }}>换个时间范围，或者直接开始下一次生成</p></div>
         ) : (
           <div ref={cardGridRef} className={`${layoutMode === 'masonry' ? 'card-feed-masonry' : 'card-feed-grid'} pt-4`} style={{ position: 'relative' }}>
             {!feedLayoutReady && <div className="card-feed-loading-mask" />}
@@ -951,6 +1060,7 @@ export default function ChatPage() {
           onClose={() => { setSelectedCardIndex(null); setSelectedDetailTaskId(null) }}
           onUseImage={card => inputRef.current?.addImage(card.fullUrl)}
           onUsePrompt={handleAddPrompt}
+          onAddToPromptLibrary={isAdmin ? handleAddToPromptLibrary : undefined}
           onShare={isShared ? undefined : handleDetailShare}
           onUnshare={isShared ? handleDetailUnshare : undefined}
           onExtend={handleDetailExtend}

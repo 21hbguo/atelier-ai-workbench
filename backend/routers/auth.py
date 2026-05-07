@@ -96,7 +96,6 @@ class RegisterRequest(BaseModel):
     nickname: str = None
     email: str = Field(..., min_length=5, max_length=255)
     code: str = Field(..., min_length=6, max_length=6)
-    invite_code: str = Field("", max_length=32)
     turnstile_token: str = Field(..., min_length=1, max_length=4096)
 
 
@@ -207,13 +206,10 @@ async def register(req: RegisterRequest, request: Request, response: Response):
         update_user_ip(user_id, ip, conn=conn)
         register_bonus = PointsService.register_bonus()
         PointsService.add_points(user_id, register_bonus, "register_bonus", "注册赠送", conn=conn)
-        invite_result = None
-        if InviteService.is_enabled() and (req.invite_code or "").strip():
-            invite_result = InviteService.apply_register_invite(conn, user_id, req.invite_code, ip)
         mark_registered(email)
     access_token = _issue_session(response, user_id, account, False, ip, request.headers.get("user-agent", ""))
     logger.info(f"[audit.register] user={user_id} username={account} ip={ip}")
-    return {"token": access_token, "user": build_user_payload({"id": user_id, "account": account, "nickname": nickname, "is_admin": False, "points": register_bonus, "invite_code": "", "inviter_user_id": invite_result["inviter_user_id"] if invite_result else None})}
+    return {"token": access_token, "user": build_user_payload({"id": user_id, "account": account, "nickname": nickname, "is_admin": False, "points": register_bonus, "invite_code": "", "inviter_user_id": None})}
 
 
 @router.post("/login")

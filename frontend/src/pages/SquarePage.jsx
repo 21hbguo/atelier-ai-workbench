@@ -82,21 +82,24 @@ export default function SquarePage() {
   const [tab, setTab] = useState(() => location.state?.tab === 'favorites' || location.state?.tab === 'shared' ? 'shared' : 'prompts')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState('likes')
-  const [activeCategory, setActiveCategory] = useState(null)
+  const [activeCategories, setActiveCategories] = useState({ prompts: null, works: null })
   const [authorFilter, setAuthorFilter] = useState(null)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   const isAdmin = Boolean(readUser()?.is_admin)
   useEffect(() => { setLayoutMode('masonry') }, [setLayoutMode])
+  const activeCategory = tab === 'works' ? activeCategories.works : tab === 'prompts' ? activeCategories.prompts : null
 
   const handleTabChange = (newTab) => {
     setTab(newTab)
     setQuery('')
     setSort('likes')
-    setActiveCategory(null)
     setAuthorFilter(null)
   }
 
   const handleRefresh = () => setRefreshTrigger(n => n + 1)
+  const handleCategoryChange = useCallback((next) => {
+    setActiveCategories(prev => ({ ...prev, [tab]: next }))
+  }, [tab])
   const handleAuthorFilter = useCallback((card) => {
     if (!card?.author) return
     setAuthorFilter({ id: card.authorId || null, name: card.authorName || card.author })
@@ -141,7 +144,7 @@ export default function SquarePage() {
           )}
           {(tab === 'prompts' || tab === 'works') && (
             <div className="mt-2">
-              <PromptsCategoryFilter active={activeCategory} onChange={setActiveCategory} />
+              <PromptsCategoryFilter active={activeCategory} onChange={handleCategoryChange} />
             </div>
           )}
         </div>
@@ -285,6 +288,7 @@ function WorksTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, i
         onAuthorClick={onAuthorFilter}
         paginationScrollTargetId="square-scroll-container"
         scrollAfterPaging
+        cardUiMode="square"
         showAuthor
         selectable={isAdmin && selectMode}
         selected={checked}
@@ -534,6 +538,7 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
         onAuthorClick={onAuthorFilter}
         paginationScrollTargetId="square-scroll-container"
         scrollAfterPaging
+        cardUiMode="square"
         showAuthor
         emptyText="暂无提示词"
         selectable={isAdmin && selectMode}
@@ -646,7 +651,7 @@ function SharedTab({ refreshTrigger, layoutMode }) {
           <button key={k} onClick={() => { setSubTab(k); setDetailIdx(null) }} className={`flex-1 px-3 py-1.5 rounded-full text-xs font-medium transition-colors flex items-center justify-center gap-1 ${subTab === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`} style={{ color: subTab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{Icon ? <Icon size={12} /> : null}{l}</button>
         ))}
       </div>
-      <CardGrid cards={cards} layoutMode={subTab === 'prompt' ? 'grid' : layoutMode} showTotal totalUnit={subTab === 'prompt' ? '条' : '项'} loading={loading} paging={paging} refreshing={refreshing} onRefresh={refresh} hideRefresh total={total} page={page} totalPages={totalPages} onPageChange={setPage} paginationScrollTargetId="square-scroll-container" scrollAfterPaging onCardClick={(_, idx) => setDetailIdx(idx)} onFavorite={handleFavorite} onUsePrompt={handleUsePromptWithLike} onUseImage={handleUseImageWithLike} showAuthor showLike={false} emptyText="暂无内容" />
+      <CardGrid cards={cards} layoutMode={subTab === 'prompt' ? 'grid' : layoutMode} showTotal totalUnit={subTab === 'prompt' ? '条' : '项'} loading={loading} paging={paging} refreshing={refreshing} onRefresh={refresh} hideRefresh total={total} page={page} totalPages={totalPages} onPageChange={setPage} paginationScrollTargetId="square-scroll-container" scrollAfterPaging onCardClick={(_, idx) => setDetailIdx(idx)} onFavorite={handleFavorite} onUsePrompt={handleUsePromptWithLike} onUseImage={handleUseImageWithLike} showAuthor showLike={false} cardUiMode="square" emptyText="暂无内容" />
       {detailIdx !== null && cards[detailIdx] && (
         <UnifiedDetailModal card={cards[detailIdx]} cards={cards} currentIndex={detailIdx} onNavigate={setDetailIdx} onClose={() => setDetailIdx(null)}
           onFavorite={subTab === 'my-shares' ? undefined : async (id) => { const targetId = cards[detailIdx]?.id; setDetailIdx(null); const ok = await handleFavorite(id); if (!ok && targetId) { const idx = cards.findIndex(c => c.id === targetId); if (idx >= 0) setDetailIdx(idx) } }}

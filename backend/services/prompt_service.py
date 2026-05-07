@@ -1,13 +1,15 @@
 import json
 import csv
 import io
+import shutil
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from uuid import uuid4
 from backend.database import get_db
 from backend.services.category_service import CategoryService
 from backend.services.favorite_service import FavoriteService
-from backend.config import EVO_IMAGES_DIR, EVO_IMPORTED_DIR, UPLOAD_DIR
+from backend.config import EVO_IMAGES_DIR, EVO_IMPORTED_DIR, UPLOAD_DIR, GENERATED_IMAGES_DIR
 from backend.services.image_dimensions import get_image_dimensions
 
 
@@ -100,12 +102,27 @@ class PromptService:
             return cls._row_to_dict(row) if row else None
 
     @classmethod
+    def _copy_image_to_uploads(cls, image_path: str) -> Optional[str]:
+        if not image_path:
+            return image_path
+        src = GENERATED_IMAGES_DIR / image_path
+        if not src.exists():
+            return image_path
+        ext = Path(image_path).suffix or '.png'
+        new_filename = f"{uuid4().hex}{ext}"
+        dst = UPLOAD_DIR / new_filename
+        shutil.copy2(src, dst)
+        return new_filename
+
+    @classmethod
     def create(cls, name: str, prompt: str, negative_prompt: Optional[str] = None,
                tags: Optional[List[str]] = None, user_id: int = None, category: Optional[str] = None, image_path: Optional[str] = None) -> Dict[str, Any]:
         with get_db() as conn:
             existing = conn.execute("SELECT id FROM prompts WHERE prompt = %s AND user_id IS NOT DISTINCT FROM %s", (prompt, user_id)).fetchone()
             if existing:
                 raise ValueError("相同内容的提示词已存在")
+        if image_path and not image_path.startswith(("http://", "https://")):
+            image_path = cls._copy_image_to_uploads(image_path)
         item = {
             "id": str(uuid4()),
             "name": name,

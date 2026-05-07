@@ -101,19 +101,20 @@ class InviteService:
         if not user: raise HTTPException(status_code=404,detail="用户不存在")
         user=dict(user)
         existing=user["inviter_user_id"]
+        register_code=cls.normalize_code(user.get("register_invite_code") or "")
         code=cls.normalize_code(invite_code or user.get("register_invite_code") or "")
         if existing:
             inviter=conn.execute("SELECT id,invite_code,username,nickname FROM users WHERE id=%s",(existing,)).fetchone()
             if not inviter:return None
             if invite_code and cls.normalize_code(invite_code)!=(inviter["invite_code"] or ""):
                 raise HTTPException(status_code=400,detail="当前账号已绑定其他邀请码")
-            return {"inviter_user_id":inviter["id"],"invite_code":inviter["invite_code"] or code,"bound":True}
+            return {"inviter_user_id":inviter["id"],"invite_code":inviter["invite_code"] or code,"bound":True,"register_bound":bool(register_code)}
         if not code:return None
         inviter=cls.find_inviter_by_code(conn,code)
         if not inviter: raise HTTPException(status_code=400,detail="邀请码不存在")
         if int(inviter["id"])==int(user_id): raise HTTPException(status_code=400,detail="不能填写自己的邀请码")
         cls.bind_inviter(conn,user_id,inviter["id"],code)
-        return {"inviter_user_id":inviter["id"],"invite_code":code,"bound":False}
+        return {"inviter_user_id":inviter["id"],"invite_code":code,"bound":False,"register_bound":False}
     @classmethod
     def calc_recharge_bonus_points(cls,points:int):
         return max(0,int(round(float(points or 0)*cls.recharge_bonus_percent()/100)))
