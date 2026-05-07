@@ -600,17 +600,17 @@ export default function ChatPage() {
       const elapsed = Date.now() - startTime
       await new Promise(r => setTimeout(r, getDelay(elapsed)))
       try {
-        const st = await getTaskStatusWithRecovery(taskId, clientRequestId)
+        const taskStatus = await getTaskStatusWithRecovery(taskId, clientRequestId)
         missingCount = 0
         errorCount = 0
-        if (st.status === 'completed') {
-          const completedTask = { ...st, _active: false, task_id: taskId }
+        if (taskStatus.status === 'completed') {
+          const completedTask = { ...taskStatus, _active: false, task_id: taskId }
           updateTask(taskId, completedTask)
-          if (st.result_urls?.length) {
-            const cardPrompt = st.params?.prompt || st.prompt || prompt
-            const newCards = st.result_urls.map((url, idx) => {
+          if (taskStatus.result_urls?.length) {
+            const cardPrompt = taskStatus.params?.prompt || taskStatus.prompt || prompt
+            const newCards = taskStatus.result_urls.map((url, idx) => {
               const filename = url.split('/').pop()
-              return { _type: 'image', _raw: { filename, metadata: { prompt: cardPrompt, task_id: taskId, created_at: st.created_at, started_at: st.started_at, completed_at: st.completed_at, type: st.params?.image_urls?.length ? 'image' : 'text', size: st.params?.size, input_urls: st.params?.local_image_urls || st.params?.image_urls } }, id: `${taskId}-${idx}`, prompt: cardPrompt, fullUrl: `/api/images/file/${filename}`, filename }
+              return { _type: 'image', _raw: { filename, metadata: { prompt: cardPrompt, task_id: taskId, created_at: taskStatus.created_at, started_at: taskStatus.started_at, completed_at: taskStatus.completed_at, type: taskStatus.params?.image_urls?.length ? 'image' : 'text', size: taskStatus.params?.size, input_urls: taskStatus.params?.local_image_urls || taskStatus.params?.image_urls } }, id: `${taskId}-${idx}`, prompt: cardPrompt, fullUrl: `/api/images/file/${filename}`, filename }
             })
             setDetailCards(prev => {
               const existing = new Set(prev.map(c => c.id))
@@ -622,14 +622,14 @@ export default function ChatPage() {
           syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
           return
         }
-        if (st.status === 'failed') {
-          updateTask(taskId, { ...st, _active: false })
+        if (taskStatus.status === 'failed') {
+          updateTask(taskId, { ...taskStatus, _active: false })
           releaseRecovery()
           refreshPointsOnFailed()
           syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
           return
         }
-        updateTask(taskId, { ...st, _active: true })
+        updateTask(taskId, { ...taskStatus, _active: true })
       } catch (e) {
         const msg = (e?.message || '').toLowerCase()
         if (msg.includes('404') || msg.includes('任务不存在') || msg.includes('not found')) {
@@ -746,15 +746,15 @@ export default function ChatPage() {
       const isTimeout = msg.includes('timeout') || msg.includes('超时')
       if (isTimeout) {
         try {
-          const st = await getTaskStatusWithRecovery(realTaskId, submissionId)
+          const taskStatus = await getTaskStatusWithRecovery(realTaskId, submissionId)
           syncPendingSubmissions(prev => prev.filter(queueItem => queueItem.client_request_id !== submissionId))
-          if (st.status === 'completed') {
-            updateTask(realTaskId, { ...st, params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: false, _points_consumed: true })
-          } else if (st.status === 'failed') {
-            updateTask(realTaskId, { ...st, params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: false, _points_consumed: true })
+          if (taskStatus.status === 'completed') {
+            updateTask(realTaskId, { ...taskStatus, params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: false, _points_consumed: true })
+          } else if (taskStatus.status === 'failed') {
+            updateTask(realTaskId, { ...taskStatus, params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: false, _points_consumed: true })
             refreshPointsOnFailed()
           } else {
-            updateTask(realTaskId, { ...st, params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: true, _points_consumed: true })
+            updateTask(realTaskId, { ...taskStatus, params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: true, _points_consumed: true })
             pollTask(realTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages, submissionId, confirmDeadlineTs)
           }
           submissionProcessingRef.current.delete(submissionId)
