@@ -56,8 +56,8 @@ export default function CardGrid({
     }
     let p = gridRef.current?.parentElement
     while (p) {
-      const st = window.getComputedStyle(p)
-      const oy = st.overflowY
+      const computedStyle = window.getComputedStyle(p)
+      const oy = computedStyle.overflowY
       const scrollable = (oy === 'auto' || oy === 'scroll') && p.scrollHeight > p.clientHeight
       if (scrollable) { p.scrollTop = 0; return }
       p = p.parentElement
