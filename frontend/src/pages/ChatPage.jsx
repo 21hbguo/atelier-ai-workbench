@@ -87,6 +87,7 @@ function normalizeUploadName(name, type, url = '') {
   const base = (raw.replace(/\.[^.]+$/, '') || 'reference').replace(/[^\w.-]/g, '_').replace(/^\.+/, '') || 'reference'
   return `${base}.${getUploadExt(type, raw)}`
 }
+const TASK_CONFIRM_TIMEOUT_MS = 40 * 60 * 1000
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)) }
 function shouldRetryNetworkError(message = '') { const s = String(message || '').toLowerCase(); return !!s && ['timeout', 'network error', 'fetch', 'socket', 'econn', 'etimedout', 'abort', 'connection', 'not found', '502', '503', '504'].some(k => s.includes(k)) }
 function formatSubmitSettings(params, shareToSquare, imageCount) {
@@ -567,7 +568,7 @@ export default function ChatPage() {
     throw lastError || new Error('图片上传失败')
   }, [])
 
-  const pollTask = useCallback(async (taskId, startTime, shareToSquare, prompt, params, hasImages, clientRequestId) => {
+  const pollTask = useCallback(async (taskId, startTime, shareToSquare, prompt, params, hasImages, clientRequestId, confirmDeadlineTs) => {
     const maxWaitMs = 15 * 60 * 1000
     const getDelay = (elapsed) => {
       if (elapsed >= 50_000 && elapsed < 120_000) return 6000
@@ -577,8 +578,16 @@ export default function ChatPage() {
     let missingCount = 0
     let errorCount = 0
     const releaseRecovery = () => { recoveringRef.current.delete(taskId) }
+    const hardDeadline = Number.isFinite(confirmDeadlineTs) ? confirmDeadlineTs : Date.now() + TASK_CONFIRM_TIMEOUT_MS
 
     for (let attempt = 0; Date.now() - startTime < maxWaitMs; attempt++) {
+      if (Date.now() >= hardDeadline) {
+        updateTask(taskId, { status: 'failed', error: '任务确认超时，请重试', _active: false })
+        releaseRecovery()
+        refreshPointsOnFailed()
+        syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
+        return
+      }
       const elapsed = Date.now() - startTime
       await new Promise(r => setTimeout(r, getDelay(elapsed)))
       try {
@@ -617,22 +626,43 @@ export default function ChatPage() {
         if (msg.includes('404') || msg.includes('任务不存在') || msg.includes('not found')) {
           missingCount += 1
           if (missingCount >= 8) {
+            if (Date.now() + 30000 >= hardDeadline) {
+              updateTask(taskId, { status: 'failed', error: '任务确认超时，请重试', _active: false })
+              releaseRecovery()
+              refreshPointsOnFailed()
+              syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
+              return
+            }
             updateTask(taskId, { error: '状态同步延迟，正在继续确认', _active: true })
-            window.setTimeout(() => { void pollTask(taskId, Date.now(), shareToSquare, prompt, params, hasImages, clientRequestId) }, 30000)
+            window.setTimeout(() => { void pollTask(taskId, Date.now(), shareToSquare, prompt, params, hasImages, clientRequestId, hardDeadline) }, 30000)
             return
           }
         } else {
           errorCount += 1
           if (errorCount >= 10 && !shouldRetryNetworkError(msg)) {
+            if (Date.now() + 45000 >= hardDeadline) {
+              updateTask(taskId, { status: 'failed', error: '任务确认超时，请重试', _active: false })
+              releaseRecovery()
+              refreshPointsOnFailed()
+              syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
+              return
+            }
             updateTask(taskId, { error: '任务状态同步异常，正在继续确认', _active: true })
-            window.setTimeout(() => { void pollTask(taskId, Date.now(), shareToSquare, prompt, params, hasImages, clientRequestId) }, 45000)
+            window.setTimeout(() => { void pollTask(taskId, Date.now(), shareToSquare, prompt, params, hasImages, clientRequestId, hardDeadline) }, 45000)
             return
           }
         }
       }
     }
+    if (Date.now() + 60000 >= hardDeadline) {
+      updateTask(taskId, { status: 'failed', error: '任务确认超时，请重试', _active: false })
+      releaseRecovery()
+      refreshPointsOnFailed()
+      syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
+      return
+    }
     updateTask(taskId, { error: '生成耗时较长，正在继续确认', _active: true })
-    window.setTimeout(() => { void pollTask(taskId, Date.now(), shareToSquare, prompt, params, hasImages, clientRequestId) }, 60000)
+    window.setTimeout(() => { void pollTask(taskId, Date.now(), shareToSquare, prompt, params, hasImages, clientRequestId, hardDeadline) }, 60000)
   }, [getTaskStatusWithRecovery, updateTask, refreshPointsOnFailed, syncPendingSubmissions])
 
   const processSubmission = useCallback(async (item) => {
@@ -672,7 +702,8 @@ export default function ChatPage() {
       submissionProcessingRef.current.delete(submissionId)
       return
     }
-    const requestParams = { ...baseParams, image_urls: imageUrls, local_image_urls: localImageUrls, client_request_id: submissionId }
+    const confirmDeadlineTs = Number(baseParams._confirm_deadline_ts) > 0 ? Number(baseParams._confirm_deadline_ts) : Date.now() + TASK_CONFIRM_TIMEOUT_MS
+    const requestParams = { ...baseParams, image_urls: imageUrls, local_image_urls: localImageUrls, client_request_id: submissionId, _confirm_deadline_ts: confirmDeadlineTs }
     try {
       const data = await submitGenerationWithRecovery({ hasImages, prompt, imageUrls, baseParams, realTaskId, submissionId, shareToSquare: !!item.shareToSquare, localImageUrls })
       const modelCost = baseParams?._points_cost || requestCost
@@ -697,7 +728,7 @@ export default function ChatPage() {
           setDetailCards(prev => { const existing = new Set(prev.map(card => card.id)); const toAdd = newCards.filter(card => !existing.has(card.id)); return toAdd.length ? [...prev, ...toAdd] : prev })
         }
       } else {
-        pollTask(finalTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages, submissionId)
+        pollTask(finalTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages, submissionId, confirmDeadlineTs)
       }
     } catch (e) {
       const msg = e?.message || ''
@@ -720,7 +751,7 @@ export default function ChatPage() {
             refreshPointsOnFailed()
           } else {
             updateTask(realTaskId, { ...st, params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: true, _points_consumed: true })
-            pollTask(realTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages, submissionId)
+            pollTask(realTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages, submissionId, confirmDeadlineTs)
           }
           submissionProcessingRef.current.delete(submissionId)
           return
@@ -737,7 +768,7 @@ export default function ChatPage() {
           }
         }
         syncPendingSubmissions(prev => prev.filter(queueItem => queueItem.client_request_id !== submissionId))
-        pollTask(realTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages, submissionId)
+        pollTask(realTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages, submissionId, confirmDeadlineTs)
       } else {
         if (shouldRetryNetworkError(msg)) {
           finalizeSubmissionQueueItem(submissionId, current => current ? { ...current, real_task_id: realTaskId, status: 'processing', started_at: startedAt, params: requestParams } : null)
@@ -825,7 +856,8 @@ export default function ChatPage() {
         recoveringRef.current.add(t.task_id)
         updateTask(t.task_id, { _active: true })
         const p = t.params || {}
-        pollTask(t.task_id, Date.now(), !!p.share_to_square, p.prompt || '', p, t.type === 'text_image', p.client_request_id)
+        const confirmDeadlineTs = Number(p._confirm_deadline_ts) > 0 ? Number(p._confirm_deadline_ts) : ((parseTaskTime(t.created_at) || Date.now()) + TASK_CONFIRM_TIMEOUT_MS)
+        pollTask(t.task_id, Date.now(), !!p.share_to_square, p.prompt || '', p, t.type === 'text_image', p.client_request_id, confirmDeadlineTs)
       }
     }
   }, [tasks, pollTask, updateTask])
