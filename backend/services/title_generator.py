@@ -70,17 +70,18 @@ class TitleGenerator:
             await cls._client.aclose()
             cls._client=None
     @classmethod
-    async def generate(cls,prompt:str,raw_name:str="")->str:
+    async def generate(cls,prompt:str,raw_name:str="",prefer_prompt:bool=False)->str:
         prompt=_clean_text(prompt)
         raw_name=_clean_text(raw_name)
-        if _is_good_chinese_title(raw_name):return raw_name[:12]
+        if _is_good_chinese_title(raw_name) and not prefer_prompt:return raw_name[:12]
         llm_cfg=get_llm_config()
         if not llm_cfg["enabled"] or not llm_cfg["api_key"]:return _fallback_title(prompt,raw_name)
         try:
             client=cls._get_client()
             url=f"{llm_cfg['base_url'].rstrip('/')}/v1/messages"
             headers={"x-api-key":llm_cfg["api_key"],"anthropic-version":"2023-06-01","content-type":"application/json"}
-            user_text=f"原始标题：{raw_name or '无'}\n完整提示词：\n{prompt}\n\n只返回最终中文标题"
+            prefer_tip="必须优先参考完整提示词重新命名，不要沿用原始标题。\n" if prefer_prompt else ""
+            user_text=f"原始标题：{raw_name or '无'}\n完整提示词：\n{prompt}\n\n{prefer_tip}只返回最终中文标题"
             body={"model":llm_cfg["model"],"max_tokens":96,"system":SYSTEM_PROMPT,"thinking":{"type":"disabled"},"messages":[{"role":"user","content":user_text}]}
             for retry in range(2):
                 resp=await client.post(url,headers=headers,json=body)
@@ -91,8 +92,8 @@ class TitleGenerator:
                     if block.get("type")=="text":text+=block.get("text","")
                 title=_clean_text(text).strip("《》\"'“”‘’[]()（）.,，。；;：:")
                 if _is_good_chinese_title(title):return title[:12]
-                body["messages"]=[{"role":"user","content":f"请把下面的提示词翻译并概括成一个自然的中文作品标题，只返回标题本身，不要解释。\n原始标题：{raw_name or '无'}\n完整提示词：\n{prompt}\n\n最终必须输出中文标题"}]
-            if _is_good_chinese_title(raw_name):return raw_name[:12]
+                body["messages"]=[{"role":"user","content":f"请把下面的提示词翻译并概括成一个自然的中文作品标题，只返回标题本身，不要解释。\n原始标题：{raw_name or '无'}\n完整提示词：\n{prompt}\n\n{prefer_tip}最终必须输出中文标题"}]
+            if _is_good_chinese_title(raw_name) and not prefer_prompt:return raw_name[:12]
         except Exception:
             logger.exception("[title_generator] generate failed")
         return _fallback_title(prompt,raw_name)

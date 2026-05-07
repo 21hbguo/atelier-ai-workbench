@@ -304,9 +304,8 @@ function WorksTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, i
               </div>
             )}
             {!selectMode && (
-              <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-between">
-                <p className="text-white text-xs truncate flex-1">{card.prompt || '无提示词'}</p>
-                <div className="flex items-center gap-1 ml-2">
+              <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-end">
+                <div className="flex items-center gap-1">
                   <button onClick={(e) => { e.stopPropagation(); handleSingleFreeze(card.id, !card.isFrozen) }}
                     className="p-1 rounded-lg bg-black/50 text-white hover:bg-blue-500" title={card.isFrozen ? '解冻' : '冻结'}>
                     {card.isFrozen ? <Sun size={12} /> : <Snowflake size={12} />}

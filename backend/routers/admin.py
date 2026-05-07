@@ -1353,9 +1353,10 @@ async def update_classification_result(result_id: int, body: dict, admin=Depends
 async def test_title_generation(body: dict, admin=Depends(require_admin)):
     prompt = (body.get("prompt") or "").strip()
     raw_name = (body.get("raw_name") or "").strip()
+    prefer_prompt = bool(body.get("prefer_prompt"))
     if not prompt and not raw_name:
         raise HTTPException(status_code=400, detail="prompt 或 raw_name 至少填写一项")
-    title = await TitleGenerator.generate(prompt, raw_name)
+    title = await TitleGenerator.generate(prompt, raw_name, prefer_prompt=prefer_prompt)
     return {"title": title, "prompt": prompt, "raw_name": raw_name}
 
 @router.get("/title/items")
@@ -1416,7 +1417,7 @@ async def apply_titles(body: dict, admin=Depends(require_admin)):
                 if raw_name and not force and not (len(raw_name) <= 2):
                     skipped.append({"id": item_id, "reason": "已有标题"})
                     continue
-                title = await TitleGenerator.generate(row["prompt"] or "", raw_name)
+                title = await TitleGenerator.generate(row["prompt"] or "", raw_name, prefer_prompt=bool(force or row["prompt"]))
                 conn.execute("UPDATE prompts SET name = %s WHERE id = %s", (title, item_id))
                 updated.append({"id": item_id, "title": title})
             else:
