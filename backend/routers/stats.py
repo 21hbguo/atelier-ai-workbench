@@ -68,7 +68,7 @@ async def get_system_stats(user=Depends(get_current_user)):
             "login_rate": f"{limits_cfg['login_rate_limit_per_minute_per_ip']}次/分钟/IP",
             "register_rate": f"{limits_cfg['register_rate_limit_per_minute_per_ip']}次/分钟/IP",
             "generate_concurrent": f"{limits_cfg['generate_concurrent_limit_per_user']}个/用户",
-            "file_size": "10MB",
+            "file_size": "20MB",
             "prompt_length": "2500字符",
             "image_upload_ext": "png,jpg,jpeg,webp",
             "points_cost_per_generation": limits_cfg["points_cost_per_generation"],

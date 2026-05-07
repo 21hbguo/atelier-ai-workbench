@@ -105,6 +105,7 @@ function buildDetailCardsFromTask(task, expiryByFilename = {}, squareIdMap = {})
 function mergeTasksById(list = []) { const map = new Map(); for (const task of list) { if (!task?.task_id) continue; map.set(task.task_id, { ...(map.get(task.task_id) || {}), ...task }) } return Array.from(map.values()) }
 function buildSubmissionImages(items = []) { return items.map((img, idx) => ({ name: img?.name || img?.file?.name || `reference-${idx}`, type: img?.type || img?.file?.type || 'image/png', url: img?.url || '', preview: img?.preview || img?.url || '', file: img?.file || null })) }
 function buildPendingTaskFromSubmission(item) { const prompt = item?.prompt || item?.params?.prompt || ''; return { task_id: item.real_task_id || item.temp_task_id, status: item.status || 'processing', prompt, params: { ...(item.params || {}), prompt }, previewImages: (item.images || []).map(img => img?.preview || img?.url).filter(Boolean), created_at: item.created_at || formatLocalTime(new Date()), started_at: item.started_at || item.created_at || formatLocalTime(new Date()), completed_at: item.completed_at || null, error: item.error || null, _active: false, _local_submission: true, _points_consumed: !!item.points_consumed, type: item.type || ((item.images || []).length ? 'text_image' : 'text') } }
+function normalizeTaskResultUrls(task, imageFilenameSet) { const urls = (task?.result_urls || []).filter(Boolean); if (!urls.length) return urls; return urls.filter(url => imageFilenameSet.has(url.split('/').pop())) }
 
 export default function ChatPage() {
   const dialog = useAppDialog()
@@ -249,6 +250,7 @@ export default function ChatPage() {
     for (const t of allTasks) {
       for (const u of (t.result_urls || [])) taskImageFiles.add(u.split('/').pop())
     }
+    const imageFilenameSet = new Set(allImages.map(img => img.filename).filter(Boolean))
     const expiryByFilename = Object.fromEntries(allImages.map(img => [img.filename, { expires_at: img.expires_at, is_permanent: !!img.is_permanent, days_left: img.days_left, expired: !!img.expired, width: img.width || null, height: img.height || null, square_image_id: img.square_image_id || null }]))
     setExpiryByFilenameMap(expiryByFilename)
     let orphans = allImages.filter(img => !taskImageFiles.has(img.filename)).map(img => ({
@@ -272,7 +274,7 @@ export default function ChatPage() {
       const lower = q.toLowerCase()
       orphans = orphans.filter(o => ((o.params?.prompt || '').toLowerCase().includes(lower)))
     }
-    const merged = [...orphans, ...allTasks.map(t => { const fn = t.result_urls?.[0]?.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, fn); const allExpired = (t.result_urls || []).length > 0 && (t.result_urls || []).every(u => { const f = u.split('/').pop(); const e = getExpiryByFilename(expiryByFilename, f); return typeof e.expired === 'boolean' ? e.expired : false }); return { ...t, expires_at: exp.expires_at || t.expires_at, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : t.is_permanent, days_left: typeof exp.days_left === 'number' ? exp.days_left : t.days_left, expired: allExpired ? true : typeof exp.expired === 'boolean' ? exp.expired : !!t.expired, width: exp.width || t.width || null, height: exp.height || t.height || null, square_image_id: exp.square_image_id || t.square_image_id || null } })].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
+    const merged = [...orphans, ...allTasks.map(t => { const result_urls = normalizeTaskResultUrls(t, imageFilenameSet); const fn = result_urls?.[0]?.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, fn); const allExpired = result_urls.length > 0 && result_urls.every(u => { const f = u.split('/').pop(); const e = getExpiryByFilename(expiryByFilename, f); return typeof e.expired === 'boolean' ? e.expired : false }); return { ...t, result_urls, expires_at: exp.expires_at || t.expires_at, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : t.is_permanent, days_left: typeof exp.days_left === 'number' ? exp.days_left : t.days_left, expired: allExpired ? true : typeof exp.expired === 'boolean' ? exp.expired : !!t.expired, width: exp.width || t.width || null, height: exp.height || t.height || null, square_image_id: exp.square_image_id || t.square_image_id || null } }).filter(t => t.status !== 'completed' || (t.result_urls?.length || 0) > 0)].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
     setTasks(merged)
     const completedMerged = merged.filter(t => t.status === 'completed' && t.result_urls?.length)
     setDetailCards(completedMerged.flatMap(task => buildDetailCardsFromTask(task, expiryByFilename, squareIdMapRef.current)))
