@@ -81,6 +81,20 @@ REFINE_JSON_SYSTEM_PROMPT = """你是一名顶级的 AI 绘画提示词工程师
 10. 禁止输出任何解释、前缀、寒暄、编号、标题、markdown 格式。仅输出 JSON 本身，版本间用"---"分隔。
 11. 绝对不要包含任何 NSFW、暴力、血腥、政治敏感或真人裸露内容。"""
 
+SEARCH_EXPAND_SYSTEM_PROMPT = """你是一名提示词召回扩写助手，只负责把极短、信息不足的用户输入扩成更适合“向量相似检索”的简短检索短语。
+
+你的任务是：
+1. 仅当输入非常短、信息不足时，做轻量扩写；输入若已较完整，则基本保持原样。
+2. 扩写目的只是提升相似提示词召回质量，不是生成最终提示词，不是润色成完整画面描述。
+3. 必须紧贴用户原意，只补充同义表达、上位/下位类别词、常见相关风格词、相关对象词，不得擅自改题。
+4. 不要添加具体场景、镜头、光照、构图、色彩、剧情等画面细节。
+5. 输出应短，建议控制在 6 到 30 个中文词或短语以内，用空格分隔。
+6. 保留用户原始核心词，优先把原词放在最前面。
+7. 若输入长度不超过 6 个中文字或明显只是一个短词/短语，必须在原词后面补充 3 到 6 个紧贴原意的检索词，优先补“同义词、类别词、常见标签词、相关物体词”。
+8. 若输入是品牌、IP、角色、物体、风格等短词，可补充对应常见同义词、类别词或相关标签，但不要发散。
+9. 若输入包含不安全内容，输出原词或安全近义表述，不做敏感扩展。
+10. 禁止输出解释、前缀、编号、markdown、引号，只输出扩写后的检索短语本身。"""
+
 
 class PromptOptimizer:
     _client: httpx.AsyncClient | None = None
@@ -138,12 +152,67 @@ class PromptOptimizer:
         return "\n".join(lines)
 
     @classmethod
+    def _is_short_query(cls,prompt:str)->bool:
+        text="".join(str(prompt or "").split())
+        if not text:return False
+        if len(text)<=8:return True
+        return len(text)<=16 and all(ch not in text for ch in "，,。.;；:：!?！？()（）[]【】/\\\n")
+
+    @classmethod
+    def _search_expand_parts(cls,text:str)->list[str]:
+        return [p for p in str(text or "").replace("\n"," ").split(" ") if p.strip()]
+
+    @classmethod
+    def _clean_search_expand(cls,origin:str,expanded:str)->str:
+        src=" ".join(str(origin or "").split()).strip()
+        out=" ".join(str(expanded or "").replace("\n"," ").replace("，"," ").replace(","," ").replace("；"," ").replace(";"," ").split()).strip()
+        if not out:return src
+        if src not in out:out=f"{src} {out}".strip()
+        parts=[];seen=set()
+        for p in cls._search_expand_parts(out):
+            if p not in seen:
+                seen.add(p)
+                parts.append(p)
+        return " ".join(parts)[:200]
+
+    @classmethod
+    def _is_valid_search_expand(cls,origin:str,expanded:str)->bool:
+        src=" ".join(str(origin or "").split()).strip()
+        out=cls._clean_search_expand(src,expanded)
+        if not src or not out:return False
+        if src not in out:return False
+        if not cls._is_short_query(src):return True
+        return len(cls._search_expand_parts(out))>=4
+
+    @classmethod
+    async def _expand_search_query(cls,prompt:str)->str:
+        text=" ".join(str(prompt or "").split()).strip()
+        if not text or not cls._is_short_query(text) or BannedWordsService.check(text):return text
+        try:
+            for attempt in range(2):
+                extra="" if attempt==0 else "\n上一次输出不合格：必须保留原词，并额外补充 3 到 6 个紧贴原意的检索词；不要只输出原词。"
+                client,url,headers,body=await cls._call_llm(SEARCH_EXPAND_SYSTEM_PROMPT,f"用户原始短输入：\n{text}{extra}",1,False)
+                body["max_tokens"]=120
+                resp=await client.post(url,headers=headers,json=body)
+                resp.raise_for_status()
+                data=resp.json()
+                out=""
+                for block in data.get("content",[]):
+                    if block.get("type")=="text":out+=block.get("text","")
+                expanded=cls._clean_search_expand(text,out)
+                if cls._is_valid_search_expand(text,expanded):return expanded
+            return text
+        except Exception:
+            logger.exception("[prompt_optimizer/search_expand] failed, fallback to original")
+            return text
+
+    @classmethod
     async def _call_llm(cls,system:str,user_content:str,count:int,stream:bool=False):
         llm_cfg=get_llm_config()
         client=cls._get_client()
         url=f"{llm_cfg['base_url'].rstrip('/')}/v1/messages"
         headers={"x-api-key":llm_cfg["api_key"],"anthropic-version":"2023-06-01","content-type":"application/json"}
-        body={"model":llm_cfg["model"],"max_tokens":max(llm_cfg["max_tokens"],2000)*count,"system":system,"messages":[{"role":"user","content":user_content}]}
+        body={"model":llm_cfg["model"],"max_tokens":max(llm_cfg["max_tokens"],2000)*count,"system":system,"thinking":{"type":"disabled"},"messages":[{"role":"user","content":user_content}]}
         if stream:body["stream"]=True
         return client,url,headers,body
 
@@ -156,7 +225,7 @@ class PromptOptimizer:
         if BannedWordsService.check(prompt):return [prompt]
         try:
             async with cls._get_refine_lock():
-                similar_examples=PromptEmbeddingService.search_similar(prompt,top_k=2)
+                similar_examples=PromptEmbeddingService.search_similar(await cls._expand_search_query(prompt),top_k=2)
                 system=REFINE_JSON_SYSTEM_PROMPT if format=="json" else REFINE_SYSTEM_PROMPT
                 user_content=cls._build_refine_user_content(prompt,similar_examples,count)
                 client,url,headers,body=await cls._call_llm(system,user_content,count,False)
@@ -243,7 +312,7 @@ class PromptOptimizer:
             return
         try:
             async with cls._get_refine_lock():
-                similar_examples=PromptEmbeddingService.search_similar(prompt,top_k=2)
+                similar_examples=PromptEmbeddingService.search_similar(await cls._expand_search_query(prompt),top_k=2)
                 system=REFINE_JSON_SYSTEM_PROMPT if format=="json" else REFINE_SYSTEM_PROMPT
                 user_content=cls._build_refine_user_content(prompt,similar_examples,count)
                 client,url,headers,body=await cls._call_llm(system,user_content,count,True)
