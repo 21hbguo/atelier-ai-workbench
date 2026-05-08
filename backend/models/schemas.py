@@ -2,6 +2,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from pydantic import ConfigDict
+from datetime import datetime
 
 class GenerateTextRequest(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
@@ -39,9 +40,9 @@ class TaskStatusResponse(BaseModel):
     params: Optional[dict] = None
     prompt: Optional[str] = None
     type: Optional[str] = None
-    created_at: Optional[str] = None
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
+    created_at: Optional[datetime] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
 
 class UploadResponse(BaseModel):
     url: str

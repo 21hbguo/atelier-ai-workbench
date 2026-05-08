@@ -33,7 +33,7 @@ def _enrich_tasks_with_username(tasks: list) -> list:
     return tasks
 def _to_task_status_response(task: dict) -> TaskStatusResponse:
     params = task.get("params") or {}
-    return TaskStatusResponse(task_id=task["task_id"], status=task["status"], progress=task.get("progress"), result_urls=task.get("result_urls"), error=task.get("error"), params=params, prompt=params.get("prompt") or task.get("prompt"), type=task.get("type"), created_at=task.get("created_at"), started_at=task.get("started_at"), completed_at=task.get("completed_at"))
+    return TaskStatusResponse(task_id=task["task_id"], status=task["status"], progress=task.get("progress"), result_urls=task.get("result_urls"), error=task.get("error"), params=params, prompt=params.get("prompt") or task.get("prompt"), type=task.get("type"), created_at=str(task.get("created_at")) if task.get("created_at") is not None else None, started_at=str(task.get("started_at")) if task.get("started_at") is not None else None, completed_at=str(task.get("completed_at")) if task.get("completed_at") is not None else None)
 
 
 @router.get("/tasks", response_model=list)

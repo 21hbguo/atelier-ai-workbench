@@ -349,9 +349,17 @@ async def _poll_and_download(provider_id: str, external_task_id: str, task_id: s
             filename = f"{task_id}_{i}.png"
             save_path = str(GENERATED_IMAGES_DIR / filename)
             logger.info(f"[poll] task={task_id} downloading image {i}")
-            if await GenGateway.download(provider_id, url, save_path):
+            downloaded = False
+            for download_attempt in range(6):
+                if download_attempt > 0:
+                    await asyncio.sleep(min(2 * download_attempt, 8))
+                if await GenGateway.download(provider_id, url, save_path):
+                    downloaded = True
+                    break
+                logger.warning(f"[poll] task={task_id} download retry={download_attempt + 1} provider={provider_id} url={url}")
+            if downloaded:
                 local_paths.append(save_path)
-                image_meta = meta or {}
+                image_meta = dict(meta or {})
                 image_meta["created_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 with get_db() as conn:
                     conn.execute(
@@ -360,6 +368,9 @@ async def _poll_and_download(provider_id: str, external_task_id: str, task_id: s
                     )
         if not local_paths and (result or {}).get("message"):
             raise Exception(((result or {}).get("message") or "").strip())
+        if raw_urls and not local_paths:
+            attempt += 1
+            continue
         return local_paths
 
     raise Exception("轮询超时（已等待15分钟）")

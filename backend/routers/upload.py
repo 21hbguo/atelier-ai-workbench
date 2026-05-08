@@ -100,10 +100,14 @@ async def _do_upload(file: UploadFile) -> UploadResponse:
     await asyncio.to_thread(_write_file, save_path, content)
     logger.info(f"上传文件: {filename}, github_hosting={is_github_hosting_enabled()}")
     if is_github_hosting_enabled():
-        size_result = await enforce_github_repo_size_limit()
-        if size_result.get("hard_over_limit"):
-            logger.warning(f"github hosting repo still over hard limit after cleanup: {size_result}")
-        url, delete_token = await GithubImageHostingService.upload_image(str(save_path))
+        try:
+            size_result = await enforce_github_repo_size_limit()
+            if size_result.get("hard_over_limit"):
+                logger.warning(f"github hosting repo still over hard limit after cleanup: {size_result}")
+            url, delete_token = await GithubImageHostingService.upload_image(str(save_path))
+        except Exception as e:
+            logger.exception(f"github hosting upload failed, fallback to direct hosting: {e}")
+            url, delete_token = await ImageHostingService.upload_image(str(save_path))
     else:
         url, delete_token = await ImageHostingService.upload_image(str(save_path))
     logger.info(f"上传结果: url={url}")
