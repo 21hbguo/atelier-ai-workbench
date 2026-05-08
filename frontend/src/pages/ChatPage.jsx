@@ -520,6 +520,14 @@ export default function ChatPage() {
       window.dispatchEvent(new Event('points-updated'))
     }).catch(() => {})
   }, [])
+  const finalizeSubmissionQueueItem = useCallback((clientRequestId, updater) => {
+    if (!clientRequestId) return
+    syncPendingSubmissions(prev => prev.flatMap(item => {
+      if (item.client_request_id !== clientRequestId) return [item]
+      const next = typeof updater === 'function' ? updater(item) : { ...item, ...(updater || {}) }
+      return next ? [next] : []
+    }))
+  }, [syncPendingSubmissions])
   const consumeLocalPointsOnce = useCallback((item, submissionId, taskId, modelCost, params) => {
     if (item?.points_consumed) return
     setPoints(p => Math.max(0, p - modelCost))
@@ -529,14 +537,6 @@ export default function ChatPage() {
     finalizeSubmissionQueueItem(submissionId, current => current ? { ...current, real_task_id: taskId, points_consumed: true, params: params || current.params } : null)
     updateTask(taskId, { _points_consumed: true })
   }, [finalizeSubmissionQueueItem, updateTask])
-  const finalizeSubmissionQueueItem = useCallback((clientRequestId, updater) => {
-    if (!clientRequestId) return
-    syncPendingSubmissions(prev => prev.flatMap(item => {
-      if (item.client_request_id !== clientRequestId) return [item]
-      const next = typeof updater === 'function' ? updater(item) : { ...item, ...(updater || {}) }
-      return next ? [next] : []
-    }))
-  }, [syncPendingSubmissions])
   const markSubmissionFailed = useCallback((item, message) => {
     if (!item) return
     finalizeSubmissionQueueItem(item.client_request_id, { ...item, status: 'failed', error: message || '提交失败', real_task_id: item.real_task_id || null, completed_at: formatLocalTime(new Date()) })
