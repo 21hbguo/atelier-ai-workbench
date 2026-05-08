@@ -47,7 +47,7 @@ function getClipboardText(event){return String(event?.clipboardData?.getData?.('
 function inferImageUrlName(url,type='image/png'){const clean=String(url||'').split('#')[0].split('?')[0];const last=decodeURIComponent(clean.split('/').pop()||'').trim();return normalizeImageName(last||`reference-${Date.now()}`,type,`reference-${Date.now()}`)}
 async function resolveClipboardImageUrl(text){if(!/^https?:\/\//i.test(text))return null;try{const res=await fetch(text,{method:'HEAD'}).catch(()=>fetch(text));if(!res?.ok)return{error:'图片链接不可访问'};const type=String(res.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();if(!['image/png','image/jpeg','image/webp'].includes(type))return{error:'仅支持 PNG/JPG/WebP 图片链接'};const size=Number(res.headers.get('content-length')||0);if(size>20*1024*1024)return{error:'参考图不能超过 20MB'};return{url:text,name:inferImageUrlName(text,type)}}catch{return{error:'图片链接读取失败'}}}
 
-const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost = 10, optimizeCost = 10 }, ref) {
+const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost = 10, optimizeCost = 10, refineOptimizeCost = 20 }, ref) {
   const initialOptimizeDraft=loadOptimizeDraft()
   const [prompt, setPrompt] = useState('')
   const [images, setImages] = useState([])
@@ -655,7 +655,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
               </div>
               <div className="flex items-center justify-between mb-4 px-1">
                 <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>消耗积分</span>
-                <span className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>{optimizeCost * (optimizeMode === 'refine' ? 1 : optimizeCount)}</span>
+                <span className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>{(optimizeMode === 'refine' ? refineOptimizeCost : optimizeCost) * (optimizeMode === 'refine' ? 1 : optimizeCount)}</span>
               </div>
               <div className="flex gap-2">
                 <button onClick={() => setShowOptimizeModal(false)} className="flex-1 py-2 rounded-2xl text-xs font-medium border transition-colors" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>取消</button>

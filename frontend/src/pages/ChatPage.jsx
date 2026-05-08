@@ -133,6 +133,7 @@ export default function ChatPage() {
   const [points, setPoints] = useState(currentUser?.points ?? 0)
   const [requestCost, setRequestCost] = useState(10)
   const [optimizeCost, setOptimizeCost] = useState(10)
+  const [refineOptimizeCost, setRefineOptimizeCost] = useState(20)
   const [extendCostPerImage, setExtendCostPerImage] = useState(2)
   const [loadError, setLoadError] = useState('')
   const [selectedCardIndex, setSelectedCardIndex] = useState(null)
@@ -366,8 +367,9 @@ export default function ChatPage() {
     configAPI.get().then(res => {
       setRequestCost(Math.max(0, Number(res.data?.points_cost_per_generation) || 10))
       setOptimizeCost(Math.max(0, Number(res.data?.points_cost_per_optimize) || 10))
+      setRefineOptimizeCost(Math.max(0, Number(res.data?.points_cost_per_optimize_refine) || 20))
       setExtendCostPerImage(Math.max(1, Number(res.data?.points_cost_per_image_extend) || 2))
-    }).catch(() => { setRequestCost(10); setOptimizeCost(10) })
+    }).catch(() => { setRequestCost(10); setOptimizeCost(10); setRefineOptimizeCost(20) })
   }, [])
 
   useEffect(() => {
@@ -1132,7 +1134,7 @@ export default function ChatPage() {
           </div>
         </div>
       )}
-      <ChatInput ref={inputRef} onSubmit={handleSubmit} loading={loading} requestCost={requestCost} optimizeCost={optimizeCost} />
+      <ChatInput ref={inputRef} onSubmit={handleSubmit} loading={loading} requestCost={requestCost} optimizeCost={optimizeCost} refineOptimizeCost={refineOptimizeCost} />
     </div>
   )
 

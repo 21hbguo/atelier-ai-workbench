@@ -29,12 +29,12 @@ class PromptOptimizeResponse(BaseModel):
 @router.post("/optimize")
 async def optimize_prompt(body: PromptOptimizeRequest, user=Depends(get_current_user)):
     user_id = user["user_id"]
-    cost_per = PointsService.cost_per_optimize()
+    cost_per = PointsService.cost_per_optimize(body.mode)
     total_cost = cost_per * body.count
     req_id = str(uuid.uuid4())
 
     try:
-        balance_after = PointsService.consume(user_id, total_cost, f"提示词优化 x{body.count}", tx_type="prompt_optimize", request_key=f"optimize:{req_id}")
+        balance_after = PointsService.consume(user_id, total_cost, f"{'精细优化' if body.mode == 'refine' else '提示词优化'} x{body.count}", tx_type="prompt_optimize_refine" if body.mode == "refine" else "prompt_optimize", request_key=f"optimize:{req_id}")
     except ValueError as e:
         raise HTTPException(status_code=402, detail=str(e))
 

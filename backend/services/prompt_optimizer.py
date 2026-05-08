@@ -147,7 +147,7 @@ class PromptOptimizer:
     @classmethod
     def _build_refine_user_content(cls,prompt:str,similar_examples:list[dict],count:int)->str:
         lines=[f"请生成 {count} 个优化版本。","用户原始提示词：",prompt.strip()]
-        for i,item in enumerate(similar_examples[:2],start=1):
+        for i,item in enumerate(similar_examples[:4],start=1):
             lines.extend(["",f"参考示例{i}：",f"分类：{item.get('category') or '未分类'}",f"提示词：{item.get('prompt') or ''}"])
         return "\n".join(lines)
 
@@ -225,7 +225,7 @@ class PromptOptimizer:
         if BannedWordsService.check(prompt):return [prompt]
         try:
             async with cls._get_refine_lock():
-                similar_examples=PromptEmbeddingService.search_similar(await cls._expand_search_query(prompt),top_k=2)
+                similar_examples=PromptEmbeddingService.search_similar(await cls._expand_search_query(prompt),top_k=4)
                 system=REFINE_JSON_SYSTEM_PROMPT if format=="json" else REFINE_SYSTEM_PROMPT
                 user_content=cls._build_refine_user_content(prompt,similar_examples,count)
                 client,url,headers,body=await cls._call_llm(system,user_content,count,False)
@@ -312,7 +312,7 @@ class PromptOptimizer:
             return
         try:
             async with cls._get_refine_lock():
-                similar_examples=PromptEmbeddingService.search_similar(await cls._expand_search_query(prompt),top_k=2)
+                similar_examples=PromptEmbeddingService.search_similar(await cls._expand_search_query(prompt),top_k=4)
                 system=REFINE_JSON_SYSTEM_PROMPT if format=="json" else REFINE_SYSTEM_PROMPT
                 user_content=cls._build_refine_user_content(prompt,similar_examples,count)
                 client,url,headers,body=await cls._call_llm(system,user_content,count,True)
