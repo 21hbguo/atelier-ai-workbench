@@ -50,30 +50,16 @@ class GenGateway:
         fallback=models.get(fallback_id) or {"label":"默认模型","capability":"image","providers":[]}
         return {"model_id":fallback_id,"model":fallback}
     @classmethod
-    def _quota_exhausted_providers(cls) -> set:
-        from backend.database import get_db
-        try:
-            with get_db() as conn:
-                rows = conn.execute(
-                    "SELECT provider_id, COALESCE(SUM(remaining_quota),0) total FROM provider_purchase_batches GROUP BY provider_id HAVING COALESCE(SUM(remaining_quota),0) <= 0"
-                ).fetchall()
-                return {r["provider_id"] for r in rows}
-        except Exception:
-            return set()
-
-    @classmethod
     def choose_provider_chain(cls, model_id: Optional[str]) -> Dict[str, Any]:
         resolved=cls.resolve_model(model_id)
         m=resolved["model"]
         providers=(m.get("providers") or [])[:]
         all_providers=get_generation_providers() or {}
-        exhausted=cls._quota_exhausted_providers()
         provider_ids=[]
         for pid in providers:
             conf=all_providers.get(pid) or {}
             if not conf or conf.get("enabled") is False: continue
             if cls._is_open(pid,conf): continue
-            if pid in exhausted: continue
             provider_ids.append(pid)
         return {"model_id":resolved["model_id"],"model":m,"provider_ids":provider_ids}
     @classmethod
