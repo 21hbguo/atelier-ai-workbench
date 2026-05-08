@@ -2,6 +2,7 @@ import json
 import logging
 import threading
 import gc
+import time
 from pathlib import Path
 from typing import Any
 import numpy as np
@@ -13,6 +14,10 @@ class PromptEmbeddingService:
     _index=None
     _lock=threading.RLock()
     _model_lock=threading.RLock()
+    _use_lock=threading.RLock()
+    _active_uses=0
+    _last_used_at=0.0
+    _idle_unload_seconds=30.0
     _items_name="items.json"
     _vectors_name="vectors.npy"
     @classmethod
@@ -72,6 +77,26 @@ class PromptEmbeddingService:
             cls._model=TextEmbedding(model_name=cls._cfg()["model"],cache_dir=str(cls._cache_dir()),providers=["CPUExecutionProvider"],specific_model_path=str(local_model_dir) if local_model_dir else None)
             return cls._model
     @classmethod
+    def acquire_model(cls):
+        with cls._use_lock:
+            model=cls._load_model()
+            cls._active_uses+=1
+            cls._last_used_at=time.time()
+            return model
+    @classmethod
+    def release_model(cls):
+        with cls._use_lock:
+            if cls._active_uses>0:cls._active_uses-=1
+            cls._last_used_at=time.time()
+            should_unload=cls._active_uses==0
+        if should_unload:
+            def _defer_unload():
+                time.sleep(cls._idle_unload_seconds)
+                with cls._use_lock:
+                    idle_for=time.time()-cls._last_used_at
+                    if cls._active_uses==0 and idle_for>=cls._idle_unload_seconds:cls.unload_model()
+            threading.Thread(target=_defer_unload,daemon=True).start()
+    @classmethod
     def unload_model(cls):
         with cls._model_lock:
             cls._model=None
@@ -88,7 +113,7 @@ class PromptEmbeddingService:
         rows=[str(t or "").strip() for t in texts]
         if not rows:return np.zeros((0,0),dtype=np.float32)
         try:
-            model=cls._load_model()
+            model=cls.acquire_model()
             sizes=[];start=max(1,int(batch_size or cls._cfg()["batch_size"]))
             cur=start
             while cur>=1:
@@ -107,7 +132,7 @@ class PromptEmbeddingService:
             if last_err:raise last_err
             return np.zeros((0,0),dtype=np.float32)
         finally:
-            cls.unload_model()
+            cls.release_model()
     @classmethod
     def _read_index(cls)->dict[str,Any]:
         items_path=cls._items_path();vectors_path=cls._vectors_path()

@@ -1,6 +1,7 @@
 import httpx
 import json
 import logging
+import asyncio
 from backend.config import get_llm_config
 from backend.services.banned_words import BannedWordsService
 from backend.services.prompt_embedding_service import PromptEmbeddingService
@@ -83,6 +84,13 @@ REFINE_JSON_SYSTEM_PROMPT = """你是一名顶级的 AI 绘画提示词工程师
 
 class PromptOptimizer:
     _client: httpx.AsyncClient | None = None
+    _refine_lock: asyncio.Lock | None = None
+
+    @classmethod
+    def _get_refine_lock(cls) -> asyncio.Lock:
+        if cls._refine_lock is None:
+            cls._refine_lock = asyncio.Lock()
+        return cls._refine_lock
 
     @classmethod
     def _get_client(cls) -> httpx.AsyncClient:
@@ -147,18 +155,19 @@ class PromptOptimizer:
         if len(prompt) < 2 or len(prompt) > 500:raise ValueError("输入长度需在 2-500 个字符之间")
         if BannedWordsService.check(prompt):return [prompt]
         try:
-            similar_examples=PromptEmbeddingService.search_similar(prompt,top_k=2)
-            system=REFINE_JSON_SYSTEM_PROMPT if format=="json" else REFINE_SYSTEM_PROMPT
-            user_content=cls._build_refine_user_content(prompt,similar_examples,count)
-            client,url,headers,body=await cls._call_llm(system,user_content,count,False)
-            resp=await client.post(url,headers=headers,json=body)
-            resp.raise_for_status()
-            data=resp.json()
-            text=""
-            for block in data.get("content",[]):
-                if block.get("type")=="text":text+=block.get("text","")
-            versions=cls._parse_json_versions(text,prompt) if format=="json" else [v.strip() for v in text.split("---") if v.strip()] or [prompt]
-            return [v if not BannedWordsService.check(v) else prompt for v in versions][:count]
+            async with cls._get_refine_lock():
+                similar_examples=PromptEmbeddingService.search_similar(prompt,top_k=2)
+                system=REFINE_JSON_SYSTEM_PROMPT if format=="json" else REFINE_SYSTEM_PROMPT
+                user_content=cls._build_refine_user_content(prompt,similar_examples,count)
+                client,url,headers,body=await cls._call_llm(system,user_content,count,False)
+                resp=await client.post(url,headers=headers,json=body)
+                resp.raise_for_status()
+                data=resp.json()
+                text=""
+                for block in data.get("content",[]):
+                    if block.get("type")=="text":text+=block.get("text","")
+                versions=cls._parse_json_versions(text,prompt) if format=="json" else [v.strip() for v in text.split("---") if v.strip()] or [prompt]
+                return [v if not BannedWordsService.check(v) else prompt for v in versions][:count]
         except httpx.TimeoutException:
             logger.warning("[prompt_optimizer/refine] timeout, degrading to simple")
             return await cls.optimize(prompt,count,format)
@@ -233,35 +242,36 @@ class PromptOptimizer:
             yield {"type":"done","versions":[prompt]}
             return
         try:
-            similar_examples=PromptEmbeddingService.search_similar(prompt,top_k=2)
-            system=REFINE_JSON_SYSTEM_PROMPT if format=="json" else REFINE_SYSTEM_PROMPT
-            user_content=cls._build_refine_user_content(prompt,similar_examples,count)
-            client,url,headers,body=await cls._call_llm(system,user_content,count,True)
-            full_text="";current_version=0;buffer="";sep="---"
-            async with client.stream("POST",url,headers=headers,json=body,timeout=httpx.Timeout(float(llm_cfg["timeout_seconds"]),connect=5.0)) as resp:
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data: "):continue
-                    data_str=line[6:]
-                    if data_str.strip()=="[DONE]":break
-                    try:event=json.loads(data_str)
-                    except json.JSONDecodeError:continue
-                    if event.get("type")=="content_block_delta":
-                        delta=event.get("delta",{})
-                        if delta.get("type")=="text_delta":
-                            text=delta.get("text","");full_text+=text;buffer+=text
-                            while True:
-                                idx=buffer.find(sep)
-                                if idx<0:break
-                                before=buffer[:idx].strip();buffer=buffer[idx+len(sep):]
-                                if before:yield {"type":"chunk","text":before,"version_index":current_version,"done":True}
-                                current_version+=1
-                            partial=buffer.strip()
-                            if partial:yield {"type":"chunk","text":partial,"version_index":current_version,"done":False}
-            if buffer.strip():yield {"type":"chunk","text":buffer.strip(),"version_index":current_version,"done":True}
-            versions=cls._parse_json_versions(full_text,prompt) if format=="json" else [v.strip() for v in full_text.split("---") if v.strip()] or [prompt]
-            versions=[v if not BannedWordsService.check(v) else prompt for v in versions]
-            yield {"type":"done","versions":versions[:count]}
+            async with cls._get_refine_lock():
+                similar_examples=PromptEmbeddingService.search_similar(prompt,top_k=2)
+                system=REFINE_JSON_SYSTEM_PROMPT if format=="json" else REFINE_SYSTEM_PROMPT
+                user_content=cls._build_refine_user_content(prompt,similar_examples,count)
+                client,url,headers,body=await cls._call_llm(system,user_content,count,True)
+                full_text="";current_version=0;buffer="";sep="---"
+                async with client.stream("POST",url,headers=headers,json=body,timeout=httpx.Timeout(float(llm_cfg["timeout_seconds"]),connect=5.0)) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data: "):continue
+                        data_str=line[6:]
+                        if data_str.strip()=="[DONE]":break
+                        try:event=json.loads(data_str)
+                        except json.JSONDecodeError:continue
+                        if event.get("type")=="content_block_delta":
+                            delta=event.get("delta",{})
+                            if delta.get("type")=="text_delta":
+                                text=delta.get("text","");full_text+=text;buffer+=text
+                                while True:
+                                    idx=buffer.find(sep)
+                                    if idx<0:break
+                                    before=buffer[:idx].strip();buffer=buffer[idx+len(sep):]
+                                    if before:yield {"type":"chunk","text":before,"version_index":current_version,"done":True}
+                                    current_version+=1
+                                partial=buffer.strip()
+                                if partial:yield {"type":"chunk","text":partial,"version_index":current_version,"done":False}
+                if buffer.strip():yield {"type":"chunk","text":buffer.strip(),"version_index":current_version,"done":True}
+                versions=cls._parse_json_versions(full_text,prompt) if format=="json" else [v.strip() for v in full_text.split("---") if v.strip()] or [prompt]
+                versions=[v if not BannedWordsService.check(v) else prompt for v in versions]
+                yield {"type":"done","versions":versions[:count]}
         except httpx.TimeoutException:
             logger.warning("[prompt_optimizer/refine_stream] timeout, degrading to simple")
             async for event in cls.optimize_stream(prompt,count,format):yield event
