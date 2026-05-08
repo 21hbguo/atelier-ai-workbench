@@ -18,6 +18,7 @@ from backend.services.favorite_service import FavoriteService
 from backend.services.classification_service import ClassificationService
 from backend.services.content_audit_service import ContentAuditService
 from backend.services.title_generator import TitleGenerator
+from backend.services.prompt_embedding_service import PromptEmbeddingService
 from backend.config import get_generation_providers, get_generation_models, get_config
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -331,6 +332,12 @@ async def batch_freeze_square(body: dict, admin=Depends(require_admin)):
     ids = [int(i) for i in ids]
     with get_db() as conn:
         conn.execute("UPDATE square_images SET is_frozen = %s WHERE id = ANY(%s)", [frozen, ids])
+        for image_id in ids:
+            try:
+                if frozen:PromptEmbeddingService.remove_item("image", image_id)
+                else:PromptEmbeddingService.upsert_square(image_id)
+            except Exception:
+                logger.exception("广场向量冻结同步失败")
         return {"message": f"已{'冻结' if frozen else '解冻'} {len(ids)} 张图片", "updated": len(ids)}
 
 
@@ -348,6 +355,9 @@ async def batch_delete_square(body: dict, admin=Depends(require_admin)):
         conn.execute("DELETE FROM square_images WHERE id = ANY(%s)", (ids,))
         if filenames:
             refresh_permanent_flags_by_filenames(filenames, conn=conn)
+        for image_id in ids:
+            try:PromptEmbeddingService.remove_item("image", image_id)
+            except Exception:logger.exception("广场向量删除失败")
         return {"message": f"已删除 {len(ids)} 张图片", "deleted": len(ids)}
 
 
@@ -364,6 +374,10 @@ async def delete_square_image(image_id: int, admin=Depends(require_admin)):
         conn.execute("DELETE FROM square_images WHERE id = %s", (image_id,))
         if row:
             refresh_permanent_flags_by_filenames([row["filename"]], conn=conn)
+        try:
+            PromptEmbeddingService.remove_item("image", image_id)
+        except Exception:
+            logger.exception("广场向量删除失败")
         return {"message": "删除成功"}
 
 
@@ -694,6 +708,12 @@ async def batch_freeze_prompts(body: dict, admin=Depends(require_admin)):
     ids = [str(i) for i in ids]
     with get_db() as conn:
         conn.execute("UPDATE prompts SET is_frozen = %s WHERE id = ANY(%s)", (frozen, ids))
+        for prompt_id in ids:
+            try:
+                if frozen:PromptEmbeddingService.remove_item("prompt", prompt_id)
+                else:PromptEmbeddingService.upsert_prompt(prompt_id)
+            except Exception:
+                logger.exception("提示词向量冻结同步失败")
         return {"message": f"已{'冻结' if frozen else '解冻'} {len(ids)} 条提示词", "updated": len(ids), "frozen": bool(frozen)}
 
 
@@ -706,6 +726,10 @@ async def delete_prompt(prompt_id: str, admin=Depends(require_admin)):
             raise HTTPException(status_code=404, detail="提示词不存在")
         conn.execute("DELETE FROM prompt_likes WHERE prompt_id = %s", (prompt_id,))
         conn.execute("DELETE FROM prompts WHERE id = %s", (prompt_id,))
+        try:
+            PromptEmbeddingService.remove_item("prompt", prompt_id)
+        except Exception:
+            logger.exception("提示词向量删除失败")
         return {"message": "删除成功"}
 
 
@@ -718,6 +742,9 @@ async def batch_delete_prompts(body: dict, admin=Depends(require_admin)):
     with get_db() as conn:
         conn.execute("DELETE FROM prompt_likes WHERE prompt_id = ANY(%s)", (ids,))
         conn.execute("DELETE FROM prompts WHERE id = ANY(%s)", (ids,))
+        for prompt_id in ids:
+            try:PromptEmbeddingService.remove_item("prompt", prompt_id)
+            except Exception:logger.exception("提示词向量删除失败")
         return {"message": f"已删除 {len(ids)} 条提示词"}
 
 

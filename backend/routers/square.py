@@ -13,6 +13,7 @@ from backend.services.classification_service import ClassificationService
 from backend.services.content_audit_service import ContentAuditService
 from backend.services.notification_service import NotificationService
 from backend.services.title_generator import TitleGenerator
+from backend.services.prompt_embedding_service import PromptEmbeddingService
 from backend.config import GENERATED_IMAGES_DIR, EVO_IMAGES_DIR, EVO_IMPORTED_DIR
 from backend.services.image_dimensions import get_image_dimensions
 
@@ -82,6 +83,10 @@ async def share_to_square(req: ShareRequest, user=Depends(get_current_user)):
 
 async def _auto_square_postprocess(image_id:int, filename:str, prompt:str, author:str, user_id:int):
     try:
+        PromptEmbeddingService.upsert_square(image_id)
+    except Exception:
+        logger.exception("广场向量更新失败")
+    try:
         title=await TitleGenerator.generate(prompt, filename)
         with get_db() as conn:
             row=conn.execute("SELECT metadata FROM square_images WHERE id = %s",(image_id,)).fetchone()
@@ -110,6 +115,10 @@ async def _auto_square_postprocess(image_id:int, filename:str, prompt:str, autho
                 conn.execute("DELETE FROM square_images WHERE id = %s", (image_id,))
                 from backend.services.image_expiry import refresh_permanent_flags_by_filenames
                 refresh_permanent_flags_by_filenames([filename], conn=conn)
+            try:
+                PromptEmbeddingService.remove_item("image", image_id)
+            except Exception:
+                logger.exception("广场向量删除失败")
             NotificationService.create(user_id, "square_auto_high_risk", "广场内容高风险", f"作品 {filename} 命中高风险，已自动撤回分享", str(image_id))
         elif audit.get("risk_level") in ("medium","low") and audit.get("suggested_action") in ("review","keep","freeze","delete"):
             pass
@@ -132,6 +141,10 @@ async def unshare_from_square(image_id: int = Query(...), user=Depends(get_curre
         conn.execute("DELETE FROM square_images WHERE id = %s", (image_id,))
         from backend.services.image_expiry import refresh_permanent_flags_by_filenames
         refresh_permanent_flags_by_filenames([row["filename"]], conn=conn)
+        try:
+            PromptEmbeddingService.remove_item("image", image_id)
+        except Exception:
+            logger.exception("广场向量删除失败")
         return {"message": "已撤回分享"}
 
 

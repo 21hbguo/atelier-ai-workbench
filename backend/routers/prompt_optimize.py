@@ -17,6 +17,7 @@ class PromptOptimizeRequest(BaseModel):
     count: int = Field(1, ge=1, le=3)
     stream: bool = False
     format: str = Field("text", pattern="^(text|json)$")
+    mode: str = Field("simple", pattern="^(simple|refine)$")
 
 
 class PromptOptimizeResponse(BaseModel):
@@ -41,7 +42,8 @@ async def optimize_prompt(body: PromptOptimizeRequest, user=Depends(get_current_
         async def event_generator():
             refunded = False
             try:
-                async for event in PromptOptimizer.optimize_stream(body.prompt, body.count, body.format):
+                runner = PromptOptimizer.optimize_refine_stream if body.mode == "refine" else PromptOptimizer.optimize_stream
+                async for event in runner(body.prompt, body.count, body.format):
                     if event["type"] == "chunk":
                         yield f"event: chunk\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
                     elif event["type"] == "done":
@@ -59,7 +61,7 @@ async def optimize_prompt(body: PromptOptimizeRequest, user=Depends(get_current_
         return StreamingResponse(event_generator(), media_type="text/event-stream")
 
     try:
-        versions = await PromptOptimizer.optimize(body.prompt, body.count, body.format)
+        versions = await (PromptOptimizer.optimize_refine(body.prompt, body.count, body.format) if body.mode == "refine" else PromptOptimizer.optimize(body.prompt, body.count, body.format))
         return PromptOptimizeResponse(versions=versions, original=body.prompt, points_balance=balance_after).model_dump()
     except ValueError as e:
         PointsService.refund(user_id, total_cost, "优化失败退还", request_key=f"optimize_refund:{req_id}")

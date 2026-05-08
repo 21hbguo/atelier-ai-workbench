@@ -15,6 +15,7 @@ from backend.services.stats_service import StatsService
 from backend.services.banned_words import BannedWordsService
 from backend.services.points_service import PointsService
 from backend.services.finance_service import FinanceService
+from backend.services.prompt_embedding_service import PromptEmbeddingService
 from backend.config import GENERATED_IMAGES_DIR, get_limit_config
 from backend.models.schemas import (
     GenerateTextRequest,
@@ -145,8 +146,12 @@ def _share_to_square(user_id: int, file_path: str, prompt: str, size: str, task_
         if input_urls:
             meta["input_urls"] = input_urls
         metadata = json.dumps(meta, ensure_ascii=False)
-        conn.execute("INSERT INTO square_images (user_id, filename, prompt, metadata) VALUES (%s, %s, %s, %s)", (user_id, filename, prompt, metadata))
+        row=conn.execute("INSERT INTO square_images (user_id, filename, prompt, metadata) VALUES (%s, %s, %s, %s) RETURNING id", (user_id, filename, prompt, metadata)).fetchone()
         mark_image_permanent(filename, conn=conn)
+        try:
+            if row and row.get("id") is not None:PromptEmbeddingService.upsert_square(int(row["id"]))
+        except Exception:
+            logger.exception(f"[submit.square_embedding.fail] user={user_id} filename={filename}")
 
 
 async def _run_generation(task_id: str, task_type: str, submit_payload: dict, meta: dict, user_id: int, is_admin: bool):

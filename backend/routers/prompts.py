@@ -15,6 +15,7 @@ from backend.services.favorite_service import FavoriteService
 from backend.services.classification_service import ClassificationService
 from backend.services.content_audit_service import ContentAuditService
 from backend.services.notification_service import NotificationService
+from backend.services.prompt_embedding_service import PromptEmbeddingService
 from backend.database import get_db
 from backend.auth import get_current_user, require_admin, get_optional_user
 from backend.models.schemas import (
@@ -235,6 +236,10 @@ async def create_public_prompt(request: PromptCreateRequest, admin=Depends(requi
 
 async def _auto_prompt_postprocess(prompt_id:str, prompt:str, name:str, category:str, author:str, user_id:int):
     try:
+        PromptEmbeddingService.upsert_prompt(prompt_id)
+    except Exception:
+        logger.exception("提示词向量更新失败")
+    try:
         await ClassificationService.auto_classify_single("prompt", prompt_id)
     except Exception:
         logger.exception("提示词自动分类失败")
@@ -244,6 +249,10 @@ async def _auto_prompt_postprocess(prompt_id:str, prompt:str, name:str, category
         if audit.get("risk_level")=="high":
             with get_db() as conn:
                 conn.execute("UPDATE prompts SET is_frozen = TRUE WHERE id = %s", (prompt_id,))
+            try:
+                PromptEmbeddingService.remove_item("prompt", prompt_id)
+            except Exception:
+                logger.exception("提示词向量删除失败")
             NotificationService.create(user_id, "prompt_auto_high_risk", "提示词高风险", f"提示词“{name or prompt[:20]}”命中高风险，已自动冻结", prompt_id)
     except Exception:
         logger.exception("提示词自动审核失败")
@@ -265,6 +274,10 @@ async def update_prompt(prompt_id: str, request: PromptUpdateRequest, user=Depen
     )
     if not result:
         raise HTTPException(status_code=404, detail="提示词不存在")
+    try:
+        PromptEmbeddingService.upsert_prompt(prompt_id)
+    except Exception:
+        logger.exception("提示词向量更新失败")
     return result
 
 
@@ -275,6 +288,10 @@ async def delete_prompt(prompt_id: str, user=Depends(get_current_user)):
     success = PromptService.delete(prompt_id)
     if not success:
         raise HTTPException(status_code=404, detail="提示词不存在")
+    try:
+        PromptEmbeddingService.remove_item("prompt", prompt_id)
+    except Exception:
+        logger.exception("提示词向量删除失败")
     return {"id": prompt_id, "message": "提示词已删除"}
 
 
@@ -284,6 +301,9 @@ async def batch_delete(request: BatchDeleteRequest, user=Depends(get_current_use
         _check_ownership(pid, user)
     try:
         count = PromptService.batch_delete(request.ids)
+        for pid in request.ids:
+            try:PromptEmbeddingService.remove_item("prompt", pid)
+            except Exception:logger.exception("提示词向量删除失败")
         return {"deleted": count, "message": f"已删除 {count} 条提示词"}
     except Exception as e:
         logger.exception("批量删除失败")

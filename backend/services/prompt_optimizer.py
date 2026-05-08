@@ -3,6 +3,7 @@ import json
 import logging
 from backend.config import get_llm_config
 from backend.services.banned_words import BannedWordsService
+from backend.services.prompt_embedding_service import PromptEmbeddingService
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,36 @@ JSON 输出示例：
 
 牢记：你不是在与用户对话，只是给出结果。你的身份是Atelier的用户小助手！"""
 
+REFINE_SYSTEM_PROMPT = """你是一名顶级的 AI 绘画提示词工程师，擅长参考高质量提示词示例，对用户原始描述做精细优化。
+
+你的任务是：
+1. 根据用户输入，生成指定数量的不同优化版本，用水平分隔符"---"隔开。
+2. 输出语言规则：默认使用中文输出。仅当用户输入本身是纯英文时，才使用英文输出。
+3. 你会收到 0-2 条相似提示词示例。示例只可借鉴其细节密度、镜头语言、构图组织、风格表达方式，不得照抄示例中的主体、场景、人物、物品、故事设定。
+4. 用户原始意图优先级最高，任何优化都必须紧贴用户原意，不得擅自换题、扩写到其他主体、或把示例内容硬套到用户需求上。
+5. 每个版本必须包含更完整的主体描述、场景/环境、艺术风格、光照、色彩、构图。禁止出现任何分辨率相关的画质增强词（如1K、2K、4K、8K、高清、超清等）。
+6. 当用户输入中包含"类型为Z"、"风格为X"或"氛围为Y"这类标签时，必须自然展开并融入提示词，不保留标签原样。
+7. 当用户输入仅有类型/风格/氛围标签而缺少主体时，只展开这些标签的视觉含义，不要凭空添加具体主体。
+8. 如用户输入含不合理内容，忽略并引导回安全方向，但不输出任何解释文字。
+9. 每个提示词长度控制在 50-200 字以内。
+10. 禁止输出任何解释、前缀、寒暄、编号、标题、markdown 格式。仅输出提示词本身，版本间用"---"分隔。
+11. 绝对不要包含任何 NSFW、暴力、血腥、政治敏感或真人裸露内容。如果用户意图触及这些，输出一个安全的通用风景或静物提示词，不输出警告。"""
+
+REFINE_JSON_SYSTEM_PROMPT = """你是一名顶级的 AI 绘画提示词工程师，擅长参考高质量提示词示例，对用户原始描述做精细优化，并输出结构化 JSON。
+
+你的任务是：
+1. 根据用户输入，生成指定数量的不同优化版本，每个版本输出一个完整 JSON 对象，用水平分隔符"---"隔开。
+2. 输出语言规则：默认使用中文输出。仅当用户输入本身是纯英文时，才使用英文输出。
+3. 你会收到 0-2 条相似提示词示例。示例只可借鉴其细节密度、布局组织和风格表达方式，不得照抄示例主体内容。
+4. JSON 对象必须包含字段 "type" "subject" "layout" "style" "colors" "mood"。
+5. 优化必须紧贴用户原意，不得把示例中的主体、场景或叙事直接迁移到用户需求。
+6. 当用户输入包含类型/风格/氛围标签时，将其自然展开并融入 JSON 结构。
+7. 当用户输入仅有类型/风格/氛围标签而无主体时，只展开标签含义，不凭空添加主体。
+8. 如用户输入含不合理内容，忽略并引导回安全方向，但不输出任何解释文字。
+9. sections 不超过 12 个，所有值都应是图像生成模型能理解的描述性文本。
+10. 禁止输出任何解释、前缀、寒暄、编号、标题、markdown 格式。仅输出 JSON 本身，版本间用"---"分隔。
+11. 绝对不要包含任何 NSFW、暴力、血腥、政治敏感或真人裸露内容。"""
+
 
 class PromptOptimizer:
     _client: httpx.AsyncClient | None = None
@@ -90,6 +121,50 @@ class PromptOptimizer:
             except json.JSONDecodeError:
                 versions.append(cleaned)
         return versions or [fallback]
+
+    @classmethod
+    def _build_refine_user_content(cls,prompt:str,similar_examples:list[dict],count:int)->str:
+        lines=[f"请生成 {count} 个优化版本。","用户原始提示词：",prompt.strip()]
+        for i,item in enumerate(similar_examples[:2],start=1):
+            lines.extend(["",f"参考示例{i}：",f"分类：{item.get('category') or '未分类'}",f"提示词：{item.get('prompt') or ''}"])
+        return "\n".join(lines)
+
+    @classmethod
+    async def _call_llm(cls,system:str,user_content:str,count:int,stream:bool=False):
+        llm_cfg=get_llm_config()
+        client=cls._get_client()
+        url=f"{llm_cfg['base_url'].rstrip('/')}/v1/messages"
+        headers={"x-api-key":llm_cfg["api_key"],"anthropic-version":"2023-06-01","content-type":"application/json"}
+        body={"model":llm_cfg["model"],"max_tokens":max(llm_cfg["max_tokens"],2000)*count,"system":system,"messages":[{"role":"user","content":user_content}]}
+        if stream:body["stream"]=True
+        return client,url,headers,body
+
+    @classmethod
+    async def optimize_refine(cls,prompt:str,count:int=1,format:str="text")->list[str]:
+        llm_cfg=get_llm_config()
+        if not llm_cfg["enabled"] or not llm_cfg["api_key"] or not PromptEmbeddingService.is_enabled():
+            return await cls.optimize(prompt,count,format)
+        if len(prompt) < 2 or len(prompt) > 500:raise ValueError("输入长度需在 2-500 个字符之间")
+        if BannedWordsService.check(prompt):return [prompt]
+        try:
+            similar_examples=PromptEmbeddingService.search_similar(prompt,top_k=2)
+            system=REFINE_JSON_SYSTEM_PROMPT if format=="json" else REFINE_SYSTEM_PROMPT
+            user_content=cls._build_refine_user_content(prompt,similar_examples,count)
+            client,url,headers,body=await cls._call_llm(system,user_content,count,False)
+            resp=await client.post(url,headers=headers,json=body)
+            resp.raise_for_status()
+            data=resp.json()
+            text=""
+            for block in data.get("content",[]):
+                if block.get("type")=="text":text+=block.get("text","")
+            versions=cls._parse_json_versions(text,prompt) if format=="json" else [v.strip() for v in text.split("---") if v.strip()] or [prompt]
+            return [v if not BannedWordsService.check(v) else prompt for v in versions][:count]
+        except httpx.TimeoutException:
+            logger.warning("[prompt_optimizer/refine] timeout, degrading to simple")
+            return await cls.optimize(prompt,count,format)
+        except Exception:
+            logger.exception("[prompt_optimizer/refine] failed, degrading to simple")
+            return await cls.optimize(prompt,count,format)
 
     @classmethod
     async def optimize(cls, prompt: str, count: int = 1, format: str = "text") -> list[str]:
@@ -144,6 +219,55 @@ class PromptOptimizer:
         except Exception:
             logger.exception("[prompt_optimizer] LLM API call failed")
             return [prompt]
+
+    @classmethod
+    async def optimize_refine_stream(cls,prompt:str,count:int=1,format:str="text"):
+        llm_cfg=get_llm_config()
+        if not llm_cfg["enabled"] or not llm_cfg["api_key"] or not PromptEmbeddingService.is_enabled():
+            async for event in cls.optimize_stream(prompt,count,format):yield event
+            return
+        if len(prompt) < 2 or len(prompt) > 500:
+            yield {"type":"error","detail":"输入长度需在 2-500 个字符之间"}
+            return
+        if BannedWordsService.check(prompt):
+            yield {"type":"done","versions":[prompt]}
+            return
+        try:
+            similar_examples=PromptEmbeddingService.search_similar(prompt,top_k=2)
+            system=REFINE_JSON_SYSTEM_PROMPT if format=="json" else REFINE_SYSTEM_PROMPT
+            user_content=cls._build_refine_user_content(prompt,similar_examples,count)
+            client,url,headers,body=await cls._call_llm(system,user_content,count,True)
+            full_text="";current_version=0;buffer="";sep="---"
+            async with client.stream("POST",url,headers=headers,json=body,timeout=httpx.Timeout(float(llm_cfg["timeout_seconds"]),connect=5.0)) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):continue
+                    data_str=line[6:]
+                    if data_str.strip()=="[DONE]":break
+                    try:event=json.loads(data_str)
+                    except json.JSONDecodeError:continue
+                    if event.get("type")=="content_block_delta":
+                        delta=event.get("delta",{})
+                        if delta.get("type")=="text_delta":
+                            text=delta.get("text","");full_text+=text;buffer+=text
+                            while True:
+                                idx=buffer.find(sep)
+                                if idx<0:break
+                                before=buffer[:idx].strip();buffer=buffer[idx+len(sep):]
+                                if before:yield {"type":"chunk","text":before,"version_index":current_version,"done":True}
+                                current_version+=1
+                            partial=buffer.strip()
+                            if partial:yield {"type":"chunk","text":partial,"version_index":current_version,"done":False}
+            if buffer.strip():yield {"type":"chunk","text":buffer.strip(),"version_index":current_version,"done":True}
+            versions=cls._parse_json_versions(full_text,prompt) if format=="json" else [v.strip() for v in full_text.split("---") if v.strip()] or [prompt]
+            versions=[v if not BannedWordsService.check(v) else prompt for v in versions]
+            yield {"type":"done","versions":versions[:count]}
+        except httpx.TimeoutException:
+            logger.warning("[prompt_optimizer/refine_stream] timeout, degrading to simple")
+            async for event in cls.optimize_stream(prompt,count,format):yield event
+        except Exception:
+            logger.exception("[prompt_optimizer/refine_stream] failed, degrading to simple")
+            async for event in cls.optimize_stream(prompt,count,format):yield event
 
     @classmethod
     async def optimize_stream(cls, prompt: str, count: int = 1, format: str = "text"):

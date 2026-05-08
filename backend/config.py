@@ -133,6 +133,10 @@ _runtime_config = {
     "llm_max_tokens": int(os.getenv("LLM_MAX_TOKENS", "2000")),
     "llm_timeout_seconds": int(os.getenv("LLM_TIMEOUT_SECONDS", "30")),
     "prompt_optimize_enabled": os.getenv("PROMPT_OPTIMIZE_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
+    "prompt_refine_enabled": os.getenv("PROMPT_REFINE_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
+    "prompt_embedding_model": os.getenv("PROMPT_EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"),
+    "prompt_embedding_batch_size": int(os.getenv("PROMPT_EMBEDDING_BATCH_SIZE", "32")),
+    "prompt_embedding_dir": os.getenv("PROMPT_EMBEDDING_DIR", str(DATA_DIR / "prompt_embeddings")),
 }
 _runtime_config_defaults = dict(_runtime_config)
 if not _runtime_config["generation_models"]:
@@ -326,6 +330,11 @@ def get_llm_config():
         "timeout_seconds": int(_runtime_config.get("llm_timeout_seconds", 30)),
         "enabled": bool(_runtime_config.get("prompt_optimize_enabled", True)),
     }
+
+
+def get_prompt_embedding_config():
+    d=Path(str(_runtime_config.get("prompt_embedding_dir") or (DATA_DIR / "prompt_embeddings")));d.mkdir(parents=True,exist_ok=True)
+    return {"enabled":bool(_runtime_config.get("prompt_refine_enabled",True)),"model":str(_runtime_config.get("prompt_embedding_model") or "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2").strip() or "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2","batch_size":max(1,int(_runtime_config.get("prompt_embedding_batch_size",32) or 32)),"dir":d}
 
 
 _load_runtime_config()

@@ -9,9 +9,9 @@ const OPTIMIZE_DRAFT_KEY='chat_optimize_draft_v1'
 function normalizeOptimizeResults(data,fallbackOriginal=''){const versions=Array.isArray(data?.versions)?data.versions.map(v=>typeof v==='string'?v.trim():(typeof v?.text==='string'?v.text.trim():'' )).filter(Boolean):[];return versions.length?{versions,original:typeof data?.original==='string'?data.original:fallbackOriginal}:null}
 function normalizeStreamingVersions(data){return Array.isArray(data)?data.map(v=>({text:typeof v?.text==='string'?v.text:'',done:!!v?.done})).filter(v=>v.text||v.done):[]}
 function normalizeMessage(value,fallback='操作失败'){if(Array.isArray(value))return value.map(v=>normalizeMessage(v,'')).filter(Boolean).join('；')||fallback;if(value&&typeof value==='object'){if(typeof value.message==='string'&&value.message.trim())return value.message;if(typeof value.detail==='string'&&value.detail.trim())return value.detail;if(typeof value.msg==='string'&&value.msg.trim())return value.msg;const parts=[value.loc?String(Array.isArray(value.loc)?value.loc.join('.') : value.loc):'',typeof value.msg==='string'?value.msg:''].filter(Boolean);return parts.join('：')||fallback}return typeof value==='string'&&value.trim()?value:fallback}
-function loadOptimizeDraft(){try{const raw=localStorage.getItem(OPTIMIZE_DRAFT_KEY);if(!raw)return null;const data=JSON.parse(raw);if(!data||typeof data!=='object')return null;const optimizeResults=normalizeOptimizeResults(data.optimizeResults);const streamingVersions=normalizeStreamingVersions(data.streamingVersions);const showOptimizeOverlay=!!(data.showOptimizeOverlay&&(optimizeResults||streamingVersions.length));const showOptimizeModal=!!data.showOptimizeModal;const optimizeCount=Math.min(3,Math.max(1,Number(data.optimizeCount)||2));return{optimizeResults,streamingVersions,isStreaming:false,showOptimizeOverlay,showOptimizeModal,optimizeCount,restored:showOptimizeOverlay||showOptimizeModal}}catch{return null}}
-function saveOptimizeDraft(data){try{const optimizeResults=normalizeOptimizeResults(data?.optimizeResults);const streamingVersions=normalizeStreamingVersions(data?.streamingVersions);const showOptimizeOverlay=!!data?.showOptimizeOverlay;const showOptimizeModal=!!data?.showOptimizeModal;if(!showOptimizeOverlay&&!showOptimizeModal&&!optimizeResults&&!streamingVersions.length){localStorage.removeItem(OPTIMIZE_DRAFT_KEY);return}localStorage.setItem(OPTIMIZE_DRAFT_KEY,JSON.stringify({showOptimizeOverlay,showOptimizeModal,optimizeResults,streamingVersions,optimizeCount:Math.min(3,Math.max(1,Number(data?.optimizeCount)||2)),savedAt:Date.now()}))}catch{}}
-function clearOptimizeDraft(){try{localStorage.removeItem(OPTIMIZE_DRAFT_KEY)}catch{}}
+function loadOptimizeDraft(){try{const raw=localStorage.getItem(OPTIMIZE_DRAFT_KEY);if(!raw)return null;const data=JSON.parse(raw);if(!data||typeof data!=='object')return null;const optimizeResults=normalizeOptimizeResults(data.optimizeResults);const streamingVersions=normalizeStreamingVersions(data.streamingVersions);const showOptimizeOverlay=!!(data.showOptimizeOverlay&&(optimizeResults||streamingVersions.length));const showOptimizeModal=!!data.showOptimizeModal;const optimizeCount=Math.min(3,Math.max(1,Number(data.optimizeCount)||2));const optimizeMode=data.optimizeMode==='refine'?'refine':'simple';return{optimizeResults,streamingVersions,isStreaming:false,showOptimizeOverlay,showOptimizeModal,optimizeCount,optimizeMode,restored:showOptimizeOverlay||showOptimizeModal}}catch{return null}}
+function saveOptimizeDraft(data){try{const optimizeResults=normalizeOptimizeResults(data?.optimizeResults);const streamingVersions=normalizeStreamingVersions(data?.streamingVersions);const showOptimizeOverlay=!!data?.showOptimizeOverlay;const showOptimizeModal=!!data?.showOptimizeModal;if(!showOptimizeOverlay&&!showOptimizeModal&&!optimizeResults&&!streamingVersions.length){localStorage.removeItem(OPTIMIZE_DRAFT_KEY);return}localStorage.setItem(OPTIMIZE_DRAFT_KEY,JSON.stringify({showOptimizeOverlay,showOptimizeModal,optimizeResults,streamingVersions,optimizeCount:Math.min(3,Math.max(1,Number(data?.optimizeCount)||2)),optimizeMode:data?.optimizeMode==='refine'?'refine':'simple',savedAt:Date.now()}))}catch{return}}
+function clearOptimizeDraft(){try{localStorage.removeItem(OPTIMIZE_DRAFT_KEY)}catch{return}}
 function formatOptimizeText(text, format) {
   if (format === 'json') {
     try {
@@ -60,6 +60,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const [showOptimizeOverlay, setShowOptimizeOverlay] = useState(initialOptimizeDraft?.showOptimizeOverlay||false)
   const [showOptimizeModal, setShowOptimizeModal] = useState(initialOptimizeDraft?.showOptimizeModal||false)
   const [optimizeCount, setOptimizeCount] = useState(initialOptimizeDraft?.optimizeCount||2)
+  const [optimizeMode, setOptimizeMode] = useState(initialOptimizeDraft?.optimizeMode||'simple')
   const [optimizeFormat, setOptimizeFormat] = useState('json')
   const [streamingVersions, setStreamingVersions] = useState(initialOptimizeDraft?.streamingVersions||[])
   const [isStreaming, setIsStreaming] = useState(initialOptimizeDraft?.isStreaming||false)
@@ -95,7 +96,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
       }))
       if (version !== persistVersionRef.current) return
       await setCachedImages(cached.filter(Boolean))
-    } catch {}
+    } catch { return }
   }, [])
   const appendImages = useCallback((items) => {
     if (!items?.length) return
@@ -182,7 +183,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
           console.log('[ChatInput mount] IndexedDB cachedImages count:', cachedImages.length)
           const items = cachedImages.map((item, i) => item?.blob ? (() => { const type = item.type || item.blob.type || 'image/png'; const name = normalizeImageName(item.name || `cached-${i}`, type, `cached-${i}`); return { file: new File([item.blob], name, { type }), preview: URL.createObjectURL(item.blob), name } })() : null).filter(Boolean)
           if (items.length > 0) setImages(items)
-        } catch {}
+        } catch { return }
       })()
     }
   }, [])
@@ -322,7 +323,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     if (!input) return
     input.value = ''
     if (typeof input.showPicker === 'function') {
-      try { input.showPicker(); return } catch {}
+      try { input.showPicker(); return } catch { input.click(); return }
     }
     input.click()
   }, [])
@@ -333,7 +334,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     return () => clearTimeout(t)
   }, [toast])
 
-  useEffect(() => { saveOptimizeDraft({ showOptimizeOverlay, showOptimizeModal, optimizeResults, streamingVersions, optimizeCount }) }, [showOptimizeOverlay, showOptimizeModal, optimizeResults, streamingVersions, optimizeCount])
+  useEffect(() => { saveOptimizeDraft({ showOptimizeOverlay, showOptimizeModal, optimizeResults, streamingVersions, optimizeCount, optimizeMode }) }, [showOptimizeOverlay, showOptimizeModal, optimizeResults, streamingVersions, optimizeCount, optimizeMode])
 
   useEffect(() => {
     if (!initialOptimizeDraft?.restored) return
@@ -359,12 +360,13 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
       let doneCalled = false
       await promptOptimizeAPI.optimizeStream(fullPrompt, optimizeCount, {
         format: optimizeFormat,
+        mode: optimizeMode,
         onChunk: (data) => {
           setStreamingVersions(prev => {
             const next = [...prev]
             while (next.length <= data.version_index) next.push({ text: '', done: false })
             next[data.version_index] = { text: data.text, done: !!data.done }
-            saveOptimizeDraft({showOptimizeOverlay:true,optimizeResults:null,streamingVersions:next})
+            saveOptimizeDraft({showOptimizeOverlay:true,optimizeResults:null,streamingVersions:next,optimizeMode})
             return next
           })
         },
@@ -375,7 +377,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
           setStreamingVersions([])
           setIsStreaming(false)
           setOptimizeLoading(false)
-          saveOptimizeDraft({showOptimizeOverlay:true,showOptimizeModal:false,optimizeResults:nextResults,streamingVersions:[],optimizeCount})
+          saveOptimizeDraft({showOptimizeOverlay:true,showOptimizeModal:false,optimizeResults:nextResults,streamingVersions:[],optimizeCount,optimizeMode})
           if (data.points_balance != null) {
             const u = JSON.parse(localStorage.getItem('user') || 'null')
             if (u) { u.points = data.points_balance; localStorage.setItem('user', JSON.stringify(u)) }
@@ -387,12 +389,12 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
           setIsStreaming(false)
           setStreamingVersions([])
           try {
-            const { data } = await promptOptimizeAPI.optimize(fullPrompt, optimizeCount, optimizeFormat)
+            const { data } = await promptOptimizeAPI.optimize(fullPrompt, optimizeCount, optimizeFormat, optimizeMode)
             const nextResults=normalizeOptimizeResults(data, fullPrompt)
             setOptimizeResults(nextResults)
             setStreamingVersions([])
             setShowOptimizeOverlay(true)
-            saveOptimizeDraft({showOptimizeOverlay:true,showOptimizeModal:false,optimizeResults:nextResults,streamingVersions:[],optimizeCount})
+            saveOptimizeDraft({showOptimizeOverlay:true,showOptimizeModal:false,optimizeResults:nextResults,streamingVersions:[],optimizeCount,optimizeMode})
             if (data.points_balance != null) {
               const u = JSON.parse(localStorage.getItem('user') || 'null')
               if (u) { u.points = data.points_balance; localStorage.setItem('user', JSON.stringify(u)) }
@@ -412,12 +414,12 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
       }
     } else {
       try {
-        const { data } = await promptOptimizeAPI.optimize(fullPrompt, optimizeCount, optimizeFormat)
+        const { data } = await promptOptimizeAPI.optimize(fullPrompt, optimizeCount, optimizeFormat, optimizeMode)
         const nextResults=normalizeOptimizeResults(data, fullPrompt)
         setOptimizeResults(nextResults)
         setStreamingVersions([])
         setShowOptimizeOverlay(true)
-        saveOptimizeDraft({showOptimizeOverlay:true,showOptimizeModal:false,optimizeResults:nextResults,streamingVersions:[],optimizeCount})
+        saveOptimizeDraft({showOptimizeOverlay:true,showOptimizeModal:false,optimizeResults:nextResults,streamingVersions:[],optimizeCount,optimizeMode})
         if (data.points_balance != null) {
           const u = JSON.parse(localStorage.getItem('user') || 'null')
           if (u) { u.points = data.points_balance; localStorage.setItem('user', JSON.stringify(u)) }
@@ -429,7 +431,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
         setOptimizeLoading(false)
       }
     }
-  }, [prompt, type, style, mood, optimizeCount, optimizeFormat, params.optimize_stream])
+  }, [prompt, type, style, mood, optimizeCount, optimizeFormat, optimizeMode, params.optimize_stream])
 
   const handleSelectOptimized = useCallback((text) => {
     let cleaned = text
@@ -560,7 +562,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
       <div className="w-full px-4 pt-2 pb-2 relative">
         {showOptimizeOverlay && (isStreaming || optimizeResults || streamingVersions.length > 0) && (() => {
           const displayVersions = optimizeResults
-            ? optimizeResults.versions.map((v, i) => ({ text: v, done: true }))
+            ? optimizeResults.versions.map(v => ({ text: v, done: true }))
             : streamingVersions
           return (
             <div className="absolute bottom-full left-0 right-0 mb-3 z-30 pointer-events-none">
@@ -606,6 +608,17 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
                 <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>AI 优化提示词</span>
               </div>
               <p className="text-xs mb-4" style={{ color: 'var(--text-secondary)' }}>将优化当前提示词，生成更精确的描述以获得更好的生成效果。</p>
+              <div className="mb-4">
+                <span className="text-xs mb-2 block" style={{ color: 'var(--text-secondary)' }}>优化模式</span>
+                <div className="grid grid-cols-2 gap-2">
+                  {[{ key: 'simple', label: '简单优化', desc: '快速润色' }, { key: 'refine', label: '精细优化', desc: '基于示例优化' }].map(m => (
+                    <button key={m.key} onClick={() => setOptimizeMode(m.key)} className="px-3 py-2 rounded-2xl text-left border transition-colors" style={{ background: optimizeMode === m.key ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent', borderColor: optimizeMode === m.key ? 'var(--accent)' : 'var(--border-color)', color: 'var(--text-primary)' }}>
+                      <div className="text-xs font-medium">{m.label}</div>
+                      <div className="text-[10px]" style={{ color: optimizeMode === m.key ? 'var(--accent)' : 'var(--text-secondary)' }}>{m.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="mb-4">
                 <span className="text-xs mb-2 block" style={{ color: 'var(--text-secondary)' }}>生成条数</span>
                 <div className="flex gap-2">
