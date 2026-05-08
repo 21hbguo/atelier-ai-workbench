@@ -135,7 +135,7 @@ _runtime_config = {
     "prompt_optimize_enabled": os.getenv("PROMPT_OPTIMIZE_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
     "prompt_refine_enabled": os.getenv("PROMPT_REFINE_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
     "prompt_embedding_model": os.getenv("PROMPT_EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"),
-    "prompt_embedding_batch_size": int(os.getenv("PROMPT_EMBEDDING_BATCH_SIZE", "32")),
+    "prompt_embedding_batch_size": int(os.getenv("PROMPT_EMBEDDING_BATCH_SIZE", "4")),
     "prompt_embedding_dir": os.getenv("PROMPT_EMBEDDING_DIR", str(DATA_DIR / "prompt_embeddings")),
 }
 _runtime_config_defaults = dict(_runtime_config)

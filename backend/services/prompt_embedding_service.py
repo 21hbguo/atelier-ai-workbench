@@ -1,6 +1,7 @@
 import json
 import logging
 import threading
+import gc
 from pathlib import Path
 from typing import Any
 import numpy as np
@@ -71,6 +72,11 @@ class PromptEmbeddingService:
             cls._model=TextEmbedding(model_name=cls._cfg()["model"],cache_dir=str(cls._cache_dir()),providers=["CPUExecutionProvider"],specific_model_path=str(local_model_dir) if local_model_dir else None)
             return cls._model
     @classmethod
+    def unload_model(cls):
+        with cls._model_lock:
+            cls._model=None
+        gc.collect()
+    @classmethod
     def _normalize_vectors(cls,vectors:np.ndarray)->np.ndarray:
         if vectors.size==0:return vectors.astype(np.float32)
         arr=np.asarray(vectors,dtype=np.float32)
@@ -81,24 +87,27 @@ class PromptEmbeddingService:
     def _encode(cls,texts:list[str],batch_size:int|None=None)->np.ndarray:
         rows=[str(t or "").strip() for t in texts]
         if not rows:return np.zeros((0,0),dtype=np.float32)
-        model=cls._load_model()
-        sizes=[];start=max(1,int(batch_size or cls._cfg()["batch_size"]))
-        cur=start
-        while cur>=1:
-            if cur not in sizes:sizes.append(cur)
-            if cur==1:break
-            cur=max(1,cur//2)
-        last_err=None
-        for size in sizes:
-            try:
-                vectors=list(model.embed(rows,batch_size=size))
-                if not vectors:return np.zeros((0,0),dtype=np.float32)
-                return cls._normalize_vectors(np.vstack([np.asarray(v,dtype=np.float32) for v in vectors]))
-            except Exception as e:
-                last_err=e
-                logger.warning("[prompt_embedding] batch_size=%s failed: %s",size,e)
-        if last_err:raise last_err
-        return np.zeros((0,0),dtype=np.float32)
+        try:
+            model=cls._load_model()
+            sizes=[];start=max(1,int(batch_size or cls._cfg()["batch_size"]))
+            cur=start
+            while cur>=1:
+                if cur not in sizes:sizes.append(cur)
+                if cur==1:break
+                cur=max(1,cur//2)
+            last_err=None
+            for size in sizes:
+                try:
+                    vectors=list(model.embed(rows,batch_size=size))
+                    if not vectors:return np.zeros((0,0),dtype=np.float32)
+                    return cls._normalize_vectors(np.vstack([np.asarray(v,dtype=np.float32) for v in vectors]))
+                except Exception as e:
+                    last_err=e
+                    logger.warning("[prompt_embedding] batch_size=%s failed: %s",size,e)
+            if last_err:raise last_err
+            return np.zeros((0,0),dtype=np.float32)
+        finally:
+            cls.unload_model()
     @classmethod
     def _read_index(cls)->dict[str,Any]:
         items_path=cls._items_path();vectors_path=cls._vectors_path()

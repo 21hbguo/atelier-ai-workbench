@@ -345,11 +345,13 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     if (!prompt.trim() || optimizeLoading) return
     setShowOptimizeModal(true)
   }, [prompt, optimizeLoading])
+  useEffect(() => { if (optimizeMode === 'refine' && optimizeCount !== 1) setOptimizeCount(1) }, [optimizeMode, optimizeCount])
 
   const handleConfirmOptimize = useCallback(async () => {
     setShowOptimizeModal(false)
     setOptimizeLoading(true)
     const fullPrompt = `${type ? `类型为${type} ` : ''}${style ? `风格为${style} ` : ''}${mood ? `氛围为${mood} ` : ''}${prompt.trim()}`.trim()
+    const finalOptimizeCount = optimizeMode === 'refine' ? 1 : optimizeCount
 
     if (params.optimize_stream !== false) {
       setStreamingVersions([{ text: '', done: false }])
@@ -358,7 +360,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
       setOptimizeResults(null)
 
       let doneCalled = false
-      await promptOptimizeAPI.optimizeStream(fullPrompt, optimizeCount, {
+      await promptOptimizeAPI.optimizeStream(fullPrompt, finalOptimizeCount, {
         format: optimizeFormat,
         mode: optimizeMode,
         onChunk: (data) => {
@@ -377,7 +379,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
           setStreamingVersions([])
           setIsStreaming(false)
           setOptimizeLoading(false)
-          saveOptimizeDraft({showOptimizeOverlay:true,showOptimizeModal:false,optimizeResults:nextResults,streamingVersions:[],optimizeCount,optimizeMode})
+          saveOptimizeDraft({showOptimizeOverlay:true,showOptimizeModal:false,optimizeResults:nextResults,streamingVersions:[],optimizeCount:finalOptimizeCount,optimizeMode})
           if (data.points_balance != null) {
             const u = JSON.parse(localStorage.getItem('user') || 'null')
             if (u) { u.points = data.points_balance; localStorage.setItem('user', JSON.stringify(u)) }
@@ -389,12 +391,12 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
           setIsStreaming(false)
           setStreamingVersions([])
           try {
-            const { data } = await promptOptimizeAPI.optimize(fullPrompt, optimizeCount, optimizeFormat, optimizeMode)
+            const { data } = await promptOptimizeAPI.optimize(fullPrompt, finalOptimizeCount, optimizeFormat, optimizeMode)
             const nextResults=normalizeOptimizeResults(data, fullPrompt)
             setOptimizeResults(nextResults)
             setStreamingVersions([])
             setShowOptimizeOverlay(true)
-            saveOptimizeDraft({showOptimizeOverlay:true,showOptimizeModal:false,optimizeResults:nextResults,streamingVersions:[],optimizeCount,optimizeMode})
+            saveOptimizeDraft({showOptimizeOverlay:true,showOptimizeModal:false,optimizeResults:nextResults,streamingVersions:[],optimizeCount:finalOptimizeCount,optimizeMode})
             if (data.points_balance != null) {
               const u = JSON.parse(localStorage.getItem('user') || 'null')
               if (u) { u.points = data.points_balance; localStorage.setItem('user', JSON.stringify(u)) }
@@ -414,12 +416,12 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
       }
     } else {
       try {
-        const { data } = await promptOptimizeAPI.optimize(fullPrompt, optimizeCount, optimizeFormat, optimizeMode)
+        const { data } = await promptOptimizeAPI.optimize(fullPrompt, finalOptimizeCount, optimizeFormat, optimizeMode)
         const nextResults=normalizeOptimizeResults(data, fullPrompt)
         setOptimizeResults(nextResults)
         setStreamingVersions([])
         setShowOptimizeOverlay(true)
-        saveOptimizeDraft({showOptimizeOverlay:true,showOptimizeModal:false,optimizeResults:nextResults,streamingVersions:[],optimizeCount,optimizeMode})
+        saveOptimizeDraft({showOptimizeOverlay:true,showOptimizeModal:false,optimizeResults:nextResults,streamingVersions:[],optimizeCount:finalOptimizeCount,optimizeMode})
         if (data.points_balance != null) {
           const u = JSON.parse(localStorage.getItem('user') || 'null')
           if (u) { u.points = data.points_balance; localStorage.setItem('user', JSON.stringify(u)) }
@@ -621,17 +623,21 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
               </div>
               <div className="mb-4">
                 <span className="text-xs mb-2 block" style={{ color: 'var(--text-secondary)' }}>生成条数</span>
-                <div className="flex gap-2">
-                  {[1, 2, 3].map(n => (
-                    <button key={n} onClick={() => setOptimizeCount(n)}
-                      className="flex-1 py-1.5 rounded-2xl text-xs font-medium border transition-colors"
-                      style={{
-                        background: optimizeCount === n ? 'var(--accent)' : 'transparent',
-                        borderColor: optimizeCount === n ? 'var(--accent)' : 'var(--border-color)',
-                        color: optimizeCount === n ? '#fff' : 'var(--text-secondary)',
-                      }}>{n} 条</button>
-                  ))}
-                </div>
+                {optimizeMode === 'refine' ? (
+                  <div className="px-3 py-2 rounded-2xl border text-xs" style={{ borderColor: 'var(--accent)', background: 'color-mix(in srgb, var(--accent) 10%, transparent)', color: 'var(--accent)' }}>精细优化固定生成 1 条</div>
+                ) : (
+                  <div className="flex gap-2">
+                    {[1, 2, 3].map(n => (
+                      <button key={n} onClick={() => setOptimizeCount(n)}
+                        className="flex-1 py-1.5 rounded-2xl text-xs font-medium border transition-colors"
+                        style={{
+                          background: optimizeCount === n ? 'var(--accent)' : 'transparent',
+                          borderColor: optimizeCount === n ? 'var(--accent)' : 'var(--border-color)',
+                          color: optimizeCount === n ? '#fff' : 'var(--text-secondary)',
+                        }}>{n} 条</button>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="mb-4">
                 <span className="text-xs mb-2 block" style={{ color: 'var(--text-secondary)' }}>输出格式</span>
@@ -649,7 +655,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
               </div>
               <div className="flex items-center justify-between mb-4 px-1">
                 <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>消耗积分</span>
-                <span className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>{optimizeCost * optimizeCount}</span>
+                <span className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>{optimizeCost * (optimizeMode === 'refine' ? 1 : optimizeCount)}</span>
               </div>
               <div className="flex gap-2">
                 <button onClick={() => setShowOptimizeModal(false)} className="flex-1 py-2 rounded-2xl text-xs font-medium border transition-colors" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>取消</button>
