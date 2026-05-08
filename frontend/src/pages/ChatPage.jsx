@@ -109,6 +109,7 @@ function mergeTasksById(list = []) { const map = new Map(); for (const task of l
 function buildSubmissionImages(items = []) { return items.map((img, idx) => ({ name: img?.name || img?.file?.name || `reference-${idx}`, type: img?.type || img?.file?.type || 'image/png', url: img?.url || '', preview: img?.preview || img?.url || '', file: img?.file || null })) }
 function buildPendingTaskFromSubmission(item) { const prompt = item?.prompt || item?.params?.prompt || ''; return { task_id: item.real_task_id || item.temp_task_id, status: item.status || 'processing', prompt, params: { ...(item.params || {}), prompt }, previewImages: (item.images || []).map(img => img?.preview || img?.url).filter(Boolean), created_at: item.created_at || formatLocalTime(new Date()), started_at: item.started_at || item.created_at || formatLocalTime(new Date()), completed_at: item.completed_at || null, error: item.error || null, _active: false, _local_submission: true, _points_consumed: !!item.points_consumed, type: item.type || ((item.images || []).length ? 'text_image' : 'text') } }
 function normalizeTaskResultUrls(task, imageFilenameSet) { const urls = (task?.result_urls || []).filter(Boolean); if (!urls.length) return urls; return urls.filter(url => imageFilenameSet.has(url.split('/').pop())) }
+function normalizeUploadedImageParams(uploaded = []) { const image_urls = uploaded.map(r => r?.data?.url).filter(Boolean); const local_image_urls = uploaded.map(r => r?.data?.storage_name || r?.data?.url).filter(Boolean); return { image_urls, local_image_urls } }
 
 export default function ChatPage() {
   const dialog = useAppDialog()
@@ -578,6 +579,14 @@ export default function ChatPage() {
     }
     throw lastError || new Error('图片上传失败')
   }, [])
+  const uploadSubmissionImagesOnce = useCallback(async (images) => {
+    const list = Array.isArray(images) ? images : []
+    if (!list.length) return { image_urls: [], local_image_urls: [] }
+    const uploaded = await Promise.all(list.map(uploadSubmissionImage))
+    const out = normalizeUploadedImageParams(uploaded)
+    if (out.image_urls.length !== list.length || out.local_image_urls.length !== list.length) throw new Error('参考图上传不完整')
+    return out
+  }, [uploadSubmissionImage])
 
   const pollTask = useCallback(async (taskId, startTime, shareToSquare, prompt, params, hasImages, clientRequestId, confirmDeadlineTs) => {
     const maxWaitMs = 15 * 60 * 1000
@@ -703,9 +712,9 @@ export default function ChatPage() {
     let hasImages = imageUrls.length > 0
     try {
       if (!hasImages && images.length > 0) {
-        const uploaded = await Promise.all(images.map(uploadSubmissionImage))
-        imageUrls = uploaded.map(r => r.data.url).filter(Boolean)
-        localImageUrls = uploaded.map(r => r.data.storage_name || r.data.url).filter(Boolean)
+        const uploaded = await uploadSubmissionImagesOnce(images)
+        imageUrls = uploaded.image_urls
+        localImageUrls = uploaded.local_image_urls
         hasImages = imageUrls.length > 0
       }
     } catch (e) {
@@ -791,7 +800,7 @@ export default function ChatPage() {
       }
     }
     submissionProcessingRef.current.delete(submissionId)
-  }, [consumeLocalPointsOnce, finalizeSubmissionQueueItem, getTaskStatusWithRecovery, markSubmissionFailed, pendingSubmissions, pollTask, refreshPointsOnFailed, requestCost, saveCachedActiveTasks, submitGenerationWithRecovery, syncPendingSubmissions, updateTask, uploadSubmissionImage])
+  }, [consumeLocalPointsOnce, finalizeSubmissionQueueItem, getTaskStatusWithRecovery, markSubmissionFailed, pendingSubmissions, pollTask, refreshPointsOnFailed, requestCost, saveCachedActiveTasks, submitGenerationWithRecovery, syncPendingSubmissions, updateTask, uploadSubmissionImagesOnce])
 
   const handleSubmit = useCallback(async ({ prompt, images, params, shareToSquare, rollCount = 1, clearInput }) => {
     const batchCount = Math.min(5, Math.max(1, Number(rollCount) || 1))
@@ -820,10 +829,7 @@ export default function ChatPage() {
       const baseImages = buildSubmissionImages(images || [])
       let sharedUploadParams = {}
       if (baseImages.length > 0 && batchCount > 1) {
-        const uploaded = await Promise.all(baseImages.map(uploadSubmissionImage))
-        const image_urls = uploaded.map(r => r.data.url).filter(Boolean)
-        const local_image_urls = uploaded.map(r => r.data.storage_name || r.data.url).filter(Boolean)
-        sharedUploadParams = { image_urls, local_image_urls }
+        sharedUploadParams = await uploadSubmissionImagesOnce(baseImages)
       }
       const submissions = Array.from({ length: batchCount }, (_, index) => ({ client_request_id: makeTaskId(), temp_task_id: `pending-${Date.now()}-${index}-${Math.random().toString(16).slice(2, 8)}`, real_task_id: null, prompt, images: baseImages, params: { ...params, ...sharedUploadParams, prompt, share_to_square: !!shareToSquare }, shareToSquare: !!shareToSquare, type: baseImages.length ? 'text_image' : 'text', status: 'processing', created_at: now, started_at: now, error: null }))
       const stagedTasks = submissions.map(buildPendingTaskFromSubmission)
@@ -841,7 +847,7 @@ export default function ChatPage() {
       dialog.alert('提交失败: ' + (e?.message || '未知错误'))
       return false
     }
-  }, [dialog, points, processSubmission, requestCost, saveCachedActiveTasks, scroll, syncPendingSubmissions, uploadSubmissionImage])
+  }, [dialog, points, processSubmission, requestCost, saveCachedActiveTasks, scroll, syncPendingSubmissions, uploadSubmissionImagesOnce])
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true)
