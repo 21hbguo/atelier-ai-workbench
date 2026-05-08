@@ -6,7 +6,7 @@ from datetime import datetime
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from backend.routers import generate, upload, tasks, images, prompts, stats, config, auth, square, admin, points, announcements, notifications, account, shares, favorites, prompt_optimize
+from backend.routers import generate, upload, tasks, images, prompts, stats, config, auth, square, admin, points, announcements, notifications, account, shares, favorites, prompt_optimize, vmq
 from backend.services.image_gen import close_http_client
 from backend.services.prompt_optimizer import PromptOptimizer
 from backend.services.classification_service import ClassificationService
@@ -80,6 +80,13 @@ app.include_router(shares.api_router)
 app.include_router(shares.router)
 app.include_router(favorites.router)
 app.include_router(prompt_optimize.router)
+app.include_router(vmq.router)
+
+
+@app.get("/appPush")
+async def app_push_compat(t: str, type: str, price: str, sign: str):
+    from backend.routers.points import app_push_callback
+    return await app_push_callback(t=t, type=type, price=price, sign=sign)
 
 
 @app.get("/api/health")

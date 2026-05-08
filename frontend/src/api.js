@@ -232,6 +232,8 @@ export const pointsAPI = {
   generateInviteCode: () => api.post('/points/invite/generate'),
   inviteHistory: (page = 1, size = 20) => api.get('/points/invite/history', { params: { page, size } }),
   createRechargeRequest: data => api.post('/points/recharge/requests', data),
+  getRechargeRequest: id => api.get(`/points/recharge/requests/${id}`),
+  confirmRechargeRequest: id => api.post(`/points/recharge/requests/${id}/confirm`),
   rechargeRequests: (page = 1, size = 20) => api.get('/points/recharge/requests', { params: { page, size } }),
 }
 

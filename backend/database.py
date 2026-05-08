@@ -194,7 +194,10 @@ def init_db():
                 risk_flags JSONB DEFAULT '[]'::jsonb,
                 created_at TIMESTAMP DEFAULT NOW(),
                 reviewed_at TIMESTAMP,
-                reviewed_by INTEGER REFERENCES users(id)
+                reviewed_by INTEGER REFERENCES users(id),
+                user_confirmed BOOLEAN DEFAULT FALSE,
+                confirmed_at TIMESTAMP,
+                discount NUMERIC(4,2) DEFAULT 0
             )""",
             """CREATE TABLE IF NOT EXISTS upload_files (
                 id SERIAL PRIMARY KEY,
@@ -536,6 +539,12 @@ def init_db():
                 conn.execute("ALTER TABLE recharge_requests ADD COLUMN invite_bonus_points INTEGER DEFAULT 0")
             if not _column_exists(conn, "recharge_requests", "invite_rebate_points"):
                 conn.execute("ALTER TABLE recharge_requests ADD COLUMN invite_rebate_points INTEGER DEFAULT 0")
+            if not _column_exists(conn, "recharge_requests", "user_confirmed"):
+                conn.execute("ALTER TABLE recharge_requests ADD COLUMN user_confirmed BOOLEAN DEFAULT FALSE")
+            if not _column_exists(conn, "recharge_requests", "confirmed_at"):
+                conn.execute("ALTER TABLE recharge_requests ADD COLUMN confirmed_at TIMESTAMP")
+            if not _column_exists(conn, "recharge_requests", "discount"):
+                conn.execute("ALTER TABLE recharge_requests ADD COLUMN discount NUMERIC(4,2) DEFAULT 0")
             dup_nickname = conn.execute("SELECT nickname,COUNT(*) cnt FROM users WHERE nickname IS NOT NULL AND nickname<>'' GROUP BY nickname HAVING COUNT(*)>1 LIMIT 1").fetchone()
             if not dup_nickname:
                 conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_nickname_unique ON users(nickname) WHERE nickname IS NOT NULL AND nickname<>''")

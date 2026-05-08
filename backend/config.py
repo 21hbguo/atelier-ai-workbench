@@ -62,6 +62,7 @@ _SENSITIVE_KEYS = {
     "sendgrid_sender": "SENDGRID_SENDER",
     "llm_api_key": "LLM_API_KEY",
     "turnstile_secret_key": "TURNSTILE_SECRET_KEY",
+    "vmq_notify_secret": "VMQ_NOTIFY_SECRET",
 }
 
 def _update_env_file(key: str, value: str):
@@ -138,6 +139,7 @@ _runtime_config = {
     "prompt_embedding_model": os.getenv("PROMPT_EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"),
     "prompt_embedding_batch_size": int(os.getenv("PROMPT_EMBEDDING_BATCH_SIZE", "4")),
     "prompt_embedding_dir": os.getenv("PROMPT_EMBEDDING_DIR", str(DATA_DIR / "prompt_embeddings")),
+    "vmq_notify_secret": os.getenv("VMQ_NOTIFY_SECRET", ""),
 }
 _runtime_config_defaults = dict(_runtime_config)
 if not _runtime_config["generation_models"]:
