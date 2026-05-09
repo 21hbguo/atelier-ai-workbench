@@ -412,7 +412,7 @@ describe('WalletPage', () => {
       fireEvent.click(submitBtn)
       await waitFor(() => {
         expect(createRechargeRequestMock).toHaveBeenCalled()
-        expect(screen.getByText(/剩余支付时间 10:00/)).toBeInTheDocument()
+        expect(screen.getByText('10:00')).toBeInTheDocument()
       })
     })
 
@@ -432,6 +432,23 @@ describe('WalletPage', () => {
       await waitFor(() => {
         expect(screen.getByText('当前支付金额已失效')).toBeInTheDocument()
         expect(screen.getByRole('button', { name: '重新生成金额' })).toBeInTheDocument()
+      })
+    })
+    it('shows countdown in modal header when request is active', async () => {
+      createRechargeRequestMock.mockResolvedValue({
+        data: { id: 1, amount: 9.5, discount: 0.5, tx_no: 'TX001', remaining_seconds: 600 },
+      })
+      getRechargeRequestMock.mockResolvedValueOnce({
+        data: { id: 1, channel: 'alipay', amount: 9.5, points: 100, status: 'pending', user_confirmed: false, created_at: '2026-05-10 00:00:00', remaining_seconds: 600 },
+      })
+      render(<WalletPage />)
+      fireEvent.click(screen.getByText('捐赠支持'))
+      await waitFor(() => {
+        expect(screen.getByText('轻量支持')).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByRole('button', { name: /提交并获取捐赠二维码/ }))
+      await waitFor(() => {
+        expect(screen.getByText('10:00')).toBeInTheDocument()
       })
     })
 

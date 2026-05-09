@@ -1072,7 +1072,7 @@ export default function WalletPage() {
           onClick={handleCloseQrModal}
         >
           <div
-            className="relative w-full max-w-sm rounded-2xl p-6 text-center"
+            className="relative w-full max-w-sm rounded-2xl text-center max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col"
             style={{ background: 'var(--bg-card)' }}
             onClick={e => e.stopPropagation()}
           >
@@ -1084,8 +1084,31 @@ export default function WalletPage() {
             >
               <X size={16} />
             </button>
-            {pollingStatus === 'success' && successPayload ? (
-              <>
+            <div className="shrink-0 border-b px-6 pt-6 pb-4 text-left" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+              {pollingStatus === 'expired' ? (
+                <div className="rounded-2xl border px-4 py-3" style={{ background: 'rgba(239,68,68,0.12)', borderColor: 'rgba(239,68,68,0.2)' }}>
+                  <div className="text-sm font-semibold mb-1" style={{ color: 'var(--color-error)' }}>支付时间已到</div>
+                  <div className="text-xs leading-6" style={{ color: 'var(--text-primary)' }}>请不要继续支付旧金额，必须重新生成后再支付。</div>
+                </div>
+              ) : (
+                <div className="rounded-[1.25rem] border px-4 py-4 text-center" style={{ background: countdownTone === 'danger' ? 'linear-gradient(180deg,rgba(239,68,68,0.10),rgba(239,68,68,0.03))' : countdownTone === 'warn' ? 'linear-gradient(180deg,rgba(245,158,11,0.10),rgba(245,158,11,0.03))' : 'var(--bg-primary)', borderColor: countdownTone === 'danger' ? 'rgba(239,68,68,0.20)' : countdownTone === 'warn' ? 'rgba(245,158,11,0.20)' : 'var(--border-color)' }}>
+                  <div className="text-xs mb-1" style={{ color: countdownTone === 'danger' ? 'var(--color-error)' : countdownTone === 'warn' ? 'var(--color-warning)' : 'var(--text-secondary)' }}>剩余支付时间</div>
+                  <div className="text-3xl font-semibold tabular-nums leading-none" style={{ color: countdownTone === 'danger' ? 'var(--color-error)' : countdownTone === 'warn' ? 'var(--color-warning)' : 'var(--color-success)' }}>
+                    {formatCountdown(countdown)}
+                  </div>
+                  <div className="mt-2 text-xs leading-5" style={{ color: 'var(--text-secondary)' }}>
+                    {countdownTone === 'danger'
+                      ? '金额即将失效，请立即完成支付；若超时，请重新生成金额。'
+                      : countdownTone === 'warn'
+                        ? '请尽快支付当前精确金额，超时后旧金额将自动失效。'
+                        : '请支付上方显示的精确金额，到账后系统会自动更新。'}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 pb-6 pt-4">
+              {pollingStatus === 'success' && successPayload ? (
+                <>
                 <div className="text-4xl mb-3">🎉🎆</div>
                 <div className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
                   捐赠成功，感谢支持
@@ -1157,36 +1180,8 @@ export default function WalletPage() {
                     恭喜获得随机减免 ¥{activeRequest.discount.toFixed(2)}
                   </div>
                 )}
-                <div className="text-4xl font-bold mb-1 tracking-tight" style={{ color: 'var(--text-primary)' }}>
+                <div className="text-4xl font-bold mb-3 tracking-tight" style={{ color: 'var(--text-primary)' }}>
                   ¥{activeRequest.amount.toFixed(2)}
-                </div>
-                <div
-                  className="mx-auto mb-3 inline-flex items-center rounded-full px-4 py-1.5 text-sm font-semibold tabular-nums"
-                  style={{
-                    background: countdownTone === 'danger' ? 'rgba(239,68,68,0.14)' : countdownTone === 'warn' ? 'rgba(245,158,11,0.16)' : 'rgba(34,197,94,0.12)',
-                    color: countdownTone === 'danger' ? 'var(--color-error)' : countdownTone === 'warn' ? 'var(--color-warning)' : 'var(--color-success)',
-                    boxShadow: countdownTone === 'danger' ? '0 0 0 3px rgba(239,68,68,0.08)' : 'none',
-                  }}
-                >
-                  剩余支付时间 {formatCountdown(countdown)}
-                </div>
-                <div
-                  className="mb-4 rounded-[1.5rem] border px-4 py-3 text-left"
-                  style={{
-                    background: countdownTone === 'danger' ? 'linear-gradient(180deg,rgba(239,68,68,0.10),rgba(239,68,68,0.03))' : countdownTone === 'warn' ? 'linear-gradient(180deg,rgba(245,158,11,0.10),rgba(245,158,11,0.03))' : 'var(--bg-primary)',
-                    borderColor: countdownTone === 'danger' ? 'rgba(239,68,68,0.20)' : countdownTone === 'warn' ? 'rgba(245,158,11,0.20)' : 'var(--border-color)',
-                  }}
-                >
-                  <div className="text-xs mb-1" style={{ color: countdownTone === 'danger' ? 'var(--color-error)' : countdownTone === 'warn' ? 'var(--color-warning)' : 'var(--text-secondary)' }}>
-                    支付提醒
-                  </div>
-                  <div className="text-sm leading-6" style={{ color: 'var(--text-primary)' }}>
-                    {countdownTone === 'danger'
-                      ? '金额即将失效，请立即完成支付；若超时，请重新生成金额。'
-                      : countdownTone === 'warn'
-                        ? '请尽快支付当前精确金额，超时后旧金额将自动失效。'
-                        : '请支付上方显示的精确金额，系统会自动识别到账。'}
-                  </div>
                 </div>
                 <div className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
                   {channelLabel[activeRequest.channel]}扫码支付 · {activeRequest.points}积分
@@ -1196,14 +1191,9 @@ export default function WalletPage() {
                     订单号：{activeRequest.tx_no}
                   </div>
                 )}
-                {countdown > 0 && pollingStatus !== 'success' && (
-                  <div
-                    className="text-xs mb-3"
-                    style={{ color: pollingStatus === 'verifying' ? 'var(--color-success)' : countdownTone === 'danger' ? 'var(--color-error)' : 'var(--color-warning)' }}
-                  >
-                    {pollingStatus === 'verifying'
-                      ? '已触发人工确认刷新，系统仍在自动识别到账'
-                      : '请务必支付上方显示的精确金额，过期后请重新生成'}
+                {countdown > 0 && pollingStatus !== 'success' && pollingStatus === 'verifying' && (
+                  <div className="text-xs mb-3" style={{ color: 'var(--color-success)' }}>
+                    已刷新到账状态，系统正在继续确认
                   </div>
                 )}
                 {(activeRequest.channel === 'alipay' ? payConfig.alipay_pay_qr_url : payConfig.wechat_pay_qr_url) ? (
@@ -1244,13 +1234,14 @@ export default function WalletPage() {
                   </span>
                 </button>
                 <p className="text-sm font-bold mt-3" style={{ color: 'var(--text-primary)' }}>
-                  请支付上方显示的精确金额，系统将自动识别并到账
+                  请支付上方显示的精确金额，支付成功后会自动更新到账状态
                 </p>
                 <p className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>
-                  弹窗打开后已在自动识别到账，无需手动切换
+                  支付成功后会自动更新到账状态，无需重复操作
                 </p>
               </>
             )}
+            </div>
           </div>
         </div>
       )}
