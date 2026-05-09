@@ -40,7 +40,10 @@ function normalizeImageName(name, type, fallback = 'reference') {
 }
 const MAX_IMAGES=5
 function isVipModel(modelId=''){return modelId==='grsai-vip'}
-function normalizeGenerationParams(params={}){const next={...(params||{})};if(isVipModel(next.model_id)){next.size='auto';if((next.resolution||'auto')==='auto')next.aspectRatio=''}return next}
+function getVipResolutionLabel(value=''){return value==='low'?'1K':value==='medium'?'2K':value==='high'?'4K':'1K'}
+function getVipResolutionCost(params={},fallback=10){const costs=params?._resolution_costs||params?.resolution_costs||{};const key=params?.resolution||'auto';const value=costs[key]??costs.auto??params?._points_cost;const num=Number(value);return num>0?Math.round(num):fallback}
+function getModelRequestCost(params={},fallback=10){return isVipModel(params?.model_id)?getVipResolutionCost(params,fallback):(Number(params?._points_cost)>0?Math.round(Number(params._points_cost)):fallback)}
+function normalizeGenerationParams(params={}){const next={...(params||{})};if(isVipModel(next.model_id)){next.size=next.size||'auto';next.resolution=next.resolution||'low';next.aspectRatio=next.size&&next.size!=='auto'?next.size:''}return next}
 function createImageId(){if(typeof crypto!=='undefined'&&typeof crypto.randomUUID==='function')return crypto.randomUUID();return`ref-${Date.now()}-${Math.random().toString(36).slice(2,10)}`}
 function createInputImageItem(input={},fallback=`reference-${Date.now()}`){const file=input?.file||null;const type=input?.type||file?.type||'image/png';const name=normalizeImageName(input?.name||file?.name||fallback,type,fallback);const uploadedUrl=String(input?.uploadedUrl||'').trim();const uploadedStorageName=String(input?.uploadedStorageName||'').trim();const uploadStatus=input?.uploadStatus||(uploadedUrl&&(uploadedStorageName||uploadedUrl)?'success':'pending');return{id:input?.id||createImageId(),name,type,preview:input?.preview||input?.url||'',url:input?.url||'',file,uploadStatus,uploadProgress:uploadStatus==='success'?100:Math.max(0,Math.min(100,Number(input?.uploadProgress)||0)),uploadedUrl,uploadedStorageName:uploadedStorageName||uploadedUrl,uploadError:String(input?.uploadError||'')}}
 function snapshotInputImages(list=[]){return list.map((img,i)=>({id:img?.id||`reference-${i}`,name:img?.name||img?.file?.name||`reference-${i}`,type:img?.type||img?.file?.type||'image/png',preview:img?.preview||img?.url||'',url:img?.url||'',file:img?.file||null,uploadStatus:img?.uploadStatus||'pending',uploadProgress:Number(img?.uploadProgress)||0,uploadedUrl:img?.uploadedUrl||'',uploadedStorageName:img?.uploadedStorageName||'',uploadError:img?.uploadError||''}))}
@@ -56,7 +59,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const [prompt, setPrompt] = useState('')
   const [images, setImages] = useState([])
   const [showParams, setShowParams] = useState(false)
-  const [params, setParams] = useState({ size: 'auto', resolution: 'auto', aspectRatio: '', model_id: 'gpt-image-2', roll_count: 5, optimize_stream: false })
+  const [params, setParams] = useState({ size: 'auto', resolution: 'low', aspectRatio: '', model_id: 'gpt-image-2', roll_count: 5, optimize_stream: false })
   const [shareToSquare, setShareToSquare] = useState(false)
   const [lightbox, setLightbox] = useState(null)
   const [optimizeLoading, setOptimizeLoading] = useState(false)
@@ -76,7 +79,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const [showBatchModal, setShowBatchModal] = useState(false)
   const [selectedBatchCount, setSelectedBatchCount] = useState(1)
   const [requestSubmitting, setRequestSubmitting] = useState(false)
-  const modelRequestCost=params?._points_cost||requestCost
+  const modelRequestCost=getModelRequestCost(params,requestCost)
   const fileRef = useRef(null)
   const textareaRef = useRef(null)
   const paramsStatePushedRef = useRef(false)
@@ -757,8 +760,8 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
               <div className="mb-3 p-2.5 rounded-xl" style={{ background: 'var(--bg-ai-bubble)' }}>
                 <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
                   <span style={{ color: 'var(--text-secondary)' }}>模型: <span style={{ color: 'var(--text-primary)' }}>{params._model_label || params.model_id}</span></span>
-                  {isVipModel(params.model_id)?<span style={{ color: 'var(--text-secondary)' }}>分辨率: <span style={{ color: 'var(--text-primary)' }}>{params.resolution||'auto'}</span></span>:<span style={{ color: 'var(--text-secondary)' }}>尺寸: <span style={{ color: 'var(--text-primary)' }}>{params.size || 'auto'}</span></span>}
-                  {isVipModel(params.model_id)&&params.resolution&&params.resolution!=='auto'&&params.aspectRatio?<span style={{ color: 'var(--text-secondary)' }}>比例: <span style={{ color: 'var(--text-primary)' }}>{params.aspectRatio}</span></span>:null}
+                  <span style={{ color: 'var(--text-secondary)' }}>比例: <span style={{ color: 'var(--text-primary)' }}>{params.size || 'auto'}</span></span>
+                  {isVipModel(params.model_id)?<span style={{ color: 'var(--text-secondary)' }}>分辨率: <span style={{ color: 'var(--text-primary)' }}>{getVipResolutionLabel(params.resolution||'low')}</span></span>:null}
                   {params.quality?<span style={{ color: 'var(--text-secondary)' }}>{isVipModel(params.model_id)?'画质':'质量'}: <span style={{ color: 'var(--text-primary)' }}>{params.quality}</span></span>:null}
                   {type && <span style={{ color: 'var(--text-secondary)' }}>类型: <span style={{ color: 'var(--accent)' }}>{type}</span></span>}
                   {style && <span style={{ color: 'var(--text-secondary)' }}>风格: <span style={{ color: 'var(--accent)' }}>{style}</span></span>}

@@ -31,10 +31,20 @@ router = APIRouter(prefix="/api/generate", tags=["generate"])
 GLOBAL_GENERATE_ACTIVE_LIMIT = 20
 
 
-def _get_model_cost(model_id: str) -> int:
+def _get_model_cost(model_id: str, resolution: str = None) -> int:
     models = get_generation_models() or {}
     model = models.get(model_id) or {}
     params = model.get("params") or {}
+    if model_id == "grsai-vip":
+        resolution_costs = params.get("resolution_costs") or {}
+        resolution_key = (resolution or "auto").strip() or "auto"
+        cost = resolution_costs.get(resolution_key)
+        if cost is None: cost = resolution_costs.get("auto", params.get("points_cost"))
+        if cost is not None:
+            try:
+                return max(1, int(cost))
+            except (ValueError, TypeError):
+                pass
     cost = params.get("points_cost")
     if cost is not None:
         try:
@@ -119,7 +129,7 @@ def retry_generation_task(task_id: str):
         return None
     params = dict(task.get("params") or {})
     retry_count = int(params.get("_retry_count") or 0) + 1
-    cost = int(task.get("points_cost") or _get_model_cost(params.get("model_id")))
+    cost = int(task.get("points_cost") or _get_model_cost(params.get("model_id"), params.get("resolution")))
     consume_request_key = f"consume:{task_id}:retry:{retry_count}"
     refund_request_key = f"refund:{task_id}:retry:{retry_count}"
     slot = _consume_generation_slot_for_existing_task(task_id, task["user_id"], cost, consume_request_key)
@@ -219,7 +229,7 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
     task_id = request.task_id or str(uuid.uuid4())
     logger.info(f"[submit.start] type=text task={task_id} user={user_id} prompt_len={len(request.prompt or '')}")
     is_admin = user.get("is_admin")
-    cost = _get_model_cost(request.model_id)
+    cost = _get_model_cost(request.model_id, request.resolution)
     task_params = {"prompt": request.prompt, "size": request.size, "resolution": request.resolution, "aspect_ratio": request.aspect_ratio, "quality": request.quality, "model_id": request.model_id, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}
     points_balance_after = _reserve_generation_slot(task_id, "text", task_params, user_id, cost)
 
@@ -265,7 +275,7 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
     task_id = request.task_id or str(uuid.uuid4())
     logger.info(f"[submit.start] type=text_image task={task_id} user={user_id} prompt_len={len(request.prompt or '')} images={len(request.image_urls or [])}")
     is_admin = user.get("is_admin")
-    cost = _get_model_cost(request.model_id)
+    cost = _get_model_cost(request.model_id, request.resolution)
     task_params = {"prompt": request.prompt, "size": request.size, "resolution": request.resolution, "aspect_ratio": request.aspect_ratio, "quality": request.quality, "model_id": request.model_id, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}
     points_balance_after = _reserve_generation_slot(task_id, "text_image", task_params, user_id, cost)
 

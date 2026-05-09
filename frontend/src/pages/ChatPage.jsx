@@ -94,15 +94,18 @@ function shouldRetryNetworkError(message = '') { const s = String(message || '')
 function normalizeGenerationError(message = '') { const s = String(message || ''); const lower = s.toLowerCase(); if (lower.includes('image url failed') || lower.includes('image_url_failed') || lower.includes('invalid image url') || lower.includes('image url invalid')) return '参考图链接失效或不可访问，请重新上传参考图'; return s }
 function isVipModel(modelId=''){return modelId==='grsai-vip'}
 function getGenerationModeLabel(params={}){return params?.image_urls?.length?'图生图':'文生图'}
-function getVipResolutionLabel(value=''){return value==='low'?'1K':value==='medium'?'2K':value==='high'?'4K':'自动'}
-function getGenerationSizeLabel(params={}){if(isVipModel(params?.model_id)){const resolution=params?.resolution||'auto';const ratio=params?.aspect_ratio||params?.aspectRatio||'';const quality=params?.quality||'';const parts=[`分辨率:${getVipResolutionLabel(resolution)}`];if(resolution!=='auto'&&ratio)parts.push(`比例:${ratio}`);if(quality)parts.push(`画质:${quality}`);return parts.join(' / ')}const size=params?.size||'';const quality=params?.quality||'';return [size?`尺寸:${size}`:'',quality?`质量:${quality}`:''].filter(Boolean).join(' / ')}
-function normalizeSubmissionParams(params={}){const next={...(params||{})};if(isVipModel(next.model_id)){next.size='auto';next.resolution=next.resolution||'auto';next.aspect_ratio=next.aspect_ratio??next.aspectRatio??'';if(next.resolution==='auto')next.aspect_ratio=''}return next}
+function getVipResolutionLabel(value=''){return value==='low'?'1K':value==='medium'?'2K':value==='high'?'4K':'1K'}
+function getImageRatioLabel(value=''){return value||'自动'}
+function getVipResolutionCost(params={},fallback=10){const costs=params?._resolution_costs||params?.resolution_costs||{};const key=params?.resolution||'auto';const value=costs[key]??costs.auto??params?._points_cost;const num=Number(value);return num>0?Math.round(num):fallback}
+function getModelCost(params={},fallback=10){return isVipModel(params?.model_id)?getVipResolutionCost(params,fallback):(Number(params?._points_cost)>0?Math.round(Number(params._points_cost)):fallback)}
+function getGenerationSizeLabel(params={}){if(isVipModel(params?.model_id)){const resolution=params?.resolution||'low';const ratio=params?.size||params?.aspect_ratio||params?.aspectRatio||'auto';const quality=params?.quality||'';const parts=[`比例:${getImageRatioLabel(ratio)}`,`分辨率:${getVipResolutionLabel(resolution)}`];if(quality)parts.push(`画质:${quality}`);return parts.join(' / ')}const size=params?.size||'';return size?`比例:${getImageRatioLabel(size)}`:''}
+function normalizeSubmissionParams(params={}){const next={...(params||{})};if(isVipModel(next.model_id)){next.size=next.size||'auto';next.resolution=next.resolution||'low';next.aspect_ratio=next.size&&next.size!=='auto'?next.size:''}return next}
 function formatSubmitSettings(params, shareToSquare, imageCount) {
   const modelLabel = params?._model_label || params?.model_id || '默认模型'
   const lines = [`模型：${modelLabel}`]
   const sizeLabel=getGenerationSizeLabel(params)
   if (sizeLabel) lines.push(sizeLabel)
-  const extra = Object.entries(params || {}).filter(([key, value]) => !['size','resolution','aspect_ratio','aspectRatio','quality', 'model_id', '_model_label', '_points_cost', 'roll_count', 'optimize_stream'].includes(key) && value !== undefined && value !== null && value !== '')
+  const extra = Object.entries(params || {}).filter(([key, value]) => !['size','resolution','aspect_ratio','aspectRatio','quality', 'model_id', '_model_label', '_points_cost', '_resolution_costs', 'resolution_costs', 'roll_count', 'optimize_stream'].includes(key) && value !== undefined && value !== null && value !== '')
   for (const [key, value] of extra) lines.push(`${key}：${value}`)
   lines.push(`参考图：${imageCount || 0} 张`)
   lines.push(`分享：${shareToSquare ? '开启' : '关闭'}`)
@@ -716,7 +719,7 @@ export default function ChatPage() {
     const startedAt = item.started_at || formatLocalTime(new Date())
     const prompt = item.prompt || item?.params?.prompt || ''
     const baseParams = normalizeSubmissionParams({ ...(item.params || {}), prompt, share_to_square: !!item.shareToSquare })
-    const modelCost = baseParams?._points_cost || requestCost
+    const modelCost = getModelCost(baseParams,requestCost)
     const realTaskId = item.real_task_id || makeTaskId()
     const hasExistingRealTask = !!item.real_task_id
     if (!hasExistingRealTask) {
@@ -826,7 +829,7 @@ export default function ChatPage() {
 
   const handleSubmit = useCallback(async ({ prompt, images, params, shareToSquare, rollCount = 1, clearInput }) => {
     const batchCount = Math.min(5, Math.max(1, Number(rollCount) || 1))
-    const modelCost = params?._points_cost || requestCost
+    const modelCost = getModelCost(params,requestCost)
     const totalCost = batchCount * modelCost
     if (points < totalCost) {
       dialog.alert(`积分不足，当前仅剩 ${points} 积分，本次需要 ${totalCost} 积分。`)

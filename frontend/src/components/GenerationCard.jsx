@@ -5,8 +5,8 @@ import UnifiedCard from './UnifiedCard'
 import { getExpiryInfo } from '../utils/expiry'
 function normalizeCardText(v=''){return String(v||'').replace(/\s+/g,' ').trim()}
 function isVipModel(modelId=''){return modelId==='grsai-vip'}
-function getVipResolutionLabel(value=''){return value==='low'?'1K':value==='medium'?'2K':value==='high'?'4K':'自动'}
-function getGenerationSizeLabel(params={}){if(isVipModel(params?.model_id)){const resolution=params?.resolution||'auto';const ratio=params?.aspect_ratio||params?.aspectRatio||'';const quality=params?.quality||'';const parts=[`分辨率:${getVipResolutionLabel(resolution)}`];if(resolution!=='auto'&&ratio)parts.push(`比例:${ratio}`);if(quality)parts.push(`画质:${quality}`);return parts.join(' / ')}const size=params?.size||'';const quality=params?.quality||'';return [size?`尺寸:${size}`:'',quality?`质量:${quality}`:''].filter(Boolean).join(' / ')}
+function getVipResolutionLabel(value=''){return value==='low'?'1K':value==='medium'?'2K':value==='high'?'4K':'1K'}
+function getGenerationSizeLabel(params={}){if(isVipModel(params?.model_id)){const resolution=params?.resolution||'low';const ratio=params?.size||params?.aspect_ratio||params?.aspectRatio||'auto';const quality=params?.quality||'';const parts=[`比例:${ratio}`,`分辨率:${getVipResolutionLabel(resolution)}`];if(quality)parts.push(`画质:${quality}`);return parts.join(' / ')}const size=params?.size||'';return size?`比例:${size}`:''}
 
 const statusConfig = {
   queued: { color: 'var(--color-warning)', bg: 'color-mix(in srgb, var(--color-warning) 12%, transparent)', label: '排队中' },

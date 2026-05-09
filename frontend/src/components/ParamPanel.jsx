@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { configAPI } from '../api'
 
 function isVipModel(modelId=''){return modelId==='grsai-vip'}
+function getVipResolutionCost(params={},resolution='auto',fallback=10){const costs=params?.resolution_costs||{};const key=resolution||'auto';const value=costs[key]??costs.auto??params?.points_cost;const num=Number(value);return num>0?Math.round(num):fallback}
 
 export default function ParamPanel({ params, onChange }) {
   const [models, setModels] = useState([])
@@ -18,45 +19,48 @@ export default function ParamPanel({ params, onChange }) {
   )
 
   const modelParams = currentModel?.params || {}
-  const visibleEntries = useMemo(() => Object.entries(modelParams).filter(([key]) => !(key === 'aspectRatio' && isVipModel(currentModel?.model_id) && (params?.resolution ?? modelParams?.resolution?.default ?? 'auto') === 'auto')), [currentModel?.model_id, modelParams, params?.resolution])
+  const visibleEntries = useMemo(() => Object.entries(modelParams).filter(([key]) => key !== 'aspectRatio'), [modelParams])
 
   useEffect(() => {
     if (!currentModel) return
     const defaults = {}
     if (!params.model_id) defaults.model_id = currentModel.model_id
     defaults._model_label = currentModel.label || currentModel.model_id
+    if (modelParams.resolution_costs !== undefined) defaults._resolution_costs = modelParams.resolution_costs
     for (const [key, cfg] of Object.entries(modelParams)) {
       if (cfg.default !== undefined && params[key] === undefined) {
         defaults[key] = cfg.default
       }
     }
-    if (modelParams.points_cost !== undefined) {
-      defaults._points_cost = modelParams.points_cost
-    }
+    if (isVipModel(currentModel?.model_id)) defaults._points_cost = getVipResolutionCost(modelParams, params?.resolution ?? modelParams?.resolution?.default ?? 'low')
+    else if (modelParams.points_cost !== undefined) defaults._points_cost = modelParams.points_cost
     if (Object.keys(defaults).length > 0) {
       onChange(p => ({ ...p, ...defaults }))
     }
-  }, [currentModel])
+  }, [currentModel, modelParams, onChange, params?.resolution])
 
   useEffect(() => {
     if (!isVipModel(currentModel?.model_id)) return
-    const resolution = params?.resolution ?? modelParams?.resolution?.default ?? 'auto'
-    if (resolution === 'auto' && params?.aspectRatio) onChange(p => ({ ...p, aspectRatio: '' }))
-  }, [currentModel?.model_id, modelParams, onChange, params?.aspectRatio, params?.resolution])
+    const resolution = params?.resolution ?? modelParams?.resolution?.default ?? 'low'
+    const nextCost=getVipResolutionCost(modelParams,resolution,Number(params?._points_cost)||10)
+    if (Number(params?._points_cost)!==nextCost) onChange(p => ({ ...p, _points_cost: nextCost }))
+  }, [currentModel?.model_id, modelParams, onChange, params?._points_cost, params?.resolution])
 
   const handleModelChange = (modelId) => {
     const model = models.find(m => m.model_id === modelId)
     if (!model) return
-    const newParams = { model_id: modelId, _model_label: model.label || modelId }
+    const newParams = { model_id: modelId, _model_label: model.label || modelId, _points_cost: model?.params?.points_cost, _resolution_costs: model?.params?.resolution_costs }
     for (const [key, cfg] of Object.entries(model.params || {})) {
       if (key === 'points_cost') {
         newParams._points_cost = cfg
         continue
       }
+      if (key === 'resolution_costs') continue
       if (cfg.default !== undefined) {
         newParams[key] = cfg.default
       }
     }
+    if (isVipModel(modelId)) newParams._points_cost = getVipResolutionCost(model.params || {}, newParams.resolution || 'low', Number(newParams._points_cost)||10)
     onChange(p => ({ ...p, ...newParams }))
   }
 
@@ -65,7 +69,7 @@ export default function ParamPanel({ params, onChange }) {
       return (
         <label key={key} className="flex flex-col gap-1">
           <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{cfg.label || key}</span>
-          <select value={params[key] ?? cfg.default ?? ''} onChange={e => onChange(p => ({ ...p, [key]: e.target.value }))}
+          <select value={params[key] ?? cfg.default ?? ''} onChange={e => onChange(p => ({ ...p, [key]: e.target.value, ...(isVipModel(currentModel?.model_id)&&key==='resolution'?{_points_cost:getVipResolutionCost(modelParams,e.target.value,Number(p?._points_cost)||10),_resolution_costs:modelParams?.resolution_costs||p?._resolution_costs}:{}) }))}
             className="px-2 py-1.5 rounded-2xl text-sm border outline-none focus:ring-1 focus:ring-accent/50"
             style={{ background: 'var(--bg-input)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
             {(cfg.options || []).map(opt => typeof opt === 'string'

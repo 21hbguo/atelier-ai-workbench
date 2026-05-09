@@ -152,20 +152,36 @@ if not _runtime_config["generation_providers"]:
     _runtime_config["generation_providers"]={"wuyin-main":{"type":"wuyin","enabled":True,"priority":100,"api_url":"","api_key":"","circuit_fail_threshold":3,"circuit_cooldown_seconds":60,"unit_name":"供应商积分","unit_code":"vendor_points"}}
 
 def _vip_resolution_options():
-    return [{"value":"auto","label":"自动"},{"value":"low","label":"1K"},{"value":"medium","label":"2K"},{"value":"high","label":"4K"}]
+    return [{"value":"low","label":"1K"},{"value":"medium","label":"2K"},{"value":"high","label":"4K"}]
 
-def _vip_aspect_ratio_options():
-    return [{"value":"1:1","label":"1:1"},{"value":"3:2","label":"3:2"},{"value":"2:3","label":"2:3"},{"value":"4:3","label":"4:3"},{"value":"3:4","label":"3:4"},{"value":"16:9","label":"16:9"},{"value":"9:16","label":"9:16"}]
+def _image_ratio_options():
+    return [{"value":"auto","label":"自动"},{"value":"1:1","label":"1:1"},{"value":"3:2","label":"3:2"},{"value":"2:3","label":"2:3"},{"value":"4:3","label":"4:3"},{"value":"3:4","label":"3:4"},{"value":"16:9","label":"16:9"},{"value":"9:16","label":"9:16"}]
 
 def _vip_quality_options():
     return [{"value":"auto","label":"自动"},{"value":"low","label":"低"},{"value":"medium","label":"中"},{"value":"high","label":"高"}]
+
+def _vip_resolution_costs(params: dict):
+    if not isinstance(params,dict): return {"auto":15,"low":15,"medium":25,"high":40}
+    raw=params.get("resolution_costs") or {}
+    def _to_int(value, fallback: int):
+        try:return max(1,int(value))
+        except Exception:return max(1,int(fallback))
+    low=_to_int(raw.get("low",params.get("points_cost",15)),15)
+    medium=_to_int(raw.get("medium",25),25)
+    high=_to_int(raw.get("high",40),40)
+    auto=_to_int(raw.get("auto",low),low)
+    return {"auto":auto,"low":low,"medium":medium,"high":high}
 
 def normalize_generation_model_params(model_id: str, model: dict):
     if not isinstance(model,dict): return {}
     out=dict(model)
     params=out.get("params") or {}
+    if model_id=="gpt-image-2" and isinstance(params,dict):
+        out["params"]={**{k:v for k,v in params.items() if k not in {"size","quality","aspectRatio"}}, "size":{"label":"比例","type":"select","default":"auto","options":_image_ratio_options()}}
+        return out
     if model_id!="grsai-vip" or not isinstance(params,dict): return out
-    out["params"]={"points_cost":params.get("points_cost",20),"resolution":{"label":"分辨率","type":"select","default":"auto","options":_vip_resolution_options()},"aspectRatio":{"label":"比例","type":"select","default":"1:1","options":_vip_aspect_ratio_options()},"quality":{"label":"画质","type":"select","default":"auto","options":_vip_quality_options()}}
+    resolution_costs=_vip_resolution_costs(params)
+    out["params"]={**{k:v for k,v in params.items() if k not in {"size","quality","aspectRatio","resolution","points_cost","resolution_costs"}}, "points_cost":resolution_costs.get("low",15),"resolution_costs":resolution_costs,"size":{"label":"比例","type":"select","default":"auto","options":_image_ratio_options()},"resolution":{"label":"分辨率","type":"select","default":"low","options":_vip_resolution_options()},"quality":{"label":"画质","type":"select","default":"auto","options":_vip_quality_options()}}
     return out
 
 

@@ -20,6 +20,7 @@ import { useAppDialog } from '../components/AppDialogProvider'
 
 const nowFinanceTime=()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');return`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`}
 const defaultRechargePackages=[{amount:9.9,points:120,label:'体验包'},{amount:29.9,points:400,label:'进阶包'},{amount:59.9,points:900,label:'超值包'}]
+const isVipModelId=id=>id==='grsai-vip'
 
 export default function AdminPage() {
   const dialog = useAppDialog()
@@ -112,7 +113,7 @@ export default function AdminPage() {
   const [editingProviderId, setEditingProviderId] = useState('')
   const [editingProviderDraft, setEditingProviderDraft] = useState({ type: 'wuyin', enabled: true, priority: 100, api_url: '', api_key: '', circuit_fail_threshold: 3, circuit_cooldown_seconds: 60, unit_name: '供应商额度', unit_code: 'vendor_quota' })
   const [editingModelId, setEditingModelId] = useState('')
-  const [editingModelDraft, setEditingModelDraft] = useState({ label: '', capability: 'image', enabled: true, providers: [], points_cost: '' })
+  const [editingModelDraft, setEditingModelDraft] = useState({ label: '', capability: 'image', enabled: true, providers: [], points_cost: '', resolution_cost_low: '', resolution_cost_medium: '', resolution_cost_high: '' })
   const [draggingModelProviderId, setDraggingModelProviderId] = useState('')
   const [modelLabelMap, setModelLabelMap] = useState({})
   const [financeRange, setFinanceRange] = useState('30d')
@@ -529,9 +530,10 @@ export default function AdminPage() {
   }
   const openModelEditor = (id) => {
     const m = genModelsObj[id] || {}
+    const resolutionCosts = m?.params?.resolution_costs || {}
     setDraggingModelProviderId('')
     setEditingModelId(id)
-    setEditingModelDraft({ label: m.label || '', capability: m.capability || 'image', enabled: m.enabled !== false, providers: Array.isArray(m.providers) ? m.providers : [], points_cost: m?.params?.points_cost ?? '' })
+    setEditingModelDraft({ label: m.label || '', capability: m.capability || 'image', enabled: m.enabled !== false, providers: Array.isArray(m.providers) ? m.providers : [], points_cost: m?.params?.points_cost ?? '', resolution_cost_low: resolutionCosts.low ?? m?.params?.points_cost ?? '', resolution_cost_medium: resolutionCosts.medium ?? '', resolution_cost_high: resolutionCosts.high ?? '' })
   }
   const applyProviderEditor = () => {
     if (!editingProviderId) return
@@ -542,10 +544,26 @@ export default function AdminPage() {
     if (!editingModelId) return
     const providers = Array.isArray(editingModelDraft.providers) ? [...new Set(editingModelDraft.providers.map(i => String(i || '').trim()).filter(Boolean))] : []
     const prev = genModelsObj[editingModelId] || {}
-    const pointsCost = Number(editingModelDraft.points_cost || 0)
     const params = { ...(prev.params || {}) }
-    if (pointsCost > 0) params.points_cost = Math.round(pointsCost)
-    else delete params.points_cost
+    if (isVipModelId(editingModelId)) {
+      const lowCost = Number(editingModelDraft.resolution_cost_low || 0)
+      const mediumCost = Number(editingModelDraft.resolution_cost_medium || 0)
+      const highCost = Number(editingModelDraft.resolution_cost_high || 0)
+      if (lowCost > 0) params.points_cost = Math.round(lowCost)
+      else delete params.points_cost
+      const nextResolutionCosts = {}
+      if (lowCost > 0) nextResolutionCosts.low = Math.round(lowCost)
+      if (mediumCost > 0) nextResolutionCosts.medium = Math.round(mediumCost)
+      if (highCost > 0) nextResolutionCosts.high = Math.round(highCost)
+      if (lowCost > 0) nextResolutionCosts.auto = Math.round(lowCost)
+      if (Object.keys(nextResolutionCosts).length) params.resolution_costs = nextResolutionCosts
+      else delete params.resolution_costs
+    } else {
+      const pointsCost = Number(editingModelDraft.points_cost || 0)
+      if (pointsCost > 0) params.points_cost = Math.round(pointsCost)
+      else delete params.points_cost
+      delete params.resolution_costs
+    }
     const next = { ...genModelsObj, [editingModelId]: { ...prev, label: editingModelDraft.label, capability: editingModelDraft.capability, enabled: editingModelDraft.enabled, providers, params } }
     setGenModelsObj(next); syncGenJsonFromForm(next, genProvidersObj); setDraggingModelProviderId(''); setEditingModelId('')
   }
@@ -1476,6 +1494,7 @@ export default function AdminPage() {
                             {isDefault && <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: 'var(--accent)', color: 'white' }}>默认</span>}
                           </div>
                           <div className="text-[11px] font-mono truncate mb-1" style={{ color: 'var(--text-secondary)' }}>{mid}</div>
+                          {isVipModelId(mid)&&m?.params?.resolution_costs&&<div className="text-[10px] mb-1" style={{ color: 'var(--text-secondary)' }}>{`扣分 1K:${m.params.resolution_costs.low??m.params.resolution_costs.auto??'-'} / 2K:${m.params.resolution_costs.medium??'-'} / 4K:${m.params.resolution_costs.high??'-'}`}</div>}
                           {boundProviders.length > 0 && (
                             <div className="flex items-center gap-1 flex-wrap">
                               <span className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>供应商:</span>
@@ -1611,10 +1630,23 @@ export default function AdminPage() {
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>能力</label>
                 <select value={editingModelDraft.capability || 'image'} onChange={e => setEditingModelDraft(prev => ({ ...prev, capability: e.target.value }))} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}><option value="image">image</option><option value="video">video</option></select>
               </div>
+              {isVipModelId(editingModelId)?<>
               <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>1K 扣分</label>
+                <input type="number" min="1" value={editingModelDraft.resolution_cost_low ?? ''} onChange={e => setEditingModelDraft(prev => ({ ...prev, resolution_cost_low: e.target.value, points_cost: e.target.value }))} placeholder="15" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>2K 扣分</label>
+                <input type="number" min="1" value={editingModelDraft.resolution_cost_medium ?? ''} onChange={e => setEditingModelDraft(prev => ({ ...prev, resolution_cost_medium: e.target.value }))} placeholder="25" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>4K 扣分</label>
+                <input type="number" min="1" value={editingModelDraft.resolution_cost_high ?? ''} onChange={e => setEditingModelDraft(prev => ({ ...prev, resolution_cost_high: e.target.value }))} placeholder="40" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              </>:<div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>模型扣分（留空走默认）</label>
                 <input type="number" min="1" value={editingModelDraft.points_cost ?? ''} onChange={e => setEditingModelDraft(prev => ({ ...prev, points_cost: e.target.value }))} placeholder={`默认 ${runtimeConfig.points_cost_per_generation}`} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
-              </div>
+              </div>}
               <div className="flex items-end">
                 <label className="inline-flex items-center gap-2 text-sm" style={{ color: 'var(--text-primary)' }}><input type="checkbox" checked={editingModelDraft.enabled !== false} onChange={e => setEditingModelDraft(prev => ({ ...prev, enabled: e.target.checked }))} />启用该模型</label>
               </div>

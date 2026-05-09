@@ -5,6 +5,7 @@ from backend.services.image_gen import get_http_client
 class GrsAIProvider:
     provider_type = "grsai"
     _vip_pixels={"low":{"1:1":"1024x1024","16:9":"1774x887","9:16":"887x1774","3:2":"1536x1024","2:3":"1024x1536","4:3":"1365x1024","3:4":"1024x1365"},"medium":{"1:1":"2048x2048","16:9":"2048x1152","9:16":"1152x2048","3:2":"2048x1360","2:3":"1360x2048","4:3":"2048x1536","3:4":"1536x2048"},"high":{"1:1":"2880x2880","16:9":"3840x2160","9:16":"2160x3840","3:2":"3504x2336","2:3":"2336x3504","4:3":"3328x2496","3:4":"2496x3328"}}
+    _image_pixels={"1:1":"1024x1024","16:9":"1774x887","9:16":"887x1774","3:2":"1536x1024","2:3":"1024x1536","4:3":"1365x1024","3:4":"1024x1365"}
 
     @classmethod
     def _base_url(cls, conf: Dict[str, Any]) -> str:
@@ -22,6 +23,12 @@ class GrsAIProvider:
         return cls._vip_pixels.get(res, {}).get(ratio, "")
 
     @classmethod
+    def _resolve_image_ratio_pixels(cls, size: Optional[str]) -> str:
+        ratio = str(size or "").strip()
+        if not ratio or ratio == "auto": return ""
+        return cls._image_pixels.get(ratio, ratio if "x" in ratio.lower() else "")
+
+    @classmethod
     async def submit(cls, conf: Dict[str, Any], prompt: str, size: str = "auto", resolution: Optional[str] = None, aspect_ratio: Optional[str] = None, quality: Optional[str] = None, urls: Optional[List[str]] = None, model: Optional[str] = None) -> Dict[str, Any]:
         headers = {
             "Content-Type": "application/json",
@@ -36,9 +43,14 @@ class GrsAIProvider:
         }
         size = str(size or "").strip()
         if model_name == "gpt-image-2-vip":
-            vip_pixels = cls._resolve_vip_aspect_pixels(resolution, aspect_ratio)
+            vip_ratio = size if size and size != "auto" else aspect_ratio
+            vip_pixels = cls._resolve_vip_aspect_pixels(resolution, vip_ratio)
             if vip_pixels:
-                payload["aspectRatio"] = vip_pixels
+                payload["size"] = vip_pixels
+        elif model_name == "gpt-image-2":
+            image_pixels = cls._resolve_image_ratio_pixels(size)
+            if image_pixels:
+                payload["size"] = image_pixels
         elif size and size != "auto":
             payload["size" if "x" in size.lower() else "aspectRatio"] = size
         quality = str(quality or "").strip()
