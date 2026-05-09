@@ -1,3 +1,122 @@
 import { Trash2 } from 'lucide-react'
 import Pagination from '../../components/Pagination'
-export default function AdminAnnouncementsTab({newTitle,setNewTitle,newContent,setNewContent,handleCreateAnnouncement,creatingAnnouncement,announcementTotal,loading,announcements,handleDeleteAnnouncement,announcementPage,setAnnouncementPage}){return(<div><div className="p-4 rounded-2xl border mb-4" style={{ borderColor: 'var(--border-color)' }}><h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>发布公告</h3><input type="text" value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="公告标题" maxLength={200} className="w-full px-3 py-2 rounded-2xl text-sm border mb-3 outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} /><div className="text-[11px] mb-2 text-right" style={{ color: 'var(--text-secondary)' }}>{newTitle.length}/200</div><textarea value={newContent} onChange={e => setNewContent(e.target.value)} placeholder="公告内容" rows={4} maxLength={5000} className="w-full px-3 py-2 rounded-2xl text-sm border resize-none outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} /><div className="text-[11px] mt-1 text-right" style={{ color: 'var(--text-secondary)' }}>{newContent.length}/5000</div><div className="flex justify-end mt-3"><button onClick={handleCreateAnnouncement} disabled={!newTitle.trim() || !newContent.trim() || creatingAnnouncement} className="px-4 py-2 rounded-2xl text-sm font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed">{creatingAnnouncement ? '发布中...' : '发布'}</button></div></div><div className="flex items-center gap-3 mb-4"><span className="text-sm" style={{ color: 'var(--text-secondary)' }}>共 {announcementTotal} 条公告</span></div>{loading?(<div className="flex justify-center py-20"><div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} /></div>):(<><div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}><div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr style={{ background: 'var(--bg-card)' }}><th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>标题</th><th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>作者</th><th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>时间</th><th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>操作</th></tr></thead><tbody>{announcements.map(item=><tr key={item.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}><td className="px-3 py-2 truncate max-w-[300px] font-medium" title={item.title} style={{ color: 'var(--text-primary)' }}>{item.title}</td><td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{item.author_name || '管理员'}</td><td className="px-3 py-2 text-right whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{item.created_at}</td><td className="px-3 py-2 text-right"><button onClick={() => handleDeleteAnnouncement(item.id)} className="p-1.5 rounded-2xl hover:bg-[var(--color-error)]/10 text-[var(--color-error)]" title="删除"><Trash2 size={14} /></button></td></tr>)}</tbody></table></div></div>{announcements.length===0&&(<div className="text-center py-20" style={{ color: 'var(--text-secondary)' }}>暂无公告</div>)}<Pagination page={announcementPage} totalPages={Math.ceil(announcementTotal / 20)} onPageChange={setAnnouncementPage} /></>)}</div>)}
+
+export default function AdminAnnouncementsTab({
+  newTitle, setNewTitle,
+  newContent, setNewContent,
+  handleCreateAnnouncement,
+  creatingAnnouncement,
+  announcementTotal,
+  loading,
+  announcements,
+  handleDeleteAnnouncement,
+  announcementPage, setAnnouncementPage,
+}) {
+  return (
+    <div>
+      <div className="p-4 rounded-2xl border mb-4" style={{ borderColor: 'var(--border-color)' }}>
+        <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>发布公告</h3>
+        <input
+          type="text"
+          value={newTitle}
+          onChange={e => setNewTitle(e.target.value)}
+          placeholder="公告标题"
+          maxLength={200}
+          className="w-full px-3 py-2 rounded-2xl text-sm border mb-3 outline-none"
+          style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+        />
+        <div className="text-[11px] mb-2 text-right" style={{ color: 'var(--text-secondary)' }}>
+          {newTitle.length}/200
+        </div>
+        <textarea
+          value={newContent}
+          onChange={e => setNewContent(e.target.value)}
+          placeholder="公告内容"
+          rows={4}
+          maxLength={5000}
+          className="w-full px-3 py-2 rounded-2xl text-sm border resize-none outline-none"
+          style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+        />
+        <div className="text-[11px] mt-1 text-right" style={{ color: 'var(--text-secondary)' }}>
+          {newContent.length}/5000
+        </div>
+        <div className="flex justify-end mt-3">
+          <button
+            onClick={handleCreateAnnouncement}
+            disabled={!newTitle.trim() || !newContent.trim() || creatingAnnouncement}
+            className="px-4 py-2 rounded-2xl text-sm font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {creatingAnnouncement ? '发布中...' : '发布'}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 mb-4">
+        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>共 {announcementTotal} 条公告</span>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-20">
+          <div
+            className="w-8 h-8 border-2 rounded-full animate-spin-slow"
+            style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }}
+          />
+        </div>
+      ) : (
+        <>
+          <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr style={{ background: 'var(--bg-card)' }}>
+                    <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>标题</th>
+                    <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>作者</th>
+                    <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>时间</th>
+                    <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {announcements.map(item => (
+                    <tr key={item.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
+                      <td
+                        className="px-3 py-2 truncate max-w-[300px] font-medium"
+                        title={item.title}
+                        style={{ color: 'var(--text-primary)' }}
+                      >
+                        {item.title}
+                      </td>
+                      <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>
+                        {item.author_name || '管理员'}
+                      </td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>
+                        {item.created_at}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <button
+                          onClick={() => handleDeleteAnnouncement(item.id)}
+                          className="p-1.5 rounded-2xl hover:bg-[var(--color-error)]/10 text-[var(--color-error)]"
+                          title="删除"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {announcements.length === 0 && (
+            <div className="text-center py-20" style={{ color: 'var(--text-secondary)' }}>暂无公告</div>
+          )}
+          <Pagination
+            page={announcementPage}
+            totalPages={Math.ceil(announcementTotal / 20)}
+            onPageChange={setAnnouncementPage}
+          />
+        </>
+      )}
+    </div>
+  )
+}

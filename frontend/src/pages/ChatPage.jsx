@@ -115,10 +115,83 @@ function makePromptLibraryName(prompt=''){const clean=String(prompt||'').replace
 function getThumbnailBlurStorageKey(user){const id=user?.id??user?.user_id??user?.username??'guest';return`chat_thumbnail_blur_${id}`}
 function getThumbnailBlurMap(user){try{return JSON.parse(localStorage.getItem(getThumbnailBlurStorageKey(user))||'{}')}catch{return {}}}
 function getThumbnailBlurItemKey(task){return String(task?.result_urls?.[0]?.split('/').pop()||task?.task_id||'')}
-function buildDetailCardsFromTask(task, expiryByFilename = {}, squareIdMap = {}) { const prompt = task?.params?.prompt || task?.prompt || ''; const params=task?.params||{}; return (task?.result_urls || []).map((url, idx) => { const filename = url.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, filename); const expired = typeof exp.expired === 'boolean' ? exp.expired : !!task.expired; return { _type: 'image', _raw: { filename, metadata: { prompt, task_id: task.task_id, created_at: task.created_at, started_at: task.started_at, completed_at: task.completed_at, type: getGenerationModeLabel(params), size: getGenerationSizeLabel(params), input_urls: params?.image_urls } }, id: `${task.task_id}-${idx}`, prompt, fullUrl: `/api/images/file/${filename}`, filename, expiresAt: exp.expires_at || task.expires_at || null, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : !!task.is_permanent, daysLeft: typeof exp.days_left === 'number' ? exp.days_left : task.days_left, expired, square_image_id: squareIdMap[filename] || exp.square_image_id || task.square_image_id || null } }) }
-function mergeTasksById(list = []) { const map = new Map(); for (const task of list) { if (!task?.task_id) continue; map.set(task.task_id, { ...(map.get(task.task_id) || {}), ...task }) } return Array.from(map.values()) }
-function buildSubmissionImages(items = []) { return items.map((img, idx) => ({ id: img?.id || `reference-${idx}`, name: img?.name || img?.file?.name || `reference-${idx}`, type: img?.type || img?.file?.type || 'image/png', url: img?.url || '', preview: img?.preview || img?.url || '', file: img?.file || null, uploadStatus: img?.uploadStatus || '', uploadProgress: Number(img?.uploadProgress) || 0, uploadedUrl: img?.uploadedUrl || '', uploadedStorageName: img?.uploadedStorageName || '', uploadError: img?.uploadError || '' })) }
-function buildPendingTaskFromSubmission(item) { const prompt = item?.prompt || item?.params?.prompt || ''; return { task_id: item.real_task_id || item.temp_task_id, status: item.status || 'processing', prompt, params: { ...(item.params || {}), prompt }, previewImages: (item.images || []).map(img => img?.preview || img?.url).filter(Boolean), created_at: item.created_at || formatLocalTime(new Date()), started_at: item.started_at || item.created_at || formatLocalTime(new Date()), completed_at: item.completed_at || null, error: item.error || null, _active: false, _local_submission: true, _points_consumed: !!item.points_consumed, type: item.type || ((item.images || []).length ? 'text_image' : 'text') } }
+function buildDetailCardsFromTask(task, expiryByFilename = {}, squareIdMap = {}) {
+  const prompt = task?.params?.prompt || task?.prompt || ''
+  const params = task?.params || {}
+  return (task?.result_urls || []).map((url, idx) => {
+    const filename = url.split('/').pop()
+    const exp = getExpiryByFilename(expiryByFilename, filename)
+    const expired = typeof exp.expired === 'boolean' ? exp.expired : !!task.expired
+    return {
+      _type: 'image',
+      _raw: {
+        filename,
+        metadata: {
+          prompt,
+          task_id: task.task_id,
+          created_at: task.created_at,
+          started_at: task.started_at,
+          completed_at: task.completed_at,
+          type: getGenerationModeLabel(params),
+          size: getGenerationSizeLabel(params),
+          input_urls: params?.image_urls,
+        },
+      },
+      id: `${task.task_id}-${idx}`,
+      prompt,
+      fullUrl: `/api/images/file/${filename}`,
+      filename,
+      expiresAt: exp.expires_at || task.expires_at || null,
+      is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : !!task.is_permanent,
+      daysLeft: typeof exp.days_left === 'number' ? exp.days_left : task.days_left,
+      expired,
+      square_image_id: squareIdMap[filename] || exp.square_image_id || task.square_image_id || null,
+    }
+  })
+}
+function mergeTasksById(list = []) {
+  const map = new Map()
+  for (const task of list) {
+    if (!task?.task_id) continue
+    map.set(task.task_id, { ...(map.get(task.task_id) || {}), ...task })
+  }
+  return Array.from(map.values())
+}
+
+function buildSubmissionImages(items = []) {
+  return items.map((img, idx) => ({
+    id: img?.id || `reference-${idx}`,
+    name: img?.name || img?.file?.name || `reference-${idx}`,
+    type: img?.type || img?.file?.type || 'image/png',
+    url: img?.url || '',
+    preview: img?.preview || img?.url || '',
+    file: img?.file || null,
+    uploadStatus: img?.uploadStatus || '',
+    uploadProgress: Number(img?.uploadProgress) || 0,
+    uploadedUrl: img?.uploadedUrl || '',
+    uploadedStorageName: img?.uploadedStorageName || '',
+    uploadError: img?.uploadError || '',
+  }))
+}
+
+function buildPendingTaskFromSubmission(item) {
+  const prompt = item?.prompt || item?.params?.prompt || ''
+  return {
+    task_id: item.real_task_id || item.temp_task_id,
+    status: item.status || 'processing',
+    prompt,
+    params: { ...(item.params || {}), prompt },
+    previewImages: (item.images || []).map((img) => img?.preview || img?.url).filter(Boolean),
+    created_at: item.created_at || formatLocalTime(new Date()),
+    started_at: item.started_at || item.created_at || formatLocalTime(new Date()),
+    completed_at: item.completed_at || null,
+    error: item.error || null,
+    _active: false,
+    _local_submission: true,
+    _points_consumed: !!item.points_consumed,
+    type: item.type || ((item.images || []).length ? 'text_image' : 'text'),
+  }
+}
 function normalizeTaskResultUrls(task, imageFilenameSet) { const urls = (task?.result_urls || []).filter(Boolean); if (!urls.length) return urls; return urls.filter(url => imageFilenameSet.has(url.split('/').pop())) }
 function normalizeUploadedImageParams(uploaded = []) { const image_urls = uploaded.map(r => r?.data?.url).filter(Boolean); const local_image_urls = uploaded.map(r => r?.data?.storage_name || r?.data?.url).filter(Boolean); return { image_urls, local_image_urls } }
 
@@ -213,7 +286,25 @@ export default function ChatPage() {
   }, [activeCacheKey])
   const saveCachedActiveTasks = useCallback((taskList) => {
     try {
-      const arr = (Array.isArray(taskList) ? taskList : []).filter(t => t?.task_id && activeStatuses.includes(t.status)).map(t => ({ task_id: t.task_id, status: t.status, progress: t.progress ?? 0, error: t.error || null, type: t.type || 'text', params: t.params || {}, prompt: t.prompt || '', created_at: t.created_at || '', started_at: t.started_at || '', completed_at: t.completed_at || null, result_urls: t.result_urls || [], previewImages: t.previewImages || [], _active: !!t._active, _local_submission: !!t._local_submission, _points_consumed: !!t._points_consumed }))
+      const arr = (Array.isArray(taskList) ? taskList : [])
+        .filter((t) => t?.task_id && activeStatuses.includes(t.status))
+        .map((t) => ({
+          task_id: t.task_id,
+          status: t.status,
+          progress: t.progress ?? 0,
+          error: t.error || null,
+          type: t.type || 'text',
+          params: t.params || {},
+          prompt: t.prompt || '',
+          created_at: t.created_at || '',
+          started_at: t.started_at || '',
+          completed_at: t.completed_at || null,
+          result_urls: t.result_urls || [],
+          previewImages: t.previewImages || [],
+          _active: !!t._active,
+          _local_submission: !!t._local_submission,
+          _points_consumed: !!t._points_consumed,
+        }))
       localStorage.setItem(activeCacheKey, JSON.stringify(arr.slice(0, 100)))
     } catch {}
   }, [activeCacheKey])
@@ -296,7 +387,39 @@ export default function ChatPage() {
       const lower = q.toLowerCase()
       orphans = orphans.filter(o => ((o.params?.prompt || '').toLowerCase().includes(lower)))
     }
-    const merged = [...orphans, ...allTasks.map(t => { const result_urls = normalizeTaskResultUrls(t, imageFilenameSet); const fn = result_urls?.[0]?.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, fn); const allExpired = result_urls.length > 0 && result_urls.every(u => { const f = u.split('/').pop(); const e = getExpiryByFilename(expiryByFilename, f); return typeof e.expired === 'boolean' ? e.expired : false }); return { ...t, result_urls, expires_at: exp.expires_at || t.expires_at, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : t.is_permanent, days_left: typeof exp.days_left === 'number' ? exp.days_left : t.days_left, expired: allExpired ? true : typeof exp.expired === 'boolean' ? exp.expired : !!t.expired, width: exp.width || t.width || null, height: exp.height || t.height || null, square_image_id: exp.square_image_id || t.square_image_id || null } }).filter(t => t.status !== 'completed' || (t.result_urls?.length || 0) > 0)].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
+    const merged = [
+      ...orphans,
+      ...allTasks
+        .map((t) => {
+          const result_urls = normalizeTaskResultUrls(t, imageFilenameSet)
+          const fn = result_urls?.[0]?.split('/').pop()
+          const exp = getExpiryByFilename(expiryByFilename, fn)
+          const allExpired =
+            result_urls.length > 0 &&
+            result_urls.every((u) => {
+              const f = u.split('/').pop()
+              const e = getExpiryByFilename(expiryByFilename, f)
+              return typeof e.expired === 'boolean' ? e.expired : false
+            })
+          return {
+            ...t,
+            result_urls,
+            expires_at: exp.expires_at || t.expires_at,
+            is_permanent:
+              typeof exp.is_permanent === 'boolean' ? exp.is_permanent : t.is_permanent,
+            days_left: typeof exp.days_left === 'number' ? exp.days_left : t.days_left,
+            expired: allExpired
+              ? true
+              : typeof exp.expired === 'boolean'
+                ? exp.expired
+                : !!t.expired,
+            width: exp.width || t.width || null,
+            height: exp.height || t.height || null,
+            square_image_id: exp.square_image_id || t.square_image_id || null,
+          }
+        })
+        .filter((t) => t.status !== 'completed' || (t.result_urls?.length || 0) > 0),
+    ].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
     setTasks(merged)
     const completedMerged = merged.filter(t => t.status === 'completed' && t.result_urls?.length)
     setDetailCards(completedMerged.flatMap(task => buildDetailCardsFromTask(task, expiryByFilename, squareIdMapRef.current)))
@@ -646,7 +769,26 @@ export default function ChatPage() {
             const cardPrompt = taskStatus.params?.prompt || taskStatus.prompt || prompt
             const newCards = taskStatus.result_urls.map((url, idx) => {
               const filename = url.split('/').pop()
-              return { _type: 'image', _raw: { filename, metadata: { prompt: cardPrompt, task_id: taskId, created_at: taskStatus.created_at, started_at: taskStatus.started_at, completed_at: taskStatus.completed_at, type: getGenerationModeLabel(taskStatus.params||{}), size: getGenerationSizeLabel(taskStatus.params||{}), input_urls: taskStatus.params?.local_image_urls || taskStatus.params?.image_urls } }, id: `${taskId}-${idx}`, prompt: cardPrompt, fullUrl: `/api/images/file/${filename}`, filename }
+              return {
+                _type: 'image',
+                _raw: {
+                  filename,
+                  metadata: {
+                    prompt: cardPrompt,
+                    task_id: taskId,
+                    created_at: taskStatus.created_at,
+                    started_at: taskStatus.started_at,
+                    completed_at: taskStatus.completed_at,
+                    type: getGenerationModeLabel(taskStatus.params || {}),
+                    size: getGenerationSizeLabel(taskStatus.params || {}),
+                    input_urls: taskStatus.params?.local_image_urls || taskStatus.params?.image_urls,
+                  },
+                },
+                id: `${taskId}-${idx}`,
+                prompt: cardPrompt,
+                fullUrl: `/api/images/file/${filename}`,
+                filename,
+              }
             })
             setDetailCards(prev => {
               const existing = new Set(prev.map(c => c.id))
@@ -762,10 +904,45 @@ export default function ChatPage() {
       finalizeSubmissionQueueItem(submissionId, current => current ? { ...current, real_task_id: finalTaskId, points_consumed: !!(current.points_consumed || item.points_consumed), status: data.status || 'processing', params: requestParams } : null)
       syncPendingSubmissions(prev => prev.filter(queueItem => queueItem.client_request_id !== submissionId))
       if (data.status === 'completed') {
-        updateTask(finalTaskId, { status: 'completed', result_urls: data.result_urls || [], params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: false })
+        updateTask(finalTaskId, {
+          status: 'completed',
+          result_urls: data.result_urls || [],
+          params: requestParams,
+          prompt,
+          created_at: createdAt,
+          started_at: startedAt,
+          _active: false,
+        })
         if (data.result_urls?.length) {
-          const newCards = data.result_urls.map((url, idx) => { const filename = url.split('/').pop(); return { _type: 'image', _raw: { filename, metadata: { prompt, task_id: finalTaskId, created_at: createdAt, started_at: startedAt, completed_at: formatLocalTime(new Date()), type: getGenerationModeLabel(baseParams), size: getGenerationSizeLabel(baseParams), input_urls: localImageUrls.length ? localImageUrls : imageUrls } }, id: `${finalTaskId}-${idx}`, prompt, fullUrl: `/api/images/file/${filename}`, filename, expired: false } })
-          setDetailCards(prev => { const existing = new Set(prev.map(card => card.id)); const toAdd = newCards.filter(card => !existing.has(card.id)); return toAdd.length ? [...prev, ...toAdd] : prev })
+          const newCards = data.result_urls.map((url, idx) => {
+            const filename = url.split('/').pop()
+            return {
+              _type: 'image',
+              _raw: {
+                filename,
+                metadata: {
+                  prompt,
+                  task_id: finalTaskId,
+                  created_at: createdAt,
+                  started_at: startedAt,
+                  completed_at: formatLocalTime(new Date()),
+                  type: getGenerationModeLabel(baseParams),
+                  size: getGenerationSizeLabel(baseParams),
+                  input_urls: localImageUrls.length ? localImageUrls : imageUrls,
+                },
+              },
+              id: `${finalTaskId}-${idx}`,
+              prompt,
+              fullUrl: `/api/images/file/${filename}`,
+              filename,
+              expired: false,
+            }
+          })
+          setDetailCards((prev) => {
+            const existing = new Set(prev.map((card) => card.id))
+            const toAdd = newCards.filter((card) => !existing.has(card.id))
+            return toAdd.length ? [...prev, ...toAdd] : prev
+          })
         }
       } else {
         pollTask(finalTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages, submissionId, confirmDeadlineTs)
@@ -1233,19 +1410,99 @@ export default function ChatPage() {
         )}
       </div>
       </div>
-      {loadError && <div className="mx-4 mt-2 px-3 py-2 rounded-2xl text-xs" style={{ background: 'color-mix(in srgb, var(--color-warning) 12%, transparent)', color: 'var(--color-warning)' }}>{loadError}</div>}
-      {downloadProgress.open && <div className="fixed left-4 right-4 bottom-24 sm:left-auto sm:right-4 sm:bottom-6 sm:w-80 z-40 pointer-events-none"><div className="rounded-2xl p-4 border shadow-lg" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}><div className="flex items-center justify-between gap-3"><div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{downloadProgress.phase === 'zip' ? '正在打包 ZIP' : downloadProgress.phase === 'single' ? '正在逐个下载' : downloadProgress.phase === 'done' ? '处理完成' : '正在准备下载'}</div><div className="text-xs tabular-nums" style={{ color: 'var(--accent)' }}>{downloadProgress.percent}%</div></div><div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{downloadProgress.phase === 'zip' ? `已下载 ${downloadProgress.total}/${downloadProgress.total} 张，正在压缩` : `已处理 ${downloadProgress.current}/${downloadProgress.total} 张`}</div>{downloadProgress.filename && <div className="mt-1 text-[11px] truncate" style={{ color: 'var(--text-secondary)', opacity: 0.8 }}>{downloadProgress.filename}</div>}<div className="mt-3 h-2 rounded-full overflow-hidden" style={{ background: 'var(--border-color)' }}><div className="h-full rounded-full transition-all duration-300" style={{ width: `${downloadProgress.percent}%`, background: 'var(--accent)' }} /></div></div></div>}
-      {deleteProgress.open && <div className="fixed left-4 right-4 bottom-24 sm:left-auto sm:right-4 sm:bottom-[8.5rem] sm:w-80 z-40 pointer-events-none"><div className="rounded-2xl p-4 border shadow-lg" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}><div className="flex items-center justify-between gap-3"><div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>正在批量删除</div><div className="text-xs tabular-nums" style={{ color: 'var(--color-error)' }}>{deleteProgress.percent}%</div></div><div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{deleteProgress.text || `已处理 ${deleteProgress.current}/${deleteProgress.total} 项`}</div><div className="mt-3 h-2 rounded-full overflow-hidden" style={{ background: 'var(--border-color)' }}><div className="h-full rounded-full transition-all duration-300" style={{ width: `${deleteProgress.percent}%`, background: 'var(--color-error)' }} /></div></div></div>}
+      {loadError && (
+        <div className="mx-4 mt-2 px-3 py-2 rounded-2xl text-xs" style={{ background: 'color-mix(in srgb, var(--color-warning) 12%, transparent)', color: 'var(--color-warning)' }}>
+          {loadError}
+        </div>
+      )}
+      {downloadProgress.open && (
+        <div className="fixed left-4 right-4 bottom-24 sm:left-auto sm:right-4 sm:bottom-6 sm:w-80 z-40 pointer-events-none">
+          <div className="rounded-2xl p-4 border shadow-lg" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                {downloadProgress.phase === 'zip' ? '正在打包 ZIP' : downloadProgress.phase === 'single' ? '正在逐个下载' : downloadProgress.phase === 'done' ? '处理完成' : '正在准备下载'}
+              </div>
+              <div className="text-xs tabular-nums" style={{ color: 'var(--accent)' }}>{downloadProgress.percent}%</div>
+            </div>
+            <div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
+              {downloadProgress.phase === 'zip'
+                ? `已下载 ${downloadProgress.total}/${downloadProgress.total} 张，正在压缩`
+                : `已处理 ${downloadProgress.current}/${downloadProgress.total} 张`}
+            </div>
+            {downloadProgress.filename && (
+              <div className="mt-1 text-[11px] truncate" style={{ color: 'var(--text-secondary)', opacity: 0.8 }}>
+                {downloadProgress.filename}
+              </div>
+            )}
+            <div className="mt-3 h-2 rounded-full overflow-hidden" style={{ background: 'var(--border-color)' }}>
+              <div className="h-full rounded-full transition-all duration-300" style={{ width: `${downloadProgress.percent}%`, background: 'var(--accent)' }} />
+            </div>
+          </div>
+        </div>
+      )}
+      {deleteProgress.open && (
+        <div className="fixed left-4 right-4 bottom-24 sm:left-auto sm:right-4 sm:bottom-[8.5rem] sm:w-80 z-40 pointer-events-none">
+          <div className="rounded-2xl p-4 border shadow-lg" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>正在批量删除</div>
+              <div className="text-xs tabular-nums" style={{ color: 'var(--color-error)' }}>{deleteProgress.percent}%</div>
+            </div>
+            <div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
+              {deleteProgress.text || `已处理 ${deleteProgress.current}/${deleteProgress.total} 项`}
+            </div>
+            <div className="mt-3 h-2 rounded-full overflow-hidden" style={{ background: 'var(--border-color)' }}>
+              <div className="h-full rounded-full transition-all duration-300" style={{ width: `${deleteProgress.percent}%`, background: 'var(--color-error)' }} />
+            </div>
+          </div>
+        </div>
+      )}
       <div ref={feedRef} className="flex-1 min-h-0 overflow-y-auto px-4 pb-56 lg:pb-6">
         {!loaded ? (
           <div className="pt-4"><CardGridSkeleton layoutMode={layoutMode} label="加载中..." /></div>
         ) : visibleTasks.length === 0 ? (
-          showPortfolioEmptyState ? <div className="flex min-h-full items-center justify-center py-8 sm:py-12"><PortfolioShowcaseCard onUsePrompt={handleAddPrompt} /></div> : <div className="flex flex-col items-center justify-center h-full text-center py-20"><h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>当前筛选下没有记录</h2><p className="text-sm" style={{ color: 'var(--text-secondary)' }}>换个时间范围，或者直接开始下一次生成</p></div>
+          showPortfolioEmptyState ? (
+            <div className="flex min-h-full items-center justify-center py-8 sm:py-12">
+              <PortfolioShowcaseCard onUsePrompt={handleAddPrompt} />
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-center py-20">
+              <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+                当前筛选下没有记录
+              </h2>
+              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                换个时间范围，或者直接开始下一次生成
+              </p>
+            </div>
+          )
         ) : (
           <div>
           <div ref={cardGridRef} className={`${layoutMode === 'masonry' ? 'card-feed-masonry' : 'card-feed-grid'} pt-4`} style={{ position: 'relative' }}>
             {layoutMode === 'masonry' && !feedLayoutReady && <div className="card-feed-loading-mask" />}
-            {pagedVisibleTasks.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onAddPrompt={handleAddPrompt} onAddToPromptLibrary={isAdmin?handleAddToPromptLibrary:undefined} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id) || dragSelected.has(String(task.task_id))} onToggleCheck={() => toggleCheck(task.task_id)} wasDraggedRef={wasDraggedRef} showUsername={isAdmin} username={task.username} thumbnailBlurred={!!thumbnailBlurMap[getThumbnailBlurItemKey(task)]} onToggleThumbnailBlur={() => { const k=getThumbnailBlurItemKey(task); setThumbnailBlurMap(prev => ({ ...prev, [k]: !prev[k] })) }} onViewDetail={() => handleCardViewDetail(task.task_id)} masonry={layoutMode === 'masonry'} nowTs={expiryNowTs} data-card-id={String(task.task_id)} />)}
+            {pagedVisibleTasks.map(task => (
+              <GenerationCard
+                key={task.task_id}
+                task={task}
+                onAddImage={url => inputRef.current?.addImage(url)}
+                onAddPrompt={handleAddPrompt}
+                onAddToPromptLibrary={isAdmin ? handleAddToPromptLibrary : undefined}
+                onRetry={handleRetry}
+                selectMode={selectMode}
+                checked={checked.has(task.task_id) || dragSelected.has(String(task.task_id))}
+                onToggleCheck={() => toggleCheck(task.task_id)}
+                wasDraggedRef={wasDraggedRef}
+                showUsername={isAdmin}
+                username={task.username}
+                thumbnailBlurred={!!thumbnailBlurMap[getThumbnailBlurItemKey(task)]}
+                onToggleThumbnailBlur={() => {
+                  const k = getThumbnailBlurItemKey(task)
+                  setThumbnailBlurMap(prev => ({ ...prev, [k]: !prev[k] }))
+                }}
+                onViewDetail={() => handleCardViewDetail(task.task_id)}
+                masonry={layoutMode === 'masonry'}
+                nowTs={expiryNowTs}
+                data-card-id={String(task.task_id)}
+              />
+            ))}
             {selectionRect && selectionRect.width > 5 && selectionRect.height > 5 && (
               <div className="drag-selection-rect" style={{ position: 'fixed', left: selectionRect.left, top: selectionRect.top, width: selectionRect.width, height: selectionRect.height }} />
             )}

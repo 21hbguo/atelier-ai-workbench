@@ -275,10 +275,93 @@ export default function AdminClassificationTab({
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-2">
-          {[{k:'classification',l:'分类任务'},{k:'audit',l:'内容审核'},{k:'title',l:'标题生成'},{k:'categories',l:'分类管理'}].map(i=><button key={i.k} onClick={()=>setMode(i.k)} className="px-3 py-1.5 rounded-2xl text-xs font-medium border" style={mode===i.k?{background:'var(--accent)',color:'#fff',borderColor:'var(--accent)'}:{borderColor:'var(--border-color)',color:'var(--text-secondary)'}}>{i.l}</button>)}
+          {[
+            { k: 'classification', l: '分类任务' },
+            { k: 'audit', l: '内容审核' },
+            { k: 'title', l: '标题生成' },
+            { k: 'categories', l: '分类管理' },
+          ].map(i => (
+            <button
+              key={i.k}
+              onClick={() => setMode(i.k)}
+              className="px-3 py-1.5 rounded-2xl text-xs font-medium border"
+              style={mode === i.k
+                ? { background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' }
+                : { borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
+            >
+              {i.l}
+            </button>
+          ))}
         </div>
-        {mode==='title'&&<TitleManagePanel />}
-        {mode==='categories'&&<div className="space-y-4"><div className="rounded-2xl border p-4 space-y-3" style={{ borderColor:'var(--border-color)',background:'var(--bg-card)' }}><div className="text-sm font-medium" style={{ color:'var(--text-primary)' }}>{categoryDraft.id?'编辑分类':'新建分类'}</div><div className="grid grid-cols-1 sm:grid-cols-[12rem_minmax(0,1fr)_auto] gap-2"><input value={categoryDraft.slug} onChange={e=>setCategoryDraft(prev=>({...prev,slug:e.target.value}))} disabled={!!categoryDraft.id} placeholder="slug" className="px-3 py-2 rounded-2xl border text-sm" style={{ borderColor:'var(--border-color)',background:'var(--bg-primary)',color:'var(--text-primary)' }} /><input value={categoryDraft.label} onChange={e=>setCategoryDraft(prev=>({...prev,label:e.target.value}))} placeholder="分类名称" className="px-3 py-2 rounded-2xl border text-sm" style={{ borderColor:'var(--border-color)',background:'var(--bg-primary)',color:'var(--text-primary)' }} /><button onClick={handleSaveCategory} disabled={savingCategory||!categoryDraft.slug||!categoryDraft.label} className="px-4 py-2 rounded-2xl text-sm text-white disabled:opacity-50" style={{ background:'var(--accent)' }}>{savingCategory?'保存中...':categoryDraft.id?'保存':'新增'}</button></div>{categoryDraft.id&&<button onClick={()=>setCategoryDraft({ id:null, slug:'', label:'' })} className="text-xs" style={{ color:'var(--text-secondary)' }}>取消编辑</button>}</div><div className="rounded-2xl border overflow-hidden" style={{ borderColor:'var(--border-color)',background:'var(--bg-card)' }}><table className="w-full text-sm"><thead><tr style={{ background:'var(--bg-ai-bubble)' }}><th className="px-3 py-2 text-left font-medium" style={{ color:'var(--text-secondary)' }}>ID</th><th className="px-3 py-2 text-left font-medium" style={{ color:'var(--text-secondary)' }}>Slug</th><th className="px-3 py-2 text-left font-medium" style={{ color:'var(--text-secondary)' }}>名称</th><th className="px-3 py-2 text-left font-medium" style={{ color:'var(--text-secondary)' }}>操作</th></tr></thead><tbody>{categories.length===0?<tr><td colSpan={4} className="px-3 py-8 text-center" style={{ color:'var(--text-secondary)' }}>暂无分类</td></tr>:categories.map(c=><tr key={c.id||c.slug} className="border-t" style={{ borderColor:'var(--border-color)' }}><td className="px-3 py-2" style={{ color:'var(--text-primary)' }}>{c.id||'-'}</td><td className="px-3 py-2" style={{ color:'var(--text-primary)' }}>{c.slug}</td><td className="px-3 py-2" style={{ color:'var(--text-primary)' }}>{c.label}</td><td className="px-3 py-2"><div className="flex items-center gap-2"><button onClick={()=>setCategoryDraft({ id:c.id, slug:c.slug, label:c.label })} className="text-xs font-medium hover:underline" style={{ color:'var(--accent)' }}>编辑</button><button onClick={()=>handleDeleteCategory(c.id)} className="text-xs font-medium hover:underline" style={{ color:'var(--color-error)' }}>删除</button></div></td></tr>)}</tbody></table></div></div>}
+        {mode === 'title' && <TitleManagePanel />}
+        {mode === 'categories' && (
+          <div className="space-y-4">
+            <div className="rounded-2xl border p-4 space-y-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
+              <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                {categoryDraft.id ? '编辑分类' : '新建分类'}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-[12rem_minmax(0,1fr)_auto] gap-2">
+                <input
+                  value={categoryDraft.slug}
+                  onChange={e => setCategoryDraft(prev => ({ ...prev, slug: e.target.value }))}
+                  disabled={!!categoryDraft.id}
+                  placeholder="slug"
+                  className="px-3 py-2 rounded-2xl border text-sm"
+                  style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+                />
+                <input
+                  value={categoryDraft.label}
+                  onChange={e => setCategoryDraft(prev => ({ ...prev, label: e.target.value }))}
+                  placeholder="分类名称"
+                  className="px-3 py-2 rounded-2xl border text-sm"
+                  style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+                />
+                <button
+                  onClick={handleSaveCategory}
+                  disabled={savingCategory || !categoryDraft.slug || !categoryDraft.label}
+                  className="px-4 py-2 rounded-2xl text-sm text-white disabled:opacity-50"
+                  style={{ background: 'var(--accent)' }}
+                >
+                  {savingCategory ? '保存中...' : categoryDraft.id ? '保存' : '新增'}
+                </button>
+              </div>
+              {categoryDraft.id && (
+                <button onClick={() => setCategoryDraft({ id: null, slug: '', label: '' })} className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  取消编辑
+                </button>
+              )}
+            </div>
+            <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr style={{ background: 'var(--bg-ai-bubble)' }}>
+                    <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>ID</th>
+                    <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>Slug</th>
+                    <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>名称</th>
+                    <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {categories.length === 0 ? (
+                    <tr><td colSpan={4} className="px-3 py-8 text-center" style={{ color: 'var(--text-secondary)' }}>暂无分类</td></tr>
+                  ) : categories.map(c => (
+                    <tr key={c.id || c.slug} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
+                      <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{c.id || '-'}</td>
+                      <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{c.slug}</td>
+                      <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{c.label}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => setCategoryDraft({ id: c.id, slug: c.slug, label: c.label })} className="text-xs font-medium hover:underline" style={{ color: 'var(--accent)' }}>编辑</button>
+                          <button onClick={() => handleDeleteCategory(c.id)} className="text-xs font-medium hover:underline" style={{ color: 'var(--color-error)' }}>删除</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
         {mode!=='categories'&&<>
         <div className="flex items-center justify-between">
           <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{mode==='classification'?'AI 自动分类':'AI 内容审核'}</h3>
@@ -420,7 +503,23 @@ export default function AdminClassificationTab({
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        {[{k:'classification',l:'分类任务'},{k:'audit',l:'内容审核'},{k:'title',l:'标题生成'},{k:'categories',l:'分类管理'}].map(i=><button key={i.k} onClick={()=>{setMode(i.k);setSelected(new Set());setAuditSelected(new Set())}} className="px-3 py-1.5 rounded-2xl text-xs font-medium border" style={mode===i.k?{background:'var(--accent)',color:'#fff',borderColor:'var(--accent)'}:{borderColor:'var(--border-color)',color:'var(--text-secondary)'}}>{i.l}</button>)}
+        {[
+          { k: 'classification', l: '分类任务' },
+          { k: 'audit', l: '内容审核' },
+          { k: 'title', l: '标题生成' },
+          { k: 'categories', l: '分类管理' },
+        ].map(i => (
+          <button
+            key={i.k}
+            onClick={() => { setMode(i.k); setSelected(new Set()); setAuditSelected(new Set()) }}
+            className="px-3 py-1.5 rounded-2xl text-xs font-medium border"
+            style={mode === i.k
+              ? { background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' }
+              : { borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
+          >
+            {i.l}
+          </button>
+        ))}
       </div>
       <div className="flex items-center gap-3">
         <button onClick={() => { setActiveDetail(null); setActiveSelected(new Set()) }} className="flex items-center gap-1 text-sm hover:underline" style={{ color: 'var(--accent)' }}>
@@ -551,7 +650,36 @@ export default function AdminClassificationTab({
                         <X size={14} />
                       </button>
                     )}
-                    {mode==='audit'&&r.status==='pending'&&<div className="flex gap-1"><button onClick={async()=>{await adminAPI.approveAudit(activeDetail.id,[r.id]);const { data }=await adminAPI.getAuditTask(activeDetail.id);setAuditDetail(data);onRefreshAuditTasks()}} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--color-success)' }} title="执行建议"><Check size={14} /></button><button onClick={async()=>{await adminAPI.rejectAudit(activeDetail.id,[r.id]);const { data }=await adminAPI.getAuditTask(activeDetail.id);setAuditDetail(data);onRefreshAuditTasks()}} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--color-error)' }} title="忽略建议"><X size={14} /></button></div>}
+                    {mode === 'audit' && r.status === 'pending' && (
+                      <div className="flex gap-1">
+                        <button
+                          onClick={async () => {
+                            await adminAPI.approveAudit(activeDetail.id, [r.id])
+                            const { data } = await adminAPI.getAuditTask(activeDetail.id)
+                            setAuditDetail(data)
+                            onRefreshAuditTasks()
+                          }}
+                          className="p-1 rounded-lg hover:bg-bg-hover"
+                          style={{ color: 'var(--color-success)' }}
+                          title="执行建议"
+                        >
+                          <Check size={14} />
+                        </button>
+                        <button
+                          onClick={async () => {
+                            await adminAPI.rejectAudit(activeDetail.id, [r.id])
+                            const { data } = await adminAPI.getAuditTask(activeDetail.id)
+                            setAuditDetail(data)
+                            onRefreshAuditTasks()
+                          }}
+                          className="p-1 rounded-lg hover:bg-bg-hover"
+                          style={{ color: 'var(--color-error)' }}
+                          title="忽略建议"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    )}
                   </td>
                 )}
               </tr>
@@ -564,9 +692,93 @@ export default function AdminClassificationTab({
 }
 
 function AuditSuggestion({ result, canEdit, onChange }) {
-  const [draft,setDraft]=useState({risk_level:result.risk_level||'medium',confidence:result.confidence||'medium',suggested_action:result.suggested_action||'review',reason_summary:result.reason_summary||'',reason_detail:result.reason_detail||'',hit_rules:Array.isArray(result.hit_rules)?result.hit_rules.join('、'):(result.hit_rules||'')})
-  if (!canEdit) return <div className="space-y-1"><div className="flex items-center gap-1 flex-wrap"><span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: (result.risk_level==='high'?'var(--color-error)':result.risk_level==='medium'?'var(--color-warning)':'var(--color-success)')+'20', color: result.risk_level==='high'?'var(--color-error)':result.risk_level==='medium'?'var(--color-warning)':'var(--color-success)' }}>{result.risk_level==='high'?'高风险':result.risk_level==='medium'?'中风险':'低风险'}</span><span className="px-2 py-0.5 rounded-full text-xs" style={{ background: 'var(--bg-ai-bubble)', color: 'var(--text-secondary)' }}>{result.suggested_action==='freeze'?'建议冻结':result.suggested_action==='delete'?'建议删除':result.suggested_action==='keep'?'建议保留':'建议复核'}</span></div><div className="text-xs" style={{ color:'var(--text-primary)' }}>{result.reason_summary||'-'}</div><div className="text-xs" style={{ color:'var(--text-secondary)' }}>{result.reason_detail||'-'}</div><div className="text-xs" style={{ color:'var(--text-secondary)' }}>{Array.isArray(result.hit_rules)&&result.hit_rules.length?`命中：${result.hit_rules.join('、')}`:'未命中规则'}</div></div>
-  return <div className="space-y-1 min-w-[260px]"><div className="flex gap-1 flex-wrap"><select value={draft.risk_level} onChange={e=>setDraft(prev=>({...prev,risk_level:e.target.value}))} className="px-1.5 py-0.5 rounded-lg text-xs border" style={{ borderColor:'var(--border-color)',background:'var(--bg-card)',color:'var(--text-primary)' }}><option value="high">高风险</option><option value="medium">中风险</option><option value="low">低风险</option></select><select value={draft.suggested_action} onChange={e=>setDraft(prev=>({...prev,suggested_action:e.target.value}))} className="px-1.5 py-0.5 rounded-lg text-xs border" style={{ borderColor:'var(--border-color)',background:'var(--bg-card)',color:'var(--text-primary)' }}><option value="freeze">冻结</option><option value="delete">删除</option><option value="review">复核</option><option value="keep">保留</option></select></div><input value={draft.reason_summary} onChange={e=>setDraft(prev=>({...prev,reason_summary:e.target.value}))} placeholder="摘要" className="w-full px-1.5 py-0.5 rounded-lg text-xs border" style={{ borderColor:'var(--border-color)',background:'var(--bg-card)',color:'var(--text-primary)' }}/><input value={draft.reason_detail} onChange={e=>setDraft(prev=>({...prev,reason_detail:e.target.value}))} placeholder="原因" className="w-full px-1.5 py-0.5 rounded-lg text-xs border" style={{ borderColor:'var(--border-color)',background:'var(--bg-card)',color:'var(--text-primary)' }}/><input value={draft.hit_rules} onChange={e=>setDraft(prev=>({...prev,hit_rules:e.target.value}))} placeholder="命中词，用、分隔" className="w-full px-1.5 py-0.5 rounded-lg text-xs border" style={{ borderColor:'var(--border-color)',background:'var(--bg-card)',color:'var(--text-primary)' }}/><button onClick={()=>onChange({...draft,hit_rules:String(draft.hit_rules||'').split(/[、,，]/).map(s=>s.trim()).filter(Boolean)})} className="px-2 py-0.5 rounded-lg text-xs text-white" style={{ background:'var(--accent)' }}>保存</button></div>
+  const [draft, setDraft] = useState({
+    risk_level: result.risk_level || 'medium',
+    confidence: result.confidence || 'medium',
+    suggested_action: result.suggested_action || 'review',
+    reason_summary: result.reason_summary || '',
+    reason_detail: result.reason_detail || '',
+    hit_rules: Array.isArray(result.hit_rules) ? result.hit_rules.join('、') : (result.hit_rules || ''),
+  })
+
+  if (!canEdit) {
+    const riskColor = result.risk_level === 'high' ? 'var(--color-error)' : result.risk_level === 'medium' ? 'var(--color-warning)' : 'var(--color-success)'
+    const riskLabel = result.risk_level === 'high' ? '高风险' : result.risk_level === 'medium' ? '中风险' : '低风险'
+    const actionLabel = result.suggested_action === 'freeze' ? '建议冻结' : result.suggested_action === 'delete' ? '建议删除' : result.suggested_action === 'keep' ? '建议保留' : '建议复核'
+    return (
+      <div className="space-y-1">
+        <div className="flex items-center gap-1 flex-wrap">
+          <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: riskColor + '20', color: riskColor }}>
+            {riskLabel}
+          </span>
+          <span className="px-2 py-0.5 rounded-full text-xs" style={{ background: 'var(--bg-ai-bubble)', color: 'var(--text-secondary)' }}>
+            {actionLabel}
+          </span>
+        </div>
+        <div className="text-xs" style={{ color: 'var(--text-primary)' }}>{result.reason_summary || '-'}</div>
+        <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>{result.reason_detail || '-'}</div>
+        <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+          {Array.isArray(result.hit_rules) && result.hit_rules.length ? `命中：${result.hit_rules.join('、')}` : '未命中规则'}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-1 min-w-[260px]">
+      <div className="flex gap-1 flex-wrap">
+        <select
+          value={draft.risk_level}
+          onChange={e => setDraft(prev => ({ ...prev, risk_level: e.target.value }))}
+          className="px-1.5 py-0.5 rounded-lg text-xs border"
+          style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+        >
+          <option value="high">高风险</option>
+          <option value="medium">中风险</option>
+          <option value="low">低风险</option>
+        </select>
+        <select
+          value={draft.suggested_action}
+          onChange={e => setDraft(prev => ({ ...prev, suggested_action: e.target.value }))}
+          className="px-1.5 py-0.5 rounded-lg text-xs border"
+          style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+        >
+          <option value="freeze">冻结</option>
+          <option value="delete">删除</option>
+          <option value="review">复核</option>
+          <option value="keep">保留</option>
+        </select>
+      </div>
+      <input
+        value={draft.reason_summary}
+        onChange={e => setDraft(prev => ({ ...prev, reason_summary: e.target.value }))}
+        placeholder="摘要"
+        className="w-full px-1.5 py-0.5 rounded-lg text-xs border"
+        style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+      />
+      <input
+        value={draft.reason_detail}
+        onChange={e => setDraft(prev => ({ ...prev, reason_detail: e.target.value }))}
+        placeholder="原因"
+        className="w-full px-1.5 py-0.5 rounded-lg text-xs border"
+        style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+      />
+      <input
+        value={draft.hit_rules}
+        onChange={e => setDraft(prev => ({ ...prev, hit_rules: e.target.value }))}
+        placeholder="命中词，用、分隔"
+        className="w-full px-1.5 py-0.5 rounded-lg text-xs border"
+        style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+      />
+      <button
+        onClick={() => onChange({ ...draft, hit_rules: String(draft.hit_rules || '').split(/[、,，]/).map(s => s.trim()).filter(Boolean) })}
+        className="px-2 py-0.5 rounded-lg text-xs text-white"
+        style={{ background: 'var(--accent)' }}
+      >
+        保存
+      </button>
+    </div>
+  )
 }
 
 function CategorySuggestion({ result, categories, canEdit, onRemove, onChange }) {
@@ -731,6 +943,117 @@ function TitleManagePanel() {
   const toggleAll=()=>{if(checked.size===items.length)setChecked(new Set());else setChecked(new Set(items.map(i=>i.id)))}
   const generateOne=async item=>{setPreviewLoading(item.id);try{const { data }=await adminAPI.testTitle({ prompt:item.prompt||'', raw_name:item.name||'', prefer_prompt:itemType==='prompt' });setItems(prev=>prev.map(v=>v.id===item.id?{...v,suggested_title:data?.title||''}:v))}catch(e){setItems(prev=>prev.map(v=>v.id===item.id?{...v,suggested_title:e?.message||'生成失败'}:v))}setPreviewLoading('')}
   const applySelected=async(force=false)=>{const ids=items.filter(i=>checked.has(i.id)).map(i=>i.id);if(!ids.length)return;setApplying(true);try{await adminAPI.applyTitles({ item_type:itemType, item_ids:ids, force });setChecked(new Set());await load()}catch{}setApplying(false)}
-  const totalPages=Math.ceil(total/20)
-  return <div className="space-y-4"><div className="rounded-2xl border p-4 space-y-3" style={{ borderColor:'var(--border-color)',background:'var(--bg-card)' }}><div className="text-sm font-medium" style={{ color:'var(--text-primary)' }}>现有库标题管理</div><div className="text-xs" style={{ color:'var(--text-secondary)' }}>这里处理现有提示词库和作品库，不是手动测试输入框。可先筛出缺标题项目，再生成并批量应用。</div><div className="flex flex-wrap gap-2 items-center"><select value={itemType} onChange={e=>setItemType(e.target.value)} className="px-3 py-2 rounded-2xl text-sm border" style={{ borderColor:'var(--border-color)',background:'var(--bg-primary)',color:'var(--text-primary)' }}><option value="prompt">提示词库</option><option value="image">作品库</option></select><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="搜索标题、提示词、作者" className="flex-1 min-w-[220px] px-3 py-2 rounded-2xl border text-sm" style={{ borderColor:'var(--border-color)',background:'var(--bg-primary)',color:'var(--text-primary)' }} /><label className="flex items-center gap-2 px-3 py-2 rounded-2xl border text-sm" style={{ borderColor:'var(--border-color)',background:'var(--bg-primary)',color:'var(--text-secondary)' }}><input type="checkbox" checked={onlyMissing} onChange={e=>setOnlyMissing(e.target.checked)} className="rounded" />仅看缺标题</label><button onClick={load} disabled={loading} className="px-4 py-2 rounded-2xl text-sm text-white disabled:opacity-50" style={{ background:'var(--accent)' }}>{loading?'刷新中...':'刷新'}</button></div></div><div className="flex items-center justify-between"><div className="text-sm" style={{ color:'var(--text-secondary)' }}>共 {total} 项，当前 {items.length} 项，已选 {checked.size} 项</div><div className="flex items-center gap-2">{items.length>0&&<button onClick={toggleAll} className="px-3 py-1.5 rounded-2xl text-xs border" style={{ borderColor:'var(--border-color)',color:'var(--text-secondary)' }}>{checked.size===items.length?'取消全选':'全选'}</button>}<button onClick={()=>applySelected(false)} disabled={applying||checked.size===0} className="px-3 py-1.5 rounded-2xl text-xs text-white disabled:opacity-50" style={{ background:'var(--accent)' }}>{applying?'应用中...':'应用标题'}</button><button onClick={()=>applySelected(true)} disabled={applying||checked.size===0} className="px-3 py-1.5 rounded-2xl text-xs text-white disabled:opacity-50" style={{ background:'var(--color-warning)' }}>强制覆盖</button></div></div><div className="rounded-2xl border overflow-hidden" style={{ borderColor:'var(--border-color)',background:'var(--bg-card)' }}><table className="w-full text-sm"><thead><tr style={{ background:'var(--bg-ai-bubble)' }}><th className="px-3 py-2 w-8"></th><th className="px-3 py-2 text-left font-medium" style={{ color:'var(--text-secondary)' }}>项目</th><th className="px-3 py-2 text-left font-medium" style={{ color:'var(--text-secondary)' }}>当前标题</th><th className="px-3 py-2 text-left font-medium" style={{ color:'var(--text-secondary)' }}>建议标题</th><th className="px-3 py-2 text-left font-medium" style={{ color:'var(--text-secondary)' }}>操作</th></tr></thead><tbody>{loading?<tr><td colSpan={5} className="px-3 py-8 text-center" style={{ color:'var(--text-secondary)' }}>加载中...</td></tr>:items.length===0?<tr><td colSpan={5} className="px-3 py-8 text-center" style={{ color:'var(--text-secondary)' }}>暂无可处理项目</td></tr>:items.map(item=><tr key={item.id} className="border-t" style={{ borderColor:'var(--border-color)' }}><td className="px-3 py-2"><input type="checkbox" checked={checked.has(item.id)} onChange={()=>toggle(item.id)} className="rounded" /></td><td className="px-3 py-2"><div className="flex items-center gap-3">{item.thumb_url?<img src={item.thumb_url} alt="" className="w-12 h-12 rounded-lg object-cover border shrink-0" style={{ borderColor:'var(--border-color)' }} loading="lazy" />:null}<div className="min-w-0"><div className="text-xs mb-1" style={{ color:'var(--text-secondary)' }}>{itemType==='prompt'?'提示词库':'作品库'} · {item.author||'-'} · {item.category||'未分类'}</div><div className="font-medium truncate" style={{ color:'var(--text-primary)' }}>{item.name||'(无标题)'}</div><div className="text-xs truncate mt-1" style={{ color:'var(--text-secondary)' }}>{item.prompt||'-'}</div></div></div></td><td className="px-3 py-2" style={{ color:'var(--text-primary)' }}>{item.name||'-'}</td><td className="px-3 py-2" style={{ color:'var(--accent)' }}>{item.suggested_title||'-'}</td><td className="px-3 py-2"><button onClick={()=>generateOne(item)} disabled={previewLoading===item.id} className="px-3 py-1.5 rounded-2xl text-xs text-white disabled:opacity-50" style={{ background:'var(--accent)' }}>{previewLoading===item.id?'生成中...':'生成建议'}</button></td></tr>)}</tbody></table></div>{totalPages>1&&<div className="flex justify-center gap-2"><button onClick={()=>setPage(Math.max(1,page-1))} disabled={page===1} className="px-3 py-1 rounded-lg text-xs" style={{ color:'var(--text-secondary)' }}>上一页</button><span className="text-xs px-2 py-1" style={{ color:'var(--text-secondary)' }}>{page}/{totalPages}</span><button onClick={()=>setPage(Math.min(totalPages,page+1))} disabled={page===totalPages} className="px-3 py-1 rounded-lg text-xs" style={{ color:'var(--text-secondary)' }}>下一页</button></div>}</div>
+  const totalPages = Math.ceil(total / 20)
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border p-4 space-y-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
+        <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>现有库标题管理</div>
+        <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+          这里处理现有提示词库和作品库，不是手动测试输入框。可先筛出缺标题项目，再生成并批量应用。
+        </div>
+        <div className="flex flex-wrap gap-2 items-center">
+          <select
+            value={itemType}
+            onChange={e => setItemType(e.target.value)}
+            className="px-3 py-2 rounded-2xl text-sm border"
+            style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+          >
+            <option value="prompt">提示词库</option>
+            <option value="image">作品库</option>
+          </select>
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="搜索标题、提示词、作者"
+            className="flex-1 min-w-[220px] px-3 py-2 rounded-2xl border text-sm"
+            style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+          />
+          <label className="flex items-center gap-2 px-3 py-2 rounded-2xl border text-sm" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-secondary)' }}>
+            <input type="checkbox" checked={onlyMissing} onChange={e => setOnlyMissing(e.target.checked)} className="rounded" />
+            仅看缺标题
+          </label>
+          <button onClick={load} disabled={loading} className="px-4 py-2 rounded-2xl text-sm text-white disabled:opacity-50" style={{ background: 'var(--accent)' }}>
+            {loading ? '刷新中...' : '刷新'}
+          </button>
+        </div>
+      </div>
+      <div className="flex items-center justify-between">
+        <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+          共 {total} 项，当前 {items.length} 项，已选 {checked.size} 项
+        </div>
+        <div className="flex items-center gap-2">
+          {items.length > 0 && (
+            <button onClick={toggleAll} className="px-3 py-1.5 rounded-2xl text-xs border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
+              {checked.size === items.length ? '取消全选' : '全选'}
+            </button>
+          )}
+          <button onClick={() => applySelected(false)} disabled={applying || checked.size === 0} className="px-3 py-1.5 rounded-2xl text-xs text-white disabled:opacity-50" style={{ background: 'var(--accent)' }}>
+            {applying ? '应用中...' : '应用标题'}
+          </button>
+          <button onClick={() => applySelected(true)} disabled={applying || checked.size === 0} className="px-3 py-1.5 rounded-2xl text-xs text-white disabled:opacity-50" style={{ background: 'var(--color-warning)' }}>
+            强制覆盖
+          </button>
+        </div>
+      </div>
+      <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
+        <table className="w-full text-sm">
+          <thead>
+            <tr style={{ background: 'var(--bg-ai-bubble)' }}>
+              <th className="px-3 py-2 w-8"></th>
+              <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>项目</th>
+              <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>当前标题</th>
+              <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>建议标题</th>
+              <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={5} className="px-3 py-8 text-center" style={{ color: 'var(--text-secondary)' }}>加载中...</td></tr>
+            ) : items.length === 0 ? (
+              <tr><td colSpan={5} className="px-3 py-8 text-center" style={{ color: 'var(--text-secondary)' }}>暂无可处理项目</td></tr>
+            ) : items.map(item => (
+              <tr key={item.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
+                <td className="px-3 py-2">
+                  <input type="checkbox" checked={checked.has(item.id)} onChange={() => toggle(item.id)} className="rounded" />
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-3">
+                    {item.thumb_url ? (
+                      <img src={item.thumb_url} alt="" className="w-12 h-12 rounded-lg object-cover border shrink-0" style={{ borderColor: 'var(--border-color)' }} loading="lazy" />
+                    ) : null}
+                    <div className="min-w-0">
+                      <div className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
+                        {itemType === 'prompt' ? '提示词库' : '作品库'} · {item.author || '-'} · {item.category || '未分类'}
+                      </div>
+                      <div className="font-medium truncate" style={{ color: 'var(--text-primary)' }}>{item.name || '(无标题)'}</div>
+                      <div className="text-xs truncate mt-1" style={{ color: 'var(--text-secondary)' }}>{item.prompt || '-'}</div>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{item.name || '-'}</td>
+                <td className="px-3 py-2" style={{ color: 'var(--accent)' }}>{item.suggested_title || '-'}</td>
+                <td className="px-3 py-2">
+                  <button
+                    onClick={() => generateOne(item)}
+                    disabled={previewLoading === item.id}
+                    className="px-3 py-1.5 rounded-2xl text-xs text-white disabled:opacity-50"
+                    style={{ background: 'var(--accent)' }}
+                  >
+                    {previewLoading === item.id ? '生成中...' : '生成建议'}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {totalPages > 1 && (
+        <div className="flex justify-center gap-2">
+          <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1} className="px-3 py-1 rounded-lg text-xs" style={{ color: 'var(--text-secondary)' }}>上一页</button>
+          <span className="text-xs px-2 py-1" style={{ color: 'var(--text-secondary)' }}>{page}/{totalPages}</span>
+          <button onClick={() => setPage(Math.min(totalPages, page + 1))} disabled={page === totalPages} className="px-3 py-1 rounded-lg text-xs" style={{ color: 'var(--text-secondary)' }}>下一页</button>
+        </div>
+      )}
+    </div>
+  )
 }

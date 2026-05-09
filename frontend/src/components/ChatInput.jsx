@@ -6,11 +6,73 @@ import { TYPE_OPTIONS, STYLE_OPTIONS, MOOD_OPTIONS } from '../data/quickOptions'
 import { promptOptimizeAPI, uploadAPI } from '../api'
 import { getCachedImages, setCachedImages, getPendingImage, clearPendingImage } from '../utils/imageDB'
 const OPTIMIZE_DRAFT_KEY='chat_optimize_draft_v1'
-function normalizeOptimizeResults(data,fallbackOriginal=''){const versions=Array.isArray(data?.versions)?data.versions.map(v=>typeof v==='string'?v.trim():(typeof v?.text==='string'?v.text.trim():'' )).filter(Boolean):[];return versions.length?{versions,original:typeof data?.original==='string'?data.original:fallbackOriginal}:null}
-function normalizeStreamingVersions(data){return Array.isArray(data)?data.map(v=>({text:typeof v?.text==='string'?v.text:'',done:!!v?.done})).filter(v=>v.text||v.done):[]}
-function normalizeMessage(value,fallback='操作失败'){if(Array.isArray(value))return value.map(v=>normalizeMessage(v,'')).filter(Boolean).join('；')||fallback;if(value&&typeof value==='object'){if(typeof value.message==='string'&&value.message.trim())return value.message;if(typeof value.detail==='string'&&value.detail.trim())return value.detail;if(typeof value.msg==='string'&&value.msg.trim())return value.msg;const parts=[value.loc?String(Array.isArray(value.loc)?value.loc.join('.') : value.loc):'',typeof value.msg==='string'?value.msg:''].filter(Boolean);return parts.join('：')||fallback}return typeof value==='string'&&value.trim()?value:fallback}
-function loadOptimizeDraft(){try{const raw=localStorage.getItem(OPTIMIZE_DRAFT_KEY);if(!raw)return null;const data=JSON.parse(raw);if(!data||typeof data!=='object')return null;const optimizeResults=normalizeOptimizeResults(data.optimizeResults);const streamingVersions=normalizeStreamingVersions(data.streamingVersions);const showOptimizeOverlay=!!(data.showOptimizeOverlay&&(optimizeResults||streamingVersions.length));const showOptimizeModal=!!data.showOptimizeModal;const optimizeCount=Math.min(3,Math.max(1,Number(data.optimizeCount)||2));const optimizeMode=data.optimizeMode==='refine'?'refine':'simple';return{optimizeResults,streamingVersions,isStreaming:false,showOptimizeOverlay,showOptimizeModal,optimizeCount,optimizeMode,restored:showOptimizeOverlay||showOptimizeModal}}catch{return null}}
-function saveOptimizeDraft(data){try{const optimizeResults=normalizeOptimizeResults(data?.optimizeResults);const streamingVersions=normalizeStreamingVersions(data?.streamingVersions);const showOptimizeOverlay=!!data?.showOptimizeOverlay;const showOptimizeModal=!!data?.showOptimizeModal;if(!showOptimizeOverlay&&!showOptimizeModal&&!optimizeResults&&!streamingVersions.length){localStorage.removeItem(OPTIMIZE_DRAFT_KEY);return}localStorage.setItem(OPTIMIZE_DRAFT_KEY,JSON.stringify({showOptimizeOverlay,showOptimizeModal,optimizeResults,streamingVersions,optimizeCount:Math.min(3,Math.max(1,Number(data?.optimizeCount)||2)),optimizeMode:data?.optimizeMode==='refine'?'refine':'simple',savedAt:Date.now()}))}catch{return}}
+function normalizeOptimizeResults(data,fallbackOriginal=''){
+  const versions=Array.isArray(data?.versions)
+    ?data.versions.map(v=>typeof v==='string'?v.trim():(typeof v?.text==='string'?v.text.trim():'')).filter(Boolean)
+    :[];
+  return versions.length?{versions,original:typeof data?.original==='string'?data.original:fallbackOriginal}:null
+}
+function normalizeStreamingVersions(data){
+  return Array.isArray(data)?data.map(v=>({text:typeof v?.text==='string'?v.text:'',done:!!v?.done})).filter(v=>v.text||v.done):[]
+}
+function normalizeMessage(value,fallback='操作失败'){
+  if(Array.isArray(value))return value.map(v=>normalizeMessage(v,'')).filter(Boolean).join('；')||fallback;
+  if(value&&typeof value==='object'){
+    if(typeof value.message==='string'&&value.message.trim())return value.message;
+    if(typeof value.detail==='string'&&value.detail.trim())return value.detail;
+    if(typeof value.msg==='string'&&value.msg.trim())return value.msg;
+    const parts=[
+      value.loc?String(Array.isArray(value.loc)?value.loc.join('.'):value.loc):'',
+      typeof value.msg==='string'?value.msg:''
+    ].filter(Boolean);
+    return parts.join('：')||fallback
+  }
+  return typeof value==='string'&&value.trim()?value:fallback
+}
+function loadOptimizeDraft(){
+  try{
+    const raw=localStorage.getItem(OPTIMIZE_DRAFT_KEY);
+    if(!raw)return null;
+    const data=JSON.parse(raw);
+    if(!data||typeof data!=='object')return null;
+    const optimizeResults=normalizeOptimizeResults(data.optimizeResults);
+    const streamingVersions=normalizeStreamingVersions(data.streamingVersions);
+    const showOptimizeOverlay=!!(data.showOptimizeOverlay&&(optimizeResults||streamingVersions.length));
+    const showOptimizeModal=!!data.showOptimizeModal;
+    const optimizeCount=Math.min(3,Math.max(1,Number(data.optimizeCount)||2));
+    const optimizeMode=data.optimizeMode==='refine'?'refine':'simple';
+    return{
+      optimizeResults,
+      streamingVersions,
+      isStreaming:false,
+      showOptimizeOverlay,
+      showOptimizeModal,
+      optimizeCount,
+      optimizeMode,
+      restored:showOptimizeOverlay||showOptimizeModal
+    }
+  }catch{return null}
+}
+function saveOptimizeDraft(data){
+  try{
+    const optimizeResults=normalizeOptimizeResults(data?.optimizeResults);
+    const streamingVersions=normalizeStreamingVersions(data?.streamingVersions);
+    const showOptimizeOverlay=!!data?.showOptimizeOverlay;
+    const showOptimizeModal=!!data?.showOptimizeModal;
+    if(!showOptimizeOverlay&&!showOptimizeModal&&!optimizeResults&&!streamingVersions.length){
+      localStorage.removeItem(OPTIMIZE_DRAFT_KEY);return
+    }
+    localStorage.setItem(OPTIMIZE_DRAFT_KEY,JSON.stringify({
+      showOptimizeOverlay,
+      showOptimizeModal,
+      optimizeResults,
+      streamingVersions,
+      optimizeCount:Math.min(3,Math.max(1,Number(data?.optimizeCount)||2)),
+      optimizeMode:data?.optimizeMode==='refine'?'refine':'simple',
+      savedAt:Date.now()
+    }))
+  }catch{return}
+}
 function clearOptimizeDraft(){try{localStorage.removeItem(OPTIMIZE_DRAFT_KEY)}catch{return}}
 function formatOptimizeText(text, format) {
   if (format === 'json') {
@@ -41,18 +103,105 @@ function normalizeImageName(name, type, fallback = 'reference') {
 const MAX_IMAGES=5
 function isVipModel(modelId=''){return modelId==='grsai-vip'}
 function getVipResolutionLabel(value=''){return value==='low'?'1K':value==='medium'?'2K':value==='high'?'4K':'1K'}
-function getVipResolutionCost(params={},fallback=10){const costs=params?._resolution_costs||params?.resolution_costs||{};const key=params?.resolution||'auto';const value=costs[key]??costs.auto??params?._points_cost;const num=Number(value);return num>0?Math.round(num):fallback}
-function getModelRequestCost(params={},fallback=10){return isVipModel(params?.model_id)?getVipResolutionCost(params,fallback):(Number(params?._points_cost)>0?Math.round(Number(params._points_cost)):fallback)}
-function normalizeGenerationParams(params={}){const next={...(params||{})};if(isVipModel(next.model_id)){next.size=next.size||'auto';next.resolution=next.resolution||'low';next.aspectRatio=next.size&&next.size!=='auto'?next.size:''}return next}
-function createImageId(){if(typeof crypto!=='undefined'&&typeof crypto.randomUUID==='function')return crypto.randomUUID();return`ref-${Date.now()}-${Math.random().toString(36).slice(2,10)}`}
-function createInputImageItem(input={},fallback=`reference-${Date.now()}`){const file=input?.file||null;const type=input?.type||file?.type||'image/png';const name=normalizeImageName(input?.name||file?.name||fallback,type,fallback);const uploadedUrl=String(input?.uploadedUrl||'').trim();const uploadedStorageName=String(input?.uploadedStorageName||'').trim();const uploadStatus=input?.uploadStatus||(uploadedUrl&&(uploadedStorageName||uploadedUrl)?'success':'pending');return{id:input?.id||createImageId(),name,type,preview:input?.preview||input?.url||'',url:input?.url||'',file,uploadStatus,uploadProgress:uploadStatus==='success'?100:Math.max(0,Math.min(100,Number(input?.uploadProgress)||0)),uploadedUrl,uploadedStorageName:uploadedStorageName||uploadedUrl,uploadError:String(input?.uploadError||'')}}
-function snapshotInputImages(list=[]){return list.map((img,i)=>({id:img?.id||`reference-${i}`,name:img?.name||img?.file?.name||`reference-${i}`,type:img?.type||img?.file?.type||'image/png',preview:img?.preview||img?.url||'',url:img?.url||'',file:img?.file||null,uploadStatus:img?.uploadStatus||'pending',uploadProgress:Number(img?.uploadProgress)||0,uploadedUrl:img?.uploadedUrl||'',uploadedStorageName:img?.uploadedStorageName||'',uploadError:img?.uploadError||''}))}
-function normalizeInputFile(file,fallback=`reference-${Date.now()}`){const type=String(file?.type||'').split(';')[0].trim().toLowerCase();if(!['image/png','image/jpeg','image/webp'].includes(type))return null;if((file?.size||0)>20*1024*1024)return null;const name=normalizeImageName(file?.name||fallback,type,fallback);return file instanceof File&&file.name===name?file:new File([file],name,{type:type||'image/png'})}
-function getClipboardImageFiles(event){const items=Array.from(event?.clipboardData?.items||[]);return items.filter(item=>item.kind==='file'&&String(item.type||'').startsWith('image/')).map((item,i)=>item.getAsFile&&normalizeInputFile(item.getAsFile(),`pasted-${Date.now()}-${i}`)).filter(Boolean)}
-function getFileRejectReason(file){const type=String(file?.type||'').split(';')[0].trim().toLowerCase();const name=String(file?.name||'').toLowerCase();if(type==='application/pdf'||name.endsWith('.pdf'))return'参考图不支持 PDF';if(!['image/png','image/jpeg','image/webp'].includes(type))return'参考图仅支持 PNG/JPG/WebP';if((file?.size||0)>20*1024*1024)return'参考图不能超过 20MB';return''}
+function getVipResolutionCost(params={},fallback=10){
+  const costs=params?._resolution_costs||params?.resolution_costs||{};
+  const key=params?.resolution||'auto';
+  const value=costs[key]??costs.auto??params?._points_cost;
+  const num=Number(value);
+  return num>0?Math.round(num):fallback
+}
+function getModelRequestCost(params={},fallback=10){
+  return isVipModel(params?.model_id)?getVipResolutionCost(params,fallback):(Number(params?._points_cost)>0?Math.round(Number(params._points_cost)):fallback)
+}
+function normalizeGenerationParams(params={}){
+  const next={...(params||{})};
+  if(isVipModel(next.model_id)){
+    next.size=next.size||'auto';
+    next.resolution=next.resolution||'low';
+    next.aspectRatio=next.size&&next.size!=='auto'?next.size:''
+  }
+  return next
+}
+function createImageId(){
+  if(typeof crypto!=='undefined'&&typeof crypto.randomUUID==='function')return crypto.randomUUID();
+  return`ref-${Date.now()}-${Math.random().toString(36).slice(2,10)}`
+}
+function createInputImageItem(input={},fallback=`reference-${Date.now()}`){
+  const file=input?.file||null;
+  const type=input?.type||file?.type||'image/png';
+  const name=normalizeImageName(input?.name||file?.name||fallback,type,fallback);
+  const uploadedUrl=String(input?.uploadedUrl||'').trim();
+  const uploadedStorageName=String(input?.uploadedStorageName||'').trim();
+  const uploadStatus=input?.uploadStatus||(uploadedUrl&&(uploadedStorageName||uploadedUrl)?'success':'pending');
+  return{
+    id:input?.id||createImageId(),
+    name,
+    type,
+    preview:input?.preview||input?.url||'',
+    url:input?.url||'',
+    file,
+    uploadStatus,
+    uploadProgress:uploadStatus==='success'?100:Math.max(0,Math.min(100,Number(input?.uploadProgress)||0)),
+    uploadedUrl,
+    uploadedStorageName:uploadedStorageName||uploadedUrl,
+    uploadError:String(input?.uploadError||'')
+  }
+}
+function snapshotInputImages(list=[]){
+  return list.map((img,i)=>({
+    id:img?.id||`reference-${i}`,
+    name:img?.name||img?.file?.name||`reference-${i}`,
+    type:img?.type||img?.file?.type||'image/png',
+    preview:img?.preview||img?.url||'',
+    url:img?.url||'',
+    file:img?.file||null,
+    uploadStatus:img?.uploadStatus||'pending',
+    uploadProgress:Number(img?.uploadProgress)||0,
+    uploadedUrl:img?.uploadedUrl||'',
+    uploadedStorageName:img?.uploadedStorageName||'',
+    uploadError:img?.uploadError||''
+  }))
+}
+function normalizeInputFile(file,fallback=`reference-${Date.now()}`){
+  const type=String(file?.type||'').split(';')[0].trim().toLowerCase();
+  if(!['image/png','image/jpeg','image/webp'].includes(type))return null;
+  if((file?.size||0)>20*1024*1024)return null;
+  const name=normalizeImageName(file?.name||fallback,type,fallback);
+  return file instanceof File&&file.name===name?file:new File([file],name,{type:type||'image/png'})
+}
+function getClipboardImageFiles(event){
+  const items=Array.from(event?.clipboardData?.items||[]);
+  return items
+    .filter(item=>item.kind==='file'&&String(item.type||'').startsWith('image/'))
+    .map((item,i)=>item.getAsFile&&normalizeInputFile(item.getAsFile(),`pasted-${Date.now()}-${i}`))
+    .filter(Boolean)
+}
+function getFileRejectReason(file){
+  const type=String(file?.type||'').split(';')[0].trim().toLowerCase();
+  const name=String(file?.name||'').toLowerCase();
+  if(type==='application/pdf'||name.endsWith('.pdf'))return'参考图不支持 PDF';
+  if(!['image/png','image/jpeg','image/webp'].includes(type))return'参考图仅支持 PNG/JPG/WebP';
+  if((file?.size||0)>20*1024*1024)return'参考图不能超过 20MB';
+  return''
+}
 function getClipboardText(event){return String(event?.clipboardData?.getData?.('text/plain')||'').trim()}
-function inferImageUrlName(url,type='image/png'){const clean=String(url||'').split('#')[0].split('?')[0];const last=decodeURIComponent(clean.split('/').pop()||'').trim();return normalizeImageName(last||`reference-${Date.now()}`,type,`reference-${Date.now()}`)}
-async function resolveClipboardImageUrl(text){if(!/^https?:\/\//i.test(text))return null;try{const res=await fetch(text,{method:'HEAD'}).catch(()=>fetch(text));if(!res?.ok)return{error:'图片链接不可访问'};const type=String(res.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();if(!['image/png','image/jpeg','image/webp'].includes(type))return{error:'仅支持 PNG/JPG/WebP 图片链接'};const size=Number(res.headers.get('content-length')||0);if(size>20*1024*1024)return{error:'参考图不能超过 20MB'};return{url:text,name:inferImageUrlName(text,type)}}catch{return{error:'图片链接读取失败'}}}
+function inferImageUrlName(url,type='image/png'){
+  const clean=String(url||'').split('#')[0].split('?')[0];
+  const last=decodeURIComponent(clean.split('/').pop()||'').trim();
+  return normalizeImageName(last||`reference-${Date.now()}`,type,`reference-${Date.now()}`)
+}
+async function resolveClipboardImageUrl(text){
+  if(!/^https?:\/\//i.test(text))return null;
+  try{
+    const res=await fetch(text,{method:'HEAD'}).catch(()=>fetch(text));
+    if(!res?.ok)return{error:'图片链接不可访问'};
+    const type=String(res.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
+    if(!['image/png','image/jpeg','image/webp'].includes(type))return{error:'仅支持 PNG/JPG/WebP 图片链接'};
+    const size=Number(res.headers.get('content-length')||0);
+    if(size>20*1024*1024)return{error:'参考图不能超过 20MB'};
+    return{url:text,name:inferImageUrlName(text,type)}
+  }catch{return{error:'图片链接读取失败'}}
+}
 
 const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost = 10, optimizeCost = 10, refineOptimizeCost = 20 }, ref) {
   const initialOptimizeDraft=loadOptimizeDraft()
@@ -186,13 +335,29 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     const allRefs = refUrl ? [...refImages, { url: refUrl, name: 'reference.png' }] : refImages
     const unique = allRefs.filter((v, i, a) => a.findIndex(x => x.url === v.url) === i)
     if (unique.length > 0) {
-      setImages(unique.map((r, i) => createInputImageItem({ url: r.url, preview: r.url, name: normalizeImageName(r.name || `reference-${i}`, '', `reference-${i}`), uploadStatus: 'success', uploadProgress: 100, uploadedUrl: r.url, uploadedStorageName: r.storage_name || r.url }, `reference-${i}`)))
+      setImages(unique.map((r, i) => createInputImageItem({
+        url: r.url,
+        preview: r.url,
+        name: normalizeImageName(r.name || `reference-${i}`, '', `reference-${i}`),
+        uploadStatus: 'success',
+        uploadProgress: 100,
+        uploadedUrl: r.url,
+        uploadedStorageName: r.storage_name || r.url,
+      }, `reference-${i}`)))
     } else {
       ;(async () => {
         try {
           const cachedImages = await getCachedImages()
           console.log('[ChatInput mount] IndexedDB cachedImages count:', cachedImages.length)
-          const items = cachedImages.map((item, i) => item?.blob ? (() => { const type = item.type || item.blob.type || 'image/png'; const name = normalizeImageName(item.name || `cached-${i}`, type, `cached-${i}`); return createInputImageItem({ file: new File([item.blob], name, { type }), preview: URL.createObjectURL(item.blob), name }, `cached-${i}`) })() : null).filter(Boolean)
+          const items = cachedImages.map((item, i) => item?.blob ? (() => {
+            const type = item.type || item.blob.type || 'image/png'
+            const name = normalizeImageName(item.name || `cached-${i}`, type, `cached-${i}`)
+            return createInputImageItem({
+              file: new File([item.blob], name, { type }),
+              preview: URL.createObjectURL(item.blob),
+              name,
+            }, `cached-${i}`)
+          })() : null).filter(Boolean)
           if (items.length > 0) setImages(items)
         } catch { return }
       })()
@@ -348,7 +513,16 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     return () => clearTimeout(t)
   }, [toast])
 
-  useEffect(() => { saveOptimizeDraft({ showOptimizeOverlay, showOptimizeModal, optimizeResults, streamingVersions, optimizeCount, optimizeMode }) }, [showOptimizeOverlay, showOptimizeModal, optimizeResults, streamingVersions, optimizeCount, optimizeMode])
+  useEffect(() => {
+    saveOptimizeDraft({
+      showOptimizeOverlay,
+      showOptimizeModal,
+      optimizeResults,
+      streamingVersions,
+      optimizeCount,
+      optimizeMode,
+    })
+  }, [showOptimizeOverlay, showOptimizeModal, optimizeResults, streamingVersions, optimizeCount, optimizeMode])
 
   useEffect(() => {
     if (!initialOptimizeDraft?.restored) return
@@ -474,8 +648,13 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     clearOptimizeDraft()
   }, [isStreaming])
   const persistRemoteImages = useCallback((list) => {
-    const refs=(list||[]).filter(img=>img?.uploadedUrl&&img?.uploadStatus==='success').map(img=>({url:img.uploadedUrl,name:img.name,storage_name:img.uploadedStorageName||img.uploadedUrl}))
-    if(refs.length>0)localStorage.setItem('ref_images',JSON.stringify(refs));else localStorage.removeItem('ref_images')
+    const refs=(list||[]).filter(img=>img?.uploadedUrl&&img?.uploadStatus==='success').map(img=>({
+      url:img.uploadedUrl,
+      name:img.name,
+      storage_name:img.uploadedStorageName||img.uploadedUrl
+    }))
+    if(refs.length>0)localStorage.setItem('ref_images',JSON.stringify(refs));
+    else localStorage.removeItem('ref_images')
   }, [])
   const updateImageItem = useCallback((id,updater,syncRemote=false) => {
     setImages(prev => {
@@ -495,7 +674,14 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     uploadStartedRef.current.add(item.id)
     const controller=new AbortController()
     uploadAbortRef.current.set(item.id,controller)
-    updateImageItem(item.id,img=>({...(img||item),uploadStatus:'uploading',uploadProgress:0,uploadError:'',uploadedUrl:'',uploadedStorageName:''}))
+    updateImageItem(item.id,img=>({
+      ...(img||item),
+      uploadStatus:'uploading',
+      uploadProgress:0,
+      uploadError:'',
+      uploadedUrl:'',
+      uploadedStorageName:''
+    }))
     try{
       let uploadFile=item.file
       if(!uploadFile&&item.url){
@@ -506,12 +692,35 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
         uploadFile=new File([blob],normalizeImageName(item.name||`reference-${Date.now()}`,type,`reference-${Date.now()}`),{type})
       }
       if(!uploadFile)throw new Error('图片文件不存在')
-      const {data}=await uploadAPI.upload(uploadFile,{signal:controller.signal,onProgress:(percent)=>updateImageItem(item.id,img=>img&&img.uploadStatus!=='success'?{...img,uploadStatus:'uploading',uploadProgress:Math.max(0,Math.min(100,Number(percent)||0)),uploadError:''}:img)})
+      const {data}=await uploadAPI.upload(uploadFile,{
+        signal:controller.signal,
+        onProgress:(percent)=>updateImageItem(item.id,img=>img&&img.uploadStatus!=='success'?{
+          ...img,
+          uploadStatus:'uploading',
+          uploadProgress:Math.max(0,Math.min(100,Number(percent)||0)),
+          uploadError:''
+        }:img)
+      })
       if(controller.signal.aborted)return
-      updateImageItem(item.id,img=>img?{...img,url:data?.url||img.url,uploadStatus:'success',uploadProgress:100,uploadedUrl:data?.url||'',uploadedStorageName:data?.storage_name||data?.url||'',uploadError:''}:img,true)
+      updateImageItem(item.id,img=>img?{
+        ...img,
+        url:data?.url||img.url,
+        uploadStatus:'success',
+        uploadProgress:100,
+        uploadedUrl:data?.url||'',
+        uploadedStorageName:data?.storage_name||data?.url||'',
+        uploadError:''
+      }:img,true)
     }catch(e){
       if(controller.signal.aborted)return
-      updateImageItem(item.id,img=>img?{...img,uploadStatus:'error',uploadProgress:0,uploadedUrl:'',uploadedStorageName:'',uploadError:normalizeMessage(e?.message||e,'上传失败，请删除后重新添加')}:img)
+      updateImageItem(item.id,img=>img?{
+        ...img,
+        uploadStatus:'error',
+        uploadProgress:0,
+        uploadedUrl:'',
+        uploadedStorageName:'',
+        uploadError:normalizeMessage(e?.message||e,'上传失败，请删除后重新添加')
+      }:img)
     }finally{
       uploadAbortRef.current.delete(item.id)
       uploadStartedRef.current.delete(item.id)
@@ -579,7 +788,12 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   }, [appendImages])
   const handlePaste = useCallback(async (e) => {
     const pasted=getClipboardImageFiles(e)
-    if(pasted.length){e.preventDefault();appendImages(pasted.map(f=>({file:f,preview:URL.createObjectURL(f),name:f.name})));setToast({ message: `已粘贴 ${Math.min(pasted.length,Math.max(0,MAX_IMAGES-images.length))} 张参考图`, type: 'success' });return}
+    if(pasted.length){
+      e.preventDefault();
+      appendImages(pasted.map(f=>({file:f,preview:URL.createObjectURL(f),name:f.name})));
+      setToast({ message: `已粘贴 ${Math.min(pasted.length,Math.max(0,MAX_IMAGES-images.length))} 张参考图`, type: 'success' });
+      return
+    }
     const text=getClipboardText(e)
     if(!text)return
     const resolved=await resolveClipboardImageUrl(text)
@@ -864,14 +1078,44 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
           {images.length > 0 && (
             <div className="flex gap-2 p-3 pb-0 overflow-x-auto">
               {images.map((img, i) => (
-                <div key={img.id||i} className="relative w-14 h-14 flex-shrink-0 rounded-lg overflow-hidden group cursor-pointer border" style={{borderColor:img.uploadStatus==='error'?'var(--color-error)':img.uploadStatus==='success'?'color-mix(in srgb,var(--color-success) 45%,var(--border-color))':'color-mix(in srgb,var(--accent) 28%,var(--border-color))'}}>
+                <div
+                  key={img.id||i}
+                  className="relative w-14 h-14 flex-shrink-0 rounded-lg overflow-hidden group cursor-pointer border"
+                  style={{
+                    borderColor: img.uploadStatus==='error'
+                      ?'var(--color-error)'
+                      :img.uploadStatus==='success'
+                        ?'color-mix(in srgb,var(--color-success) 45%,var(--border-color))'
+                        :'color-mix(in srgb,var(--accent) 28%,var(--border-color))'
+                  }}
+                >
                   <img src={img.preview} alt="" className="w-full h-full object-cover" onClick={() => setLightbox(img.preview)} />
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center" onClick={() => setLightbox(img.preview)}>
                     <Maximize2 size={14} className={`transition-opacity text-white ${img.uploadStatus==='uploading'||img.uploadStatus==='error'?'opacity-0':'opacity-0 group-hover:opacity-100'}`} />
                   </div>
-                  {img.uploadStatus==='uploading'&&<div className="absolute inset-0 bg-black/40 flex items-center justify-center"><div className="relative flex items-center justify-center w-9 h-9 rounded-full bg-black/45 text-white"><svg className="-rotate-90" width="30" height="30" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,.25)" strokeWidth="3"/><circle cx="18" cy="18" r="15" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray={`${Math.max(0,Math.min(100,Number(img.uploadProgress)||0))*0.94} 100`}/></svg><span className="absolute text-[9px] font-semibold">{Math.max(0,Math.min(100,Math.round(Number(img.uploadProgress)||0)))}%</span></div></div>}
-                  {img.uploadStatus==='error'&&<div className="absolute inset-0 bg-[rgba(181,52,52,.58)] flex flex-col items-center justify-center gap-0.5 px-1 text-white"><AlertCircle size={14} /><span className="text-[8px] leading-none text-center">上传失败</span></div>}
-                  {img.uploadStatus==='success'&&<div className="absolute left-1 bottom-1 w-4 h-4 rounded-full flex items-center justify-center text-white" style={{background:'var(--color-success)'}}><Check size={10} /></div>}
+                  {img.uploadStatus==='uploading'&&(
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                      <div className="relative flex items-center justify-center w-9 h-9 rounded-full bg-black/45 text-white">
+                        <svg className="-rotate-90" width="30" height="30" viewBox="0 0 36 36">
+                          <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,.25)" strokeWidth="3"/>
+                          <circle cx="18" cy="18" r="15" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"
+                            strokeDasharray={`${Math.max(0,Math.min(100,Number(img.uploadProgress)||0))*0.94} 100`}/>
+                        </svg>
+                        <span className="absolute text-[9px] font-semibold">{Math.max(0,Math.min(100,Math.round(Number(img.uploadProgress)||0)))}%</span>
+                      </div>
+                    </div>
+                  )}
+                  {img.uploadStatus==='error'&&(
+                    <div className="absolute inset-0 bg-[rgba(181,52,52,.58)] flex flex-col items-center justify-center gap-0.5 px-1 text-white">
+                      <AlertCircle size={14} />
+                      <span className="text-[8px] leading-none text-center">上传失败</span>
+                    </div>
+                  )}
+                  {img.uploadStatus==='success'&&(
+                    <div className="absolute left-1 bottom-1 w-4 h-4 rounded-full flex items-center justify-center text-white" style={{background:'var(--color-success)'}}>
+                      <Check size={10} />
+                    </div>
+                  )}
                   <button onClick={(e) => { e.stopPropagation(); removeImage(i) }} className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center"><X size={10} /></button>
                 </div>
               ))}
@@ -909,14 +1153,51 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
               <div className="flex items-center flex-shrink-0 whitespace-nowrap gap-0.5">
                 <button onClick={toggleParams} title="参数设置" className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors" style={{ color: showParams ? 'var(--accent)' : 'var(--text-secondary)' }}><Settings size={14} /><span className="text-[11px] leading-none">设置</span></button>
                 <button type="button" onClick={openFilePicker} title="上传参考图" className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors" style={{ color: 'var(--text-secondary)' }}><Paperclip size={15} /><span className="text-[11px] leading-none">上传</span></button>
-                <button onClick={() => { const next = !shareToSquare; setShareToSquare(next); setToast({ message: next ? '已开启分享到广场，作品将长久保存' : '已关闭分享到广场', type: 'success' }) }} className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors relative" style={{ color: shareToSquare ? 'var(--color-success)' : 'var(--text-secondary)' }} title={shareToSquare ? '已开启分享到广场' : '已关闭分享到广场'}><Share2 size={13} /><span className="text-[11px] leading-none">分享</span><span className="absolute -right-0.5 -top-0.5 w-2.5 h-2.5 rounded-full" style={{ background: shareToSquare ? 'var(--color-success)' : 'var(--border-color)' }} /></button>
-                <button onClick={handleOptimize} disabled={!prompt.trim() || loading || requestSubmitting || optimizeLoading} title="AI 优化提示词" className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors disabled:opacity-40" style={{ color: 'var(--accent)' }}>{optimizeLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}<span className="text-[11px] leading-none">AI优化</span></button>
+                <button
+                  onClick={() => {
+                    const next = !shareToSquare
+                    setShareToSquare(next)
+                    setToast({ message: next ? '已开启分享到广场，作品将长久保存' : '已关闭分享到广场', type: 'success' })
+                  }}
+                  className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors relative"
+                  style={{ color: shareToSquare ? 'var(--color-success)' : 'var(--text-secondary)' }}
+                  title={shareToSquare ? '已开启分享到广场' : '已关闭分享到广场'}
+                >
+                  <Share2 size={13} />
+                  <span className="text-[11px] leading-none">分享</span>
+                  <span className="absolute -right-0.5 -top-0.5 w-2.5 h-2.5 rounded-full" style={{ background: shareToSquare ? 'var(--color-success)' : 'var(--border-color)' }} />
+                </button>
+                <button
+                  onClick={handleOptimize}
+                  disabled={!prompt.trim() || loading || requestSubmitting || optimizeLoading}
+                  title="AI 优化提示词"
+                  className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors disabled:opacity-40"
+                  style={{ color: 'var(--accent)' }}
+                >
+                  {optimizeLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                  <span className="text-[11px] leading-none">AI优化</span>
+                </button>
               </div>
               <div className="min-w-0 flex items-center justify-end gap-1 flex-1">
                 {prompt.length > 0 && <span className="text-[10px] tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{prompt.length}</span>}
                 {sendDisabledReason&&!requestSubmitting&&<span className="text-[10px] flex-shrink-0 font-medium" style={{ color: hasErrorImages ? 'var(--color-error)' : 'var(--accent)' }}>{sendDisabledReason}</span>}
                 {requestSubmitting&&<span className="text-[10px] flex-shrink-0 font-medium" style={{ color: 'var(--accent)' }}>正在提交...</span>}
-                <button onClick={() => { if(sendDisabledReason){setToast({ message: sendDisabledReason, type: 'error' });return} setShowBatchModal(true) }} disabled={!canSend || loading || requestSubmitting || !!sendDisabledReason} title="生成" className="inline-flex items-center gap-1 px-2 py-1.5 rounded-2xl text-white disabled:opacity-40 flex-shrink-0" style={{ background: canSend && !loading && !requestSubmitting && !sendDisabledReason ? 'var(--accent)' : 'var(--border-color)' }}>{loading || requestSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}</button>
+                <button
+                  onClick={() => {
+                    if(sendDisabledReason){setToast({ message: sendDisabledReason, type: 'error' });return}
+                    setShowBatchModal(true)
+                  }}
+                  disabled={!canSend || loading || requestSubmitting || !!sendDisabledReason}
+                  title="生成"
+                  className="inline-flex items-center gap-1 px-2 py-1.5 rounded-2xl text-white disabled:opacity-40 flex-shrink-0"
+                  style={{
+                    background: canSend && !loading && !requestSubmitting && !sendDisabledReason
+                      ? 'var(--accent)'
+                      : 'var(--border-color)'
+                  }}
+                >
+                  {loading || requestSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                </button>
               </div>
             </div>
           </div>

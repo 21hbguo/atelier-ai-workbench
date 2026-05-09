@@ -246,7 +246,27 @@ function WorksTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, i
     catch (e) { dialog.alert(e?.response?.data?.detail || e.message || '删除失败') }
   }, [refresh, dialog])
   const exitSelectMode = useCallback(() => { setSelectMode(false); setChecked(new Set()) }, [])
-  const bottomDock = isAdmin && selectMode && checked.size > 0 ? <div className="fixed inset-x-0 bottom-0 z-40 border-t" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', paddingBottom: 'env(safe-area-inset-bottom)' }}><div className="px-4 py-3 flex items-center gap-3"><span className="text-sm" style={{ color: 'var(--text-primary)' }}>已选 {checked.size} 项</span><button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>{checked.size === cards.length ? '取消全选' : '全选'}</button><div className="ml-auto flex items-center gap-2"><button onClick={() => handleBatchFreeze(false)} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--color-info)' }}><Sun size={14} /> 解冻</button><button onClick={() => handleBatchFreeze(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--color-warning)' }}><Snowflake size={14} /> 冻结</button><button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-[var(--color-error)] hover:bg-[var(--color-error)]/10"><Trash2 size={14} /> 删除</button></div></div></div> : null
+  const bottomDock = isAdmin && selectMode && checked.size > 0 ? (
+    <div className="fixed inset-x-0 bottom-0 z-40 border-t" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <div className="px-4 py-3 flex items-center gap-3">
+        <span className="text-sm" style={{ color: 'var(--text-primary)' }}>已选 {checked.size} 项</span>
+        <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
+          {checked.size === cards.length ? '取消全选' : '全选'}
+        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={() => handleBatchFreeze(false)} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--color-info)' }}>
+            <Sun size={14} /> 解冻
+          </button>
+          <button onClick={() => handleBatchFreeze(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--color-warning)' }}>
+            <Snowflake size={14} /> 冻结
+          </button>
+          <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-[var(--color-error)] hover:bg-[var(--color-error)]/10">
+            <Trash2 size={14} /> 删除
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null
 
   return (
     <>
@@ -411,7 +431,27 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
     catch (e) { dialog.alert(e?.response?.data?.detail || e.message || '操作失败') }
   }, [refresh, dialog])
   const exitSelectMode = useCallback(() => { setSelectMode(false); setChecked(new Set()) }, [])
-  const bottomDock = isAdmin && selectMode && checked.size > 0 ? <div className="fixed inset-x-0 bottom-0 z-40 border-t" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', paddingBottom: 'env(safe-area-inset-bottom)' }}><div className="px-4 py-3 flex items-center gap-3"><span className="text-sm" style={{ color: 'var(--text-primary)' }}>已选 {checked.size} 条</span><button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>{checked.size === cards.length ? '取消全选' : '全选'}</button><div className="ml-auto flex items-center gap-2"><button onClick={() => handleBatchFreeze(false)} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--color-info)' }}><Sun size={14} /> 解冻</button><button onClick={() => handleBatchFreeze(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--color-warning)' }}><Snowflake size={14} /> 冻结</button><button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-[var(--color-error)] hover:bg-[var(--color-error)]/10"><Trash2 size={14} /> 删除</button></div></div></div> : null
+  const bottomDock = isAdmin && selectMode && checked.size > 0 ? (
+    <div className="fixed inset-x-0 bottom-0 z-40 border-t" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <div className="px-4 py-3 flex items-center gap-3">
+        <span className="text-sm" style={{ color: 'var(--text-primary)' }}>已选 {checked.size} 条</span>
+        <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
+          {checked.size === cards.length ? '取消全选' : '全选'}
+        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={() => handleBatchFreeze(false)} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--color-info)' }}>
+            <Sun size={14} /> 解冻
+          </button>
+          <button onClick={() => handleBatchFreeze(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--color-warning)' }}>
+            <Snowflake size={14} /> 冻结
+          </button>
+          <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-[var(--color-error)] hover:bg-[var(--color-error)]/10">
+            <Trash2 size={14} /> 删除
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null
 
   const [newCard, setNewCard] = useState(null)
   const newCardRef = useRef(null)
@@ -641,7 +681,31 @@ function SharedTab({ refreshTrigger, layoutMode, pageSize }) {
           <button key={k} onClick={() => { setSubTab(k); setDetailIdx(null) }} className={`flex-1 px-3 py-1.5 rounded-full text-xs font-medium transition-colors flex items-center justify-center gap-1 ${subTab === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`} style={{ color: subTab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{Icon ? <Icon size={12} /> : null}{l}</button>
         ))}
       </div>
-      <CardGrid cards={cards} layoutMode={subTab === 'prompt' ? 'grid' : layoutMode} showTotal totalUnit={subTab === 'prompt' ? '条' : '项'} loading={loading} paging={paging} refreshing={refreshing} onRefresh={refresh} hideRefresh total={total} page={page} totalPages={totalPages} onPageChange={setPage} paginationScrollTargetId="square-scroll-container" scrollAfterPaging onCardClick={(_, idx) => setDetailIdx(idx)} onFavorite={handleFavorite} onUsePrompt={handleUsePromptWithLike} onUseImage={handleUseImageWithLike} showAuthor showLike={false} cardUiMode="square" emptyText="暂无内容" />
+      <CardGrid
+        cards={cards}
+        layoutMode={subTab === 'prompt' ? 'grid' : layoutMode}
+        showTotal
+        totalUnit={subTab === 'prompt' ? '条' : '项'}
+        loading={loading}
+        paging={paging}
+        refreshing={refreshing}
+        onRefresh={refresh}
+        hideRefresh
+        total={total}
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        paginationScrollTargetId="square-scroll-container"
+        scrollAfterPaging
+        onCardClick={(_, idx) => setDetailIdx(idx)}
+        onFavorite={handleFavorite}
+        onUsePrompt={handleUsePromptWithLike}
+        onUseImage={handleUseImageWithLike}
+        showAuthor
+        showLike={false}
+        cardUiMode="square"
+        emptyText="暂无内容"
+      />
       {detailIdx !== null && cards[detailIdx] && (
         <UnifiedDetailModal card={cards[detailIdx]} cards={cards} currentIndex={detailIdx} onNavigate={setDetailIdx} onClose={() => setDetailIdx(null)}
           onFavorite={subTab === 'my-shares' ? undefined : async (id) => { const targetId = cards[detailIdx]?.id; setDetailIdx(null); const ok = await handleFavorite(id); if (!ok && targetId) { const idx = cards.findIndex(c => c.id === targetId); if (idx >= 0) setDetailIdx(idx) } }}

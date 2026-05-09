@@ -96,7 +96,46 @@ export default function AdminPage() {
   const [newTitle, setNewTitle] = useState('')
   const [newContent, setNewContent] = useState('')
   const [creatingAnnouncement, setCreatingAnnouncement] = useState(false)
-  const [runtimeConfig, setRuntimeConfig] = useState({ api_url: '', register_enabled: true, image_hosting_upload_url: '', image_hosting_base_url: '', image_hosting_referer: '', wechat_pay_qr_url: '', alipay_pay_qr_url: '', manual_recharge_notice: '', recharge_packages: defaultRechargePackages, recharge_random_discount_min: 0.01, recharge_random_discount_max: 0.5, generate_concurrent_limit_per_user: 10, home_page_size: 24, square_page_size: 20, points_cost_per_generation: 10, points_cost_per_optimize: 10, points_cost_per_optimize_refine: 20, points_cost_per_image_extend: 2, points_checkin_reward: 10, points_register_bonus: 50, points_migration_amount: 50, invite_enabled: true, invite_register_reward_points: 20, invite_recharge_rebate_percent: 10, invite_recharge_bonus_percent: 10, login_rate_limit_per_minute_per_ip: 5, register_rate_limit_per_minute_per_ip: 3, github_hosting_enabled: false, github_hosting_repo: '', github_hosting_token: '', github_hosting_branch: 'main', smtp_server: 'smtp.qq.com', smtp_port: 465, smtp_password: '', smtp_sender: '', smtp_sender_name: 'Atelier·AI造梦工坊', sendgrid_api_key: '', sendgrid_sender: '' })
+  const [runtimeConfig, setRuntimeConfig] = useState({
+    api_url: '',
+    register_enabled: true,
+    image_hosting_upload_url: '',
+    image_hosting_base_url: '',
+    image_hosting_referer: '',
+    wechat_pay_qr_url: '',
+    alipay_pay_qr_url: '',
+    manual_recharge_notice: '',
+    recharge_packages: defaultRechargePackages,
+    recharge_random_discount_min: 0.01,
+    recharge_random_discount_max: 0.5,
+    generate_concurrent_limit_per_user: 10,
+    home_page_size: 24,
+    square_page_size: 20,
+    points_cost_per_generation: 10,
+    points_cost_per_optimize: 10,
+    points_cost_per_optimize_refine: 20,
+    points_cost_per_image_extend: 2,
+    points_checkin_reward: 10,
+    points_register_bonus: 50,
+    points_migration_amount: 50,
+    invite_enabled: true,
+    invite_register_reward_points: 20,
+    invite_recharge_rebate_percent: 10,
+    invite_recharge_bonus_percent: 10,
+    login_rate_limit_per_minute_per_ip: 5,
+    register_rate_limit_per_minute_per_ip: 3,
+    github_hosting_enabled: false,
+    github_hosting_repo: '',
+    github_hosting_token: '',
+    github_hosting_branch: 'main',
+    smtp_server: 'smtp.qq.com',
+    smtp_port: 465,
+    smtp_password: '',
+    smtp_sender: '',
+    smtp_sender_name: 'Atelier·AI造梦工坊',
+    sendgrid_api_key: '',
+    sendgrid_sender: '',
+  })
   const [configSaving, setConfigSaving] = useState(false)
   const [defaultModelId, setDefaultModelId] = useState('gpt-image-2')
   const [generationModelsText, setGenerationModelsText] = useState('{}')
@@ -444,12 +483,42 @@ export default function AdminPage() {
   const handleAddRechargePackage = () => setRuntimeConfig(prev => { const list = Array.isArray(prev.recharge_packages) ? prev.recharge_packages : []; return { ...prev, recharge_packages: [...list, { amount: '', points: '', label: `套餐${list.length + 1}` }] } })
   const handleDeleteRechargePackage = (idx) => setRuntimeConfig(prev => { const list = Array.isArray(prev.recharge_packages) ? prev.recharge_packages : []; return { ...prev, recharge_packages: list.length <= 1 ? list : list.filter((_, i) => i !== idx) } })
   const handleSaveConfig = async () => {
-    const n = ['generate_concurrent_limit_per_user', 'home_page_size', 'square_page_size', 'points_cost_per_generation', 'points_cost_per_optimize', 'points_cost_per_optimize_refine', 'points_cost_per_image_extend', 'points_checkin_reward', 'points_register_bonus', 'points_migration_amount', 'invite_register_reward_points', 'invite_recharge_rebate_percent', 'invite_recharge_bonus_percent', 'login_rate_limit_per_minute_per_ip', 'register_rate_limit_per_minute_per_ip', 'smtp_port', 'llm_max_tokens', 'llm_timeout_seconds', 'recharge_random_discount_min', 'recharge_random_discount_max']
+    const n = [
+      'generate_concurrent_limit_per_user', 'home_page_size', 'square_page_size',
+      'points_cost_per_generation', 'points_cost_per_optimize', 'points_cost_per_optimize_refine',
+      'points_cost_per_image_extend', 'points_checkin_reward', 'points_register_bonus',
+      'points_migration_amount', 'invite_register_reward_points', 'invite_recharge_rebate_percent',
+      'invite_recharge_bonus_percent', 'login_rate_limit_per_minute_per_ip',
+      'register_rate_limit_per_minute_per_ip', 'smtp_port', 'llm_max_tokens', 'llm_timeout_seconds',
+      'recharge_random_discount_min', 'recharge_random_discount_max',
+    ]
     const payload = { ...runtimeConfig }
     payload.default_model_id = (defaultModelId || '').trim() || 'gpt-image-2'
     let recharge_packages = []
     for (const k of n) payload[k] = Number(payload[k])
-    if (payload.generate_concurrent_limit_per_user < 1 || payload.home_page_size < 1 || payload.square_page_size < 1 || payload.points_cost_per_generation < 1 || payload.points_cost_per_optimize < 1 || payload.points_cost_per_optimize_refine < 1 || payload.points_cost_per_image_extend < 1 || payload.login_rate_limit_per_minute_per_ip < 1 || payload.register_rate_limit_per_minute_per_ip < 1 || payload.points_checkin_reward < 0 || payload.points_register_bonus < 0 || payload.points_migration_amount < 0 || payload.invite_register_reward_points < 0 || payload.invite_recharge_rebate_percent < 0 || payload.invite_recharge_bonus_percent < 0 || payload.recharge_random_discount_min < 0.01 || payload.recharge_random_discount_max < 0.01 || payload.recharge_random_discount_max < payload.recharge_random_discount_min) { dialog.alert('限制配置不合法'); return }
+    if (
+      payload.generate_concurrent_limit_per_user < 1 ||
+      payload.home_page_size < 1 ||
+      payload.square_page_size < 1 ||
+      payload.points_cost_per_generation < 1 ||
+      payload.points_cost_per_optimize < 1 ||
+      payload.points_cost_per_optimize_refine < 1 ||
+      payload.points_cost_per_image_extend < 1 ||
+      payload.login_rate_limit_per_minute_per_ip < 1 ||
+      payload.register_rate_limit_per_minute_per_ip < 1 ||
+      payload.points_checkin_reward < 0 ||
+      payload.points_register_bonus < 0 ||
+      payload.points_migration_amount < 0 ||
+      payload.invite_register_reward_points < 0 ||
+      payload.invite_recharge_rebate_percent < 0 ||
+      payload.invite_recharge_bonus_percent < 0 ||
+      payload.recharge_random_discount_min < 0.01 ||
+      payload.recharge_random_discount_max < 0.01 ||
+      payload.recharge_random_discount_max < payload.recharge_random_discount_min
+    ) {
+      dialog.alert('限制配置不合法')
+      return
+    }
     try {
       recharge_packages = Array.isArray(payload.recharge_packages) ? payload.recharge_packages : []
       if (!Array.isArray(recharge_packages) || !recharge_packages.length) throw new Error('捐赠档位需要 JSON 数组且至少保留一项')
@@ -847,10 +916,32 @@ export default function AdminPage() {
     <MainLayout>
       <div className="admin-dense flex-1 overflow-y-auto p-3 sm:p-4">
         <div className="flex gap-1 p-0.5 rounded-2xl mb-4 overflow-x-auto scrollbar-hide" style={{ background: 'var(--border-color)', scrollbarWidth: 'none' }}>
-          {[{ k: 'stats', l: '系统统计', i: BarChart3 }, { k: 'finance', l: '财务中心', i: Wallet }, { k: 'users', l: '用户管理', i: Users }, { k: 'history', l: '生成历史', i: Clock }, { k: 'hosting', l: '图床管理', i: HardDrive }, { k: 'banned', l: '违禁词管理', i: Ban }, { k: 'classification', l: 'AI分类', i: Tags }, { k: 'codes', l: '兑换码', i: Key }, { k: 'recharge_review', l: '充值审核', i: Ticket }, { k: 'announcements', l: '公告管理', i: Megaphone }, { k: 'evlogs', l: '邮件验证', i: Mail }, { k: 'config', l: '配置中心', i: SlidersHorizontal }].map(({ k, l, i: Icon }) => (
-            <button key={k} onClick={() => switchTab(k)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${tab === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`}
-              style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
-              <Icon size={14} />{l}{k === 'recharge_review' && rechargePendingCount > 0 && <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] text-white" style={{ background: 'var(--color-error)' }}>{rechargePendingCount}</span>}
+          {[
+            { k: 'stats', l: '系统统计', i: BarChart3 },
+            { k: 'finance', l: '财务中心', i: Wallet },
+            { k: 'users', l: '用户管理', i: Users },
+            { k: 'history', l: '生成历史', i: Clock },
+            { k: 'hosting', l: '图床管理', i: HardDrive },
+            { k: 'banned', l: '违禁词管理', i: Ban },
+            { k: 'classification', l: 'AI分类', i: Tags },
+            { k: 'codes', l: '兑换码', i: Key },
+            { k: 'recharge_review', l: '充值审核', i: Ticket },
+            { k: 'announcements', l: '公告管理', i: Megaphone },
+            { k: 'evlogs', l: '邮件验证', i: Mail },
+            { k: 'config', l: '配置中心', i: SlidersHorizontal },
+          ].map(({ k, l, i: Icon }) => (
+            <button
+              key={k}
+              onClick={() => switchTab(k)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${tab === k ? 'bg-[var(--bg-card)] shadow-sm' : ''}`}
+              style={{ color: tab === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}
+            >
+              <Icon size={14} />{l}
+              {k === 'recharge_review' && rechargePendingCount > 0 && (
+                <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] text-white" style={{ background: 'var(--color-error)' }}>
+                  {rechargePendingCount}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -977,7 +1068,14 @@ export default function AdminPage() {
                   <div className="p-3 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
                     <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>Fallback 尝试</div>
                     <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
-                      {(overviewStats?.generation?.fallback_attempts || []).slice(0, 12).map(i => <div key={`f-${i.provider_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.provider_id}`} style={{ color: 'var(--text-primary)' }}>{`${i.provider_id === 'unknown' ? 'unknown(历史缺失)' : i.provider_id} (${i.provider_type})`}</span><span className="shrink-0" style={{ color: 'var(--text-secondary)' }}>{i.attempts} / {i.attempt_ok_rate}%</span></div>)}
+                      {(overviewStats?.generation?.fallback_attempts || []).slice(0, 12).map(i => (
+                        <div key={`f-${i.provider_id}`} className="flex items-center justify-between text-sm gap-2">
+                          <span className="truncate" title={`${i.provider_id}`} style={{ color: 'var(--text-primary)' }}>
+                            {`${i.provider_id === 'unknown' ? 'unknown(历史缺失)' : i.provider_id} (${i.provider_type})`}
+                          </span>
+                          <span className="shrink-0" style={{ color: 'var(--text-secondary)' }}>{i.attempts} / {i.attempt_ok_rate}%</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -1023,9 +1121,42 @@ export default function AdminPage() {
             )}
           </div>
         ) : tab === 'finance' ? (
-          <AdminFinanceTab financeRange={financeRange} setFinanceRange={setFinanceRange} financeOverview={financeOverview} financeProviders={financeProviders} financePurchases={financePurchases} financePurchaseTotal={financePurchaseTotal} financePurchasePage={financePurchasePage} setFinancePurchasePage={setFinancePurchasePage} financeTasks={financeTasks} financeTaskTotal={financeTaskTotal} financeTaskPage={financeTaskPage} setFinanceTaskPage={setFinanceTaskPage} financeProviderFilter={financeProviderFilter} setFinanceProviderFilter={setFinanceProviderFilter} financeTaskProviderFilter={financeTaskProviderFilter} setFinanceTaskProviderFilter={setFinanceTaskProviderFilter} financeModelFilter={financeModelFilter} setFinanceModelFilter={setFinanceModelFilter} financeStatusFilter={financeStatusFilter} setFinanceStatusFilter={setFinanceStatusFilter} financeLoading={financeLoading} financeCreatingPurchase={financeCreatingPurchase} financePurchaseDraft={financePurchaseDraft} setFinancePurchaseDraft={setFinancePurchaseDraft} handleCreatePurchase={handleCreateFinancePurchase} handleEditPurchase={handleEditFinancePurchase} handleDeletePurchase={handleDeleteFinancePurchase} handleCancelPurchaseEdit={handleCancelFinancePurchaseEdit} providerOptions={financeProviderOptions} modelOptions={financeModelOptions} financeRules={financeRules} financeRuleDraft={financeRuleDraft} setFinanceRuleDraft={setFinanceRuleDraft} financeRuleSaving={financeRuleSaving} handleSaveFinanceRule={handleSaveFinanceRule} handleEditFinanceRule={handleEditFinanceRule} handleDeleteFinanceRule={handleDeleteFinanceRule} />
+          <AdminFinanceTab
+            financeRange={financeRange} setFinanceRange={setFinanceRange}
+            financeOverview={financeOverview} financeProviders={financeProviders}
+            financePurchases={financePurchases} financePurchaseTotal={financePurchaseTotal}
+            financePurchasePage={financePurchasePage} setFinancePurchasePage={setFinancePurchasePage}
+            financeTasks={financeTasks} financeTaskTotal={financeTaskTotal}
+            financeTaskPage={financeTaskPage} setFinanceTaskPage={setFinanceTaskPage}
+            financeProviderFilter={financeProviderFilter} setFinanceProviderFilter={setFinanceProviderFilter}
+            financeTaskProviderFilter={financeTaskProviderFilter} setFinanceTaskProviderFilter={setFinanceTaskProviderFilter}
+            financeModelFilter={financeModelFilter} setFinanceModelFilter={setFinanceModelFilter}
+            financeStatusFilter={financeStatusFilter} setFinanceStatusFilter={setFinanceStatusFilter}
+            financeLoading={financeLoading} financeCreatingPurchase={financeCreatingPurchase}
+            financePurchaseDraft={financePurchaseDraft} setFinancePurchaseDraft={setFinancePurchaseDraft}
+            handleCreatePurchase={handleCreateFinancePurchase}
+            handleEditPurchase={handleEditFinancePurchase}
+            handleDeletePurchase={handleDeleteFinancePurchase}
+            handleCancelPurchaseEdit={handleCancelFinancePurchaseEdit}
+            providerOptions={financeProviderOptions} modelOptions={financeModelOptions}
+            financeRules={financeRules} financeRuleDraft={financeRuleDraft}
+            setFinanceRuleDraft={setFinanceRuleDraft} financeRuleSaving={financeRuleSaving}
+            handleSaveFinanceRule={handleSaveFinanceRule}
+            handleEditFinanceRule={handleEditFinanceRule}
+            handleDeleteFinanceRule={handleDeleteFinanceRule}
+          />
         ) : tab === 'users' ? (
-          <AdminUsersTab userTotal={userTotal} userQuery={userQuery} setUserQuery={setUserQuery} handleMigratePoints={handleMigratePoints} loading={loading} users={users} setAdjustUserId={setAdjustUserId} setAdjustAmount={setAdjustAmount} setAdjustDesc={setAdjustDesc} resetPwdUserId={resetPwdUserId} setResetPwdUserId={setResetPwdUserId} resetPwdValue={resetPwdValue} setResetPwdValue={setResetPwdValue} handleToggleFreeze={handleToggleFreeze} handleDeleteUser={handleDeleteUser} handleResetPassword={handleResetPassword} userPage={userPage} setUserPage={setUserPage} createUserDraft={createUserDraft} setCreateUserDraft={setCreateUserDraft} creatingUser={creatingUser} handleCreateUser={handleCreateUser} />
+          <AdminUsersTab
+            userTotal={userTotal} userQuery={userQuery} setUserQuery={setUserQuery}
+            handleMigratePoints={handleMigratePoints} loading={loading} users={users}
+            setAdjustUserId={setAdjustUserId} setAdjustAmount={setAdjustAmount} setAdjustDesc={setAdjustDesc}
+            resetPwdUserId={resetPwdUserId} setResetPwdUserId={setResetPwdUserId}
+            resetPwdValue={resetPwdValue} setResetPwdValue={setResetPwdValue}
+            handleToggleFreeze={handleToggleFreeze} handleDeleteUser={handleDeleteUser}
+            handleResetPassword={handleResetPassword} userPage={userPage} setUserPage={setUserPage}
+            createUserDraft={createUserDraft} setCreateUserDraft={setCreateUserDraft}
+            creatingUser={creatingUser} handleCreateUser={handleCreateUser}
+          />
         ) : tab === 'announcements' ? (
           <AdminAnnouncementsTab newTitle={newTitle} setNewTitle={setNewTitle} newContent={newContent} setNewContent={setNewContent} handleCreateAnnouncement={handleCreateAnnouncement} creatingAnnouncement={creatingAnnouncement} announcementTotal={announcementTotal} loading={loading} announcements={announcements} handleDeleteAnnouncement={handleDeleteAnnouncement} announcementPage={announcementPage} setAnnouncementPage={setAnnouncementPage} />
         ) : tab === 'evlogs' ? (
@@ -1077,7 +1208,16 @@ export default function AdminPage() {
             <Pagination page={evPage} totalPages={Math.ceil(evTotal / 20)} onPageChange={setEvPage} />
           </div>
         ) : tab === 'hosting' ? (
-          <AdminHostingTab hostingStats={hostingStats} handleCleanDuplicates={handleCleanDuplicates} hostingTotal={hostingTotal} hostingSelectMode={hostingSelectMode} hostingChecked={hostingChecked} hostingImages={hostingImages} setHostingChecked={setHostingChecked} handleHostingBatchDelete={handleHostingBatchDelete} setHostingSelectMode={setHostingSelectMode} loading={loading} toggleHostingCheck={toggleHostingCheck} setHostingDetail={setHostingDetail} hostingPage={hostingPage} setHostingPage={setHostingPage} hostingTypeFilter={hostingTypeFilter} setHostingTypeFilter={setHostingTypeFilter} />
+          <AdminHostingTab
+            hostingStats={hostingStats} handleCleanDuplicates={handleCleanDuplicates}
+            hostingTotal={hostingTotal} hostingSelectMode={hostingSelectMode}
+            hostingChecked={hostingChecked} hostingImages={hostingImages}
+            setHostingChecked={setHostingChecked} handleHostingBatchDelete={handleHostingBatchDelete}
+            setHostingSelectMode={setHostingSelectMode} loading={loading}
+            toggleHostingCheck={toggleHostingCheck} setHostingDetail={setHostingDetail}
+            hostingPage={hostingPage} setHostingPage={setHostingPage}
+            hostingTypeFilter={hostingTypeFilter} setHostingTypeFilter={setHostingTypeFilter}
+          />
         ) : tab === 'banned' ? (
           <AdminBannedTab bannedWordsTotal={bannedWordsTotal} bannedWordsQuery={bannedWordsQuery} setBannedWordsQuery={setBannedWordsQuery} setShowBatchImport={setShowBatchImport} newBannedWord={newBannedWord} setNewBannedWord={setNewBannedWord} handleAddBannedWord={handleAddBannedWord} loading={loading} bannedWords={bannedWords} handleDeleteBannedWord={handleDeleteBannedWord} bannedWordsPage={bannedWordsPage} setBannedWordsPage={setBannedWordsPage} />
         ) : tab === 'codes' ? (
@@ -1310,10 +1450,33 @@ export default function AdminPage() {
                 </button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {[{ k: 'generate_concurrent_limit_per_user', l: '生成并发上限/用户', min: 1 }, { k: 'home_page_size', l: '首页每页卡片数', min: 1 }, { k: 'square_page_size', l: '广场每页卡片数', min: 1 }, { k: 'points_cost_per_generation', l: '默认生成扣分', min: 1 }, { k: 'points_cost_per_optimize', l: '简单优化扣分', min: 1 }, { k: 'points_cost_per_optimize_refine', l: '精细优化扣分', min: 1 }, { k: 'points_cost_per_image_extend', l: '图片续期扣分/张', min: 1 }, { k: 'points_checkin_reward', l: '每日签到奖励', min: 0 }, { k: 'points_register_bonus', l: '注册送分', min: 0 }, { k: 'points_migration_amount', l: '补发积分值', min: 0 }, { k: 'invite_register_reward_points', l: '邀请注册奖励', min: 0 }, { k: 'invite_recharge_rebate_percent', l: '捐赠返利百分比', min: 0 }, { k: 'invite_recharge_bonus_percent', l: '捐赠加赠百分比', min: 0 }, { k: 'login_rate_limit_per_minute_per_ip', l: '登录限流/分钟/IP', min: 1 }, { k: 'register_rate_limit_per_minute_per_ip', l: '注册限流/分钟/IP', min: 1 }].map(item => (
+                {[
+                  { k: 'generate_concurrent_limit_per_user', l: '生成并发上限/用户', min: 1 },
+                  { k: 'home_page_size', l: '首页每页卡片数', min: 1 },
+                  { k: 'square_page_size', l: '广场每页卡片数', min: 1 },
+                  { k: 'points_cost_per_generation', l: '默认生成扣分', min: 1 },
+                  { k: 'points_cost_per_optimize', l: '简单优化扣分', min: 1 },
+                  { k: 'points_cost_per_optimize_refine', l: '精细优化扣分', min: 1 },
+                  { k: 'points_cost_per_image_extend', l: '图片续期扣分/张', min: 1 },
+                  { k: 'points_checkin_reward', l: '每日签到奖励', min: 0 },
+                  { k: 'points_register_bonus', l: '注册送分', min: 0 },
+                  { k: 'points_migration_amount', l: '补发积分值', min: 0 },
+                  { k: 'invite_register_reward_points', l: '邀请注册奖励', min: 0 },
+                  { k: 'invite_recharge_rebate_percent', l: '捐赠返利百分比', min: 0 },
+                  { k: 'invite_recharge_bonus_percent', l: '捐赠加赠百分比', min: 0 },
+                  { k: 'login_rate_limit_per_minute_per_ip', l: '登录限流/分钟/IP', min: 1 },
+                  { k: 'register_rate_limit_per_minute_per_ip', l: '注册限流/分钟/IP', min: 1 },
+                ].map(item => (
                   <div key={item.k}>
                     <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>{item.l}</label>
-                    <input type="number" min={item.min} value={runtimeConfig[item.k]} onChange={e => onConfigInput(item.k, e.target.value)} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                    <input
+                      type="number"
+                      min={item.min}
+                      value={runtimeConfig[item.k]}
+                      onChange={e => onConfigInput(item.k, e.target.value)}
+                      className="w-full px-3 py-2 rounded-2xl text-sm border outline-none"
+                      style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+                    />
                   </div>
                 ))}
               </div>
@@ -1327,11 +1490,42 @@ export default function AdminPage() {
             <div className="p-4 rounded-2xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
               <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>运行时配置</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {[{ k: 'api_url', l: '生成 API URL' }, { k: 'image_hosting_upload_url', l: '图床上传 URL' }, { k: 'image_hosting_base_url', l: '图床基础 URL' }, { k: 'image_hosting_referer', l: '图床 Referer' }, { k: 'wechat_pay_qr_url', l: '微信收款码 URL' }, { k: 'alipay_pay_qr_url', l: '支付宝收款码 URL' }, { k: 'donation_contact', l: '捐赠联系方式' }].map(item => (
+                {[
+                  { k: 'api_url', l: '生成 API URL' },
+                  { k: 'image_hosting_upload_url', l: '图床上传 URL' },
+                  { k: 'image_hosting_base_url', l: '图床基础 URL' },
+                  { k: 'image_hosting_referer', l: '图床 Referer' },
+                  { k: 'wechat_pay_qr_url', l: '微信收款码 URL' },
+                  { k: 'alipay_pay_qr_url', l: '支付宝收款码 URL' },
+                  { k: 'donation_contact', l: '捐赠联系方式' },
+                ].map(item => (
                   <div key={item.k}>
                     <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>{item.l}</label>
-                    <input type="text" value={runtimeConfig[item.k]} onChange={e => onConfigInput(item.k, e.target.value)} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
-                    {(item.k === 'wechat_pay_qr_url' || item.k === 'alipay_pay_qr_url') && <label className="mt-2 inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-medium cursor-pointer border hover:bg-bg-hover" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}><input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => { const file = e.target.files?.[0]; handleUploadQr(item.k, file); e.target.value = '' }} />{qrUploading === item.k ? '上传中...' : '上传二维码图片'}</label>}
+                    <input
+                      type="text"
+                      value={runtimeConfig[item.k]}
+                      onChange={e => onConfigInput(item.k, e.target.value)}
+                      className="w-full px-3 py-2 rounded-2xl text-sm border outline-none"
+                      style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+                    />
+                    {(item.k === 'wechat_pay_qr_url' || item.k === 'alipay_pay_qr_url') && (
+                      <label
+                        className="mt-2 inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-medium cursor-pointer border hover:bg-bg-hover"
+                        style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                      >
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          className="hidden"
+                          onChange={e => {
+                            const file = e.target.files?.[0]
+                            handleUploadQr(item.k, file)
+                            e.target.value = ''
+                          }}
+                        />
+                        {qrUploading === item.k ? '上传中...' : '上传二维码图片'}
+                      </label>
+                    )}
                   </div>
                 ))}
               </div>

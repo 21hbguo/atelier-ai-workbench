@@ -16,7 +16,19 @@ export default function MainLayout({ children, dragProps }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [unreadNoticeCount, setUnreadNoticeCount] = useState(0)
   const location = useLocation()
-  useEffect(()=>{let timer=0;const load=()=>Promise.allSettled([notificationAPI.unreadCount(),announcementAPI.getUnread()]).then(([noticeRes,annRes])=>setUnreadNoticeCount((noticeRes.status==='fulfilled'?(noticeRes.value.data.count||0):0)+(annRes.status==='fulfilled'?((annRes.value.data.items||[]).length):0))).catch(()=>{});timer=window.setTimeout(load,180);window.addEventListener('notifications-updated',load);return()=>{window.clearTimeout(timer);window.removeEventListener('notifications-updated',load)}},[])
+  useEffect(()=>{
+    let timer=0;
+    const load=()=>Promise.allSettled([
+      notificationAPI.unreadCount(),
+      announcementAPI.getUnread()
+    ]).then(([noticeRes,annRes])=>setUnreadNoticeCount(
+      (noticeRes.status==='fulfilled'?(noticeRes.value.data.count||0):0)
+      +(annRes.status==='fulfilled'?((annRes.value.data.items||[]).length):0)
+    )).catch(()=>{});
+    timer=window.setTimeout(load,180);
+    window.addEventListener('notifications-updated',load);
+    return()=>{window.clearTimeout(timer);window.removeEventListener('notifications-updated',load)}
+  },[])
 
   return (
     <div className="flex h-[100dvh] overflow-hidden safe-area-bottom" {...dragProps}>
@@ -30,7 +42,12 @@ export default function MainLayout({ children, dragProps }) {
               const isActive = item.path === '/' ? location.pathname === '/' : location.pathname.startsWith(item.path)
               return (
                 <Link key={item.path} to={item.path} className="mobile-topbar-link" style={{ color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', borderBottomColor: isActive ? 'var(--accent)' : 'transparent' }}>
-                  <span className="relative inline-flex items-center"><span className="mobile-topbar-link-text">{item.label}</span>{item.path==='/notifications'&&unreadNoticeCount>0&&<span className="absolute -top-1.5 -right-2 w-2 h-2 rounded-full" style={{background:'var(--color-error)'}} />}</span>
+                  <span className="relative inline-flex items-center">
+                    <span className="mobile-topbar-link-text">{item.label}</span>
+                    {item.path==='/notifications'&&unreadNoticeCount>0&&(
+                      <span className="absolute -top-1.5 -right-2 w-2 h-2 rounded-full" style={{background:'var(--color-error)'}} />
+                    )}
+                  </span>
                 </Link>
               )
             })}

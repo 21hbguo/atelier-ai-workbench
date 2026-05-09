@@ -1,2 +1,35 @@
-export function parseExpiryTime(v){const s=String(v||'').trim();if(!s)return null;const withTz=s.includes('T')?(s.includes('+')||s.includes('Z')?s:s+'+08:00'):s.replace(' ','T')+'+08:00';const ts=Date.parse(withTz);return Number.isNaN(ts)?null:ts}
-export function getExpiryInfo({expiresAt,isPermanent,now=Date.now(),fallbackDaysLeft}){if(isPermanent)return{expired:false,text:'长久',detail:'已分享到广场，长久保存',msLeft:null};const ts=parseExpiryTime(expiresAt);if(ts===null){const days=typeof fallbackDaysLeft==='number'?fallbackDaysLeft:null;return{expired:false,text:days===null?'3天到期':`${days}天到期`,detail:days===null?'3天后过期':`${days}天后过期`,msLeft:null}}const msLeft=ts-now;if(msLeft<=0)return{expired:true,text:'已过期',detail:`已过期（到期时间 ${expiresAt||'-'}）`,msLeft:0};const min=Math.ceil(msLeft/60000);const hour=Math.ceil(msLeft/3600000);const day=Math.ceil(msLeft/86400000);const text=min<=60?`${min}分钟到期`:hour<=48?`${hour}小时到期`:`${day}天到期`;const detail=min<=60?`${min}分钟后过期`:hour<=48?`${hour}小时后过期`:`${day}天后过期`;return{expired:false,text,detail,msLeft}}
+export function parseExpiryTime(v) {
+  const s = String(v || '').trim()
+  if (!s) return null
+  const withTz = s.includes('T')
+    ? (s.includes('+') || s.includes('Z') ? s : s + '+08:00')
+    : s.replace(' ', 'T') + '+08:00'
+  const ts = Date.parse(withTz)
+  return Number.isNaN(ts) ? null : ts
+}
+
+export function getExpiryInfo({ expiresAt, isPermanent, now = Date.now(), fallbackDaysLeft }) {
+  if (isPermanent) {
+    return { expired: false, text: '长久', detail: '已分享到广场，长久保存', msLeft: null }
+  }
+  const ts = parseExpiryTime(expiresAt)
+  if (ts === null) {
+    const days = typeof fallbackDaysLeft === 'number' ? fallbackDaysLeft : null
+    return {
+      expired: false,
+      text: days === null ? '3天到期' : `${days}天到期`,
+      detail: days === null ? '3天后过期' : `${days}天后过期`,
+      msLeft: null,
+    }
+  }
+  const msLeft = ts - now
+  if (msLeft <= 0) {
+    return { expired: true, text: '已过期', detail: `已过期（到期时间 ${expiresAt || '-'}）`, msLeft: 0 }
+  }
+  const min = Math.ceil(msLeft / 60000)
+  const hour = Math.ceil(msLeft / 3600000)
+  const day = Math.ceil(msLeft / 86400000)
+  const text = min <= 60 ? `${min}分钟到期` : hour <= 48 ? `${hour}小时到期` : `${day}天到期`
+  const detail = min <= 60 ? `${min}分钟后过期` : hour <= 48 ? `${hour}小时后过期` : `${day}天后过期`
+  return { expired: false, text, detail, msLeft }
+}

@@ -1,2 +1,534 @@
 import Pagination from '../../components/Pagination'
-export default function AdminFinanceTab({financeRange,setFinanceRange,financeOverview,financeProviders,financePurchases,financePurchaseTotal,financePurchasePage,setFinancePurchasePage,financeTasks,financeTaskTotal,financeTaskPage,setFinanceTaskPage,financeProviderFilter,setFinanceProviderFilter,financeTaskProviderFilter,setFinanceTaskProviderFilter,financeModelFilter,setFinanceModelFilter,financeStatusFilter,setFinanceStatusFilter,financeLoading,financeCreatingPurchase,financePurchaseDraft,setFinancePurchaseDraft,handleCreatePurchase,handleEditPurchase,handleDeletePurchase,handleCancelPurchaseEdit,providerOptions,modelOptions,financeRules,financeRuleDraft,setFinanceRuleDraft,financeRuleSaving,handleSaveFinanceRule,handleEditFinanceRule,handleDeleteFinanceRule}){const s=financeOverview?.summary||{},p=financeOverview?.purchases||{},rules=financeOverview?.rules||financeRules||[];if(financeLoading&&!financeOverview)return(<div className="flex justify-center py-20"><div className="w-8 h-8 border-2 rounded-full animate-spin-slow" style={{borderTopColor:'var(--accent)',borderColor:'var(--border-color)'}} /></div>);return(<div className="space-y-4"><div className="flex items-center gap-2 flex-wrap">{['today','7d','30d','all'].map(v=><button key={v} onClick={()=>setFinanceRange(v)} className={`px-3 py-1.5 rounded-2xl text-xs font-medium border ${financeRange===v?'text-white border-transparent':''}`} style={financeRange===v?{background:'var(--accent)'}:{borderColor:'var(--border-color)',color:'var(--text-secondary)'}}>{v}</button>)}<div className="ml-auto text-xs" style={{color:'var(--text-secondary)'}}>{financeOverview?.start_date||'-'} ~ {financeOverview?.end_date||'-'}</div></div><div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3">{[{l:'实收',v:`¥${s.revenue_amount??0}`},{l:'采购成本',v:`¥${s.purchased_cost??0}`},{l:'已消耗',v:`¥${s.cost_amount??0}`},{l:'利润',v:`¥${s.profit_amount??0}`},{l:'毛利率',v:`${s.profit_rate??0}%`},{l:'调用',v:s.total_calls??0},{l:'缺规则',v:s.missing_rule_calls??0},{l:'额度不足',v:s.insufficient_calls??0}].map(i=><div key={i.l} className="p-3 rounded-2xl border" style={{borderColor:'var(--border-color)'}}><div className="text-xs" style={{color:'var(--text-secondary)'}}>{i.l}</div><div className="text-lg font-semibold" style={{color:'var(--text-primary)'}}>{i.v}</div></div>)}</div><div className="grid grid-cols-1 xl:grid-cols-2 gap-4"><div className="p-4 rounded-2xl border" style={{borderColor:'var(--border-color)',background:'var(--bg-ai-bubble)'}}><div className="flex items-center justify-between mb-3"><h3 className="text-sm font-semibold" style={{color:'var(--text-primary)'}}>{financePurchaseDraft.id?'编辑采购':'供应商采购'}</h3><select value={financeProviderFilter} onChange={e=>setFinanceProviderFilter(e.target.value)} className="px-2 py-1 rounded-2xl text-xs border outline-none" style={{borderColor:'var(--border-color)',background:'var(--bg-primary)',color:'var(--text-primary)'}}><option value="">全部渠道</option>{providerOptions.map(i=><option key={i.id} value={i.id}>{i.label}</option>)}</select></div><div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-3"><div><label className="block text-xs mb-1.5" style={{color:'var(--text-secondary)'}}>渠道</label><select disabled={financePurchaseDraft.can_edit_core===false} value={financePurchaseDraft.provider_id} onChange={e=>setFinancePurchaseDraft(v=>({...v,provider_id:e.target.value}))} className="w-full px-3 py-2 rounded-2xl text-xs border outline-none disabled:opacity-60" style={{borderColor:'var(--border-color)',background:'var(--bg-primary)',color:'var(--text-primary)'}}><option value="">请选择</option>{providerOptions.map(i=><option key={i.id} value={i.id}>{i.label}</option>)}</select></div><div><label className="block text-xs mb-1.5" style={{color:'var(--text-secondary)'}}>采购金额</label><input disabled={false} value={financePurchaseDraft.amount_rmb} onChange={e=>setFinancePurchaseDraft(v=>({...v,amount_rmb:e.target.value}))} className="w-full px-3 py-2 rounded-2xl text-xs border outline-none disabled:opacity-60" style={{borderColor:'var(--border-color)',background:'var(--bg-primary)',color:'var(--text-primary)'}} /></div><div><label className="block text-xs mb-1.5" style={{color:'var(--text-secondary)'}}>供应商单位数量</label><input disabled={false} value={financePurchaseDraft.quota_amount} onChange={e=>setFinancePurchaseDraft(v=>({...v,quota_amount:e.target.value}))} className="w-full px-3 py-2 rounded-2xl text-xs border outline-none disabled:opacity-60" style={{borderColor:'var(--border-color)',background:'var(--bg-primary)',color:'var(--text-primary)'}} /></div><div><label className="block text-xs mb-1.5" style={{color:'var(--text-secondary)'}}>采购时间</label><input value={financePurchaseDraft.purchase_date} onChange={e=>setFinancePurchaseDraft(v=>({...v,purchase_date:e.target.value}))} placeholder="2026-05-04 12:00:00" className="w-full px-3 py-2 rounded-2xl text-xs border outline-none font-mono" style={{borderColor:'var(--border-color)',background:'var(--bg-primary)',color:'var(--text-primary)'}} /></div><div><label className="block text-xs mb-1.5" style={{color:'var(--text-secondary)'}}>备注</label><input value={financePurchaseDraft.remark} onChange={e=>setFinancePurchaseDraft(v=>({...v,remark:e.target.value}))} className="w-full px-3 py-2 rounded-2xl text-xs border outline-none" style={{borderColor:'var(--border-color)',background:'var(--bg-primary)',color:'var(--text-primary)'}} /></div>{financePurchaseDraft.id&&!financePurchaseDraft.can_edit_core&&<div><label className="block text-xs mb-1.5" style={{color:'var(--text-secondary)'}}>已消耗调整</label><input type="number" value={financePurchaseDraft.adjust_consumed} onChange={e=>setFinancePurchaseDraft(v=>({...v,adjust_consumed:e.target.value}))} placeholder={`当前: ${financePurchaseDraft.consumed_quota}`} className="w-full px-3 py-2 rounded-2xl text-xs border outline-none font-mono" style={{borderColor:'var(--border-color)',background:'var(--bg-primary)',color:'var(--text-primary)'}} /></div>}</div><div className="flex items-center justify-between gap-3 mb-3"><div className="text-xs" style={{color:'var(--text-secondary)'}}>{financePurchaseDraft.id?financePurchaseDraft.can_edit_core===false?'已消耗，渠道不可改，金额/数量修改后单价会重算':'编辑此批次':'这里录的是供应商内部单位，不是你站内给用户扣的积分'}</div><div className="flex items-center gap-2">{financePurchaseDraft.id&&<button onClick={handleCancelPurchaseEdit} className="px-3 py-1.5 rounded-2xl text-xs font-medium border" style={{borderColor:'var(--border-color)',color:'var(--text-primary)'}}>取消编辑</button>}<button onClick={handleCreatePurchase} disabled={financeCreatingPurchase} className="px-3 py-1.5 rounded-2xl text-xs font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50">{financeCreatingPurchase?(financePurchaseDraft.id?'保存中...':'保存中...'):(financePurchaseDraft.id?'保存修改':'新增采购')}</button></div></div><div className="overflow-x-auto rounded-2xl border" style={{borderColor:'var(--border-color)'}}><table className="w-full text-xs"><thead><tr style={{background:'var(--bg-card)'}}><th className="px-3 py-2 text-left font-medium" style={{color:'var(--text-secondary)'}}>渠道</th><th className="px-3 py-2 text-left font-medium" style={{color:'var(--text-secondary)'}}>状态</th><th className="px-3 py-2 text-left font-medium" style={{color:'var(--text-secondary)'}}>单位</th><th className="px-3 py-2 text-right font-medium" style={{color:'var(--text-secondary)'}}>金额</th><th className="px-3 py-2 text-right font-medium" style={{color:'var(--text-secondary)'}}>采购</th><th className="px-3 py-2 text-right font-medium" style={{color:'var(--text-secondary)'}}>已消耗</th><th className="px-3 py-2 text-right font-medium" style={{color:'var(--text-secondary)'}}>剩余</th><th className="px-3 py-2 text-right font-medium" style={{color:'var(--text-secondary)'}}>单价</th><th className="px-3 py-2 text-right font-medium" style={{color:'var(--text-secondary)'}}>操作</th></tr></thead><tbody>{financePurchases.map(i=><tr key={i.id} className="border-t" style={{borderColor:'var(--border-color)'}}><td className="px-3 py-2" style={{color:'var(--text-primary)'}}>{i.provider_id}</td><td className="px-3 py-2"><div className="inline-flex items-center gap-2"><span className="px-2 py-1 rounded-full text-[10px] font-medium" style={i.can_delete?{background:'rgba(34,197,94,0.12)',color:'#16a34a'}:i.remaining_quota<=0?{background:'rgba(239,68,68,0.12)',color:'#dc2626'}:{background:'rgba(245,158,11,0.14)',color:'#d97706'}}>{i.can_delete?'未消耗':i.remaining_quota<=0?'已耗尽':'已锁定'}</span>{!i.can_delete&&<span className="text-[10px]" style={{color:'var(--text-secondary)'}}>{i.remaining_quota<=0?'额度已用完':'已消耗后不可删'}</span>}</div></td><td className="px-3 py-2" style={{color:'var(--text-secondary)'}}>{i.provider_unit_name}</td><td className="px-3 py-2 text-right" style={{color:'var(--text-secondary)'}}>¥{i.amount_rmb}</td><td className="px-3 py-2 text-right" style={{color:'var(--text-secondary)'}}>{i.quota_amount}</td><td className="px-3 py-2 text-right" style={{color:i.consumed_quota>0?'#d97706':'var(--text-secondary)'}}>{i.consumed_quota}</td><td className="px-3 py-2 text-right" style={{color:'var(--text-secondary)'}}>{i.remaining_quota}</td><td className="px-3 py-2 text-right" style={{color:'var(--text-secondary)'}}>{i.unit_cost}</td><td className="px-3 py-2 text-right"><div className="inline-flex items-center gap-2"><button onClick={()=>handleEditPurchase(i)} className="px-2 py-1 rounded-lg text-[11px] border" style={{borderColor:'var(--border-color)',color:'var(--text-primary)'}}>编辑</button>{i.can_delete&&<button onClick={()=>handleDeletePurchase(i)} className="px-2 py-1 rounded-lg text-[11px] border" style={{borderColor:'var(--border-color)',color:'var(--color-error)'}}>删除</button>}</div></td></tr>)}{!financePurchases.length&&<tr><td colSpan={9} className="px-3 py-8 text-center" style={{color:'var(--text-secondary)'}}>暂无采购记录</td></tr>}</tbody></table></div><Pagination page={financePurchasePage} totalPages={Math.ceil(financePurchaseTotal/20)} onPageChange={setFinancePurchasePage} /></div><div className="p-4 rounded-2xl border" style={{borderColor:'var(--border-color)',background:'var(--bg-ai-bubble)'}}><div className="flex items-center justify-between mb-3"><h3 className="text-sm font-semibold" style={{color:'var(--text-primary)'}}>模型 × 渠道消耗规则</h3><button onClick={handleSaveFinanceRule} disabled={financeRuleSaving} className="px-3 py-1.5 rounded-2xl text-xs font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50">{financeRuleSaving?'保存中...':'保存规则'}</button></div><div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-3"><div><label className="block text-xs mb-1.5" style={{color:'var(--text-secondary)'}}>渠道</label><select value={financeRuleDraft.provider_id} onChange={e=>setFinanceRuleDraft(v=>({...v,provider_id:e.target.value}))} className="w-full px-3 py-2 rounded-2xl text-xs border outline-none" style={{borderColor:'var(--border-color)',background:'var(--bg-primary)',color:'var(--text-primary)'}}><option value="">请选择</option>{providerOptions.map(i=><option key={i.id} value={i.id}>{i.label}</option>)}</select></div><div><label className="block text-xs mb-1.5" style={{color:'var(--text-secondary)'}}>模型</label><select value={financeRuleDraft.model_id} onChange={e=>setFinanceRuleDraft(v=>({...v,model_id:e.target.value}))} className="w-full px-3 py-2 rounded-2xl text-xs border outline-none" style={{borderColor:'var(--border-color)',background:'var(--bg-primary)',color:'var(--text-primary)'}}><option value="">请选择</option>{modelOptions.map(i=><option key={i.id} value={i.id}>{i.label}</option>)}</select></div><div><label className="block text-xs mb-1.5" style={{color:'var(--text-secondary)'}}>每次成功消耗</label><input value={financeRuleDraft.quota_per_success} onChange={e=>setFinanceRuleDraft(v=>({...v,quota_per_success:e.target.value}))} className="w-full px-3 py-2 rounded-2xl text-xs border outline-none" style={{borderColor:'var(--border-color)',background:'var(--bg-primary)',color:'var(--text-primary)'}} /></div><div className="md:col-span-2"><label className="block text-xs mb-1.5" style={{color:'var(--text-secondary)'}}>备注</label><input value={financeRuleDraft.remark} onChange={e=>setFinanceRuleDraft(v=>({...v,remark:e.target.value}))} className="w-full px-3 py-2 rounded-2xl text-xs border outline-none" style={{borderColor:'var(--border-color)',background:'var(--bg-primary)',color:'var(--text-primary)'}} /></div></div><div className="overflow-x-auto rounded-2xl border" style={{borderColor:'var(--border-color)'}}><table className="w-full text-xs"><thead><tr style={{background:'var(--bg-card)'}}><th className="px-3 py-2 text-left font-medium" style={{color:'var(--text-secondary)'}}>模型</th><th className="px-3 py-2 text-left font-medium" style={{color:'var(--text-secondary)'}}>渠道</th><th className="px-3 py-2 text-left font-medium" style={{color:'var(--text-secondary)'}}>单位</th><th className="px-3 py-2 text-right font-medium" style={{color:'var(--text-secondary)'}}>每次消耗</th><th className="px-3 py-2 text-right font-medium" style={{color:'var(--text-secondary)'}}>剩余可用次数</th><th className="px-3 py-2 text-right font-medium" style={{color:'var(--text-secondary)'}}>调用/成本</th><th className="px-3 py-2 text-right font-medium" style={{color:'var(--text-secondary)'}}>操作</th></tr></thead><tbody>{rules.map(i=><tr key={`${i.provider_id}-${i.model_id}-${i.id||'missing'}`} className="border-t" style={{borderColor:'var(--border-color)'}}><td className="px-3 py-2" style={{color:'var(--text-primary)'}}>{i.model_label||i.model_id}</td><td className="px-3 py-2" style={{color:'var(--text-primary)'}}>{i.provider_id}</td><td className="px-3 py-2" style={{color:'var(--text-secondary)'}}>{i.provider_unit_name}</td><td className="px-3 py-2 text-right" style={{color:i.rule_status==='missing'?'var(--color-warning)':'var(--text-secondary)'}}>{i.quota_per_success??'缺规则'}</td><td className="px-3 py-2 text-right" style={{color:'var(--text-secondary)'}}>{i.remaining_times??'-'}</td><td className="px-3 py-2 text-right" style={{color:'var(--text-secondary)'}}>{`${i.calls||0} / ¥${i.cost_amount??0}`}</td><td className="px-3 py-2 text-right"><div className="inline-flex items-center gap-2"><button onClick={()=>handleEditFinanceRule(i)} className="px-2 py-1 rounded-lg text-[11px] border" style={{borderColor:'var(--border-color)',color:i.id?'var(--text-primary)':'var(--color-warning)'}}>{i.id?'编辑':'创建'}</button>{i.id&&<button onClick={()=>handleDeleteFinanceRule(i.id)} className="px-2 py-1 rounded-lg text-[11px] border" style={{borderColor:'var(--border-color)',color:'var(--color-error)'}}>删除</button>}</div></td></tr>)}{!rules.length&&<tr><td colSpan={7} className="px-3 py-8 text-center" style={{color:'var(--text-secondary)'}}>暂无规则</td></tr>}</tbody></table></div></div></div><div className="grid grid-cols-1 xl:grid-cols-2 gap-4"><div className="p-4 rounded-2xl border" style={{borderColor:'var(--border-color)',background:'var(--bg-ai-bubble)'}}><h3 className="text-sm font-semibold mb-3" style={{color:'var(--text-primary)'}}>渠道汇总</h3><div className="overflow-x-auto rounded-2xl border" style={{borderColor:'var(--border-color)'}}><table className="w-full text-xs"><thead><tr style={{background:'var(--bg-card)'}}><th className="px-3 py-2 text-left font-medium" style={{color:'var(--text-secondary)'}}>渠道</th><th className="px-3 py-2 text-left font-medium" style={{color:'var(--text-secondary)'}}>单位</th><th className="px-3 py-2 text-right font-medium" style={{color:'var(--text-secondary)'}}>采购/剩余</th><th className="px-3 py-2 text-right font-medium" style={{color:'var(--text-secondary)'}}>调用</th><th className="px-3 py-2 text-right font-medium" style={{color:'var(--text-secondary)'}}>异常</th></tr></thead><tbody>{financeProviders.map(i=><tr key={i.provider_id} className="border-t" style={{borderColor:'var(--border-color)'}}><td className="px-3 py-2" style={{color:'var(--text-primary)'}}>{i.provider_id}</td><td className="px-3 py-2" style={{color:'var(--text-secondary)'}}>{i.provider_unit_name}</td><td className="px-3 py-2 text-right" style={{color:'var(--text-secondary)'}}>{`${i.purchased_quota} / ${i.remaining_quota}`}</td><td className="px-3 py-2 text-right" style={{color:'var(--text-secondary)'}}>{i.calls}</td><td className="px-3 py-2 text-right" style={{color:'var(--text-secondary)'}}>{`${i.missing_rule_calls||0}+${i.insufficient_calls||0}`}</td></tr>)}{!financeProviders.length&&<tr><td colSpan={5} className="px-3 py-8 text-center" style={{color:'var(--text-secondary)'}}>暂无统计</td></tr>}</tbody></table></div></div><div className="p-4 rounded-2xl border" style={{borderColor:'var(--border-color)',background:'var(--bg-ai-bubble)'}}><div className="flex flex-wrap items-center gap-2 mb-3"><h3 className="text-sm font-semibold mr-2" style={{color:'var(--text-primary)'}}>调用明细</h3><select value={financeTaskProviderFilter} onChange={e=>setFinanceTaskProviderFilter(e.target.value)} className="px-2 py-1 rounded-2xl text-xs border outline-none" style={{borderColor:'var(--border-color)',background:'var(--bg-primary)',color:'var(--text-primary)'}}><option value="">全部渠道</option>{providerOptions.map(i=><option key={i.id} value={i.id}>{i.label}</option>)}</select><select value={financeModelFilter} onChange={e=>setFinanceModelFilter(e.target.value)} className="px-2 py-1 rounded-2xl text-xs border outline-none" style={{borderColor:'var(--border-color)',background:'var(--bg-primary)',color:'var(--text-primary)'}}><option value="">全部模型</option>{modelOptions.map(i=><option key={i.id} value={i.id}>{i.label}</option>)}</select><select value={financeStatusFilter} onChange={e=>setFinanceStatusFilter(e.target.value)} className="px-2 py-1 rounded-2xl text-xs border outline-none" style={{borderColor:'var(--border-color)',background:'var(--bg-primary)',color:'var(--text-primary)'}}><option value="">全部状态</option><option value="completed">completed</option><option value="failed">failed</option></select></div><div className="overflow-x-auto rounded-2xl border" style={{borderColor:'var(--border-color)'}}><table className="w-full text-xs"><thead><tr style={{background:'var(--bg-card)'}}><th className="px-3 py-2 text-left font-medium" style={{color:'var(--text-secondary)'}}>任务</th><th className="px-3 py-2 text-left font-medium" style={{color:'var(--text-secondary)'}}>模型/渠道</th><th className="px-3 py-2 text-right font-medium" style={{color:'var(--text-secondary)'}}>用户积分</th><th className="px-3 py-2 text-right font-medium" style={{color:'var(--text-secondary)'}}>供应商单位</th><th className="px-3 py-2 text-right font-medium" style={{color:'var(--text-secondary)'}}>成本</th><th className="px-3 py-2 text-left font-medium" style={{color:'var(--text-secondary)'}}>来源</th></tr></thead><tbody>{financeTasks.map(i=><tr key={i.id} className="border-t" style={{borderColor:'var(--border-color)'}}><td className="px-3 py-2"><div style={{color:'var(--text-primary)'}}>{i.task_id}</div><div className="text-[10px]" style={{color:'var(--text-secondary)'}}>{i.nickname||i.username||'-'}</div></td><td className="px-3 py-2" style={{color:'var(--text-secondary)'}}>{`${i.model_label||i.model_id} / ${i.provider_id}`}</td><td className="px-3 py-2 text-right" style={{color:'var(--text-secondary)'}}>{i.charged_points}</td><td className="px-3 py-2 text-right" style={{color:'var(--text-secondary)'}}>{`${i.quota_used}${i.quota_shortage>0?` (缺${i.quota_shortage})`:''}`}</td><td className="px-3 py-2 text-right" style={{color:'var(--text-secondary)'}}>{i.cost_rmb===null?'未结转':`¥${i.cost_rmb}`}</td><td className="px-3 py-2" style={{color:'var(--text-secondary)'}}>{`${i.provider_unit_name} / ${i.cost_source}`}</td></tr>)}{!financeTasks.length&&<tr><td colSpan={6} className="px-3 py-8 text-center" style={{color:'var(--text-secondary)'}}>暂无明细</td></tr>}</tbody></table></div><Pagination page={financeTaskPage} totalPages={Math.ceil(financeTaskTotal/20)} onPageChange={setFinanceTaskPage} /></div></div></div>)}
+
+export default function AdminFinanceTab({
+  financeRange, setFinanceRange,
+  financeOverview,
+  financeProviders,
+  financePurchases, financePurchaseTotal, financePurchasePage, setFinancePurchasePage,
+  financeTasks, financeTaskTotal, financeTaskPage, setFinanceTaskPage,
+  financeProviderFilter, setFinanceProviderFilter,
+  financeTaskProviderFilter, setFinanceTaskProviderFilter,
+  financeModelFilter, setFinanceModelFilter,
+  financeStatusFilter, setFinanceStatusFilter,
+  financeLoading,
+  financeCreatingPurchase,
+  financePurchaseDraft, setFinancePurchaseDraft,
+  handleCreatePurchase, handleEditPurchase, handleDeletePurchase, handleCancelPurchaseEdit,
+  providerOptions, modelOptions,
+  financeRules, financeRuleDraft, setFinanceRuleDraft, financeRuleSaving,
+  handleSaveFinanceRule, handleEditFinanceRule, handleDeleteFinanceRule,
+}) {
+  const s = financeOverview?.summary || {},
+    p = financeOverview?.purchases || {},
+    rules = financeOverview?.rules || financeRules || []
+
+  if (financeLoading && !financeOverview) {
+    return (
+      <div className="flex justify-center py-20">
+        <div
+          className="w-8 h-8 border-2 rounded-full animate-spin-slow"
+          style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 flex-wrap">
+        {['today', '7d', '30d', 'all'].map(v => (
+          <button
+            key={v}
+            onClick={() => setFinanceRange(v)}
+            className={`px-3 py-1.5 rounded-2xl text-xs font-medium border ${financeRange === v ? 'text-white border-transparent' : ''}`}
+            style={financeRange === v
+              ? { background: 'var(--accent)' }
+              : { borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }
+            }
+          >
+            {v}
+          </button>
+        ))}
+        <div className="ml-auto text-xs" style={{ color: 'var(--text-secondary)' }}>
+          {financeOverview?.start_date || '-'} ~ {financeOverview?.end_date || '-'}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3">
+        {[
+          { l: '实收', v: `¥${s.revenue_amount ?? 0}` },
+          { l: '采购成本', v: `¥${s.purchased_cost ?? 0}` },
+          { l: '已消耗', v: `¥${s.cost_amount ?? 0}` },
+          { l: '利润', v: `¥${s.profit_amount ?? 0}` },
+          { l: '毛利率', v: `${s.profit_rate ?? 0}%` },
+          { l: '调用', v: s.total_calls ?? 0 },
+          { l: '缺规则', v: s.missing_rule_calls ?? 0 },
+          { l: '额度不足', v: s.insufficient_calls ?? 0 },
+        ].map(i => (
+          <div key={i.l} className="p-3 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
+            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>{i.l}</div>
+            <div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{i.v}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        {/* 采购区块 */}
+        <div className="p-4 rounded-2xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+              {financePurchaseDraft.id ? '编辑采购' : '供应商采购'}
+            </h3>
+            <select
+              value={financeProviderFilter}
+              onChange={e => setFinanceProviderFilter(e.target.value)}
+              className="px-2 py-1 rounded-2xl text-xs border outline-none"
+              style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+            >
+              <option value="">全部渠道</option>
+              {providerOptions.map(i => <option key={i.id} value={i.id}>{i.label}</option>)}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-3">
+            <div>
+              <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>渠道</label>
+              <select
+                disabled={financePurchaseDraft.can_edit_core === false}
+                value={financePurchaseDraft.provider_id}
+                onChange={e => setFinancePurchaseDraft(v => ({ ...v, provider_id: e.target.value }))}
+                className="w-full px-3 py-2 rounded-2xl text-xs border outline-none disabled:opacity-60"
+                style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+              >
+                <option value="">请选择</option>
+                {providerOptions.map(i => <option key={i.id} value={i.id}>{i.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>采购金额</label>
+              <input
+                disabled={false}
+                value={financePurchaseDraft.amount_rmb}
+                onChange={e => setFinancePurchaseDraft(v => ({ ...v, amount_rmb: e.target.value }))}
+                className="w-full px-3 py-2 rounded-2xl text-xs border outline-none disabled:opacity-60"
+                style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+              />
+            </div>
+            <div>
+              <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>供应商单位数量</label>
+              <input
+                disabled={false}
+                value={financePurchaseDraft.quota_amount}
+                onChange={e => setFinancePurchaseDraft(v => ({ ...v, quota_amount: e.target.value }))}
+                className="w-full px-3 py-2 rounded-2xl text-xs border outline-none disabled:opacity-60"
+                style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+              />
+            </div>
+            <div>
+              <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>采购时间</label>
+              <input
+                value={financePurchaseDraft.purchase_date}
+                onChange={e => setFinancePurchaseDraft(v => ({ ...v, purchase_date: e.target.value }))}
+                placeholder="2026-05-04 12:00:00"
+                className="w-full px-3 py-2 rounded-2xl text-xs border outline-none font-mono"
+                style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+              />
+            </div>
+            <div>
+              <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>备注</label>
+              <input
+                value={financePurchaseDraft.remark}
+                onChange={e => setFinancePurchaseDraft(v => ({ ...v, remark: e.target.value }))}
+                className="w-full px-3 py-2 rounded-2xl text-xs border outline-none"
+                style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+              />
+            </div>
+            {financePurchaseDraft.id && !financePurchaseDraft.can_edit_core && (
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>已消耗调整</label>
+                <input
+                  type="number"
+                  value={financePurchaseDraft.adjust_consumed}
+                  onChange={e => setFinancePurchaseDraft(v => ({ ...v, adjust_consumed: e.target.value }))}
+                  placeholder={`当前: ${financePurchaseDraft.consumed_quota}`}
+                  className="w-full px-3 py-2 rounded-2xl text-xs border outline-none font-mono"
+                  style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+              {financePurchaseDraft.id
+                ? financePurchaseDraft.can_edit_core === false
+                  ? '已消耗，渠道不可改，金额/数量修改后单价会重算'
+                  : '编辑此批次'
+                : '这里录的是供应商内部单位，不是你站内给用户扣的积分'}
+            </div>
+            <div className="flex items-center gap-2">
+              {financePurchaseDraft.id && (
+                <button
+                  onClick={handleCancelPurchaseEdit}
+                  className="px-3 py-1.5 rounded-2xl text-xs font-medium border"
+                  style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                >
+                  取消编辑
+                </button>
+              )}
+              <button
+                onClick={handleCreatePurchase}
+                disabled={financeCreatingPurchase}
+                className="px-3 py-1.5 rounded-2xl text-xs font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50"
+              >
+                {financeCreatingPurchase
+                  ? (financePurchaseDraft.id ? '保存中...' : '保存中...')
+                  : (financePurchaseDraft.id ? '保存修改' : '新增采购')}
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
+            <table className="w-full text-xs">
+              <thead>
+                <tr style={{ background: 'var(--bg-card)' }}>
+                  <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>渠道</th>
+                  <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>状态</th>
+                  <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>单位</th>
+                  <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>金额</th>
+                  <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>采购</th>
+                  <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>已消耗</th>
+                  <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>剩余</th>
+                  <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>单价</th>
+                  <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {financePurchases.map(i => (
+                  <tr key={i.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
+                    <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{i.provider_id}</td>
+                    <td className="px-3 py-2">
+                      <div className="inline-flex items-center gap-2">
+                        <span
+                          className="px-2 py-1 rounded-full text-[10px] font-medium"
+                          style={
+                            i.can_delete
+                              ? { background: 'rgba(34,197,94,0.12)', color: '#16a34a' }
+                              : i.remaining_quota <= 0
+                                ? { background: 'rgba(239,68,68,0.12)', color: '#dc2626' }
+                                : { background: 'rgba(245,158,11,0.14)', color: '#d97706' }
+                          }
+                        >
+                          {i.can_delete ? '未消耗' : i.remaining_quota <= 0 ? '已耗尽' : '已锁定'}
+                        </span>
+                        {!i.can_delete && (
+                          <span className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>
+                            {i.remaining_quota <= 0 ? '额度已用完' : '已消耗后不可删'}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{i.provider_unit_name}</td>
+                    <td className="px-3 py-2 text-right" style={{ color: 'var(--text-secondary)' }}>¥{i.amount_rmb}</td>
+                    <td className="px-3 py-2 text-right" style={{ color: 'var(--text-secondary)' }}>{i.quota_amount}</td>
+                    <td className="px-3 py-2 text-right" style={{ color: i.consumed_quota > 0 ? '#d97706' : 'var(--text-secondary)' }}>
+                      {i.consumed_quota}
+                    </td>
+                    <td className="px-3 py-2 text-right" style={{ color: 'var(--text-secondary)' }}>{i.remaining_quota}</td>
+                    <td className="px-3 py-2 text-right" style={{ color: 'var(--text-secondary)' }}>{i.unit_cost}</td>
+                    <td className="px-3 py-2 text-right">
+                      <div className="inline-flex items-center gap-2">
+                        <button
+                          onClick={() => handleEditPurchase(i)}
+                          className="px-2 py-1 rounded-lg text-[11px] border"
+                          style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                        >
+                          编辑
+                        </button>
+                        {i.can_delete && (
+                          <button
+                            onClick={() => handleDeletePurchase(i)}
+                            className="px-2 py-1 rounded-lg text-[11px] border"
+                            style={{ borderColor: 'var(--border-color)', color: 'var(--color-error)' }}
+                          >
+                            删除
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {!financePurchases.length && (
+                  <tr>
+                    <td colSpan={9} className="px-3 py-8 text-center" style={{ color: 'var(--text-secondary)' }}>
+                      暂无采购记录
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <Pagination
+            page={financePurchasePage}
+            totalPages={Math.ceil(financePurchaseTotal / 20)}
+            onPageChange={setFinancePurchasePage}
+          />
+        </div>
+
+        {/* 规则区块 */}
+        <div className="p-4 rounded-2xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>模型 × 渠道消耗规则</h3>
+            <button
+              onClick={handleSaveFinanceRule}
+              disabled={financeRuleSaving}
+              className="px-3 py-1.5 rounded-2xl text-xs font-medium bg-accent text-white hover:opacity-90 disabled:opacity-50"
+            >
+              {financeRuleSaving ? '保存中...' : '保存规则'}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-3">
+            <div>
+              <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>渠道</label>
+              <select
+                value={financeRuleDraft.provider_id}
+                onChange={e => setFinanceRuleDraft(v => ({ ...v, provider_id: e.target.value }))}
+                className="w-full px-3 py-2 rounded-2xl text-xs border outline-none"
+                style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+              >
+                <option value="">请选择</option>
+                {providerOptions.map(i => <option key={i.id} value={i.id}>{i.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>模型</label>
+              <select
+                value={financeRuleDraft.model_id}
+                onChange={e => setFinanceRuleDraft(v => ({ ...v, model_id: e.target.value }))}
+                className="w-full px-3 py-2 rounded-2xl text-xs border outline-none"
+                style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+              >
+                <option value="">请选择</option>
+                {modelOptions.map(i => <option key={i.id} value={i.id}>{i.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>每次成功消耗</label>
+              <input
+                value={financeRuleDraft.quota_per_success}
+                onChange={e => setFinanceRuleDraft(v => ({ ...v, quota_per_success: e.target.value }))}
+                className="w-full px-3 py-2 rounded-2xl text-xs border outline-none"
+                style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>备注</label>
+              <input
+                value={financeRuleDraft.remark}
+                onChange={e => setFinanceRuleDraft(v => ({ ...v, remark: e.target.value }))}
+                className="w-full px-3 py-2 rounded-2xl text-xs border outline-none"
+                style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+              />
+            </div>
+          </div>
+
+          <div className="overflow-x-auto rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
+            <table className="w-full text-xs">
+              <thead>
+                <tr style={{ background: 'var(--bg-card)' }}>
+                  <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>模型</th>
+                  <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>渠道</th>
+                  <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>单位</th>
+                  <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>每次消耗</th>
+                  <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>剩余可用次数</th>
+                  <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>调用/成本</th>
+                  <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rules.map(i => (
+                  <tr
+                    key={`${i.provider_id}-${i.model_id}-${i.id || 'missing'}`}
+                    className="border-t"
+                    style={{ borderColor: 'var(--border-color)' }}
+                  >
+                    <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{i.model_label || i.model_id}</td>
+                    <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{i.provider_id}</td>
+                    <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{i.provider_unit_name}</td>
+                    <td
+                      className="px-3 py-2 text-right"
+                      style={{ color: i.rule_status === 'missing' ? 'var(--color-warning)' : 'var(--text-secondary)' }}
+                    >
+                      {i.quota_per_success ?? '缺规则'}
+                    </td>
+                    <td className="px-3 py-2 text-right" style={{ color: 'var(--text-secondary)' }}>{i.remaining_times ?? '-'}</td>
+                    <td className="px-3 py-2 text-right" style={{ color: 'var(--text-secondary)' }}>
+                      {`${i.calls || 0} / ¥${i.cost_amount ?? 0}`}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <div className="inline-flex items-center gap-2">
+                        <button
+                          onClick={() => handleEditFinanceRule(i)}
+                          className="px-2 py-1 rounded-lg text-[11px] border"
+                          style={{ borderColor: 'var(--border-color)', color: i.id ? 'var(--text-primary)' : 'var(--color-warning)' }}
+                        >
+                          {i.id ? '编辑' : '创建'}
+                        </button>
+                        {i.id && (
+                          <button
+                            onClick={() => handleDeleteFinanceRule(i.id)}
+                            className="px-2 py-1 rounded-lg text-[11px] border"
+                            style={{ borderColor: 'var(--border-color)', color: 'var(--color-error)' }}
+                          >
+                            删除
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {!rules.length && (
+                  <tr>
+                    <td colSpan={7} className="px-3 py-8 text-center" style={{ color: 'var(--text-secondary)' }}>
+                      暂无规则
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        {/* 渠道汇总 */}
+        <div className="p-4 rounded-2xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+          <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>渠道汇总</h3>
+          <div className="overflow-x-auto rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
+            <table className="w-full text-xs">
+              <thead>
+                <tr style={{ background: 'var(--bg-card)' }}>
+                  <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>渠道</th>
+                  <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>单位</th>
+                  <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>采购/剩余</th>
+                  <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>调用</th>
+                  <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>异常</th>
+                </tr>
+              </thead>
+              <tbody>
+                {financeProviders.map(i => (
+                  <tr key={i.provider_id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
+                    <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{i.provider_id}</td>
+                    <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>{i.provider_unit_name}</td>
+                    <td className="px-3 py-2 text-right" style={{ color: 'var(--text-secondary)' }}>
+                      {`${i.purchased_quota} / ${i.remaining_quota}`}
+                    </td>
+                    <td className="px-3 py-2 text-right" style={{ color: 'var(--text-secondary)' }}>{i.calls}</td>
+                    <td className="px-3 py-2 text-right" style={{ color: 'var(--text-secondary)' }}>
+                      {`${i.missing_rule_calls || 0}+${i.insufficient_calls || 0}`}
+                    </td>
+                  </tr>
+                ))}
+                {!financeProviders.length && (
+                  <tr>
+                    <td colSpan={5} className="px-3 py-8 text-center" style={{ color: 'var(--text-secondary)' }}>
+                      暂无统计
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* 调用明细 */}
+        <div className="p-4 rounded-2xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <h3 className="text-sm font-semibold mr-2" style={{ color: 'var(--text-primary)' }}>调用明细</h3>
+            <select
+              value={financeTaskProviderFilter}
+              onChange={e => setFinanceTaskProviderFilter(e.target.value)}
+              className="px-2 py-1 rounded-2xl text-xs border outline-none"
+              style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+            >
+              <option value="">全部渠道</option>
+              {providerOptions.map(i => <option key={i.id} value={i.id}>{i.label}</option>)}
+            </select>
+            <select
+              value={financeModelFilter}
+              onChange={e => setFinanceModelFilter(e.target.value)}
+              className="px-2 py-1 rounded-2xl text-xs border outline-none"
+              style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+            >
+              <option value="">全部模型</option>
+              {modelOptions.map(i => <option key={i.id} value={i.id}>{i.label}</option>)}
+            </select>
+            <select
+              value={financeStatusFilter}
+              onChange={e => setFinanceStatusFilter(e.target.value)}
+              className="px-2 py-1 rounded-2xl text-xs border outline-none"
+              style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+            >
+              <option value="">全部状态</option>
+              <option value="completed">completed</option>
+              <option value="failed">failed</option>
+            </select>
+          </div>
+
+          <div className="overflow-x-auto rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
+            <table className="w-full text-xs">
+              <thead>
+                <tr style={{ background: 'var(--bg-card)' }}>
+                  <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>任务</th>
+                  <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>模型/渠道</th>
+                  <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>用户积分</th>
+                  <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>供应商单位</th>
+                  <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--text-secondary)' }}>成本</th>
+                  <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>来源</th>
+                </tr>
+              </thead>
+              <tbody>
+                {financeTasks.map(i => (
+                  <tr key={i.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
+                    <td className="px-3 py-2">
+                      <div style={{ color: 'var(--text-primary)' }}>{i.task_id}</div>
+                      <div className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>{i.nickname || i.username || '-'}</div>
+                    </td>
+                    <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>
+                      {`${i.model_label || i.model_id} / ${i.provider_id}`}
+                    </td>
+                    <td className="px-3 py-2 text-right" style={{ color: 'var(--text-secondary)' }}>{i.charged_points}</td>
+                    <td className="px-3 py-2 text-right" style={{ color: 'var(--text-secondary)' }}>
+                      {`${i.quota_used}${i.quota_shortage > 0 ? ` (缺${i.quota_shortage})` : ''}`}
+                    </td>
+                    <td className="px-3 py-2 text-right" style={{ color: 'var(--text-secondary)' }}>
+                      {i.cost_rmb === null ? '未结转' : `¥${i.cost_rmb}`}
+                    </td>
+                    <td className="px-3 py-2" style={{ color: 'var(--text-secondary)' }}>
+                      {`${i.provider_unit_name} / ${i.cost_source}`}
+                    </td>
+                  </tr>
+                ))}
+                {!financeTasks.length && (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-8 text-center" style={{ color: 'var(--text-secondary)' }}>
+                      暂无明细
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <Pagination
+            page={financeTaskPage}
+            totalPages={Math.ceil(financeTaskTotal / 20)}
+            onPageChange={setFinanceTaskPage}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
