@@ -43,6 +43,18 @@ const statusMap = {
   refunded: { label: '已回退发放', color: 'var(--color-error)' },
   expired: { label: '已过期', color: 'var(--text-secondary)' },
 }
+function formatCountdown(seconds) {
+  const safe = Math.max(0, Number(seconds) || 0)
+  const min = Math.floor(safe / 60)
+  const sec = String(safe % 60).padStart(2, '0')
+  return `${min}:${sec}`
+}
+function getCountdownTone(seconds) {
+  const safe = Math.max(0, Number(seconds) || 0)
+  if (safe <= 30) return 'danger'
+  if (safe <= 120) return 'warn'
+  return 'safe'
+}
 
 const tabList = [
   { key: 'records', label: '积分记录' },
@@ -333,7 +345,7 @@ export default function WalletPage() {
       }
       setActiveRequest(nextRequest)
       setShowQrModal(true)
-      setPollingStatus('polling')
+      setPollingStatus('active')
       setSuccessPayload(null)
       setInviteCode('')
       pollingStartedRef.current = null
@@ -348,9 +360,13 @@ export default function WalletPage() {
 
   const handleConfirmRecharge = async () => {
     if (!activeRequest) return
+    if (pollingStatus === 'expired') {
+      setRechargeMsg({ type: 'error', text: '当前金额已失效，请重新生成金额后再支付' })
+      return
+    }
     try {
       await pointsAPI.confirmRechargeRequest(activeRequest.id)
-      if (pollingStatus !== 'polling') setPollingStatus('polling')
+      if (pollingStatus !== 'verifying') setPollingStatus('verifying')
       startPolling(activeRequest.id, true, activeRequest)
     } catch (err) {
       try {
@@ -364,6 +380,12 @@ export default function WalletPage() {
             channel: data.channel || activeRequest?.channel,
           })
           fetchData(page)
+          return
+        }
+        if (data.status === 'expired') {
+          setPollingStatus('expired')
+          setCountdown(0)
+          setRechargeMsg({ type: 'error', text: '当前订单已过期，请重新生成金额' })
           return
         }
       } catch {}
@@ -385,6 +407,7 @@ export default function WalletPage() {
       count++
       try {
         const { data } = await pointsAPI.getRechargeRequest(requestId)
+        if (typeof data.remaining_seconds === 'number') setCountdown(Math.max(0, Number(data.remaining_seconds) || 0))
         if (data.status === 'approved') {
           if (countdownRef.current) clearInterval(countdownRef.current)
           setPollingStatus('success')
@@ -394,6 +417,13 @@ export default function WalletPage() {
             channel: data.channel || baseRequest?.channel,
           })
           fetchData(page)
+          return
+        }
+        if (data.status === 'expired') {
+          if (countdownRef.current) clearInterval(countdownRef.current)
+          setCountdown(0)
+          setPollingStatus('expired')
+          setRechargeMsg({ type: 'error', text: '当前金额已失效，请勿继续支付旧金额' })
           return
         }
       } catch {}
@@ -411,6 +441,7 @@ export default function WalletPage() {
     setPollingStatus(null)
     setSuccessPayload(null)
     setCountdown(0)
+    setRechargeMsg(null)
     pollingStartedRef.current = null
     if (pollingRef.current) clearTimeout(pollingRef.current)
     if (countdownRef.current) clearInterval(countdownRef.current)
@@ -423,15 +454,21 @@ export default function WalletPage() {
       setCountdown(prev => {
         if (prev <= 1) {
           clearInterval(countdownRef.current)
+          setPollingStatus(current => current === 'success' ? current : 'expired')
+          setRechargeMsg({ type: 'error', text: '当前金额已失效，请重新生成金额' })
           return 0
         }
         return prev - 1
       })
     }, 1000)
   }
+  const handleRenewRecharge = async () => {
+    if (submittingRecharge) return
+    await handleSubmitRecharge()
+  }
 
   useEffect(() => {
-    if (showQrModal && activeRequest?.id && pollingStatus === 'polling')
+    if (showQrModal && activeRequest?.id && ['active', 'verifying'].includes(pollingStatus))
       startPolling(activeRequest.id, false, activeRequest)
   }, [showQrModal, activeRequest?.id, pollingStatus])
 
@@ -455,6 +492,7 @@ export default function WalletPage() {
   }
 
   const totalPages = Math.ceil(total / size)
+  const countdownTone = getCountdownTone(countdown)
 
   const inviteBonusPreview = inviteConfig?.invite_enabled && inviteInfo?.register_invite_code
     ? Math.max(0, Math.round(rechargePoints * Number(inviteConfig?.invite_recharge_bonus_percent || 0) / 100))
@@ -784,7 +822,7 @@ export default function WalletPage() {
                     {rechargeMsg.text}
                   </div>
                 )}
-                {pollingStatus === 'polling' && (
+                {['active', 'verifying'].includes(pollingStatus) && (
                   <div className="mt-2 px-3 py-2 rounded-2xl text-xs text-[var(--color-warning)]" style={{ background: 'rgba(234,179,8,0.1)' }}>
                     正在等待到账确认...
                   </div>
@@ -792,6 +830,11 @@ export default function WalletPage() {
                 {pollingStatus === 'success' && (
                   <div className="mt-2 px-3 py-2 rounded-2xl text-xs text-[var(--color-success)]" style={{ background: 'rgba(34,197,94,0.1)' }}>
                     捐赠成功，积分已到账！
+                  </div>
+                )}
+                {pollingStatus === 'expired' && (
+                  <div className="mt-2 px-3 py-2 rounded-2xl text-xs text-[var(--color-error)]" style={{ background: 'rgba(239,68,68,0.1)' }}>
+                    当前金额已失效，请重新生成金额，勿继续支付旧金额
                   </div>
                 )}
                 {pollingStatus === 'timeout' && (
@@ -1068,6 +1111,42 @@ export default function WalletPage() {
                   收下这份感谢
                 </button>
               </>
+            ) : pollingStatus === 'expired' ? (
+              <>
+                <div className="mx-auto mb-4 flex h-18 w-18 items-center justify-center rounded-full text-4xl" style={{ background: 'rgba(239,68,68,0.12)' }}>⌛</div>
+                <div className="mb-3 rounded-[1.75rem] border px-4 py-4 text-left" style={{ background: 'linear-gradient(180deg,rgba(239,68,68,0.12),rgba(239,68,68,0.04))', borderColor: 'rgba(239,68,68,0.22)' }}>
+                  <div className="text-lg font-semibold mb-1" style={{ color: 'var(--color-error)' }}>
+                    当前支付金额已失效
+                  </div>
+                  <div className="text-sm leading-6" style={{ color: 'var(--text-primary)' }}>
+                    上一个金额和订单号已经失效，请不要继续支付旧金额，否则系统无法自动到账。
+                  </div>
+                </div>
+                {activeRequest.tx_no ? (
+                  <div className="mb-3 rounded-2xl px-4 py-3 text-left" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }}>
+                    <div className="text-[11px] mb-1" style={{ color: 'var(--text-secondary)' }}>旧订单号</div>
+                    <div className="text-sm font-mono break-all" style={{ color: 'var(--text-primary)' }}>{activeRequest.tx_no}</div>
+                  </div>
+                ) : null}
+                <div className="mb-4 rounded-2xl px-4 py-3 text-sm text-left" style={{ background: 'rgba(239,68,68,0.08)', color: 'var(--color-error)' }}>
+                  若你已经按旧金额完成支付，请保留上方订单号并联系管理员人工核单。
+                </div>
+                {rechargeMsg ? (
+                  <div
+                    className={`mb-3 px-3 py-2 rounded-2xl text-xs ${rechargeMsg.type === 'success' ? 'text-[var(--color-success)]' : 'text-[var(--color-error)]'}`}
+                    style={{ background: rechargeMsg.type === 'success' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)' }}
+                  >
+                    {rechargeMsg.text}
+                  </div>
+                ) : null}
+                <button
+                  onClick={handleRenewRecharge}
+                  className="w-full px-4 py-2.5 rounded-2xl text-sm font-medium text-white"
+                  style={{ background: 'var(--accent)' }}
+                >
+                  重新生成金额
+                </button>
+              </>
             ) : (
               <>
                 {activeRequest.discount > 0 && (
@@ -1081,6 +1160,34 @@ export default function WalletPage() {
                 <div className="text-4xl font-bold mb-1 tracking-tight" style={{ color: 'var(--text-primary)' }}>
                   ¥{activeRequest.amount.toFixed(2)}
                 </div>
+                <div
+                  className="mx-auto mb-3 inline-flex items-center rounded-full px-4 py-1.5 text-sm font-semibold tabular-nums"
+                  style={{
+                    background: countdownTone === 'danger' ? 'rgba(239,68,68,0.14)' : countdownTone === 'warn' ? 'rgba(245,158,11,0.16)' : 'rgba(34,197,94,0.12)',
+                    color: countdownTone === 'danger' ? 'var(--color-error)' : countdownTone === 'warn' ? 'var(--color-warning)' : 'var(--color-success)',
+                    boxShadow: countdownTone === 'danger' ? '0 0 0 3px rgba(239,68,68,0.08)' : 'none',
+                  }}
+                >
+                  剩余支付时间 {formatCountdown(countdown)}
+                </div>
+                <div
+                  className="mb-4 rounded-[1.5rem] border px-4 py-3 text-left"
+                  style={{
+                    background: countdownTone === 'danger' ? 'linear-gradient(180deg,rgba(239,68,68,0.10),rgba(239,68,68,0.03))' : countdownTone === 'warn' ? 'linear-gradient(180deg,rgba(245,158,11,0.10),rgba(245,158,11,0.03))' : 'var(--bg-primary)',
+                    borderColor: countdownTone === 'danger' ? 'rgba(239,68,68,0.20)' : countdownTone === 'warn' ? 'rgba(245,158,11,0.20)' : 'var(--border-color)',
+                  }}
+                >
+                  <div className="text-xs mb-1" style={{ color: countdownTone === 'danger' ? 'var(--color-error)' : countdownTone === 'warn' ? 'var(--color-warning)' : 'var(--text-secondary)' }}>
+                    支付提醒
+                  </div>
+                  <div className="text-sm leading-6" style={{ color: 'var(--text-primary)' }}>
+                    {countdownTone === 'danger'
+                      ? '金额即将失效，请立即完成支付；若超时，请重新生成金额。'
+                      : countdownTone === 'warn'
+                        ? '请尽快支付当前精确金额，超时后旧金额将自动失效。'
+                        : '请支付上方显示的精确金额，系统会自动识别到账。'}
+                  </div>
+                </div>
                 <div className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
                   {channelLabel[activeRequest.channel]}扫码支付 · {activeRequest.points}积分
                 </div>
@@ -1092,11 +1199,11 @@ export default function WalletPage() {
                 {countdown > 0 && pollingStatus !== 'success' && (
                   <div
                     className="text-xs mb-3"
-                    style={{ color: pollingStatus === 'polling' ? 'var(--color-success)' : 'var(--color-warning)' }}
+                    style={{ color: pollingStatus === 'verifying' ? 'var(--color-success)' : countdownTone === 'danger' ? 'var(--color-error)' : 'var(--color-warning)' }}
                   >
-                    {pollingStatus === 'polling'
-                      ? '已打开自动识别，检测到到账后会自动切换为感谢弹窗'
-                      : `请在 ${Math.floor(countdown / 60)}:${String(countdown % 60).padStart(2, '0')} 内完成支付`}
+                    {pollingStatus === 'verifying'
+                      ? '已触发人工确认刷新，系统仍在自动识别到账'
+                      : '请务必支付上方显示的精确金额，过期后请重新生成'}
                   </div>
                 )}
                 {(activeRequest.channel === 'alipay' ? payConfig.alipay_pay_qr_url : payConfig.wechat_pay_qr_url) ? (
@@ -1128,8 +1235,9 @@ export default function WalletPage() {
                 )}
                 <button
                   onClick={handleConfirmRecharge}
+                  disabled={pollingStatus === 'expired'}
                   className="w-full px-4 py-2.5 rounded-2xl text-sm font-medium text-white"
-                  style={{ background: 'var(--color-success)' }}
+                  style={{ background: 'var(--color-success)', opacity: pollingStatus === 'expired' ? 0.5 : 1 }}
                 >
                   <span className="inline-flex items-center gap-1.5">
                     <CheckCircle size={16} />我已支付，立即刷新一次

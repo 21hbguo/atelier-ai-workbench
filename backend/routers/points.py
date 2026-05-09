@@ -46,6 +46,11 @@ def _expire_stale_requests(conn, user_id: int):
         "UPDATE recharge_requests SET status = 'expired' WHERE user_id = %s AND status = 'pending' AND created_at < NOW() - interval '10 minutes'",
         (user_id,),
     )
+def _expire_request_if_stale(conn, request_id: int, user_id: int):
+    conn.execute(
+        "UPDATE recharge_requests SET status = 'expired' WHERE id = %s AND user_id = %s AND status = 'pending' AND created_at < NOW() - interval '10 minutes'",
+        (request_id, user_id),
+    )
 
 def _generate_unique_discount(conn, user_id: int) -> float:
     import random
@@ -196,24 +201,36 @@ async def list_recharge_requests(page: int = Query(1, ge=1), size: int = Query(2
 @router.get("/recharge/requests/{request_id}")
 async def get_recharge_request(request_id: int, user=Depends(get_current_user)):
     with get_db() as conn:
+        _expire_request_if_stale(conn, request_id, user["user_id"])
         row = conn.execute(
             "SELECT id, channel, amount, points, status, user_confirmed, created_at FROM recharge_requests WHERE id = %s AND user_id = %s",
             (request_id, user["user_id"]),
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="请求不存在")
-        return dict(row)
+        item = dict(row)
+        from datetime import datetime, timedelta
+        created = item.get("created_at")
+        if isinstance(created, str):
+            created = datetime.strptime(created, "%Y-%m-%d %H:%M:%S")
+        expires_at = created + timedelta(minutes=10) if created else None
+        remaining = max(0, int((expires_at - datetime.now()).total_seconds())) if expires_at and item.get("status") == "pending" else 0
+        item["remaining_seconds"] = remaining
+        return item
 
 
 @router.post("/recharge/requests/{request_id}/confirm")
 async def confirm_recharge_request(request_id: int, user=Depends(get_current_user)):
     with get_db() as conn:
+        _expire_request_if_stale(conn, request_id, user["user_id"])
         row = conn.execute(
             "SELECT id, status FROM recharge_requests WHERE id = %s AND user_id = %s",
             (request_id, user["user_id"]),
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="请求不存在")
+        if row["status"] == "expired":
+            raise HTTPException(status_code=400, detail="订单已过期，请重新生成金额")
         if row["status"] != "pending":
             raise HTTPException(status_code=400, detail="该请求已处理")
         from datetime import datetime
