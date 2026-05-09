@@ -102,12 +102,12 @@ def _consume_generation_slot_for_existing_task(task_id: str, user_id: int, cost:
             raise HTTPException(status_code=402, detail=f"积分不足，需要 {cost} 积分")
         return {"points_balance_after": points_balance_after, "is_admin": bool(user["is_admin"])}
 def _build_task_meta(task_id: str, task_type: str, params: dict):
-    meta = {"prompt": params.get("prompt") or "", "size": params.get("size"), "type": task_type, "task_id": task_id, "model_id": params.get("model_id"), "share_to_square": bool(params.get("share_to_square")), "client_request_id": params.get("client_request_id")}
+    meta = {"prompt": params.get("prompt") or "", "size": params.get("size"), "resolution": params.get("resolution"), "aspect_ratio": params.get("aspect_ratio"), "type": task_type, "task_id": task_id, "model_id": params.get("model_id"), "share_to_square": bool(params.get("share_to_square")), "client_request_id": params.get("client_request_id")}
     if task_type == "text_image":
         meta["input_urls"] = params.get("image_urls") or []
     return meta
 def _build_submit_payload(task_type: str, params: dict, cost: int, refund_request_key: str = None):
-    payload = {"prompt": params.get("prompt") or "", "size": params.get("size") or "auto", "quality": params.get("quality"), "model_id": params.get("model_id"), "share_to_square": bool(params.get("share_to_square")), "client_request_id": params.get("client_request_id"), "_cost": cost}
+    payload = {"prompt": params.get("prompt") or "", "size": params.get("size") or "auto", "resolution": params.get("resolution"), "aspect_ratio": params.get("aspect_ratio"), "quality": params.get("quality"), "model_id": params.get("model_id"), "share_to_square": bool(params.get("share_to_square")), "client_request_id": params.get("client_request_id"), "_cost": cost}
     if task_type == "text_image":
         payload["image_urls"] = params.get("image_urls") or []
     if refund_request_key:
@@ -156,7 +156,7 @@ def _share_to_square(user_id: int, file_path: str, prompt: str, size: str, task_
 
 async def _run_generation(task_id: str, task_type: str, submit_payload: dict, meta: dict, user_id: int, is_admin: bool):
     try:
-        result = await GenGateway.submit(model_id=submit_payload.get("model_id"), prompt=submit_payload["prompt"], size=submit_payload["size"], quality=submit_payload.get("quality"), image_urls=submit_payload.get("image_urls") or [])
+        result = await GenGateway.submit(model_id=submit_payload.get("model_id"), prompt=submit_payload["prompt"], size=submit_payload["size"], resolution=submit_payload.get("resolution"), aspect_ratio=submit_payload.get("aspect_ratio"), quality=submit_payload.get("quality"), image_urls=submit_payload.get("image_urls") or [])
         external_task_id = result["external_task_id"]
         provider_id = result["provider_id"]
         model_id = result["model_id"]
@@ -220,7 +220,7 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
     logger.info(f"[submit.start] type=text task={task_id} user={user_id} prompt_len={len(request.prompt or '')}")
     is_admin = user.get("is_admin")
     cost = _get_model_cost(request.model_id)
-    task_params = {"prompt": request.prompt, "size": request.size, "quality": request.quality, "model_id": request.model_id, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}
+    task_params = {"prompt": request.prompt, "size": request.size, "resolution": request.resolution, "aspect_ratio": request.aspect_ratio, "quality": request.quality, "model_id": request.model_id, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}
     points_balance_after = _reserve_generation_slot(task_id, "text", task_params, user_id, cost)
 
     update_user_ip(user_id, get_client_ip(req))
@@ -237,10 +237,10 @@ async def generate_text(request: GenerateTextRequest, req: Request, user=Depends
             PointsService.refund(user_id, cost, "违禁词退还", request_key=f"refund:{task_id}")
             raise HTTPException(status_code=400, detail="提示词包含违禁词，请修改后重试")
 
-        submit_dict = {"prompt": request.prompt, "size": request.size, "quality": request.quality, "model_id": request.model_id, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id, "_cost": cost}
+        submit_dict = {"prompt": request.prompt, "size": request.size, "resolution": request.resolution, "aspect_ratio": request.aspect_ratio, "quality": request.quality, "model_id": request.model_id, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id, "_cost": cost}
         TaskManager.update_task(task_id, status="processing", progress=10)
         logger.info(f"[submit.task_created] type=text task={task_id} user={user_id}")
-        meta = {"prompt": request.prompt, "size": request.size, "type": "text", "task_id": task_id, "model_id": request.model_id, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}
+        meta = {"prompt": request.prompt, "size": request.size, "resolution": request.resolution, "aspect_ratio": request.aspect_ratio, "type": "text", "task_id": task_id, "model_id": request.model_id, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}
         asyncio.create_task(_run_generation(task_id, "text", submit_dict, meta, user_id, bool(is_admin)))
         return GenerateResponse(task_id=task_id, status="processing", message="任务已提交")
 
@@ -266,7 +266,7 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
     logger.info(f"[submit.start] type=text_image task={task_id} user={user_id} prompt_len={len(request.prompt or '')} images={len(request.image_urls or [])}")
     is_admin = user.get("is_admin")
     cost = _get_model_cost(request.model_id)
-    task_params = {"prompt": request.prompt, "size": request.size, "quality": request.quality, "model_id": request.model_id, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}
+    task_params = {"prompt": request.prompt, "size": request.size, "resolution": request.resolution, "aspect_ratio": request.aspect_ratio, "quality": request.quality, "model_id": request.model_id, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}
     points_balance_after = _reserve_generation_slot(task_id, "text_image", task_params, user_id, cost)
 
     update_user_ip(user_id, get_client_ip(req))
@@ -283,10 +283,10 @@ async def generate_text_image(request: GenerateTextImageRequest, req: Request, u
             PointsService.refund(user_id, cost, "违禁词退还", request_key=f"refund:{task_id}")
             raise HTTPException(status_code=400, detail="提示词包含违禁词，请修改后重试")
 
-        submit_dict = {"prompt": request.prompt, "size": request.size, "quality": request.quality, "model_id": request.model_id, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id, "_cost": cost}
+        submit_dict = {"prompt": request.prompt, "size": request.size, "resolution": request.resolution, "aspect_ratio": request.aspect_ratio, "quality": request.quality, "model_id": request.model_id, "image_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id, "_cost": cost}
         TaskManager.update_task(task_id, status="processing", progress=10)
         logger.info(f"[submit.task_created] type=text_image task={task_id} user={user_id}")
-        meta = {"prompt": request.prompt, "size": request.size, "type": "text_image", "task_id": task_id, "model_id": request.model_id, "input_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}
+        meta = {"prompt": request.prompt, "size": request.size, "resolution": request.resolution, "aspect_ratio": request.aspect_ratio, "type": "text_image", "task_id": task_id, "model_id": request.model_id, "input_urls": request.image_urls, "share_to_square": bool(request.share_to_square), "client_request_id": request.client_request_id}
         asyncio.create_task(_run_generation(task_id, "text_image", submit_dict, meta, user_id, bool(is_admin)))
         return GenerateResponse(task_id=task_id, status="processing", message="任务已提交")
 

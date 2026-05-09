@@ -8,6 +8,7 @@ window.matchMedia=window.matchMedia||(()=>({matches:false,media:'',onchange:null
 window.scrollTo=window.scrollTo||(()=>{})
 window.requestAnimationFrame=window.requestAnimationFrame||(cb=>setTimeout(cb,0))
 window.cancelAnimationFrame=window.cancelAnimationFrame||(id=>clearTimeout(id))
+if(!HTMLElement.prototype.scrollTo)HTMLElement.prototype.scrollTo=()=>{}
 Object.defineProperty(window,'showSaveFilePicker',{configurable:true,writable:true,value:undefined})
 Object.defineProperty(window.navigator,'virtualKeyboard',{configurable:true,writable:true,value:null})
 window.alert=vi.fn()

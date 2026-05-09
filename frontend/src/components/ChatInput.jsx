@@ -39,6 +39,8 @@ function normalizeImageName(name, type, fallback = 'reference') {
   return `${base}.${getImageExt(type, raw)}`
 }
 const MAX_IMAGES=5
+function isVipModel(modelId=''){return modelId==='grsai-vip'}
+function normalizeGenerationParams(params={}){const next={...(params||{})};if(isVipModel(next.model_id)){next.size='auto';if((next.resolution||'auto')==='auto')next.aspectRatio=''}return next}
 function createImageId(){if(typeof crypto!=='undefined'&&typeof crypto.randomUUID==='function')return crypto.randomUUID();return`ref-${Date.now()}-${Math.random().toString(36).slice(2,10)}`}
 function createInputImageItem(input={},fallback=`reference-${Date.now()}`){const file=input?.file||null;const type=input?.type||file?.type||'image/png';const name=normalizeImageName(input?.name||file?.name||fallback,type,fallback);const uploadedUrl=String(input?.uploadedUrl||'').trim();const uploadedStorageName=String(input?.uploadedStorageName||'').trim();const uploadStatus=input?.uploadStatus||(uploadedUrl&&(uploadedStorageName||uploadedUrl)?'success':'pending');return{id:input?.id||createImageId(),name,type,preview:input?.preview||input?.url||'',url:input?.url||'',file,uploadStatus,uploadProgress:uploadStatus==='success'?100:Math.max(0,Math.min(100,Number(input?.uploadProgress)||0)),uploadedUrl,uploadedStorageName:uploadedStorageName||uploadedUrl,uploadError:String(input?.uploadError||'')}}
 function snapshotInputImages(list=[]){return list.map((img,i)=>({id:img?.id||`reference-${i}`,name:img?.name||img?.file?.name||`reference-${i}`,type:img?.type||img?.file?.type||'image/png',preview:img?.preview||img?.url||'',url:img?.url||'',file:img?.file||null,uploadStatus:img?.uploadStatus||'pending',uploadProgress:Number(img?.uploadProgress)||0,uploadedUrl:img?.uploadedUrl||'',uploadedStorageName:img?.uploadedStorageName||'',uploadError:img?.uploadError||''}))}
@@ -54,7 +56,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const [prompt, setPrompt] = useState('')
   const [images, setImages] = useState([])
   const [showParams, setShowParams] = useState(false)
-  const [params, setParams] = useState({ size: 'auto', model_id: 'gpt-image-2', roll_count: 5, optimize_stream: false })
+  const [params, setParams] = useState({ size: 'auto', resolution: 'auto', aspectRatio: '', model_id: 'gpt-image-2', roll_count: 5, optimize_stream: false })
   const [shareToSquare, setShareToSquare] = useState(false)
   const [lightbox, setLightbox] = useState(null)
   const [optimizeLoading, setOptimizeLoading] = useState(false)
@@ -74,6 +76,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const [showBatchModal, setShowBatchModal] = useState(false)
   const [selectedBatchCount, setSelectedBatchCount] = useState(1)
   const [requestSubmitting, setRequestSubmitting] = useState(false)
+  const modelRequestCost=params?._points_cost||requestCost
   const fileRef = useRef(null)
   const textareaRef = useRef(null)
   const paramsStatePushedRef = useRef(false)
@@ -614,7 +617,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     const inputImages = snapshotInputImages(images.filter(img=>img.uploadStatus==='success'))
     setRequestSubmitting(true)
     try {
-      const ok = await onSubmit({ prompt: fullPrompt, images: inputImages, params, shareToSquare, rollCount: batchCount, clearInput: clearComposer })
+      const ok = await onSubmit({ prompt: fullPrompt, images: inputImages, params: normalizeGenerationParams(params), shareToSquare, rollCount: batchCount, clearInput: clearComposer })
       if (ok === false) return
       if (ok !== 'cleared') clearComposer()
     } finally {
@@ -750,11 +753,13 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
                 <Send size={16} style={{ color: 'var(--accent)' }} />
                 <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>批量生成</span>
               </div>
-              <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>选择生成张数，每张消耗 {requestCost} 积分。</p>
+              <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>选择生成张数，每张消耗 {modelRequestCost} 积分。</p>
               <div className="mb-3 p-2.5 rounded-xl" style={{ background: 'var(--bg-ai-bubble)' }}>
                 <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
                   <span style={{ color: 'var(--text-secondary)' }}>模型: <span style={{ color: 'var(--text-primary)' }}>{params._model_label || params.model_id}</span></span>
-                  <span style={{ color: 'var(--text-secondary)' }}>尺寸: <span style={{ color: 'var(--text-primary)' }}>{params.size || 'auto'}</span></span>
+                  {isVipModel(params.model_id)?<span style={{ color: 'var(--text-secondary)' }}>分辨率: <span style={{ color: 'var(--text-primary)' }}>{params.resolution||'auto'}</span></span>:<span style={{ color: 'var(--text-secondary)' }}>尺寸: <span style={{ color: 'var(--text-primary)' }}>{params.size || 'auto'}</span></span>}
+                  {isVipModel(params.model_id)&&params.resolution&&params.resolution!=='auto'&&params.aspectRatio?<span style={{ color: 'var(--text-secondary)' }}>比例: <span style={{ color: 'var(--text-primary)' }}>{params.aspectRatio}</span></span>:null}
+                  {params.quality?<span style={{ color: 'var(--text-secondary)' }}>{isVipModel(params.model_id)?'画质':'质量'}: <span style={{ color: 'var(--text-primary)' }}>{params.quality}</span></span>:null}
                   {type && <span style={{ color: 'var(--text-secondary)' }}>类型: <span style={{ color: 'var(--accent)' }}>{type}</span></span>}
                   {style && <span style={{ color: 'var(--text-secondary)' }}>风格: <span style={{ color: 'var(--accent)' }}>{style}</span></span>}
                   {mood && <span style={{ color: 'var(--text-secondary)' }}>氛围: <span style={{ color: 'var(--accent)' }}>{mood}</span></span>}
@@ -775,7 +780,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
               </div>
               <div className="flex items-center justify-between mb-4 px-1">
                 <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>消耗积分</span>
-                <span className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>{requestCost * selectedBatchCount}</span>
+                <span className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>{modelRequestCost * selectedBatchCount}</span>
               </div>
               <div className="flex gap-2">
                 <button onClick={() => setShowBatchModal(false)} disabled={requestSubmitting} className="flex-1 py-2 rounded-2xl text-xs font-medium border transition-colors disabled:opacity-40" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>取消</button>

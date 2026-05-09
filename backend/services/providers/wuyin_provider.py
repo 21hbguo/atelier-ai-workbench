@@ -12,7 +12,7 @@ class WuyinImageProvider:
     def _base_url(cls, conf: Dict[str, Any]) -> str:
         return ((conf or {}).get("api_url") or IMAGE_GEN_API_URL()).rstrip("/")
     @classmethod
-    async def submit(cls, conf: Dict[str, Any], prompt: str, size: str="auto", quality: Optional[str]=None, urls: Optional[List[str]]=None, model: Optional[str]=None) -> Dict[str, Any]:
+    async def submit(cls, conf: Dict[str, Any], prompt: str, size: str="auto", resolution: Optional[str]=None, aspect_ratio: Optional[str]=None, quality: Optional[str]=None, urls: Optional[List[str]]=None, model: Optional[str]=None) -> Dict[str, Any]:
         headers={"Authorization":cls._auth_value(conf)}
         payload={"prompt":prompt,"size":size}
         if urls: payload["urls"]=urls

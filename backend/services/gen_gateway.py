@@ -63,7 +63,7 @@ class GenGateway:
             provider_ids.append(pid)
         return {"model_id":resolved["model_id"],"model":m,"provider_ids":provider_ids}
     @classmethod
-    async def submit(cls, model_id: Optional[str], prompt: str, size: str="auto", quality: Optional[str]=None, image_urls: Optional[List[str]]=None) -> Dict[str, Any]:
+    async def submit(cls, model_id: Optional[str], prompt: str, size: str="auto", resolution: Optional[str]=None, aspect_ratio: Optional[str]=None, quality: Optional[str]=None, image_urls: Optional[List[str]]=None) -> Dict[str, Any]:
         chain=cls.choose_provider_chain(model_id)
         model_conf=chain.get("model") or {}
         model_name=model_conf.get("model")
@@ -75,7 +75,7 @@ class GenGateway:
             impl=cls._provider_impl(conf)
             if not impl: continue
             try:
-                ret=await impl.submit(conf,prompt=prompt,size=size,quality=quality,urls=image_urls,model=model_name)
+                ret=await impl.submit(conf,prompt=prompt,size=size,resolution=resolution,aspect_ratio=aspect_ratio,quality=quality,urls=image_urls,model=model_name)
                 cls._mark_success(pid)
                 tried.append({"provider_id":pid,"ok":True})
                 return {"model_id":chain["model_id"],"provider_id":pid,"external_task_id":ret["external_task_id"],"provider_trace":tried}

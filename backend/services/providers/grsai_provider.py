@@ -4,6 +4,7 @@ from backend.services.image_gen import get_http_client
 
 class GrsAIProvider:
     provider_type = "grsai"
+    _vip_pixels={"low":{"1:1":"1024x1024","16:9":"1774x887","9:16":"887x1774","3:2":"1536x1024","2:3":"1024x1536","4:3":"1365x1024","3:4":"1024x1365"},"medium":{"1:1":"2048x2048","16:9":"2048x1152","9:16":"1152x2048","3:2":"2048x1360","2:3":"1360x2048","4:3":"2048x1536","3:4":"1536x2048"},"high":{"1:1":"2880x2880","16:9":"3840x2160","9:16":"2160x3840","3:2":"3504x2336","2:3":"2336x3504","4:3":"3328x2496","3:4":"2496x3328"}}
 
     @classmethod
     def _base_url(cls, conf: Dict[str, Any]) -> str:
@@ -14,19 +15,31 @@ class GrsAIProvider:
         return f"Bearer {(conf or {}).get('api_key') or ''}"
 
     @classmethod
-    async def submit(cls, conf: Dict[str, Any], prompt: str, size: str = "auto", quality: Optional[str] = None, urls: Optional[List[str]] = None, model: Optional[str] = None) -> Dict[str, Any]:
+    def _resolve_vip_aspect_pixels(cls, resolution: Optional[str], aspect_ratio: Optional[str]) -> str:
+        res = str(resolution or "").strip().lower()
+        ratio = str(aspect_ratio or "").strip()
+        if not res or res == "auto": return ""
+        return cls._vip_pixels.get(res, {}).get(ratio, "")
+
+    @classmethod
+    async def submit(cls, conf: Dict[str, Any], prompt: str, size: str = "auto", resolution: Optional[str] = None, aspect_ratio: Optional[str] = None, quality: Optional[str] = None, urls: Optional[List[str]] = None, model: Optional[str] = None) -> Dict[str, Any]:
         headers = {
             "Content-Type": "application/json",
             "Authorization": cls._auth_header(conf)
         }
+        model_name = model or (conf or {}).get("model") or "gpt-image-2"
         payload = {
-            "model": model or (conf or {}).get("model") or "gpt-image-2",
+            "model": model_name,
             "prompt": prompt,
             "webHook": "-1",
             "shutProgress": False
         }
         size = str(size or "").strip()
-        if size and size != "auto":
+        if model_name == "gpt-image-2-vip":
+            vip_pixels = cls._resolve_vip_aspect_pixels(resolution, aspect_ratio)
+            if vip_pixels:
+                payload["aspectRatio"] = vip_pixels
+        elif size and size != "auto":
             payload["size" if "x" in size.lower() else "aspectRatio"] = size
         quality = str(quality or "").strip()
         if quality and quality != "auto":

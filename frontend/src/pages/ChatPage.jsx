@@ -92,11 +92,17 @@ const TASK_CONFIRM_TIMEOUT_MS = 40 * 60 * 1000
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)) }
 function shouldRetryNetworkError(message = '') { const s = String(message || '').toLowerCase(); return !!s && ['timeout', 'network error', 'fetch', 'socket', 'econn', 'etimedout', 'abort', 'connection', 'not found', '502', '503', '504'].some(k => s.includes(k)) }
 function normalizeGenerationError(message = '') { const s = String(message || ''); const lower = s.toLowerCase(); if (lower.includes('image url failed') || lower.includes('image_url_failed') || lower.includes('invalid image url') || lower.includes('image url invalid')) return '参考图链接失效或不可访问，请重新上传参考图'; return s }
+function isVipModel(modelId=''){return modelId==='grsai-vip'}
+function getGenerationModeLabel(params={}){return params?.image_urls?.length?'图生图':'文生图'}
+function getVipResolutionLabel(value=''){return value==='low'?'1K':value==='medium'?'2K':value==='high'?'4K':'自动'}
+function getGenerationSizeLabel(params={}){if(isVipModel(params?.model_id)){const resolution=params?.resolution||'auto';const ratio=params?.aspect_ratio||params?.aspectRatio||'';const quality=params?.quality||'';const parts=[`分辨率:${getVipResolutionLabel(resolution)}`];if(resolution!=='auto'&&ratio)parts.push(`比例:${ratio}`);if(quality)parts.push(`画质:${quality}`);return parts.join(' / ')}const size=params?.size||'';const quality=params?.quality||'';return [size?`尺寸:${size}`:'',quality?`质量:${quality}`:''].filter(Boolean).join(' / ')}
+function normalizeSubmissionParams(params={}){const next={...(params||{})};if(isVipModel(next.model_id)){next.size='auto';next.resolution=next.resolution||'auto';next.aspect_ratio=next.aspect_ratio??next.aspectRatio??'';if(next.resolution==='auto')next.aspect_ratio=''}return next}
 function formatSubmitSettings(params, shareToSquare, imageCount) {
   const modelLabel = params?._model_label || params?.model_id || '默认模型'
   const lines = [`模型：${modelLabel}`]
-  if (params?.size) lines.push(`尺寸：${params.size}`)
-  const extra = Object.entries(params || {}).filter(([key, value]) => !['size', 'model_id', '_model_label', '_points_cost', 'roll_count', 'optimize_stream'].includes(key) && value !== undefined && value !== null && value !== '')
+  const sizeLabel=getGenerationSizeLabel(params)
+  if (sizeLabel) lines.push(sizeLabel)
+  const extra = Object.entries(params || {}).filter(([key, value]) => !['size','resolution','aspect_ratio','aspectRatio','quality', 'model_id', '_model_label', '_points_cost', 'roll_count', 'optimize_stream'].includes(key) && value !== undefined && value !== null && value !== '')
   for (const [key, value] of extra) lines.push(`${key}：${value}`)
   lines.push(`参考图：${imageCount || 0} 张`)
   lines.push(`分享：${shareToSquare ? '开启' : '关闭'}`)
@@ -106,7 +112,7 @@ function makePromptLibraryName(prompt=''){const clean=String(prompt||'').replace
 function getThumbnailBlurStorageKey(user){const id=user?.id??user?.user_id??user?.username??'guest';return`chat_thumbnail_blur_${id}`}
 function getThumbnailBlurMap(user){try{return JSON.parse(localStorage.getItem(getThumbnailBlurStorageKey(user))||'{}')}catch{return {}}}
 function getThumbnailBlurItemKey(task){return String(task?.result_urls?.[0]?.split('/').pop()||task?.task_id||'')}
-function buildDetailCardsFromTask(task, expiryByFilename = {}, squareIdMap = {}) { const prompt = task?.params?.prompt || task?.prompt || ''; return (task?.result_urls || []).map((url, idx) => { const filename = url.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, filename); const expired = typeof exp.expired === 'boolean' ? exp.expired : !!task.expired; return { _type: 'image', _raw: { filename, metadata: { prompt, task_id: task.task_id, created_at: task.created_at, started_at: task.started_at, completed_at: task.completed_at, type: task?.params?.image_urls?.length ? 'image' : 'text', size: task?.params?.size, input_urls: task?.params?.image_urls } }, id: `${task.task_id}-${idx}`, prompt, fullUrl: `/api/images/file/${filename}`, filename, expiresAt: exp.expires_at || task.expires_at || null, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : !!task.is_permanent, daysLeft: typeof exp.days_left === 'number' ? exp.days_left : task.days_left, expired, square_image_id: squareIdMap[filename] || exp.square_image_id || task.square_image_id || null } }) }
+function buildDetailCardsFromTask(task, expiryByFilename = {}, squareIdMap = {}) { const prompt = task?.params?.prompt || task?.prompt || ''; const params=task?.params||{}; return (task?.result_urls || []).map((url, idx) => { const filename = url.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, filename); const expired = typeof exp.expired === 'boolean' ? exp.expired : !!task.expired; return { _type: 'image', _raw: { filename, metadata: { prompt, task_id: task.task_id, created_at: task.created_at, started_at: task.started_at, completed_at: task.completed_at, type: getGenerationModeLabel(params), size: getGenerationSizeLabel(params), input_urls: params?.image_urls } }, id: `${task.task_id}-${idx}`, prompt, fullUrl: `/api/images/file/${filename}`, filename, expiresAt: exp.expires_at || task.expires_at || null, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : !!task.is_permanent, daysLeft: typeof exp.days_left === 'number' ? exp.days_left : task.days_left, expired, square_image_id: squareIdMap[filename] || exp.square_image_id || task.square_image_id || null } }) }
 function mergeTasksById(list = []) { const map = new Map(); for (const task of list) { if (!task?.task_id) continue; map.set(task.task_id, { ...(map.get(task.task_id) || {}), ...task }) } return Array.from(map.values()) }
 function buildSubmissionImages(items = []) { return items.map((img, idx) => ({ id: img?.id || `reference-${idx}`, name: img?.name || img?.file?.name || `reference-${idx}`, type: img?.type || img?.file?.type || 'image/png', url: img?.url || '', preview: img?.preview || img?.url || '', file: img?.file || null, uploadStatus: img?.uploadStatus || '', uploadProgress: Number(img?.uploadProgress) || 0, uploadedUrl: img?.uploadedUrl || '', uploadedStorageName: img?.uploadedStorageName || '', uploadError: img?.uploadError || '' })) }
 function buildPendingTaskFromSubmission(item) { const prompt = item?.prompt || item?.params?.prompt || ''; return { task_id: item.real_task_id || item.temp_task_id, status: item.status || 'processing', prompt, params: { ...(item.params || {}), prompt }, previewImages: (item.images || []).map(img => img?.preview || img?.url).filter(Boolean), created_at: item.created_at || formatLocalTime(new Date()), started_at: item.started_at || item.created_at || formatLocalTime(new Date()), completed_at: item.completed_at || null, error: item.error || null, _active: false, _local_submission: true, _points_consumed: !!item.points_consumed, type: item.type || ((item.images || []).length ? 'text_image' : 'text') } }
@@ -506,7 +512,7 @@ export default function ChatPage() {
       const { data } = await squareAPI.share({
         filename,
         prompt,
-        metadata: { size: params?.size, type: hasImages ? 'image' : 'text', input_urls: imageUrls?.length ? imageUrls : undefined },
+        metadata: { size: getGenerationSizeLabel(params||{}), type: hasImages ? 'image' : 'text', input_urls: imageUrls?.length ? imageUrls : undefined },
       })
       markSquareShared(filename, data?.id)
       setTimeout(() => window.dispatchEvent(new Event('gallery-updated')), 2500)
@@ -568,7 +574,8 @@ export default function ChatPage() {
     let lastError = null
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const req = hasImages ? generateAPI.submitTextImage({ prompt, image_urls: imageUrls, size: baseParams?.size || 'auto', quality: baseParams?.quality || undefined, model_id: baseParams?.model_id, task_id: realTaskId, client_request_id: submissionId, share_to_square: !!shareToSquare, local_image_urls: localImageUrls }) : generateAPI.submitText({ prompt, size: baseParams?.size || 'auto', quality: baseParams?.quality || undefined, model_id: baseParams?.model_id, task_id: realTaskId, client_request_id: submissionId, share_to_square: !!shareToSquare })
+        const payloadBase={prompt,size:baseParams?.size||'auto',resolution:baseParams?.resolution||undefined,aspect_ratio:baseParams?.aspect_ratio??baseParams?.aspectRatio??undefined,quality:baseParams?.quality||undefined,model_id:baseParams?.model_id,task_id:realTaskId,client_request_id:submissionId,share_to_square:!!shareToSquare}
+        const req = hasImages ? generateAPI.submitTextImage({ ...payloadBase, image_urls: imageUrls, local_image_urls: localImageUrls }) : generateAPI.submitText(payloadBase)
         return (await req).data
       } catch (e) {
         lastError = e
@@ -636,7 +643,7 @@ export default function ChatPage() {
             const cardPrompt = taskStatus.params?.prompt || taskStatus.prompt || prompt
             const newCards = taskStatus.result_urls.map((url, idx) => {
               const filename = url.split('/').pop()
-              return { _type: 'image', _raw: { filename, metadata: { prompt: cardPrompt, task_id: taskId, created_at: taskStatus.created_at, started_at: taskStatus.started_at, completed_at: taskStatus.completed_at, type: taskStatus.params?.image_urls?.length ? 'image' : 'text', size: taskStatus.params?.size, input_urls: taskStatus.params?.local_image_urls || taskStatus.params?.image_urls } }, id: `${taskId}-${idx}`, prompt: cardPrompt, fullUrl: `/api/images/file/${filename}`, filename }
+              return { _type: 'image', _raw: { filename, metadata: { prompt: cardPrompt, task_id: taskId, created_at: taskStatus.created_at, started_at: taskStatus.started_at, completed_at: taskStatus.completed_at, type: getGenerationModeLabel(taskStatus.params||{}), size: getGenerationSizeLabel(taskStatus.params||{}), input_urls: taskStatus.params?.local_image_urls || taskStatus.params?.image_urls } }, id: `${taskId}-${idx}`, prompt: cardPrompt, fullUrl: `/api/images/file/${filename}`, filename }
             })
             setDetailCards(prev => {
               const existing = new Set(prev.map(c => c.id))
@@ -708,7 +715,7 @@ export default function ChatPage() {
     const createdAt = item.created_at || formatLocalTime(new Date())
     const startedAt = item.started_at || formatLocalTime(new Date())
     const prompt = item.prompt || item?.params?.prompt || ''
-    const baseParams = { ...(item.params || {}), prompt, share_to_square: !!item.shareToSquare }
+    const baseParams = normalizeSubmissionParams({ ...(item.params || {}), prompt, share_to_square: !!item.shareToSquare })
     const modelCost = baseParams?._points_cost || requestCost
     const realTaskId = item.real_task_id || makeTaskId()
     const hasExistingRealTask = !!item.real_task_id
@@ -754,7 +761,7 @@ export default function ChatPage() {
       if (data.status === 'completed') {
         updateTask(finalTaskId, { status: 'completed', result_urls: data.result_urls || [], params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: false })
         if (data.result_urls?.length) {
-          const newCards = data.result_urls.map((url, idx) => { const filename = url.split('/').pop(); return { _type: 'image', _raw: { filename, metadata: { prompt, task_id: finalTaskId, created_at: createdAt, started_at: startedAt, completed_at: formatLocalTime(new Date()), type: hasImages ? 'image' : 'text', size: baseParams?.size, input_urls: localImageUrls.length ? localImageUrls : imageUrls } }, id: `${finalTaskId}-${idx}`, prompt, fullUrl: `/api/images/file/${filename}`, filename, expired: false } })
+          const newCards = data.result_urls.map((url, idx) => { const filename = url.split('/').pop(); return { _type: 'image', _raw: { filename, metadata: { prompt, task_id: finalTaskId, created_at: createdAt, started_at: startedAt, completed_at: formatLocalTime(new Date()), type: getGenerationModeLabel(baseParams), size: getGenerationSizeLabel(baseParams), input_urls: localImageUrls.length ? localImageUrls : imageUrls } }, id: `${finalTaskId}-${idx}`, prompt, fullUrl: `/api/images/file/${filename}`, filename, expired: false } })
           setDetailCards(prev => { const existing = new Set(prev.map(card => card.id)); const toAdd = newCards.filter(card => !existing.has(card.id)); return toAdd.length ? [...prev, ...toAdd] : prev })
         }
       } else {
@@ -849,7 +856,8 @@ export default function ChatPage() {
         return false
       }
       const sharedUploadParams = successImages.length > 0 ? { image_urls: successImages.map(img => img.uploadedUrl).filter(Boolean), local_image_urls: successImages.map(img => img.uploadedStorageName || img.uploadedUrl).filter(Boolean) } : {}
-      const submissions = Array.from({ length: batchCount }, (_, index) => ({ client_request_id: makeTaskId(), temp_task_id: `pending-${Date.now()}-${index}-${Math.random().toString(16).slice(2, 8)}`, real_task_id: null, prompt, images: successImages, params: { ...params, ...sharedUploadParams, prompt, share_to_square: !!shareToSquare }, shareToSquare: !!shareToSquare, type: successImages.length ? 'text_image' : 'text', status: 'processing', created_at: now, started_at: now, error: null }))
+      const normalizedParams = normalizeSubmissionParams({ ...params, ...sharedUploadParams, prompt, share_to_square: !!shareToSquare })
+      const submissions = Array.from({ length: batchCount }, (_, index) => ({ client_request_id: makeTaskId(), temp_task_id: `pending-${Date.now()}-${index}-${Math.random().toString(16).slice(2, 8)}`, real_task_id: null, prompt, images: successImages, params: normalizedParams, shareToSquare: !!shareToSquare, type: successImages.length ? 'text_image' : 'text', status: 'processing', created_at: now, started_at: now, error: null }))
       const stagedTasks = submissions.map(buildPendingTaskFromSubmission)
       setTasks(prev => {
         const next = mergeTasksById([...prev, ...stagedTasks])

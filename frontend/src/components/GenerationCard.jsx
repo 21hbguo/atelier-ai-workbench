@@ -4,6 +4,9 @@ import { squareAPI, shareAPI } from '../api'
 import UnifiedCard from './UnifiedCard'
 import { getExpiryInfo } from '../utils/expiry'
 function normalizeCardText(v=''){return String(v||'').replace(/\s+/g,' ').trim()}
+function isVipModel(modelId=''){return modelId==='grsai-vip'}
+function getVipResolutionLabel(value=''){return value==='low'?'1K':value==='medium'?'2K':value==='high'?'4K':'自动'}
+function getGenerationSizeLabel(params={}){if(isVipModel(params?.model_id)){const resolution=params?.resolution||'auto';const ratio=params?.aspect_ratio||params?.aspectRatio||'';const quality=params?.quality||'';const parts=[`分辨率:${getVipResolutionLabel(resolution)}`];if(resolution!=='auto'&&ratio)parts.push(`比例:${ratio}`);if(quality)parts.push(`画质:${quality}`);return parts.join(' / ')}const size=params?.size||'';const quality=params?.quality||'';return [size?`尺寸:${size}`:'',quality?`质量:${quality}`:''].filter(Boolean).join(' / ')}
 
 const statusConfig = {
   queued: { color: 'var(--color-warning)', bg: 'color-mix(in srgb, var(--color-warning) 12%, transparent)', label: '排队中' },
@@ -64,7 +67,7 @@ export default function GenerationCard({ task, onAddImage, onAddPrompt, onAddToP
       await squareAPI.share({
         filename,
         prompt,
-        metadata: { size: task.params?.size, type: task.params?.image_urls?.length ? 'image' : 'text' },
+        metadata: { size: getGenerationSizeLabel(task.params||{}), type: task.params?.image_urls?.length ? 'image' : 'text' },
       })
       setShared(true)
     } catch (err) {

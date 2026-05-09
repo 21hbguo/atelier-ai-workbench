@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import { configAPI } from '../api'
 
+function isVipModel(modelId=''){return modelId==='grsai-vip'}
+
 export default function ParamPanel({ params, onChange }) {
   const [models, setModels] = useState([])
 
@@ -16,6 +18,7 @@ export default function ParamPanel({ params, onChange }) {
   )
 
   const modelParams = currentModel?.params || {}
+  const visibleEntries = useMemo(() => Object.entries(modelParams).filter(([key]) => !(key === 'aspectRatio' && isVipModel(currentModel?.model_id) && (params?.resolution ?? modelParams?.resolution?.default ?? 'auto') === 'auto')), [currentModel?.model_id, modelParams, params?.resolution])
 
   useEffect(() => {
     if (!currentModel) return
@@ -34,6 +37,12 @@ export default function ParamPanel({ params, onChange }) {
       onChange(p => ({ ...p, ...defaults }))
     }
   }, [currentModel])
+
+  useEffect(() => {
+    if (!isVipModel(currentModel?.model_id)) return
+    const resolution = params?.resolution ?? modelParams?.resolution?.default ?? 'auto'
+    if (resolution === 'auto' && params?.aspectRatio) onChange(p => ({ ...p, aspectRatio: '' }))
+  }, [currentModel?.model_id, modelParams, onChange, params?.aspectRatio, params?.resolution])
 
   const handleModelChange = (modelId) => {
     const model = models.find(m => m.model_id === modelId)
@@ -116,7 +125,7 @@ export default function ParamPanel({ params, onChange }) {
           </select>
         </label>
       )}
-      {Object.entries(modelParams).map(([key, cfg]) => renderParam(key, cfg))}
+      {visibleEntries.map(([key, cfg]) => renderParam(key, cfg))}
     </div>
   )
 }

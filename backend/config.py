@@ -151,6 +151,23 @@ if not _runtime_config["generation_models"]:
 if not _runtime_config["generation_providers"]:
     _runtime_config["generation_providers"]={"wuyin-main":{"type":"wuyin","enabled":True,"priority":100,"api_url":"","api_key":"","circuit_fail_threshold":3,"circuit_cooldown_seconds":60,"unit_name":"供应商积分","unit_code":"vendor_points"}}
 
+def _vip_resolution_options():
+    return [{"value":"auto","label":"自动"},{"value":"low","label":"1K"},{"value":"medium","label":"2K"},{"value":"high","label":"4K"}]
+
+def _vip_aspect_ratio_options():
+    return [{"value":"1:1","label":"1:1"},{"value":"3:2","label":"3:2"},{"value":"2:3","label":"2:3"},{"value":"4:3","label":"4:3"},{"value":"3:4","label":"3:4"},{"value":"16:9","label":"16:9"},{"value":"9:16","label":"9:16"}]
+
+def _vip_quality_options():
+    return [{"value":"auto","label":"自动"},{"value":"low","label":"低"},{"value":"medium","label":"中"},{"value":"high","label":"高"}]
+
+def normalize_generation_model_params(model_id: str, model: dict):
+    if not isinstance(model,dict): return {}
+    out=dict(model)
+    params=out.get("params") or {}
+    if model_id!="grsai-vip" or not isinstance(params,dict): return out
+    out["params"]={"points_cost":params.get("points_cost",20),"resolution":{"label":"分辨率","type":"select","default":"auto","options":_vip_resolution_options()},"aspectRatio":{"label":"比例","type":"select","default":"1:1","options":_vip_aspect_ratio_options()},"quality":{"label":"画质","type":"select","default":"auto","options":_vip_quality_options()}}
+    return out
+
 
 def _provider_env_key(provider_name: str) -> str:
     return f"PROVIDER_{provider_name.upper().replace('-', '_')}_API_KEY"
@@ -291,7 +308,8 @@ def get_default_model_id():
 
 def get_generation_models():
     models = _runtime_config.get("generation_models") or {}
-    return models if isinstance(models, dict) else {}
+    if not isinstance(models, dict): return {}
+    return {model_id:normalize_generation_model_params(model_id,model) for model_id,model in models.items()}
 
 
 def get_generation_providers():
