@@ -553,24 +553,25 @@ async def batch_delete_hosting(body: dict, admin=Depends(require_admin)):
     if not urls:
         raise HTTPException(status_code=400, detail="未提供要删除的URL")
 
-    # 获取删除token
     tokens = ImageUrlMapping.get_delete_tokens(urls)
-
-    # 删除图床上的图片
     from backend.services.image_hosting import ImageHostingService
+    from backend.services.github_image_hosting import GithubImageHostingService
     deleted_hosting = 0
+    deleted_github = 0
+    deleted_heliar = 0
     for url, token in tokens.items():
         if token:
             try:
-                success = await ImageHostingService.delete_image(token)
+                success = await (GithubImageHostingService.delete_image(token) if _detect_hosting_type(url) == "github" else ImageHostingService.delete_image(token))
                 if success:
                     deleted_hosting += 1
+                    if _detect_hosting_type(url) == "github": deleted_github += 1
+                    else: deleted_heliar += 1
             except Exception:
                 pass
 
-    # 删除映射记录
     count = ImageUrlMapping.delete_urls(urls)
-    return {"deleted": count, "deleted_hosting": deleted_hosting}
+    return {"deleted": count, "deleted_hosting": deleted_hosting, "deleted_github": deleted_github, "deleted_heliar": deleted_heliar}
 
 
 @router.post("/hosting/clean-duplicates")

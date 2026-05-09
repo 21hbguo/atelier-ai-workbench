@@ -10,6 +10,7 @@ import PortfolioShowcaseCard from '../components/PortfolioShowcaseCard'
 import SearchInput from '../components/SearchInput'
 import MainLayout from '../components/MainLayout'
 import UnifiedDetailModal from '../components/UnifiedDetailModal'
+import Pagination from '../components/Pagination'
 import { useAppDialog } from '../components/AppDialogProvider'
 import { useLayoutMode } from '../LayoutModeContext'
 import { generateAPI, uploadAPI, taskAPI, imageAPI, squareAPI, adminAPI, pointsAPI, configAPI, promptAPI } from '../api'
@@ -90,6 +91,7 @@ function normalizeUploadName(name, type, url = '') {
 const TASK_CONFIRM_TIMEOUT_MS = 40 * 60 * 1000
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)) }
 function shouldRetryNetworkError(message = '') { const s = String(message || '').toLowerCase(); return !!s && ['timeout', 'network error', 'fetch', 'socket', 'econn', 'etimedout', 'abort', 'connection', 'not found', '502', '503', '504'].some(k => s.includes(k)) }
+function normalizeGenerationError(message = '') { const s = String(message || ''); const lower = s.toLowerCase(); if (lower.includes('image url failed') || lower.includes('image_url_failed') || lower.includes('invalid image url') || lower.includes('image url invalid')) return '参考图链接失效或不可访问，请重新上传参考图'; return s }
 function formatSubmitSettings(params, shareToSquare, imageCount) {
   const modelLabel = params?._model_label || params?.model_id || '默认模型'
   const lines = [`模型：${modelLabel}`]
@@ -106,7 +108,7 @@ function getThumbnailBlurMap(user){try{return JSON.parse(localStorage.getItem(ge
 function getThumbnailBlurItemKey(task){return String(task?.result_urls?.[0]?.split('/').pop()||task?.task_id||'')}
 function buildDetailCardsFromTask(task, expiryByFilename = {}, squareIdMap = {}) { const prompt = task?.params?.prompt || task?.prompt || ''; return (task?.result_urls || []).map((url, idx) => { const filename = url.split('/').pop(); const exp = getExpiryByFilename(expiryByFilename, filename); const expired = typeof exp.expired === 'boolean' ? exp.expired : !!task.expired; return { _type: 'image', _raw: { filename, metadata: { prompt, task_id: task.task_id, created_at: task.created_at, started_at: task.started_at, completed_at: task.completed_at, type: task?.params?.image_urls?.length ? 'image' : 'text', size: task?.params?.size, input_urls: task?.params?.image_urls } }, id: `${task.task_id}-${idx}`, prompt, fullUrl: `/api/images/file/${filename}`, filename, expiresAt: exp.expires_at || task.expires_at || null, is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : !!task.is_permanent, daysLeft: typeof exp.days_left === 'number' ? exp.days_left : task.days_left, expired, square_image_id: squareIdMap[filename] || exp.square_image_id || task.square_image_id || null } }) }
 function mergeTasksById(list = []) { const map = new Map(); for (const task of list) { if (!task?.task_id) continue; map.set(task.task_id, { ...(map.get(task.task_id) || {}), ...task }) } return Array.from(map.values()) }
-function buildSubmissionImages(items = []) { return items.map((img, idx) => ({ name: img?.name || img?.file?.name || `reference-${idx}`, type: img?.type || img?.file?.type || 'image/png', url: img?.url || '', preview: img?.preview || img?.url || '', file: img?.file || null })) }
+function buildSubmissionImages(items = []) { return items.map((img, idx) => ({ id: img?.id || `reference-${idx}`, name: img?.name || img?.file?.name || `reference-${idx}`, type: img?.type || img?.file?.type || 'image/png', url: img?.url || '', preview: img?.preview || img?.url || '', file: img?.file || null, uploadStatus: img?.uploadStatus || '', uploadProgress: Number(img?.uploadProgress) || 0, uploadedUrl: img?.uploadedUrl || '', uploadedStorageName: img?.uploadedStorageName || '', uploadError: img?.uploadError || '' })) }
 function buildPendingTaskFromSubmission(item) { const prompt = item?.prompt || item?.params?.prompt || ''; return { task_id: item.real_task_id || item.temp_task_id, status: item.status || 'processing', prompt, params: { ...(item.params || {}), prompt }, previewImages: (item.images || []).map(img => img?.preview || img?.url).filter(Boolean), created_at: item.created_at || formatLocalTime(new Date()), started_at: item.started_at || item.created_at || formatLocalTime(new Date()), completed_at: item.completed_at || null, error: item.error || null, _active: false, _local_submission: true, _points_consumed: !!item.points_consumed, type: item.type || ((item.images || []).length ? 'text_image' : 'text') } }
 function normalizeTaskResultUrls(task, imageFilenameSet) { const urls = (task?.result_urls || []).filter(Boolean); if (!urls.length) return urls; return urls.filter(url => imageFilenameSet.has(url.split('/').pop())) }
 function normalizeUploadedImageParams(uploaded = []) { const image_urls = uploaded.map(r => r?.data?.url).filter(Boolean); const local_image_urls = uploaded.map(r => r?.data?.storage_name || r?.data?.url).filter(Boolean); return { image_urls, local_image_urls } }
@@ -132,6 +134,8 @@ export default function ChatPage() {
   const [userList, setUserList] = useState([])
   const [selectedUserId, setSelectedUserId] = useState(null)
   const [points, setPoints] = useState(currentUser?.points ?? 0)
+  const [homePageSize, setHomePageSize] = useState(24)
+  const [homePage, setHomePage] = useState(1)
   const [requestCost, setRequestCost] = useState(10)
   const [optimizeCost, setOptimizeCost] = useState(10)
   const [refineOptimizeCost, setRefineOptimizeCost] = useState(20)
@@ -141,6 +145,7 @@ export default function ChatPage() {
   const [selectedDetailTaskId, setSelectedDetailTaskId] = useState(null)
   const [detailCards, setDetailCards] = useState([])
   const [downloadProgress, setDownloadProgress] = useState({ open: false, phase: 'idle', current: 0, total: 0, percent: 0, filename: '' })
+  const [deleteProgress, setDeleteProgress] = useState({ open: false, current: 0, total: 0, percent: 0, text: '' })
   const [thumbnailBlurMap, setThumbnailBlurMap] = useState({})
   const [expiryNowTs, setExpiryNowTs] = useState(() => Date.now())
   const [expiryByFilenameMap, setExpiryByFilenameMap] = useState({})
@@ -178,6 +183,13 @@ export default function ChatPage() {
       return ts > 0 ? now - ts <= limit : true
     })
   }, [tasks, timeRange])
+  const homeTotalPages = useMemo(() => Math.max(1, Math.ceil(visibleTasks.length / Math.max(1, homePageSize || 24))), [visibleTasks.length, homePageSize])
+  const pagedVisibleTasks = useMemo(() => {
+    const size = Math.max(1, homePageSize || 24)
+    const current = Math.min(Math.max(1, homePage), Math.max(1, Math.ceil(visibleTasks.length / size)))
+    const start = (current - 1) * size
+    return visibleTasks.slice(start, start + size)
+  }, [visibleTasks, homePage, homePageSize])
   const showPortfolioEmptyState = visibleTasks.length === 0 && !searchQuery && (!isAdmin || !selectedUserId)
   const loadCachedActiveTasks = useCallback(() => {
     try {
@@ -366,12 +378,15 @@ export default function ChatPage() {
   }, [])
   useEffect(() => {
     configAPI.get().then(res => {
+      setHomePageSize(Math.max(1, Number(res.data?.home_page_size) || 24))
       setRequestCost(Math.max(0, Number(res.data?.points_cost_per_generation) || 10))
       setOptimizeCost(Math.max(0, Number(res.data?.points_cost_per_optimize) || 10))
       setRefineOptimizeCost(Math.max(0, Number(res.data?.points_cost_per_optimize_refine) || 20))
       setExtendCostPerImage(Math.max(1, Number(res.data?.points_cost_per_image_extend) || 2))
     }).catch(() => { setRequestCost(10); setOptimizeCost(10); setRefineOptimizeCost(20) })
   }, [])
+  useEffect(() => { setHomePage(1) }, [searchQuery, timeRange, selectedUserId, homePageSize])
+  useEffect(() => { if (homePage > homeTotalPages) setHomePage(homeTotalPages) }, [homePage, homeTotalPages])
 
   useEffect(() => {
     if (loaded && feedRef.current) {
@@ -542,8 +557,9 @@ export default function ChatPage() {
   }, [finalizeSubmissionQueueItem, updateTask])
   const markSubmissionFailed = useCallback((item, message) => {
     if (!item) return
-    finalizeSubmissionQueueItem(item.client_request_id, { ...item, status: 'failed', error: message || '提交失败', real_task_id: item.real_task_id || null, completed_at: formatLocalTime(new Date()) })
-    updateTask(item.real_task_id || item.temp_task_id, { status: 'failed', error: message || '提交失败', _active: false, _local_submission: false })
+    const normalized = normalizeGenerationError(message || '提交失败') || '提交失败'
+    finalizeSubmissionQueueItem(item.client_request_id, { ...item, status: 'failed', error: normalized, real_task_id: item.real_task_id || null, completed_at: formatLocalTime(new Date()) })
+    updateTask(item.real_task_id || item.temp_task_id, { status: 'failed', error: normalized, _active: false, _local_submission: false })
   }, [finalizeSubmissionQueueItem, updateTask])
   const getTaskStatusWithRecovery = useCallback(async (taskId, clientRequestId) => {
     try { return (await taskAPI.get(taskId)).data } catch (e) { const msg = e?.message || ''; if (clientRequestId && (msg.includes('404') || msg.includes('任务不存在') || msg.toLowerCase().includes('not found'))) return (await taskAPI.getByClientRequestId(clientRequestId)).data; throw e }
@@ -568,8 +584,7 @@ export default function ChatPage() {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         if (img.file) { const type = img.file.type || img.type || 'image/png'; return await uploadAPI.upload(new File([img.file], normalizeUploadName(img.name || img.file.name, type), { type })) }
-        if (img.url && img.url.startsWith('http')) return { data: { url: img.url, storage_name: img.url } }
-        if (img.url) { const r = await fetch(img.url); if (!r.ok) throw new Error(`fetch ${r.status}`); const blob = await r.blob(); const type = blob.type || r.headers.get('content-type') || img.type || 'image/png'; return await uploadAPI.upload(new File([blob], normalizeUploadName(img.name, type, img.url), { type })) }
+        if (img.url) { const r = await fetch(img.url, img.url.startsWith('/') ? { credentials: 'include' } : undefined); if (!r.ok) throw new Error(`fetch ${r.status}`); const blob = await r.blob(); const type = blob.type || r.headers.get('content-type') || img.type || 'image/png'; return await uploadAPI.upload(new File([blob], normalizeUploadName(img.name, type, img.url), { type })) }
         return { data: { url: '', storage_name: '' } }
       } catch (e) {
         lastError = e
@@ -694,6 +709,7 @@ export default function ChatPage() {
     const startedAt = item.started_at || formatLocalTime(new Date())
     const prompt = item.prompt || item?.params?.prompt || ''
     const baseParams = { ...(item.params || {}), prompt, share_to_square: !!item.shareToSquare }
+    const modelCost = baseParams?._points_cost || requestCost
     const realTaskId = item.real_task_id || makeTaskId()
     const hasExistingRealTask = !!item.real_task_id
     if (!hasExistingRealTask) {
@@ -726,7 +742,6 @@ export default function ChatPage() {
     const requestParams = { ...baseParams, image_urls: imageUrls, local_image_urls: localImageUrls, client_request_id: submissionId, _confirm_deadline_ts: confirmDeadlineTs }
     try {
       const data = await submitGenerationWithRecovery({ hasImages, prompt, imageUrls, baseParams, realTaskId, submissionId, shareToSquare: !!item.shareToSquare, localImageUrls })
-      const modelCost = baseParams?._points_cost || requestCost
       const finalTaskId = data.task_id || realTaskId
       consumeLocalPointsOnce(item, submissionId, finalTaskId, modelCost, requestParams)
       setTasks(prev => {
@@ -746,7 +761,7 @@ export default function ChatPage() {
         pollTask(finalTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages, submissionId, confirmDeadlineTs)
       }
     } catch (e) {
-      const msg = e?.message || ''
+      const msg = normalizeGenerationError(e?.message || '')
       if (msg.includes('积分不足') || msg.includes('402')) {
         markSubmissionFailed({ ...item, real_task_id: realTaskId }, '积分不足，请先获取更多积分后重试')
         dialog.alert(msg.includes('积分不足') ? msg : '积分不足，请先获取更多积分后重试')
@@ -796,7 +811,7 @@ export default function ChatPage() {
           }, 2000)
           return
         }
-        markSubmissionFailed({ ...item, real_task_id: realTaskId }, '提交失败: ' + msg)
+        markSubmissionFailed({ ...item, real_task_id: realTaskId }, '提交失败: ' + (msg || '未知错误'))
       }
     }
     submissionProcessingRef.current.delete(submissionId)
@@ -827,11 +842,14 @@ export default function ChatPage() {
     try {
       const now = formatLocalTime(new Date())
       const baseImages = buildSubmissionImages(images || [])
-      let sharedUploadParams = {}
-      if (baseImages.length > 0 && batchCount > 1) {
-        sharedUploadParams = await uploadSubmissionImagesOnce(baseImages)
+      const activeImages = baseImages.filter(img => img?.uploadStatus !== 'error')
+      const successImages = activeImages.filter(img => img?.uploadStatus === 'success' && img?.uploadedUrl && (img?.uploadedStorageName || img?.uploadedUrl))
+      if (activeImages.length !== successImages.length) {
+        dialog.alert('存在未完成上传的参考图，请等待上传完成或删除失败图片后再提交')
+        return false
       }
-      const submissions = Array.from({ length: batchCount }, (_, index) => ({ client_request_id: makeTaskId(), temp_task_id: `pending-${Date.now()}-${index}-${Math.random().toString(16).slice(2, 8)}`, real_task_id: null, prompt, images: baseImages, params: { ...params, ...sharedUploadParams, prompt, share_to_square: !!shareToSquare }, shareToSquare: !!shareToSquare, type: baseImages.length ? 'text_image' : 'text', status: 'processing', created_at: now, started_at: now, error: null }))
+      const sharedUploadParams = successImages.length > 0 ? { image_urls: successImages.map(img => img.uploadedUrl).filter(Boolean), local_image_urls: successImages.map(img => img.uploadedStorageName || img.uploadedUrl).filter(Boolean) } : {}
+      const submissions = Array.from({ length: batchCount }, (_, index) => ({ client_request_id: makeTaskId(), temp_task_id: `pending-${Date.now()}-${index}-${Math.random().toString(16).slice(2, 8)}`, real_task_id: null, prompt, images: successImages, params: { ...params, ...sharedUploadParams, prompt, share_to_square: !!shareToSquare }, shareToSquare: !!shareToSquare, type: successImages.length ? 'text_image' : 'text', status: 'processing', created_at: now, started_at: now, error: null }))
       const stagedTasks = submissions.map(buildPendingTaskFromSubmission)
       setTasks(prev => {
         const next = mergeTasksById([...prev, ...stagedTasks])
@@ -884,7 +902,7 @@ export default function ChatPage() {
 
   const allDetailCards = useMemo(() => {
     const result = []
-    for (const task of visibleTasks) {
+    for (const task of pagedVisibleTasks) {
       if (!task.result_urls?.length) continue
       const cards = buildDetailCardsFromTask(task, expiryByFilenameMap, squareIdMapRef.current)
       for (const c of cards) {
@@ -892,16 +910,16 @@ export default function ChatPage() {
       }
     }
     return result
-  }, [visibleTasks, expiryByFilenameMap])
+  }, [pagedVisibleTasks, expiryByFilenameMap])
 
   const handleCardViewDetail = useCallback((taskId) => {
-    const task = visibleTasks.find(t => t.task_id === taskId && t.result_urls?.length)
+    const task = pagedVisibleTasks.find(t => t.task_id === taskId && t.result_urls?.length)
     if (!task) return
     const cards = buildDetailCardsFromTask(task, expiryByFilenameMap, squareIdMapRef.current)
     if (cards.every(c => c.expired)) return
     const firstNonExpired = cards.findIndex(c => !c.expired)
     let offset = 0
-    for (const t of visibleTasks) {
+    for (const t of pagedVisibleTasks) {
       if (!t.result_urls?.length) continue
       const tc = buildDetailCardsFromTask(t, expiryByFilenameMap, squareIdMapRef.current)
       if (t.task_id === taskId) { offset += firstNonExpired; break }
@@ -909,12 +927,12 @@ export default function ChatPage() {
     }
     setSelectedDetailTaskId(taskId)
     setSelectedCardIndex(offset)
-  }, [visibleTasks, expiryByFilenameMap])
+  }, [pagedVisibleTasks, expiryByFilenameMap])
 
   const handleModalNavigate = useCallback((newIndex) => {
     setSelectedCardIndex(newIndex)
     let offset = 0
-    for (const task of visibleTasks) {
+    for (const task of pagedVisibleTasks) {
       if (!task.result_urls?.length) continue
       const cards = buildDetailCardsFromTask(task, expiryByFilenameMap, squareIdMapRef.current)
       const count = cards.filter(c => !c.expired).length
@@ -925,7 +943,7 @@ export default function ChatPage() {
       }
       offset += count
     }
-  }, [visibleTasks, expiryByFilenameMap])
+  }, [pagedVisibleTasks, expiryByFilenameMap])
   useEffect(() => {
     if (!selectedDetailTaskId) return
     if (allDetailCards.length === 0) { setSelectedCardIndex(null); setSelectedDetailTaskId(null); return }
@@ -987,14 +1005,14 @@ export default function ChatPage() {
   }, [])
 
   const toggleSelectAll = useCallback(() => {
-    if (checked.size === visibleTasks.length) setChecked(new Set())
-    else setChecked(new Set(visibleTasks.map(t => t.task_id)))
-  }, [checked.size, visibleTasks])
+    if (checked.size === pagedVisibleTasks.length) setChecked(new Set())
+    else setChecked(new Set(pagedVisibleTasks.map(t => t.task_id)))
+  }, [checked.size, pagedVisibleTasks])
 
   const handleBatchDownload = useCallback(async () => {
     if (downloadLockRef.current || downloadProgress.open) return
     const files = []
-    for (const task of visibleTasks) {
+    for (const task of pagedVisibleTasks) {
       if (!checked.has(task.task_id)) continue
       for (const url of (task.result_urls || [])) {
         const filename = url.split('/').pop()
@@ -1024,15 +1042,9 @@ export default function ChatPage() {
         for (let i = 0; i < files.length; i++) {
           const file = files[i]
           setDownloadProgress(v => ({ ...v, phase: 'single', current: i, total: files.length, percent: Math.min(85, Math.round(i / files.length * 85)), filename: file.name }))
-          const resp = await fetch(file.url)
-          const blob = await resp.blob()
-          const a = document.createElement('a')
-          a.href = URL.createObjectURL(blob)
-          a.download = file.name
-          document.body.appendChild(a)
-          a.click()
-          a.remove()
-          URL.revokeObjectURL(a.href)
+          const resp = await imageAPI.getBlobByUrl(file.url)
+          const saved = await saveBlob(resp.data, getDownloadFilename(resp.headers, file.name))
+          if (!saved) return
           setDownloadProgress(v => ({ ...v, phase: 'single', current: i + 1, total: files.length, percent: Math.min(95, Math.round((i + 1) / files.length * 95)), filename: file.name }))
         }
         setDownloadProgress(v => ({ ...v, phase: 'done', current: files.length, total: files.length, percent: 100 }))
@@ -1042,43 +1054,58 @@ export default function ChatPage() {
         setTimeout(() => { setDownloadProgress({ open: false, phase: 'idle', current: 0, total: 0, percent: 0, filename: '' }); downloadLockRef.current = false }, 400)
       }
     }
-  }, [checked, visibleTasks, dialog, downloadProgress.open])
+  }, [checked, pagedVisibleTasks, dialog, downloadProgress.open])
 
   const handleBatchDelete = useCallback(async () => {
+    if (deleteProgress.open) return
     if (!await dialog.confirm(`确定删除选中的 ${checked.size} 项？`)) return
-    let failed = 0
-    const deleted = new Set()
     const ids = [...checked]
-    for (const taskId of ids) {
-      try {
-        if (taskId.startsWith('img-')) {
-          const filename = taskId.replace('img-', '')
-          await imageAPI.delete(filename)
-        } else {
-          await taskAPI.delete(taskId)
-        }
-        deleted.add(taskId)
-      } catch (e) { console.error('删除失败:', taskId, e); failed += 1 }
+    const imageIds = []
+    const taskIds = []
+    for (const taskId of ids) taskId.startsWith('img-') ? imageIds.push(taskId.replace('img-', '')) : taskIds.push(taskId)
+    const total = imageIds.length + taskIds.length
+    const deleted = new Set()
+    const failed = []
+    setDeleteProgress({ open: true, current: 0, total, percent: total ? 10 : 100, text: '正在准备删除' })
+    try {
+      if (imageIds.length > 0) {
+        setDeleteProgress({ open: true, current: 0, total, percent: Math.max(10, Math.round(100 / Math.max(total, 1))), text: `正在删除图片 ${imageIds.length} 项` })
+        const { data } = await imageAPI.batchDelete(imageIds)
+        for (const filename of (data?.deleted_filenames || [])) deleted.add(`img-${filename}`)
+        failed.push(...((data?.failed || []).map(item => item?.filename || '').filter(Boolean)))
+        setDeleteProgress({ open: true, current: imageIds.length, total, percent: Math.min(60, Math.round(imageIds.length / Math.max(total, 1) * 100)), text: `已删除图片 ${data?.deleted || 0}/${imageIds.length}` })
+      }
+      if (taskIds.length > 0) {
+        setDeleteProgress({ open: true, current: imageIds.length, total, percent: Math.max(60, Math.round(imageIds.length / Math.max(total, 1) * 100)), text: `正在删除记录 ${taskIds.length} 项` })
+        const { data } = await taskAPI.batchDelete(taskIds)
+        for (const taskId of (data?.deleted_ids || [])) deleted.add(taskId)
+        failed.push(...((data?.failed || []).map(item => item?.id || '').filter(Boolean)))
+        setDeleteProgress({ open: true, current: total, total, percent: 100, text: `已删除 ${deleted.size}/${total}` })
+      } else {
+        setDeleteProgress(v => ({ ...v, current: total, percent: 100, text: `已删除 ${deleted.size}/${total}` }))
+      }
+      setChecked(new Set())
+      setSelectMode(false)
+      if (deleted.size > 0) setTasks(prev => prev.filter(t => !deleted.has(t.task_id)))
+      try { await refreshTasks() } catch (e) { console.error('刷新任务列表失败:', e) }
+      window.dispatchEvent(new Event('gallery-updated'))
+      if (failed.length > 0) dialog.alert(`${failed.length} 项删除失败`)
+    } catch (e) {
+      dialog.alert(e?.message || '批量删除失败')
+    } finally {
+      setTimeout(() => setDeleteProgress({ open: false, current: 0, total: 0, percent: 0, text: '' }), 500)
     }
-    setChecked(new Set()); setSelectMode(false)
-    // 乐观更新：立即从本地移除已删除的项
-    if (deleted.size > 0) {
-      setTasks(prev => prev.filter(t => !deleted.has(t.task_id)))
-    }
-    try { await refreshTasks() } catch (e) { console.error('刷新任务列表失败:', e) }
-    window.dispatchEvent(new Event('gallery-updated'))
-    if (failed > 0) dialog.alert(`${failed} 项删除失败`)
-  }, [checked, refreshTasks, dialog])
+  }, [checked, refreshTasks, dialog, deleteProgress.open])
   const handleBatchExtend = useCallback(async () => {
     const filenames = []
-    for (const task of visibleTasks) {
+    for (const task of pagedVisibleTasks) {
       if (!checked.has(task.task_id)) continue
       for (const url of (task.result_urls || [])) filenames.push(url.split('/').pop())
     }
     if (filenames.length === 0) return
     if (!await dialog.confirm(`确定延长选中的 ${filenames.length} 张图片3天？将扣除 ${filenames.length * extendCostPerImage} 积分`)) return
     await handleExtendImages(filenames)
-  }, [checked, visibleTasks, handleExtendImages, dialog, extendCostPerImage])
+  }, [checked, pagedVisibleTasks, handleExtendImages, dialog, extendCostPerImage])
 
   const exitSelectMode = useCallback(() => { setSelectMode(false); setChecked(new Set()) }, [])
 
@@ -1129,14 +1156,14 @@ export default function ChatPage() {
         <div className="px-4 py-3 flex items-center gap-3" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
           <span className="text-sm" style={{ color: 'var(--text-primary)' }}>已选 {checked.size} 项</span>
           <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
-            {checked.size === visibleTasks.length ? '取消全选' : '全选'}
+            {checked.size === pagedVisibleTasks.length ? '取消全选' : '全选'}
           </button>
           <div className="ml-auto flex items-center gap-2">
             {isAdmin && <button onClick={handleBatchAddToPromptLibrary} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--accent)' }}>批量入库</button>}
             <button onClick={handleBatchShareToSquare} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--color-success)' }}>批量分享</button>
             <button onClick={handleBatchExtend} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--color-info)' }}>延长3天</button>
             <button onClick={handleBatchDownload} disabled={downloadProgress.open} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white disabled:opacity-50" style={{ background: 'var(--accent)' }}><Download size={14} /> {downloadProgress.open ? '处理中' : '下载'}</button>
-            <button onClick={handleBatchDelete} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-[var(--color-error)] hover:bg-[var(--color-error)]/10"><Trash2 size={14} /> 删除</button>
+            <button onClick={handleBatchDelete} disabled={deleteProgress.open} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-[var(--color-error)] hover:bg-[var(--color-error)]/10 disabled:opacity-50"><Trash2 size={14} /> {deleteProgress.open ? '删除中' : '删除'}</button>
           </div>
         </div>
       )}
@@ -1197,18 +1224,22 @@ export default function ChatPage() {
       </div>
       {loadError && <div className="mx-4 mt-2 px-3 py-2 rounded-2xl text-xs" style={{ background: 'color-mix(in srgb, var(--color-warning) 12%, transparent)', color: 'var(--color-warning)' }}>{loadError}</div>}
       {downloadProgress.open && <div className="fixed left-4 right-4 bottom-24 sm:left-auto sm:right-4 sm:bottom-6 sm:w-80 z-40 pointer-events-none"><div className="rounded-2xl p-4 border shadow-lg" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}><div className="flex items-center justify-between gap-3"><div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{downloadProgress.phase === 'zip' ? '正在打包 ZIP' : downloadProgress.phase === 'single' ? '正在逐个下载' : downloadProgress.phase === 'done' ? '处理完成' : '正在准备下载'}</div><div className="text-xs tabular-nums" style={{ color: 'var(--accent)' }}>{downloadProgress.percent}%</div></div><div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{downloadProgress.phase === 'zip' ? `已下载 ${downloadProgress.total}/${downloadProgress.total} 张，正在压缩` : `已处理 ${downloadProgress.current}/${downloadProgress.total} 张`}</div>{downloadProgress.filename && <div className="mt-1 text-[11px] truncate" style={{ color: 'var(--text-secondary)', opacity: 0.8 }}>{downloadProgress.filename}</div>}<div className="mt-3 h-2 rounded-full overflow-hidden" style={{ background: 'var(--border-color)' }}><div className="h-full rounded-full transition-all duration-300" style={{ width: `${downloadProgress.percent}%`, background: 'var(--accent)' }} /></div></div></div>}
+      {deleteProgress.open && <div className="fixed left-4 right-4 bottom-24 sm:left-auto sm:right-4 sm:bottom-[8.5rem] sm:w-80 z-40 pointer-events-none"><div className="rounded-2xl p-4 border shadow-lg" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}><div className="flex items-center justify-between gap-3"><div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>正在批量删除</div><div className="text-xs tabular-nums" style={{ color: 'var(--color-error)' }}>{deleteProgress.percent}%</div></div><div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{deleteProgress.text || `已处理 ${deleteProgress.current}/${deleteProgress.total} 项`}</div><div className="mt-3 h-2 rounded-full overflow-hidden" style={{ background: 'var(--border-color)' }}><div className="h-full rounded-full transition-all duration-300" style={{ width: `${deleteProgress.percent}%`, background: 'var(--color-error)' }} /></div></div></div>}
       <div ref={feedRef} className="flex-1 min-h-0 overflow-y-auto px-4 pb-56 lg:pb-6">
         {!loaded ? (
           <div className="pt-4"><CardGridSkeleton layoutMode={layoutMode} label="加载中..." /></div>
         ) : visibleTasks.length === 0 ? (
           showPortfolioEmptyState ? <div className="flex min-h-full items-center justify-center py-8 sm:py-12"><PortfolioShowcaseCard onUsePrompt={handleAddPrompt} /></div> : <div className="flex flex-col items-center justify-center h-full text-center py-20"><h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>当前筛选下没有记录</h2><p className="text-sm" style={{ color: 'var(--text-secondary)' }}>换个时间范围，或者直接开始下一次生成</p></div>
         ) : (
+          <div>
           <div ref={cardGridRef} className={`${layoutMode === 'masonry' ? 'card-feed-masonry' : 'card-feed-grid'} pt-4`} style={{ position: 'relative' }}>
             {layoutMode === 'masonry' && !feedLayoutReady && <div className="card-feed-loading-mask" />}
-            {visibleTasks.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onAddPrompt={handleAddPrompt} onAddToPromptLibrary={isAdmin?handleAddToPromptLibrary:undefined} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id) || dragSelected.has(String(task.task_id))} onToggleCheck={() => toggleCheck(task.task_id)} wasDraggedRef={wasDraggedRef} showUsername={isAdmin} username={task.username} thumbnailBlurred={!!thumbnailBlurMap[getThumbnailBlurItemKey(task)]} onToggleThumbnailBlur={() => { const k=getThumbnailBlurItemKey(task); setThumbnailBlurMap(prev => ({ ...prev, [k]: !prev[k] })) }} onViewDetail={() => handleCardViewDetail(task.task_id)} masonry={layoutMode === 'masonry'} nowTs={expiryNowTs} data-card-id={String(task.task_id)} />)}
+            {pagedVisibleTasks.map(task => <GenerationCard key={task.task_id} task={task} onAddImage={url => inputRef.current?.addImage(url)} onAddPrompt={handleAddPrompt} onAddToPromptLibrary={isAdmin?handleAddToPromptLibrary:undefined} onRetry={handleRetry} selectMode={selectMode} checked={checked.has(task.task_id) || dragSelected.has(String(task.task_id))} onToggleCheck={() => toggleCheck(task.task_id)} wasDraggedRef={wasDraggedRef} showUsername={isAdmin} username={task.username} thumbnailBlurred={!!thumbnailBlurMap[getThumbnailBlurItemKey(task)]} onToggleThumbnailBlur={() => { const k=getThumbnailBlurItemKey(task); setThumbnailBlurMap(prev => ({ ...prev, [k]: !prev[k] })) }} onViewDetail={() => handleCardViewDetail(task.task_id)} masonry={layoutMode === 'masonry'} nowTs={expiryNowTs} data-card-id={String(task.task_id)} />)}
             {selectionRect && selectionRect.width > 5 && selectionRect.height > 5 && (
               <div className="drag-selection-rect" style={{ position: 'fixed', left: selectionRect.left, top: selectionRect.top, width: selectionRect.width, height: selectionRect.height }} />
             )}
+          </div>
+          <Pagination page={homePage} totalPages={homeTotalPages} onPageChange={setHomePage} />
           </div>
         )}
       </div>

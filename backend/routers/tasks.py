@@ -1,6 +1,7 @@
 import logging
 import time
 from fastapi import APIRouter, HTTPException, Depends, Query
+from pydantic import BaseModel, Field
 
 from backend.services.task_manager import TaskManager
 from backend.routers.generate import retry_generation_task
@@ -12,6 +13,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["tasks"])
 GLOBAL_GENERATE_ACTIVE_LIMIT = 20
 ACTIVE_TASK_TIMEOUT_MINUTES = 20
+
+class BatchDeleteTasksRequest(BaseModel):
+    ids: list[str] = Field(default_factory=list, max_length=500)
 
 
 def _enrich_tasks_with_username(tasks: list) -> list:
@@ -124,3 +128,33 @@ async def delete_task(task_id: str, user=Depends(get_current_user)):
 @router.post("/tasks/{task_id}/delete")
 async def delete_task_post(task_id: str, user=Depends(get_current_user)):
     return await delete_task(task_id, user)
+
+@router.post("/tasks/batch-delete")
+async def batch_delete_tasks(body: BatchDeleteTasksRequest, user=Depends(get_current_user)):
+    ids = []
+    seen = set()
+    for task_id in body.ids or []:
+        tid = str(task_id or "").strip()
+        if not tid or tid in seen:
+            continue
+        seen.add(tid)
+        ids.append(tid)
+    if not ids:
+        raise HTTPException(status_code=400, detail="未提供要删除的ID")
+    allowed = []
+    failed = []
+    for task_id in ids:
+        task = TaskManager.get_task(task_id)
+        if not task:
+            failed.append({"id": task_id, "reason": "任务不存在"})
+            continue
+        if not user.get("is_admin") and task.get("user_id") != user["user_id"]:
+            failed.append({"id": task_id, "reason": "无权操作此任务"})
+            continue
+        allowed.append(task_id)
+    deleted_ids = TaskManager.soft_delete_tasks(allowed, "admin" if user.get("is_admin") else "user") if allowed else []
+    deleted_set = set(deleted_ids)
+    for task_id in allowed:
+        if task_id not in deleted_set:
+            failed.append({"id": task_id, "reason": "删除失败"})
+    return {"deleted": len(deleted_ids), "deleted_ids": deleted_ids, "failed": failed}

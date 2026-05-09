@@ -319,6 +319,35 @@ class TaskManager:
         return True
 
     @classmethod
+    def soft_delete_tasks(cls, task_ids: List[str], deleted_by_role: str = "user") -> List[str]:
+        ids = []
+        seen = set()
+        for task_id in task_ids or []:
+            tid = str(task_id or "").strip()
+            if not tid or tid in seen:
+                continue
+            seen.add(tid)
+            ids.append(tid)
+        if not ids:
+            return []
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with get_db() as conn:
+            rows = conn.execute("SELECT task_id FROM tasks WHERE task_id = ANY(%s)", (ids,)).fetchall()
+            existing = [r["task_id"] for r in rows]
+            if not existing:
+                return []
+            conn.execute("UPDATE tasks SET is_deleted = %s, deleted_at = %s, deleted_by_role = %s, updated_at = %s WHERE task_id = ANY(%s)", (True, now, deleted_by_role, now, existing))
+        for task_id in existing:
+            task = cls._tasks.get(task_id)
+            if not task:
+                continue
+            task["is_deleted"] = True
+            task["deleted_at"] = now
+            task["deleted_by_role"] = deleted_by_role
+            task["updated_at"] = now
+        return existing
+
+    @classmethod
     async def start_polling(cls, task_id: str, external_task_id: str):
         polling_task = asyncio.create_task(cls._poll_task_status(task_id, external_task_id))
         cls._polling_tasks[task_id] = polling_task
@@ -396,26 +425,36 @@ class TaskManager:
 
     @classmethod
     def remove_image_from_tasks(cls, image_path: str) -> None:
-        changed = False
-        for task in cls._tasks.values():
+        cls.remove_images_from_tasks([image_path])
+
+    @classmethod
+    def remove_images_from_tasks(cls, image_paths: List[str]) -> None:
+        targets = {str(path or "").strip() for path in image_paths or [] if str(path or "").strip()}
+        if not targets:
+            return
+        updates = {}
+        for task_id, task in cls._tasks.items():
             urls = task.get("result_urls", [])
-            if image_path in urls:
-                task["result_urls"] = [u for u in urls if u != image_path]
-                changed = True
-        if changed:
-            with get_db() as conn:
-                rows = conn.execute("SELECT task_id, result_urls FROM tasks").fetchall()
-                for row in rows:
+            new_urls = [u for u in urls if u not in targets]
+            if len(new_urls) != len(urls):
+                task["result_urls"] = new_urls
+                updates[task_id] = new_urls
+        with get_db() as conn:
+            rows = conn.execute("SELECT task_id, result_urls FROM tasks WHERE COALESCE(is_deleted,FALSE)=FALSE AND COALESCE(result_urls,'[]'::jsonb) <> '[]'::jsonb").fetchall()
+            for row in rows:
+                urls = row["result_urls"]
+                if isinstance(urls, str):
                     try:
-                        urls = json.loads(row["result_urls"] or "[]")
+                        urls = json.loads(urls or "[]")
                     except (json.JSONDecodeError, TypeError):
                         continue
-                    if image_path in urls:
-                        new_urls = [u for u in urls if u != image_path]
-                        conn.execute(
-                            "UPDATE tasks SET result_urls = %s WHERE task_id = %s",
-                            (json.dumps(new_urls, ensure_ascii=False), row["task_id"]),
-                        )
+                else:
+                    urls = urls or []
+                new_urls = [u for u in urls if u not in targets]
+                if len(new_urls) != len(urls):
+                    updates[row["task_id"]] = new_urls
+            for task_id, new_urls in updates.items():
+                conn.execute("UPDATE tasks SET result_urls = %s WHERE task_id = %s", (json.dumps(new_urls, ensure_ascii=False), task_id))
 
 
     @classmethod

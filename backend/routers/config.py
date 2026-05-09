@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
-from backend.config import get_config, update_config, get_generation_models, get_generation_providers, get_default_model_id, get_recharge_packages, get_llm_config, get_invite_config, get_turnstile_config
+from backend.config import get_config, update_config, get_generation_models, get_generation_providers, get_default_model_id, get_recharge_packages, get_llm_config, get_invite_config, get_turnstile_config, get_recharge_random_discount_range
 from backend.auth import get_current_user, get_optional_user, require_admin
 from backend.services.gen_gateway import GenGateway
 
@@ -20,7 +20,11 @@ class ConfigUpdate(BaseModel):
     donation_contact: Optional[str] = None
     manual_recharge_notice: Optional[str] = None
     recharge_packages: Optional[List[Dict[str, Any]]] = None
+    recharge_random_discount_min: Optional[float] = Field(None, ge=0.01)
+    recharge_random_discount_max: Optional[float] = Field(None, ge=0.01)
     generate_concurrent_limit_per_user: Optional[int] = Field(None, ge=1)
+    home_page_size: Optional[int] = Field(None, ge=1, le=100)
+    square_page_size: Optional[int] = Field(None, ge=1, le=100)
     points_cost_per_generation: Optional[int] = Field(None, ge=1)
     points_cost_per_optimize: Optional[int] = Field(None, ge=1)
     points_cost_per_optimize_refine: Optional[int] = Field(None, ge=1)
@@ -77,9 +81,13 @@ async def get_runtime_config(user=Depends(get_optional_user)):
         "donation_contact": cfg.get("donation_contact", ""),
         "manual_recharge_notice": cfg.get("manual_recharge_notice", ""),
         "recharge_packages": get_recharge_packages(),
+        "recharge_random_discount_min": get_recharge_random_discount_range()["min"],
+        "recharge_random_discount_max": get_recharge_random_discount_range()["max"],
         "points_cost_per_generation": cfg.get("points_cost_per_generation", 10),
         "points_cost_per_optimize": cfg.get("points_cost_per_optimize", 10),
         "points_cost_per_optimize_refine": cfg.get("points_cost_per_optimize_refine", 20),
+        "home_page_size": cfg.get("home_page_size", 24),
+        "square_page_size": cfg.get("square_page_size", 20),
         "points_cost_per_image_extend": cfg.get("points_cost_per_image_extend", 2),
         "turnstile_site_key": get_turnstile_config()["site_key"],
         **get_invite_config(),
@@ -96,6 +104,7 @@ async def get_runtime_config_admin(admin=Depends(require_admin)):
     cfg["llm_api_key"] = "***" if cfg.get("llm_api_key") else ""
     cfg["turnstile_secret_key"] = "***" if cfg.get("turnstile_secret_key") else ""
     cfg["recharge_packages"] = get_recharge_packages()
+    cfg.update({"recharge_random_discount_min":get_recharge_random_discount_range()["min"],"recharge_random_discount_max":get_recharge_random_discount_range()["max"]})
     cfg.update(get_invite_config())
     cfg.update({"turnstile_enabled":get_turnstile_config()["enabled"]})
     return cfg
@@ -114,6 +123,12 @@ async def update_runtime_config(body: ConfigUpdate, admin=Depends(require_admin)
         del updates["turnstile_secret_key"]
     if updates.get("llm_api_key") == "***":
         del updates["llm_api_key"]
+    if "recharge_random_discount_min" in updates: updates["recharge_random_discount_min"]=round(float(updates["recharge_random_discount_min"]),2)
+    if "recharge_random_discount_max" in updates: updates["recharge_random_discount_max"]=round(float(updates["recharge_random_discount_max"]),2)
+    if "recharge_random_discount_min" in updates or "recharge_random_discount_max" in updates:
+        min_v=updates.get("recharge_random_discount_min",get_recharge_random_discount_range()["min"])
+        max_v=updates.get("recharge_random_discount_max",get_recharge_random_discount_range()["max"])
+        if max_v<min_v: raise ValueError("随机减免最大值不能小于最小值")
     update_config(updates)
     return {"status": "ok"}
 

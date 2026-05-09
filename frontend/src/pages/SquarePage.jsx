@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { ChevronUp } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Image, BookOpen, Share2, Trash2, Snowflake, Sun, RefreshCw, Star, X, Plus, Upload } from 'lucide-react'
-import { squareAPI, promptAPI, adminAPI, favoriteAPI } from '../api'
+import { squareAPI, promptAPI, adminAPI, favoriteAPI, configAPI } from '../api'
 import MainLayout from '../components/MainLayout'
 import SearchInput from '../components/SearchInput'
 import CardGrid from '../components/CardGrid'
@@ -81,6 +81,7 @@ export default function SquarePage() {
   const { layoutMode, setLayoutMode } = useLayoutMode()
   const location = useLocation()
   const [tab, setTab] = useState(() => location.state?.tab === 'favorites' || location.state?.tab === 'shared' ? 'shared' : 'prompts')
+  const [squarePageSize, setSquarePageSize] = useState(20)
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState('likes')
   const [activeCategories, setActiveCategories] = useState({ prompts: null, works: null })
@@ -97,6 +98,7 @@ export default function SquarePage() {
     return () => el.removeEventListener('scroll', onScroll)
   }, [])
   const activeCategory = tab === 'works' ? activeCategories.works : tab === 'prompts' ? activeCategories.prompts : null
+  useEffect(() => { let dead = false; configAPI.get().then(({ data }) => { if (dead) return; setSquarePageSize(Math.max(1, Number(data?.square_page_size) || 20)) }).catch(() => {}); return () => { dead = true } }, [])
 
   const handleTabChange = (newTab) => {
     setTab(newTab)
@@ -159,11 +161,11 @@ export default function SquarePage() {
         </div>
         <div id="square-scroll-container" className="flex-1 overflow-y-auto px-4 sm:px-6 pb-6 relative">
           {tab === 'works' ? (
-            <WorksTab query={query} sort={sort} activeCategory={activeCategory} authorFilter={authorFilter} onAuthorFilter={handleAuthorFilter} isAdmin={isAdmin} dialog={dialog} refreshTrigger={refreshTrigger} layoutMode={layoutMode} />
+            <WorksTab query={query} sort={sort} activeCategory={activeCategory} authorFilter={authorFilter} onAuthorFilter={handleAuthorFilter} isAdmin={isAdmin} dialog={dialog} refreshTrigger={refreshTrigger} layoutMode={layoutMode} pageSize={squarePageSize} />
           ) : tab === 'prompts' ? (
-            <PromptsTab query={query} sort={sort} activeCategory={activeCategory} authorFilter={authorFilter} onAuthorFilter={handleAuthorFilter} isAdmin={isAdmin} dialog={dialog} refreshTrigger={refreshTrigger} layoutMode={layoutMode} />
+            <PromptsTab query={query} sort={sort} activeCategory={activeCategory} authorFilter={authorFilter} onAuthorFilter={handleAuthorFilter} isAdmin={isAdmin} dialog={dialog} refreshTrigger={refreshTrigger} layoutMode={layoutMode} pageSize={squarePageSize} />
           ) : tab === 'shared' ? (
-            <SharedTab refreshTrigger={refreshTrigger} layoutMode={layoutMode} />
+            <SharedTab refreshTrigger={refreshTrigger} layoutMode={layoutMode} pageSize={squarePageSize} />
           ) : null}
           {showBackToTop && (
             <button
@@ -180,7 +182,7 @@ export default function SquarePage() {
   )
 }
 
-function WorksTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, isAdmin, dialog, refreshTrigger, layoutMode }) {
+function WorksTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, isAdmin, dialog, refreshTrigger, layoutMode, pageSize }) {
   const [detailIdx, setDetailIdx] = useState(null)
   const { handleUsePrompt, handleUseImage } = useImageActions()
   const [status, setStatus] = useState('all')
@@ -193,6 +195,7 @@ function WorksTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, i
 
   const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike, handleFavorite, updateCard } = useCardData({
     type: 'image',
+    pageSize,
     apiFn: (p, s) => isAdmin
       ? adminAPI.square(p, s, query || undefined, status, sort, authorFilter?.id || undefined, activeCategory || undefined)
       : squareAPI.list(p, s, query || undefined, sort, authorFilter?.id || undefined, activeCategory || undefined),
@@ -202,7 +205,7 @@ function WorksTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, i
     preloadTimeoutMs: 900,
   })
 
-  const totalPages = Math.ceil(total / 20)
+  const totalPages = Math.ceil(total / Math.max(1, pageSize || 20))
   const syncLiked = useCallback((card) => { if (!card?.id || card?.isLiked) return; updateCard(card.id, v => v ? { ...v, isLiked: true, likesCount: (v.likesCount || 0) + (v.isLiked ? 0 : 1) } : v) }, [updateCard])
   const handleUsePromptWithLike = useCallback(async (card) => { syncLiked(card); await handleUsePrompt(card) }, [syncLiked, handleUsePrompt])
   const handleUseImageWithLike = useCallback(async (card) => { syncLiked(card); await handleUseImage(card) }, [syncLiked, handleUseImage])
@@ -341,7 +344,7 @@ function WorksTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, i
   )
 }
 
-function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, isAdmin, dialog, refreshTrigger, layoutMode }) {
+function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter, isAdmin, dialog, refreshTrigger, layoutMode, pageSize }) {
   const user = readUser()
   const [detailIdx, setDetailIdx] = useState(null)
   const { handleUsePrompt, handleUseImage } = usePromptActions()
@@ -354,15 +357,15 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
 
   const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike, handleFavorite, updateCard } = useCardData({
     type: 'prompt',
-    pageSize: 50,
+    pageSize,
     apiFn: async (p, s) => {
       if (isAdmin) {
         const res = await adminAPI.prompts(p, s, query || undefined, activeCategory || undefined, status, sort, authorFilter?.id || undefined, authorFilter?.name || undefined)
         res.data.prompts = res.data.items || []
         return res
       }
-      if (!user) return promptAPI.listPublic(query, sort, activeCategory, p, 50, authorFilter?.id || undefined, authorFilter?.name || undefined)
-      return promptAPI.list(query, null, 'community', sort, activeCategory, p, 50, authorFilter?.id || undefined, authorFilter?.name || undefined)
+      if (!user) return promptAPI.listPublic(query, sort, activeCategory, p, s, authorFilter?.id || undefined, authorFilter?.name || undefined)
+      return promptAPI.list(query, null, 'community', sort, activeCategory, p, s, authorFilter?.id || undefined, authorFilter?.name || undefined)
     },
     deps,
     atomicPaging: true,
@@ -370,7 +373,7 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
     preloadTimeoutMs: 900,
   })
 
-  const totalPages = Math.ceil(total / 50)
+  const totalPages = Math.ceil(total / Math.max(1, pageSize || 20))
   const syncLiked = useCallback((card) => { if (!card?.id || card?.isLiked) return; updateCard(card.id, v => v ? { ...v, isLiked: true, likesCount: (v.likesCount || 0) + (v.isLiked ? 0 : 1) } : v) }, [updateCard])
   const handleUsePromptWithLike = useCallback(async (card) => { syncLiked(card); await handleUsePrompt(card) }, [syncLiked, handleUsePrompt])
   const handleUseImageWithLike = useCallback(async (card) => { syncLiked(card); await handleUseImage(card) }, [syncLiked, handleUseImage])
@@ -578,7 +581,7 @@ function PromptsTab({ query, sort, activeCategory, authorFilter, onAuthorFilter,
   )
 }
 
-function SharedTab({ refreshTrigger, layoutMode }) {
+function SharedTab({ refreshTrigger, layoutMode, pageSize }) {
   const [subTab, setSubTab] = useState('all')
   const [detailIdx, setDetailIdx] = useState(null)
   const { handleUsePrompt, handleUseImage } = useImageActions()
@@ -591,7 +594,7 @@ function SharedTab({ refreshTrigger, layoutMode }) {
   const deps = useMemo(() => [subTab, refreshTrigger], [subTab, refreshTrigger])
   const { cards, total, page, setPage, loading, paging, refreshing, refresh, handleLike, handleFavorite, updateCard } = useCardData({
     type: subTab === 'prompt' ? 'prompt' : 'image',
-    pageSize: 20,
+    pageSize,
     apiFn: async (p, s) => {
       if (subTab === 'my-shares') {
         const { data } = await squareAPI.my(p, s)
@@ -615,7 +618,7 @@ function SharedTab({ refreshTrigger, layoutMode }) {
     mapCards: items => items,
     removeOnUnfavorite: subTab === 'all' ? card => !card._isMyShare : subTab !== 'my-shares',
   })
-  const totalPages = Math.ceil(total / 20)
+  const totalPages = Math.ceil(total / Math.max(1, pageSize || 20))
   const syncLiked = useCallback((card) => { if (!card?.id || card?.isLiked) return; updateCard(card.id, v => v ? { ...v, isLiked: true, likesCount: (v.likesCount || 0) + (v.isLiked ? 0 : 1) } : v) }, [updateCard])
   const handleUsePromptWithLike = useCallback(async (card) => { syncLiked(card); await handleUsePrompt(card) }, [syncLiked, handleUsePrompt])
   const handleUseImageWithLike = useCallback(async (card) => { syncLiked(card); await handleUseImage(card) }, [syncLiked, handleUseImage])

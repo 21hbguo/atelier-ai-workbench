@@ -57,7 +57,7 @@ export function useCardData({ type, apiFn, pageSize = 20, deps = [], atomicPagin
     }
     fetch()
     return () => { cancelled = true }
-  }, [page, ...deps])
+  }, [page, pageSize, ...deps])
 
   const refresh = useCallback(async () => {
     setRefreshing(true)

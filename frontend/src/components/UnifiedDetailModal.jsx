@@ -3,6 +3,7 @@ import { X, Copy, Download, Trash2, Plus, Image as ImageIcon, Maximize2, Heart, 
 import { imageAPI, promptAPI, uploadAPI } from '../api'
 import { useAppDialog } from './AppDialogProvider'
 import { getExpiryInfo } from '../utils/expiry'
+import { saveBlob, getDownloadFilename } from '../utils/download'
 
 function InfoItem({ label, value }) {
   return (
@@ -46,6 +47,7 @@ export default function UnifiedDetailModal({
   const [editForm, setEditForm] = useState(null)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   const [mediaHovered, setMediaHovered] = useState(false)
   const touchStartX = useRef(0)
   const touchStartY = useRef(0)
@@ -175,6 +177,19 @@ export default function UnifiedDetailModal({
   if (!activeView) return null
 
   const { card: viewCard, isImage, raw, fullUrl, meta, expiryInfo } = activeView
+  const handleDownloadImage = useCallback(async () => {
+    if (!raw?.filename || downloading) return
+    setDownloading(true)
+    try {
+      const resp = await imageAPI.downloadBatch([raw.filename])
+      const saved = await saveBlob(resp.data, getDownloadFilename(resp.headers, raw.filename || 'image.png'))
+      if (!saved) return
+    } catch (e) {
+      dialog.alert(e?.message || '下载失败')
+    } finally {
+      setDownloading(false)
+    }
+  }, [dialog, downloading, raw])
   const handleSaveMetadata = async () => {
     if (!editForm || !raw.filename || saving) return
     setSaving(true)
@@ -452,6 +467,7 @@ export default function UnifiedDetailModal({
           </div>
         </div>
         <div className="shrink-0 md:order-last">
+          {downloading && <div className="mb-2 rounded-2xl px-3 py-2 text-xs font-medium flex items-center justify-between" style={{ background: 'color-mix(in srgb, var(--accent) 12%, transparent)', color: 'var(--accent)' }}><span>正在下载图片...</span><span>处理中</span></div>}
           <div className="grid items-stretch gap-1.5 rounded-2xl p-1" style={{ background: 'color-mix(in srgb, var(--bg-primary) 50%, transparent)', gridTemplateColumns: `repeat(${Math.max(panelActions.length, 1)},minmax(0,1fr))` }}>
           {panelActions.length ? panelActions : <div className="h-11 rounded-2xl" />}
           </div>
@@ -467,20 +483,8 @@ export default function UnifiedDetailModal({
     const actions = []
     if (isImage && fullUrl && !hideDownload) {
       actions.push(
-        <button key="dl" onClick={async () => {
-          try {
-            const resp = await fetch(fullUrl)
-            const blob = await resp.blob()
-            const a = document.createElement('a')
-            a.href = URL.createObjectURL(blob)
-            a.download = raw.filename || 'image.png'
-            document.body.appendChild(a)
-            a.click()
-            a.remove()
-            URL.revokeObjectURL(a.href)
-          } catch { window.open(fullUrl, '_blank') }
-        }} className={actionBaseClass} style={actionPrimaryStyle} title="下载">
-          <Download size={15} /><span>下载</span>
+        <button key="dl" onClick={handleDownloadImage} disabled={downloading} className={actionBaseClass} style={actionPrimaryStyle} title="下载">
+          <Download size={15} /><span>{downloading ? '下载中' : '下载'}</span>
         </button>
       )
     }

@@ -46,7 +46,7 @@ api.interceptors.response.use(
 export const generateAPI = { submitText: data => api.post('/generate/text', data), submitTextImage: data => api.post('/generate/text-image', data) }
 
 export const uploadAPI = {
-  upload: file => { const fd = new FormData(); fd.append('file', file); return api.post('/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } }) },
+  upload: (file,options={}) => { const fd = new FormData(); fd.append('file', file); return api.post('/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' }, signal: options?.signal, onUploadProgress: e => { if (!options?.onProgress) return; const total = Number(e?.total) || 0; const loaded = Number(e?.loaded) || 0; options.onProgress(total > 0 ? Math.round(loaded / total * 100) : 0, e) } }) },
   uploadLocal: file => { const fd = new FormData(); fd.append('file', file); return api.post('/upload/local', fd, { headers: { 'Content-Type': 'multipart/form-data' } }) },
   uploadLocalPublic: file => { const fd = new FormData(); fd.append('file', file); return api.post('/upload/local/public', fd, { headers: { 'Content-Type': 'multipart/form-data' } }) },
   uploadBatch: files => { const fd = new FormData(); files.forEach(f => fd.append('files', f)); return api.post('/upload/batch', fd, { headers: { 'Content-Type': 'multipart/form-data' } }) },
@@ -59,6 +59,7 @@ export const taskAPI = {
   get: id => api.get(`/tasks/${id}`),
   retry: id => api.post(`/tasks/${id}/retry`),
   delete: id => api.post(`/tasks/${id}/delete`),
+  batchDelete: ids => api.post('/tasks/batch-delete', { ids }),
 }
 
 export const imageAPI = {
@@ -67,6 +68,7 @@ export const imageAPI = {
   getBlobByUrl: url => api.get((url || '').startsWith('/api/') ? (url || '').slice(4) : (url || ''), { responseType: 'blob' }),
   downloadBatch: filenames => api.post('/images/download-batch', { filenames }, { responseType: 'blob' }),
   delete: filename => api.post(`/images/${filename}/delete`),
+  batchDelete: filenames => api.post('/images/batch-delete', { filenames }),
   saveMetadata: (filename, metadata) => api.post(`/images/${filename}/metadata`, metadata),
   extend: filenames => api.post('/images/extend', { filenames }),
 }

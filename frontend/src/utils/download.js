@@ -1,0 +1,4 @@
+import { imageAPI } from '../api'
+export async function saveBlob(blob,filename){const href=URL.createObjectURL(blob);try{const a=document.createElement('a');a.href=href;a.download=filename||'download';document.body.appendChild(a);a.click();a.remove();return true}finally{setTimeout(()=>URL.revokeObjectURL(href),1000)}}
+export function getDownloadFilename(headers,fallback){const raw=headers?.['content-disposition']||headers?.get?.('content-disposition')||'';if(!raw)return fallback;const utf8=raw.match(/filename\\*=UTF-8''([^;]+)/i)?.[1];if(utf8)return decodeURIComponent(utf8);const plain=raw.match(/filename=\"?([^\"]+)\"?/i)?.[1];return plain||fallback}
+export async function downloadImageByUrl(url,fallbackName='image.png'){const resp=await imageAPI.getBlobByUrl(url);return await saveBlob(resp.data,getDownloadFilename(resp.headers,fallbackName))}

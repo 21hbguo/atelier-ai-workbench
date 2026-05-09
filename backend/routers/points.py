@@ -5,7 +5,7 @@ import json
 import logging
 import secrets
 from backend.auth import get_current_user, get_client_ip
-from backend.config import get_config
+from backend.config import get_config, get_recharge_random_discount_range
 from backend.services.points_service import PointsService
 from backend.services.invite_service import InviteService
 from backend.services.notification_service import NotificationService
@@ -49,15 +49,17 @@ def _expire_stale_requests(conn, user_id: int):
 
 def _generate_unique_discount(conn, user_id: int) -> float:
     import random
+    discount_range=get_recharge_random_discount_range()
+    min_discount,max_discount=discount_range["min"],discount_range["max"]
     for _ in range(50):
-        discount = round(random.uniform(0.01, 0.50), 2)
+        discount = round(random.uniform(min_discount, max_discount), 2)
         dup = conn.execute(
             "SELECT id FROM recharge_requests WHERE discount = %s AND status = 'pending' AND created_at >= NOW() - interval '10 minutes' LIMIT 1",
             (discount,),
         ).fetchone()
         if not dup:
             return discount
-    return round(random.uniform(0.01, 0.50), 2)
+    return round(random.uniform(min_discount, max_discount), 2)
 
 
 @router.get("/balance")
@@ -242,7 +244,8 @@ async def app_push_callback(t: str, type: str, price: str, sign: str):
     import math
     base_amount = math.ceil(paid_amount)
     discount = round(base_amount - paid_amount, 2)
-    if discount < 0.01 or discount > 0.50:
+    discount_range=get_recharge_random_discount_range()
+    if discount < discount_range["min"] or discount > discount_range["max"]:
         logger.warning(f"[appPush] discount 超出范围 paid={paid_amount} discount={discount}")
         return "success"
     with get_db() as conn:

@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
-import { Paperclip, X, Settings, Send, Maximize2, Share2, Loader2, Sparkles, Palette, Wind, Layers } from 'lucide-react'
+import { Paperclip, X, Settings, Send, Maximize2, Share2, Loader2, Sparkles, Palette, Wind, Layers, AlertCircle, Check } from 'lucide-react'
 import ParamPanel from './ParamPanel'
 import QuickSelector from './QuickSelector'
 import { TYPE_OPTIONS, STYLE_OPTIONS, MOOD_OPTIONS } from '../data/quickOptions'
-import { promptOptimizeAPI } from '../api'
+import { promptOptimizeAPI, uploadAPI } from '../api'
 import { getCachedImages, setCachedImages, getPendingImage, clearPendingImage } from '../utils/imageDB'
 const OPTIMIZE_DRAFT_KEY='chat_optimize_draft_v1'
 function normalizeOptimizeResults(data,fallbackOriginal=''){const versions=Array.isArray(data?.versions)?data.versions.map(v=>typeof v==='string'?v.trim():(typeof v?.text==='string'?v.text.trim():'' )).filter(Boolean):[];return versions.length?{versions,original:typeof data?.original==='string'?data.original:fallbackOriginal}:null}
@@ -38,8 +38,10 @@ function normalizeImageName(name, type, fallback = 'reference') {
   const base = (raw.replace(/\.[^.]+$/, '') || fallback).replace(/[^\w.-]/g, '_').replace(/^\.+/, '') || fallback
   return `${base}.${getImageExt(type, raw)}`
 }
-function snapshotInputImages(list=[]){return list.map((img,i)=>({name:img?.name||img?.file?.name||`reference-${i}`,type:img?.file?.type||'image/png',preview:img?.preview||img?.url||'',url:img?.url||'',file:img?.file||null}))}
 const MAX_IMAGES=5
+function createImageId(){if(typeof crypto!=='undefined'&&typeof crypto.randomUUID==='function')return crypto.randomUUID();return`ref-${Date.now()}-${Math.random().toString(36).slice(2,10)}`}
+function createInputImageItem(input={},fallback=`reference-${Date.now()}`){const file=input?.file||null;const type=input?.type||file?.type||'image/png';const name=normalizeImageName(input?.name||file?.name||fallback,type,fallback);const uploadedUrl=String(input?.uploadedUrl||'').trim();const uploadedStorageName=String(input?.uploadedStorageName||'').trim();const uploadStatus=input?.uploadStatus||(uploadedUrl&&(uploadedStorageName||uploadedUrl)?'success':'pending');return{id:input?.id||createImageId(),name,type,preview:input?.preview||input?.url||'',url:input?.url||'',file,uploadStatus,uploadProgress:uploadStatus==='success'?100:Math.max(0,Math.min(100,Number(input?.uploadProgress)||0)),uploadedUrl,uploadedStorageName:uploadedStorageName||uploadedUrl,uploadError:String(input?.uploadError||'')}}
+function snapshotInputImages(list=[]){return list.map((img,i)=>({id:img?.id||`reference-${i}`,name:img?.name||img?.file?.name||`reference-${i}`,type:img?.type||img?.file?.type||'image/png',preview:img?.preview||img?.url||'',url:img?.url||'',file:img?.file||null,uploadStatus:img?.uploadStatus||'pending',uploadProgress:Number(img?.uploadProgress)||0,uploadedUrl:img?.uploadedUrl||'',uploadedStorageName:img?.uploadedStorageName||'',uploadError:img?.uploadError||''}))}
 function normalizeInputFile(file,fallback=`reference-${Date.now()}`){const type=String(file?.type||'').split(';')[0].trim().toLowerCase();if(!['image/png','image/jpeg','image/webp'].includes(type))return null;if((file?.size||0)>20*1024*1024)return null;const name=normalizeImageName(file?.name||fallback,type,fallback);return file instanceof File&&file.name===name?file:new File([file],name,{type:type||'image/png'})}
 function getClipboardImageFiles(event){const items=Array.from(event?.clipboardData?.items||[]);return items.filter(item=>item.kind==='file'&&String(item.type||'').startsWith('image/')).map((item,i)=>item.getAsFile&&normalizeInputFile(item.getAsFile(),`pasted-${Date.now()}-${i}`)).filter(Boolean)}
 function getFileRejectReason(file){const type=String(file?.type||'').split(';')[0].trim().toLowerCase();const name=String(file?.name||'').toLowerCase();if(type==='application/pdf'||name.endsWith('.pdf'))return'参考图不支持 PDF';if(!['image/png','image/jpeg','image/webp'].includes(type))return'参考图仅支持 PNG/JPG/WebP';if((file?.size||0)>20*1024*1024)return'参考图不能超过 20MB';return''}
@@ -71,6 +73,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const [showSelector, setShowSelector] = useState(null)
   const [showBatchModal, setShowBatchModal] = useState(false)
   const [selectedBatchCount, setSelectedBatchCount] = useState(1)
+  const [requestSubmitting, setRequestSubmitting] = useState(false)
   const fileRef = useRef(null)
   const textareaRef = useRef(null)
   const paramsStatePushedRef = useRef(false)
@@ -82,6 +85,8 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   const imagesRef = useRef([])
   const pendingImageConsumedRef = useRef(false)
   const persistVersionRef = useRef(0)
+  const uploadAbortRef = useRef(new Map())
+  const uploadStartedRef = useRef(new Set())
   const persistImages = useCallback(async (list) => {
     try {
       const version = ++persistVersionRef.current
@@ -108,11 +113,11 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
       }
       if (items.length > remaining) {
         alert(`最多只能上传 ${MAX_IMAGES} 张参考图，已自动截取前 ${remaining} 张`)
-        const next = [...prev, ...items.slice(0, remaining)]
+        const next = [...prev, ...items.slice(0, remaining).map((item,i)=>createInputImageItem(item,`reference-${Date.now()}-${i}`))]
         void persistImages(next)
         return next
       }
-      const next = [...prev, ...items]
+      const next = [...prev, ...items.map((item,i)=>createInputImageItem(item,`reference-${Date.now()}-${i}`))]
       void persistImages(next)
       return next
     })
@@ -151,7 +156,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
         if (blob) {
           const filename = normalizeImageName(name, type, `ref-${Date.now()}`)
           const file = new File([blob], filename, { type })
-          const next = [{ file, preview: URL.createObjectURL(file), name: filename }]
+          const next = [createInputImageItem({ file, preview: URL.createObjectURL(file), name: filename }, filename)]
           setImages(prev => {
             const merged = [...prev, ...next].slice(0, MAX_IMAGES)
             void persistImages(merged)
@@ -175,13 +180,13 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     const allRefs = refUrl ? [...refImages, { url: refUrl, name: 'reference.png' }] : refImages
     const unique = allRefs.filter((v, i, a) => a.findIndex(x => x.url === v.url) === i)
     if (unique.length > 0) {
-      setImages(unique.map((r, i) => ({ url: r.url, preview: r.url, name: normalizeImageName(r.name || `reference-${i}`, '', `reference-${i}`) })))
+      setImages(unique.map((r, i) => createInputImageItem({ url: r.url, preview: r.url, name: normalizeImageName(r.name || `reference-${i}`, '', `reference-${i}`), uploadStatus: 'success', uploadProgress: 100, uploadedUrl: r.url, uploadedStorageName: r.storage_name || r.url }, `reference-${i}`)))
     } else {
       ;(async () => {
         try {
           const cachedImages = await getCachedImages()
           console.log('[ChatInput mount] IndexedDB cachedImages count:', cachedImages.length)
-          const items = cachedImages.map((item, i) => item?.blob ? (() => { const type = item.type || item.blob.type || 'image/png'; const name = normalizeImageName(item.name || `cached-${i}`, type, `cached-${i}`); return { file: new File([item.blob], name, { type }), preview: URL.createObjectURL(item.blob), name } })() : null).filter(Boolean)
+          const items = cachedImages.map((item, i) => item?.blob ? (() => { const type = item.type || item.blob.type || 'image/png'; const name = normalizeImageName(item.name || `cached-${i}`, type, `cached-${i}`); return createInputImageItem({ file: new File([item.blob], name, { type }), preview: URL.createObjectURL(item.blob), name }, `cached-${i}`) })() : null).filter(Boolean)
           if (items.length > 0) setImages(items)
         } catch { return }
       })()
@@ -191,6 +196,9 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
   // 组件卸载时释放 object URL
   useEffect(() => {
     return () => {
+      for (const controller of uploadAbortRef.current.values()) controller.abort()
+      uploadAbortRef.current.clear()
+      uploadStartedRef.current.clear()
       for (const img of imagesRef.current) {
         if (img.file && img.preview) URL.revokeObjectURL(img.preview)
       }
@@ -459,7 +467,63 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     setStreamingVersions([])
     clearOptimizeDraft()
   }, [isStreaming])
+  const persistRemoteImages = useCallback((list) => {
+    const refs=(list||[]).filter(img=>img?.uploadedUrl&&img?.uploadStatus==='success').map(img=>({url:img.uploadedUrl,name:img.name,storage_name:img.uploadedStorageName||img.uploadedUrl}))
+    if(refs.length>0)localStorage.setItem('ref_images',JSON.stringify(refs));else localStorage.removeItem('ref_images')
+  }, [])
+  const updateImageItem = useCallback((id,updater,syncRemote=false) => {
+    setImages(prev => {
+      let changed=false
+      const next=prev.map(img=>{
+        if(img.id!==id)return img
+        changed=true
+        return typeof updater==='function'?updater(img):{...img,...updater}
+      })
+      if(!changed)return prev
+      if(syncRemote)persistRemoteImages(next)
+      return next
+    })
+  }, [persistRemoteImages])
+  const startImageUpload = useCallback(async (item) => {
+    if(!item?.id||uploadStartedRef.current.has(item.id))return
+    uploadStartedRef.current.add(item.id)
+    const controller=new AbortController()
+    uploadAbortRef.current.set(item.id,controller)
+    updateImageItem(item.id,img=>({...(img||item),uploadStatus:'uploading',uploadProgress:0,uploadError:'',uploadedUrl:'',uploadedStorageName:''}))
+    try{
+      let uploadFile=item.file
+      if(!uploadFile&&item.url){
+        const res=await fetch(item.url,item.url.startsWith('/')?{credentials:'include',signal:controller.signal}:{signal:controller.signal})
+        if(!res.ok)throw new Error(`图片读取失败(${res.status})`)
+        const blob=await res.blob()
+        const type=blob.type||item.type||'image/png'
+        uploadFile=new File([blob],normalizeImageName(item.name||`reference-${Date.now()}`,type,`reference-${Date.now()}`),{type})
+      }
+      if(!uploadFile)throw new Error('图片文件不存在')
+      const {data}=await uploadAPI.upload(uploadFile,{signal:controller.signal,onProgress:(percent)=>updateImageItem(item.id,img=>img&&img.uploadStatus!=='success'?{...img,uploadStatus:'uploading',uploadProgress:Math.max(0,Math.min(100,Number(percent)||0)),uploadError:''}:img)})
+      if(controller.signal.aborted)return
+      updateImageItem(item.id,img=>img?{...img,url:data?.url||img.url,uploadStatus:'success',uploadProgress:100,uploadedUrl:data?.url||'',uploadedStorageName:data?.storage_name||data?.url||'',uploadError:''}:img,true)
+    }catch(e){
+      if(controller.signal.aborted)return
+      updateImageItem(item.id,img=>img?{...img,uploadStatus:'error',uploadProgress:0,uploadedUrl:'',uploadedStorageName:'',uploadError:normalizeMessage(e?.message||e,'上传失败，请删除后重新添加')}:img)
+    }finally{
+      uploadAbortRef.current.delete(item.id)
+      uploadStartedRef.current.delete(item.id)
+    }
+  }, [updateImageItem])
+  useEffect(() => {
+    for (const img of images) {
+      if ((img?.file || img?.url) && (img.uploadStatus === 'pending' || img.uploadStatus === 'uploading') && !uploadStartedRef.current.has(img.id)) void startImageUpload(img)
+    }
+  }, [images, startImageUpload])
+  const hasUploadingImages=images.some(img=>img.uploadStatus==='uploading'||img.uploadStatus==='pending')
+  const hasErrorImages=images.some(img=>img.uploadStatus==='error')
+  const sendDisabledReason=hasUploadingImages?'参考图上传中，请稍候再提交':hasErrorImages?'存在上传失败的参考图，请删除后重新添加':''
+  useEffect(() => { void persistImages(images); persistRemoteImages(images) }, [images, persistImages, persistRemoteImages])
   const handleClearAll = useCallback(() => {
+    for (const controller of uploadAbortRef.current.values()) controller.abort()
+    uploadAbortRef.current.clear()
+    uploadStartedRef.current.clear()
     for (const img of imagesRef.current) {
       if (img?.file && img.preview) URL.revokeObjectURL(img.preview)
     }
@@ -496,9 +560,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     setPrompt(text) { setPrompt(text) },
     async addImage(url) {
       if (!url) return
-      appendImages([{ url, preview: url }])
-      const stored = JSON.parse(localStorage.getItem('ref_images') || '[]')
-      if (!stored.some(i => i.url === url)) { stored.push({ url, name: 'reference.png' }); localStorage.setItem('ref_images', JSON.stringify(stored)) }
+      appendImages([{ url, preview: url, name: 'reference.png' }])
     }
   }))
 
@@ -524,6 +586,9 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
 
   const canSend = prompt.trim() || type || style || mood
   const clearComposer = useCallback(() => {
+    for (const controller of uploadAbortRef.current.values()) controller.abort()
+    uploadAbortRef.current.clear()
+    uploadStartedRef.current.clear()
     for (const img of imagesRef.current) {
       if (img?.file && img.preview) URL.revokeObjectURL(img.preview)
     }
@@ -542,19 +607,32 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     setCachedImages([]).catch(() => {})
   }, [])
   const handleSend = async (batchCount = 1) => {
-    if (!canSend || loading) return
+    if (!canSend || loading || requestSubmitting) return
+    if (hasUploadingImages) { setToast({ message: '参考图上传中，请稍候再提交', type: 'error' }); return }
+    if (hasErrorImages) { setToast({ message: '存在上传失败的参考图，请删除后重新添加', type: 'error' }); return }
     const fullPrompt = `${type ? `类型为${type} ` : ''}${style ? `风格为${style} ` : ''}${mood ? `氛围为${mood} ` : ''}${prompt.trim()}`.trim()
-    const inputImages = snapshotInputImages(images)
-    const ok = await onSubmit({ prompt: fullPrompt, images: inputImages, params, shareToSquare, rollCount: batchCount, clearInput: clearComposer })
-    if (ok === false) return
-    if (ok !== 'cleared') clearComposer()
+    const inputImages = snapshotInputImages(images.filter(img=>img.uploadStatus==='success'))
+    setRequestSubmitting(true)
+    try {
+      const ok = await onSubmit({ prompt: fullPrompt, images: inputImages, params, shareToSquare, rollCount: batchCount, clearInput: clearComposer })
+      if (ok === false) return
+      if (ok !== 'cleared') clearComposer()
+    } finally {
+      setRequestSubmitting(false)
+    }
   }
 
   const removeImage = (idx) => {
     setImages(prev => {
-      const next = [...prev]; if (next[idx].file) URL.revokeObjectURL(next[idx].preview); next.splice(idx, 1)
-      const refUrls = next.filter(i => i.url && !i.file).map(i => ({ url: i.url, name: i.name }))
-      if (refUrls.length > 0) localStorage.setItem('ref_images', JSON.stringify(refUrls)); else localStorage.removeItem('ref_images')
+      const next = [...prev]
+      const target=next[idx]
+      if(!target)return prev
+      uploadAbortRef.current.get(target.id)?.abort()
+      uploadAbortRef.current.delete(target.id)
+      uploadStartedRef.current.delete(target.id)
+      if (target.file && target.preview) URL.revokeObjectURL(target.preview)
+      next.splice(idx, 1)
+      persistRemoteImages(next)
       void persistImages(next); return next
     })
   }
@@ -658,8 +736,8 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
                 <span className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>{(optimizeMode === 'refine' ? refineOptimizeCost : optimizeCost) * (optimizeMode === 'refine' ? 1 : optimizeCount)}</span>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => setShowOptimizeModal(false)} className="flex-1 py-2 rounded-2xl text-xs font-medium border transition-colors" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>取消</button>
-                <button onClick={handleConfirmOptimize} className="flex-1 py-2 rounded-2xl text-xs font-medium text-white transition-colors" style={{ background: 'var(--accent)' }}>确认优化</button>
+                <button onClick={() => setShowOptimizeModal(false)} disabled={requestSubmitting} className="flex-1 py-2 rounded-2xl text-xs font-medium border transition-colors disabled:opacity-40" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>取消</button>
+                <button onClick={handleConfirmOptimize} disabled={requestSubmitting} className="flex-1 py-2 rounded-2xl text-xs font-medium text-white transition-colors disabled:opacity-40" style={{ background: 'var(--accent)' }}>{requestSubmitting?'请求中...':'确认优化'}</button>
               </div>
             </div>
           </div>
@@ -700,9 +778,17 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
                 <span className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>{requestCost * selectedBatchCount}</span>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => setShowBatchModal(false)} className="flex-1 py-2 rounded-2xl text-xs font-medium border transition-colors" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>取消</button>
-                <button onClick={() => { setShowBatchModal(false); handleSend(selectedBatchCount) }} className="flex-1 py-2 rounded-2xl text-xs font-medium text-white transition-colors" style={{ background: 'var(--accent)' }}>确认生成</button>
+                <button onClick={() => setShowBatchModal(false)} disabled={requestSubmitting} className="flex-1 py-2 rounded-2xl text-xs font-medium border transition-colors disabled:opacity-40" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>取消</button>
+                <button onClick={() => { setShowBatchModal(false); handleSend(selectedBatchCount) }} disabled={requestSubmitting} className="flex-1 py-2 rounded-2xl text-xs font-medium text-white transition-colors disabled:opacity-40" style={{ background: 'var(--accent)' }}>{requestSubmitting?'正在提交...':'确认生成'}</button>
               </div>
+            </div>
+          </div>
+        )}
+        {requestSubmitting && (
+          <div className="absolute bottom-full left-0 right-0 mb-2 mx-4 flex justify-center z-40 pointer-events-none">
+            <div className="px-4 py-2 rounded-2xl text-xs font-medium flex items-center gap-2 animate-fade-in-up" style={{ background: 'var(--accent)', color: '#fff', boxShadow: 'var(--shadow-md)' }}>
+              <Loader2 size={14} className="animate-spin" />
+              <span>正在提交请求，请稍候...</span>
             </div>
           </div>
         )}
@@ -770,11 +856,14 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
           {images.length > 0 && (
             <div className="flex gap-2 p-3 pb-0 overflow-x-auto">
               {images.map((img, i) => (
-                <div key={i} className="relative w-14 h-14 flex-shrink-0 rounded-lg overflow-hidden group cursor-pointer">
+                <div key={img.id||i} className="relative w-14 h-14 flex-shrink-0 rounded-lg overflow-hidden group cursor-pointer border" style={{borderColor:img.uploadStatus==='error'?'var(--color-error)':img.uploadStatus==='success'?'color-mix(in srgb,var(--color-success) 45%,var(--border-color))':'color-mix(in srgb,var(--accent) 28%,var(--border-color))'}}>
                   <img src={img.preview} alt="" className="w-full h-full object-cover" onClick={() => setLightbox(img.preview)} />
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center" onClick={() => setLightbox(img.preview)}>
-                    <Maximize2 size={14} className="opacity-0 group-hover:opacity-100 transition-opacity text-white" />
+                    <Maximize2 size={14} className={`transition-opacity text-white ${img.uploadStatus==='uploading'||img.uploadStatus==='error'?'opacity-0':'opacity-0 group-hover:opacity-100'}`} />
                   </div>
+                  {img.uploadStatus==='uploading'&&<div className="absolute inset-0 bg-black/40 flex items-center justify-center"><div className="relative flex items-center justify-center w-9 h-9 rounded-full bg-black/45 text-white"><svg className="-rotate-90" width="30" height="30" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,.25)" strokeWidth="3"/><circle cx="18" cy="18" r="15" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray={`${Math.max(0,Math.min(100,Number(img.uploadProgress)||0))*0.94} 100`}/></svg><span className="absolute text-[9px] font-semibold">{Math.max(0,Math.min(100,Math.round(Number(img.uploadProgress)||0)))}%</span></div></div>}
+                  {img.uploadStatus==='error'&&<div className="absolute inset-0 bg-[rgba(181,52,52,.58)] flex flex-col items-center justify-center gap-0.5 px-1 text-white"><AlertCircle size={14} /><span className="text-[8px] leading-none text-center">上传失败</span></div>}
+                  {img.uploadStatus==='success'&&<div className="absolute left-1 bottom-1 w-4 h-4 rounded-full flex items-center justify-center text-white" style={{background:'var(--color-success)'}}><Check size={10} /></div>}
                   <button onClick={(e) => { e.stopPropagation(); removeImage(i) }} className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center"><X size={10} /></button>
                 </div>
               ))}
@@ -813,12 +902,13 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
                 <button onClick={toggleParams} title="参数设置" className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors" style={{ color: showParams ? 'var(--accent)' : 'var(--text-secondary)' }}><Settings size={14} /><span className="text-[11px] leading-none">设置</span></button>
                 <button type="button" onClick={openFilePicker} title="上传参考图" className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors" style={{ color: 'var(--text-secondary)' }}><Paperclip size={15} /><span className="text-[11px] leading-none">上传</span></button>
                 <button onClick={() => { const next = !shareToSquare; setShareToSquare(next); setToast({ message: next ? '已开启分享到广场，作品将长久保存' : '已关闭分享到广场', type: 'success' }) }} className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors relative" style={{ color: shareToSquare ? 'var(--color-success)' : 'var(--text-secondary)' }} title={shareToSquare ? '已开启分享到广场' : '已关闭分享到广场'}><Share2 size={13} /><span className="text-[11px] leading-none">分享</span><span className="absolute -right-0.5 -top-0.5 w-2.5 h-2.5 rounded-full" style={{ background: shareToSquare ? 'var(--color-success)' : 'var(--border-color)' }} /></button>
-                <button onClick={handleOptimize} disabled={!prompt.trim() || loading || optimizeLoading} title="AI 优化提示词" className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors disabled:opacity-40" style={{ color: 'var(--accent)' }}>{optimizeLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}<span className="text-[11px] leading-none">AI优化</span></button>
+                <button onClick={handleOptimize} disabled={!prompt.trim() || loading || requestSubmitting || optimizeLoading} title="AI 优化提示词" className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors disabled:opacity-40" style={{ color: 'var(--accent)' }}>{optimizeLoading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}<span className="text-[11px] leading-none">AI优化</span></button>
               </div>
               <div className="min-w-0 flex items-center justify-end gap-1 flex-1">
-
                 {prompt.length > 0 && <span className="text-[10px] tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{prompt.length}</span>}
-                <button onClick={() => setShowBatchModal(true)} disabled={!canSend || loading} title="生成" className="inline-flex items-center gap-1 px-2 py-1.5 rounded-2xl text-white disabled:opacity-40 flex-shrink-0" style={{ background: canSend && !loading ? 'var(--accent)' : 'var(--border-color)' }}>{loading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}</button>
+                {sendDisabledReason&&!requestSubmitting&&<span className="text-[10px] flex-shrink-0 font-medium" style={{ color: hasErrorImages ? 'var(--color-error)' : 'var(--accent)' }}>{sendDisabledReason}</span>}
+                {requestSubmitting&&<span className="text-[10px] flex-shrink-0 font-medium" style={{ color: 'var(--accent)' }}>正在提交...</span>}
+                <button onClick={() => { if(sendDisabledReason){setToast({ message: sendDisabledReason, type: 'error' });return} setShowBatchModal(true) }} disabled={!canSend || loading || requestSubmitting || !!sendDisabledReason} title="生成" className="inline-flex items-center gap-1 px-2 py-1.5 rounded-2xl text-white disabled:opacity-40 flex-shrink-0" style={{ background: canSend && !loading && !requestSubmitting && !sendDisabledReason ? 'var(--accent)' : 'var(--border-color)' }}>{loading || requestSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}</button>
               </div>
             </div>
           </div>

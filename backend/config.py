@@ -97,7 +97,11 @@ _runtime_config = {
     "donation_contact": os.getenv("DONATION_CONTACT", ""),
     "manual_recharge_notice": os.getenv("MANUAL_RECHARGE_NOTICE", "支持 Atelier 持续承担模型、图床与服务器成本。你可自愿捐赠支持平台运行，审核通过后按页面公示档位赠送对应感谢积分。请备注账号并上传支付凭证，捐赠完成后不支持退款。"),
     "recharge_packages": _safe_json_list(os.getenv("RECHARGE_PACKAGES_JSON", ""), [{"amount": 10, "points": 100, "label": "轻量支持"}, {"amount": 30, "points": 300, "label": "常用支持"}, {"amount": 50, "points": 500, "label": "高频支持"}]),
+    "recharge_random_discount_min": float(os.getenv("RECHARGE_RANDOM_DISCOUNT_MIN", "0.01")),
+    "recharge_random_discount_max": float(os.getenv("RECHARGE_RANDOM_DISCOUNT_MAX", "0.50")),
     "generate_concurrent_limit_per_user": int(os.getenv("GENERATE_CONCURRENT_LIMIT_PER_USER", "10")),
+    "home_page_size": int(os.getenv("HOME_PAGE_SIZE", "24")),
+    "square_page_size": int(os.getenv("SQUARE_PAGE_SIZE", "20")),
     "points_cost_per_generation": int(os.getenv("POINTS_COST_PER_GENERATION", "10")),
     "points_cost_per_optimize": int(os.getenv("POINTS_COST_PER_OPTIMIZE", "10")),
     "points_cost_per_optimize_refine": int(os.getenv("POINTS_COST_PER_OPTIMIZE_REFINE", "20")),
@@ -201,13 +205,15 @@ def update_config(new_values: dict):
 def get_limit_config():
     cfg = get_config()
     out = {}
-    for k in ["generate_concurrent_limit_per_user", "points_cost_per_generation", "points_cost_per_optimize", "points_cost_per_optimize_refine", "points_cost_per_image_extend", "points_checkin_reward", "points_register_bonus", "points_migration_amount", "invite_register_reward_points", "login_rate_limit_per_minute_per_ip", "register_rate_limit_per_minute_per_ip"]:
+    for k in ["generate_concurrent_limit_per_user", "home_page_size", "square_page_size", "points_cost_per_generation", "points_cost_per_optimize", "points_cost_per_optimize_refine", "points_cost_per_image_extend", "points_checkin_reward", "points_register_bonus", "points_migration_amount", "invite_register_reward_points", "login_rate_limit_per_minute_per_ip", "register_rate_limit_per_minute_per_ip"]:
         try:
             v = int(cfg.get(k, _runtime_config_defaults[k]))
         except Exception:
             v = int(_runtime_config_defaults[k])
         out[k] = v if v >= 0 else int(_runtime_config_defaults[k])
     if out["generate_concurrent_limit_per_user"] < 1: out["generate_concurrent_limit_per_user"] = 1
+    if out["home_page_size"] < 1: out["home_page_size"] = 1
+    if out["square_page_size"] < 1: out["square_page_size"] = 1
     if out["points_cost_per_generation"] < 1: out["points_cost_per_generation"] = 1
     if out["points_cost_per_optimize"] < 1: out["points_cost_per_optimize"] = 1
     if out["points_cost_per_optimize_refine"] < 1: out["points_cost_per_optimize_refine"] = 1
@@ -313,6 +319,14 @@ def normalize_recharge_packages(items):
     return [{"amount":10,"points":100,"label":"轻量支持"},{"amount":30,"points":300,"label":"常用支持"},{"amount":50,"points":500,"label":"高频支持"}]
 def get_recharge_packages():
     return normalize_recharge_packages(_runtime_config.get("recharge_packages"))
+def get_recharge_random_discount_range():
+    def _to_float(v,d):
+        try:return round(float(v),2)
+        except Exception:return round(float(d),2)
+    min_v=max(0.01,_to_float(_runtime_config.get("recharge_random_discount_min",_runtime_config_defaults.get("recharge_random_discount_min",0.01)),_runtime_config_defaults.get("recharge_random_discount_min",0.01)))
+    max_v=max(0.01,_to_float(_runtime_config.get("recharge_random_discount_max",_runtime_config_defaults.get("recharge_random_discount_max",0.50)),_runtime_config_defaults.get("recharge_random_discount_max",0.50)))
+    if max_v<min_v:max_v=min_v
+    return {"min":min_v,"max":max_v}
 
 
 def get_smtp_config():

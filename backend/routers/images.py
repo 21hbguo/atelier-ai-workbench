@@ -30,6 +30,9 @@ MAX_REMOTE_IMAGE_BYTES = int(os.getenv("MAX_REMOTE_IMAGE_BYTES", str(10 * 1024 *
 class BatchDownloadRequest(BaseModel):
     filenames: list[str] = Field(default_factory=list)
 
+class BatchDeleteImagesRequest(BaseModel):
+    filenames: list[str] = Field(default_factory=list, max_length=500)
+
 
 def get_image_metadata(filename: str) -> dict:
     with get_db() as conn:
@@ -279,12 +282,22 @@ async def local_thumbnail(path: str = Query(...), size: int = Query(400, ge=50, 
 
 
 @router.get("/images/file/{filename}")
-async def serve_image(filename: str, user=Depends(get_current_user)):
+async def serve_image(filename: str, download: int = Query(0), user=Depends(get_current_user)):
     image_path = GENERATED_IMAGES_DIR / filename
     if not image_path.exists():
         raise HTTPException(status_code=404, detail="图片不存在")
     _assert_generated_image_access(filename, user)
-    return FileResponse(str(image_path), media_type=_image_media_type(str(image_path)))
+    return FileResponse(str(image_path), media_type=_image_media_type(str(image_path)), filename=filename if download else None)
+
+
+@router.get("/images/download/{filename}")
+async def download_image_file(filename: str, t: str = Query(""), user=Depends(get_current_user)):
+    image_path = GENERATED_IMAGES_DIR / filename
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail="图片不存在")
+    _assert_generated_image_access(filename, user)
+    headers = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache", "Expires": "0"}
+    return FileResponse(str(image_path), media_type=_image_media_type(str(image_path)), filename=filename, headers=headers)
 
 
 @router.post("/images/download-batch")
@@ -390,6 +403,50 @@ async def delete_image(filename: str, user=Depends(get_current_user)):
 @router.post("/images/{filename}/delete")
 async def delete_image_post(filename: str, user=Depends(get_current_user)):
     return await delete_image(filename, user)
+
+@router.post("/images/batch-delete")
+async def batch_delete_images(body: BatchDeleteImagesRequest, user=Depends(get_current_user)):
+    filenames = _normalize_download_filenames(body.filenames)
+    if not filenames:
+        raise HTTPException(status_code=400, detail="未提供要删除的文件")
+    allowed = []
+    failed = []
+    with get_db() as conn:
+        owners = {}
+        if not user.get("is_admin"):
+            rows = conn.execute("SELECT filename,user_id FROM image_metadata WHERE filename = ANY(%s)", (filenames,)).fetchall()
+            owners = {r["filename"]: r["user_id"] for r in rows}
+        for filename in filenames:
+            image_path = GENERATED_IMAGES_DIR / filename
+            if not image_path.exists():
+                failed.append({"filename": filename, "reason": "图片不存在"})
+                continue
+            if not user.get("is_admin"):
+                owner_id = owners.get(filename)
+                if owner_id is not None and owner_id != user["user_id"]:
+                    failed.append({"filename": filename, "reason": "无权删除此图片"})
+                    continue
+            allowed.append(filename)
+    deleted = []
+    for filename in allowed:
+        image_path = GENERATED_IMAGES_DIR / filename
+        try:
+            image_path.unlink()
+            deleted.append(filename)
+        except FileNotFoundError:
+            failed.append({"filename": filename, "reason": "图片不存在"})
+        except Exception:
+            logger.exception("批量删除图片失败")
+            failed.append({"filename": filename, "reason": "删除失败"})
+    if deleted:
+        with get_db() as conn:
+            conn.execute("DELETE FROM image_metadata WHERE filename = ANY(%s)", (deleted,))
+        TaskManager.remove_images_from_tasks([str(GENERATED_IMAGES_DIR / filename) for filename in deleted])
+    deleted_set = set(deleted)
+    for filename in allowed:
+        if filename not in deleted_set and not any(item["filename"] == filename for item in failed):
+            failed.append({"filename": filename, "reason": "删除失败"})
+    return {"deleted": len(deleted), "deleted_filenames": deleted, "failed": failed}
 
 
 @router.post("/images/{filename}/metadata")

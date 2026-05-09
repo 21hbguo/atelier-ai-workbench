@@ -1,6 +1,7 @@
 import os
 import logging
 import asyncio
+import hashlib
 from contextlib import asynccontextmanager
 from datetime import datetime
 from fastapi import FastAPI, Request
@@ -87,6 +88,16 @@ app.include_router(vmq.router)
 async def app_push_compat(t: str, type: str, price: str, sign: str):
     from backend.routers.points import app_push_callback
     return await app_push_callback(t=t, type=type, price=price, sign=sign)
+
+
+@app.get("/appHeart")
+async def app_heart_compat(t: str, sign: str):
+    from backend.config import get_config
+    secret = get_config().get("vmq_notify_secret") or ""
+    if not secret:
+        return "fail"
+    expected = hashlib.md5((t + secret).encode()).hexdigest()
+    return "success" if sign == expected else "fail"
 
 
 @app.get("/api/health")
