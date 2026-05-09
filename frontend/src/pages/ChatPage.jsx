@@ -229,6 +229,7 @@ export default function ChatPage() {
   const [downloadProgress, setDownloadProgress] = useState({ open: false, phase: 'idle', current: 0, total: 0, percent: 0, filename: '' })
   const [deleteProgress, setDeleteProgress] = useState({ open: false, current: 0, total: 0, percent: 0, text: '' })
   const [thumbnailBlurMap, setThumbnailBlurMap] = useState({})
+  const [progressNowTs, setProgressNowTs] = useState(() => Date.now())
   const [expiryNowTs, setExpiryNowTs] = useState(() => Date.now())
   const [expiryByFilenameMap, setExpiryByFilenameMap] = useState({})
   const [feedLayoutReady, setFeedLayoutReady] = useState(layoutMode !== 'masonry')
@@ -253,6 +254,8 @@ export default function ChatPage() {
   const timeRangeButtonRef = useRef(null)
   const timeRangePanelRef = useRef(null)
   const prevUserCacheKeyRef = useRef(activeCacheKey)
+  const refreshSeqRef = useRef(0)
+  const refreshAbortRef = useRef(null)
   const navigate = useNavigate()
   const timeRangeOptions = useMemo(() => ([{ k: '1d', l: '近1天' }, { k: '3d', l: '近3天' }, { k: '7d', l: '近7天' }, { k: 'all', l: '全部' }]), [])
   const visibleTasks = useMemo(() => {
@@ -319,16 +322,22 @@ export default function ChatPage() {
   }, [savePendingSubmissions])
 
   const refreshTasks = useCallback(async () => {
+    refreshAbortRef.current?.abort()
+    const controller = new AbortController()
+    refreshAbortRef.current = controller
+    const seq = ++refreshSeqRef.current
     const uid = isAdmin ? selectedUserId : undefined
     const q = searchQuery || undefined
     let allTasks = []
     let allImages = []
-    const taskPromise = withTimeout(taskAPI.list(50, 0, uid, q), 10000, '任务列表加载超时，请重试')
-    const imagePromise = withTimeout(imageAPI.list(1, 100, uid), 12000, '图片列表加载超时，已仅显示任务列表')
+    const taskPromise = withTimeout(taskAPI.list(50, 0, uid, q, { signal: controller.signal }), 10000, '任务列表加载超时，请重试')
+    const imagePromise = withTimeout(imageAPI.list(1, 100, uid, { signal: controller.signal }), 12000, '图片列表加载超时，已仅显示任务列表')
     try {
       const taskRes = await taskPromise
+      if (controller.signal.aborted || seq !== refreshSeqRef.current) return
       allTasks = taskRes.data || []
     } catch (e) {
+      if (controller.signal.aborted || seq !== refreshSeqRef.current) return
       setLoadError(e.message || '任务列表加载失败')
       const cached = loadCachedActiveTasks()
       if (cached.length > 0) setTasks(prev => [...cached, ...prev.filter(t => !cached.some(c => c.task_id === t.task_id))])
@@ -348,12 +357,15 @@ export default function ChatPage() {
     }
     try {
       const imgRes = await imagePromise
+      if (controller.signal.aborted || seq !== refreshSeqRef.current) return
       allImages = imgRes.data.images || []
       setLoadError('')
     } catch (e) {
+      if (controller.signal.aborted || seq !== refreshSeqRef.current) return
       allImages = []
       setLoadError(e.message || '图片列表加载失败，已仅显示任务列表')
     }
+    if (controller.signal.aborted || seq !== refreshSeqRef.current) return
     const latestMap = {}
     for (const img of allImages || []) {
       if (img?.filename && img?.square_image_id) latestMap[img.filename] = img.square_image_id
@@ -420,13 +432,15 @@ export default function ChatPage() {
         })
         .filter((t) => t.status !== 'completed' || (t.result_urls?.length || 0) > 0),
     ].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
+    if (controller.signal.aborted || seq !== refreshSeqRef.current) return
     setTasks(merged)
     const completedMerged = merged.filter(t => t.status === 'completed' && t.result_urls?.length)
     setDetailCards(completedMerged.flatMap(task => buildDetailCardsFromTask(task, expiryByFilename, squareIdMapRef.current)))
     saveCachedActiveTasks(merged.filter(t => activeStatuses.includes(t?.status)))
     if (!loaded) setLoaded(true)
-    if (!isAdmin || !uid) {
+    if ((!isAdmin || !uid) && merged.some(t => (t.result_urls?.length || 0) > 0 && !t.square_image_id)) {
       squareAPI.my(1, 200).then(({ data }) => {
+        if (controller.signal.aborted || seq !== refreshSeqRef.current) return
         const shareMap = Object.fromEntries((data?.images || []).filter(s => s?.filename && s?.id).map(s => [s.filename, s.id]))
         if (!Object.keys(shareMap).length) return
         squareIdMapRef.current = { ...squareIdMapRef.current, ...shareMap }
@@ -437,6 +451,7 @@ export default function ChatPage() {
   }, [loaded, isAdmin, selectedUserId, searchQuery, loadCachedActiveTasks, saveCachedActiveTasks])
 
   useEffect(() => { refreshTasks() }, [refreshTasks])
+  useEffect(() => () => refreshAbortRef.current?.abort(), [])
   useEffect(() => {
     if (loaded) return
     const cached = loadCachedActiveTasks()
@@ -556,6 +571,14 @@ export default function ChatPage() {
     }
   }, [layoutMode, loaded, visibleTasks.length])
   useEffect(() => {
+    const hasActiveTask = tasks.some(t => ['pending', 'queued', 'processing', 'running', 'generating'].includes(t.status))
+    if (!hasActiveTask) return
+    const tick = () => setProgressNowTs(Date.now())
+    tick()
+    const timer = setInterval(tick, 1000)
+    return () => clearInterval(timer)
+  }, [tasks])
+  useEffect(() => {
     const tick = () => setExpiryNowTs(Date.now())
     tick()
     const timer = setInterval(tick, 60000)
@@ -583,6 +606,9 @@ export default function ChatPage() {
   const handleAddPrompt = useCallback((input) => {
     const promptText = typeof input === 'object' ? input?.prompt : input
     inputRef.current?.setPrompt(String(promptText || ''))
+  }, [])
+  const handleAddImageToInput = useCallback((url) => {
+    inputRef.current?.addImage(url)
   }, [])
   const handleAddToPromptLibrary = useCallback(async (task) => {
     if (!isAdmin) return
@@ -1191,6 +1217,12 @@ export default function ChatPage() {
   const toggleCheck = useCallback((taskId) => {
     setChecked(prev => { const next = new Set(prev); next.has(taskId) ? next.delete(taskId) : next.add(taskId); return next })
   }, [])
+  const handleToggleThumbnailBlur = useCallback((taskKey) => {
+    setThumbnailBlurMap(prev => ({ ...prev, [taskKey]: !prev[taskKey] }))
+  }, [])
+  const handleTaskViewDetail = useCallback((taskId) => {
+    handleCardViewDetail(taskId)
+  }, [handleCardViewDetail])
 
   const toggleSelectAll = useCallback(() => {
     if (checked.size === pagedVisibleTasks.length) setChecked(new Set())
@@ -1482,24 +1514,23 @@ export default function ChatPage() {
               <GenerationCard
                 key={task.task_id}
                 task={task}
-                onAddImage={url => inputRef.current?.addImage(url)}
+                onAddImage={handleAddImageToInput}
                 onAddPrompt={handleAddPrompt}
                 onAddToPromptLibrary={isAdmin ? handleAddToPromptLibrary : undefined}
                 onRetry={handleRetry}
                 selectMode={selectMode}
                 checked={checked.has(task.task_id) || dragSelected.has(String(task.task_id))}
-                onToggleCheck={() => toggleCheck(task.task_id)}
+                onToggleCheck={toggleCheck}
                 wasDraggedRef={wasDraggedRef}
                 showUsername={isAdmin}
                 username={task.username}
                 thumbnailBlurred={!!thumbnailBlurMap[getThumbnailBlurItemKey(task)]}
-                onToggleThumbnailBlur={() => {
-                  const k = getThumbnailBlurItemKey(task)
-                  setThumbnailBlurMap(prev => ({ ...prev, [k]: !prev[k] }))
-                }}
-                onViewDetail={() => handleCardViewDetail(task.task_id)}
+                thumbnailBlurKey={getThumbnailBlurItemKey(task)}
+                onToggleThumbnailBlur={handleToggleThumbnailBlur}
+                onViewDetail={handleTaskViewDetail}
                 masonry={layoutMode === 'masonry'}
-                nowTs={expiryNowTs}
+                progressNowTs={progressNowTs}
+                expiryNowTs={expiryNowTs}
                 data-card-id={String(task.task_id)}
               />
             ))}

@@ -90,6 +90,12 @@ describe('taskAPI', () => {
     expect(mockApi.get).toHaveBeenCalledWith('/tasks', { params: { limit: 10, offset: 0, user_id: 'u1', query: 'q' } })
   })
 
+  it('list passes signal option', () => {
+    const ctrl = new AbortController()
+    api.taskAPI.list(10, 0, 'u1', 'q', { signal: ctrl.signal })
+    expect(mockApi.get).toHaveBeenCalledWith('/tasks', { params: { limit: 10, offset: 0, user_id: 'u1', query: 'q' }, signal: ctrl.signal })
+  })
+
   it('activeSummary', () => {
     api.taskAPI.activeSummary()
     expect(mockApi.get).toHaveBeenCalledWith('/tasks/active-summary')
@@ -130,6 +136,12 @@ describe('imageAPI', () => {
   it('list with userId', () => {
     api.imageAPI.list(2, 10, 'u1')
     expect(mockApi.get).toHaveBeenCalledWith('/images', { params: { page: 2, page_size: 10, user_id: 'u1' } })
+  })
+
+  it('list passes signal option', () => {
+    const ctrl = new AbortController()
+    api.imageAPI.list(2, 10, 'u1', { signal: ctrl.signal })
+    expect(mockApi.get).toHaveBeenCalledWith('/images', { params: { page: 2, page_size: 10, user_id: 'u1' }, signal: ctrl.signal })
   })
 
   it('get', () => {
@@ -179,6 +191,9 @@ describe('imageAPI', () => {
 })
 
 describe('promptAPI', () => {
+  beforeEach(() => {
+    mockApi.get.mockResolvedValue({ data: { categories: [] } })
+  })
   it('list with defaults', () => {
     api.promptAPI.list()
     expect(mockApi.get).toHaveBeenCalledWith('/prompts', { params: { scope: 'private', sort: 'likes', page: 1, size: 50 } })
@@ -194,9 +209,15 @@ describe('promptAPI', () => {
     expect(mockApi.get).toHaveBeenCalledWith('/prompts/public', { params: { sort: 'likes', page: 1, size: 50 } })
   })
 
-  it('categories', () => {
-    api.promptAPI.categories()
+  it('categories', async () => {
+    await api.promptAPI.categories(true)
     expect(mockApi.get).toHaveBeenCalledWith('/prompts/categories')
+  })
+
+  it('categories uses cache by default', async () => {
+    await api.promptAPI.categories(true)
+    await api.promptAPI.categories()
+    expect(mockApi.get).toHaveBeenCalledTimes(1)
   })
 
   it('createCategory', () => {

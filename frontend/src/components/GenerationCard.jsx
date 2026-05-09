@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Check, Plus, Image, Share2, BookOpen, Eye, EyeOff } from 'lucide-react'
-import { squareAPI, shareAPI } from '../api'
+import { memo, useMemo } from 'react'
+import { Check, Eye, EyeOff } from 'lucide-react'
 import UnifiedCard from './UnifiedCard'
 import { getExpiryInfo } from '../utils/expiry'
 function normalizeCardText(v=''){return String(v||'').replace(/\s+/g,' ').trim()}
@@ -29,35 +28,22 @@ const statusConfig = {
   failed: { color: 'var(--color-error)', bg: 'color-mix(in srgb, var(--color-error) 12%, transparent)', label: '失败' },
 }
 
-function getProgress(startedAt, status) {
+function getProgress(startedAt, status, nowTs = Date.now()) {
   if (!startedAt || status === 'completed') return status === 'completed' ? 100 : 0
   if (status === 'failed') return 0
   const s = String(startedAt || '')
   const withTz = s.includes('T') ? (s.includes('+') || s.includes('Z') ? s : s + '+08:00') : s.replace(' ', 'T') + '+08:00'
-  const elapsed = (Date.now() - new Date(withTz).getTime()) / 1000
+  const elapsed = (nowTs - new Date(withTz).getTime()) / 1000
   return Math.min(99 * (1 - Math.exp(-elapsed / 30)), 99)
 }
-
-export default function GenerationCard({ task, onAddImage, onAddPrompt, onAddToPromptLibrary, onRetry, selectMode, checked, onToggleCheck, wasDraggedRef, showUsername, username, onViewDetail, thumbnailBlurred = false, onToggleThumbnailBlur, masonry = false, nowTs = Date.now(), ...rest }) {
-  const [progress, setProgress] = useState(() => getProgress(task.started_at, task.status))
-  const [shared, setShared] = useState(false)
-  const [sharing, setSharing] = useState(false)
+function GenerationCard({ task, onAddImage, onAddPrompt, onAddToPromptLibrary, onRetry, selectMode, checked, onToggleCheck, wasDraggedRef, showUsername, username, onViewDetail, thumbnailBlurred = false, thumbnailBlurKey = '', onToggleThumbnailBlur, masonry = false, progressNowTs = Date.now(), expiryNowTs = Date.now(), ...rest }) {
   const isProcessing = ['processing', 'queued', 'running', 'generating'].includes(task.status)
   const mediaClassName = masonry ? 'card-feed-media-masonry' : 'card-feed-media'
-
-  useEffect(() => {
-    if (!isProcessing) return
-    const timer = setInterval(() => setProgress(getProgress(task.started_at, task.status)), 1000)
-    return () => clearInterval(timer)
-  }, [task.started_at, task.status, isProcessing])
-
-  useEffect(() => {
-    if (task.status === 'completed') setProgress(100)
-  }, [task.status])
+  const progress = isProcessing ? getProgress(task.started_at, task.status, progressNowTs) : task.status === 'completed' ? 100 : 0
 
   const cfg = statusConfig[task.status] || statusConfig.pending
   const isCompleted = task.status === 'completed' && Array.isArray(task.result_urls) && task.result_urls.length > 0
-  const images = isCompleted
+  const images = useMemo(() => (isCompleted
     ? task.result_urls.map(u => {
         const f = u.split('/').pop()
         return {
@@ -68,13 +54,11 @@ export default function GenerationCard({ task, onAddImage, onAddPrompt, onAddToP
           height: task.height || task.image_height || null,
         }
       })
-    : (task.previewImages || []).map(u => ({ thumb: u, full: u }))
+    : (task.previewImages || []).map(u => ({ thumb: u, full: u }))), [isCompleted, task.result_urls, task.previewImages, task.width, task.image_width, task.height, task.image_height])
   const prompt = task.params?.prompt || task.prompt || ''
   const titleText = normalizeCardText(prompt || (task.status === 'failed' ? '生成失败' : '新的创作'))
   const metaText = normalizeCardText(username || '')
-  const expiryInfo = getExpiryInfo({ expiresAt: task.expires_at, isPermanent: !!task.is_permanent, now: nowTs, fallbackDaysLeft: task.days_left })
-  const hoverWrapClass = 'absolute inset-0 hidden md:flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200'
-  const hoverBtnClass = 'inline-flex h-9 items-center gap-1.5 rounded-full border border-white/18 bg-white/92 px-3.5 text-xs font-semibold text-[var(--text-primary)] shadow-[0_10px_30px_rgba(0,0,0,0.16)] backdrop-blur-md transition-all duration-200 hover:-translate-y-0.5 hover:bg-white'
+  const expiryInfo = getExpiryInfo({ expiresAt: task.expires_at, isPermanent: !!task.is_permanent, now: expiryNowTs, fallbackDaysLeft: task.days_left })
 
   const mediaInnerNode = isCompleted && images.length > 0 ? (
     masonry ? (
@@ -133,42 +117,6 @@ export default function GenerationCard({ task, onAddImage, onAddPrompt, onAddToP
     </div>
   )
 
-  const handleShare = async (e) => {
-    e.stopPropagation()
-    if (shared || sharing) return
-    setSharing(true)
-    try {
-      const filename = images[0].full.split('/').pop()
-      await squareAPI.share({
-        filename,
-        prompt,
-        metadata: { size: getGenerationSizeLabel(task.params||{}), type: task.params?.image_urls?.length ? 'image' : 'text' },
-      })
-      setShared(true)
-    } catch (err) {
-      if (err.message?.includes('已分享')) setShared(true)
-    } finally {
-      setSharing(false)
-    }
-  }
-
-  const handleShareLink = async (e) => {
-    e.stopPropagation()
-    if (sharing) return
-    setSharing(true)
-    try {
-      const filename = images[0].full.split('/').pop()
-      const { data } = await shareAPI.create({ filename, expires_days: 7 })
-      const url = `${window.location.origin}${data.url}`
-      try { await navigator.clipboard.writeText(url) } catch {}
-      setShared(true)
-    } catch (err) {
-      if (err.message?.includes('已分享')) setShared(true)
-    } finally {
-      setSharing(false)
-    }
-  }
-
   return (
     <UnifiedCard
       {...rest}
@@ -184,10 +132,10 @@ export default function GenerationCard({ task, onAddImage, onAddPrompt, onAddToP
       onClick={() => {
         if (selectMode) {
           if (wasDraggedRef?.current) { wasDraggedRef.current = false; return }
-          onToggleCheck?.()
+          onToggleCheck?.(task.task_id)
           return
         }
-        if (isCompleted) onViewDetail?.()
+        if (isCompleted) onViewDetail?.(task.task_id)
       }}
       mediaNode={mediaNode}
       hoverNode={null}
@@ -256,7 +204,7 @@ export default function GenerationCard({ task, onAddImage, onAddPrompt, onAddToP
               ) : null}
               {onAddImage ? (
                 <button
-                  onClick={(e) => { e.stopPropagation(); onAddImage(images[0].full) }}
+                  onClick={(e) => { e.stopPropagation(); onAddImage(images[0].full, task) }}
                   className="h-8 px-3 rounded-full text-[11px] font-medium border"
                   style={{ color: 'var(--text-secondary)', borderColor: 'color-mix(in srgb,var(--accent) 10%,var(--border-color))', background: 'color-mix(in srgb,var(--bg-primary) 84%,#fff 16%)' }}
                 >
@@ -274,7 +222,7 @@ export default function GenerationCard({ task, onAddImage, onAddPrompt, onAddToP
               ) : null}
               {onToggleThumbnailBlur ? (
                 <button
-                  onClick={(e) => { e.stopPropagation(); onToggleThumbnailBlur() }}
+                  onClick={(e) => { e.stopPropagation(); onToggleThumbnailBlur(thumbnailBlurKey) }}
                   className="flex items-center justify-center w-8 h-8 rounded-full border"
                   style={{ color: 'var(--text-secondary)', borderColor: 'color-mix(in srgb,var(--accent) 10%,var(--border-color))', background: 'color-mix(in srgb,var(--bg-primary) 84%,#fff 16%)' }}
                 >
@@ -288,3 +236,53 @@ export default function GenerationCard({ task, onAddImage, onAddPrompt, onAddToP
     />
   )
 }
+function areTasksEqual(prevTask, nextTask) {
+  if (prevTask === nextTask) return true
+  if (!prevTask || !nextTask) return false
+  if (prevTask.task_id !== nextTask.task_id) return false
+  if (prevTask.status !== nextTask.status) return false
+  if (prevTask.prompt !== nextTask.prompt) return false
+  if (prevTask.error !== nextTask.error) return false
+  if (prevTask.username !== nextTask.username) return false
+  if (prevTask.started_at !== nextTask.started_at) return false
+  if (prevTask.expires_at !== nextTask.expires_at) return false
+  if (prevTask.is_permanent !== nextTask.is_permanent) return false
+  if (prevTask.days_left !== nextTask.days_left) return false
+  if (prevTask.width !== nextTask.width) return false
+  if (prevTask.height !== nextTask.height) return false
+  const prevResultUrls = prevTask.result_urls || []
+  const nextResultUrls = nextTask.result_urls || []
+  if (prevResultUrls.length !== nextResultUrls.length) return false
+  for (let i = 0; i < prevResultUrls.length; i += 1) if (prevResultUrls[i] !== nextResultUrls[i]) return false
+  const prevPreviewImages = prevTask.previewImages || []
+  const nextPreviewImages = nextTask.previewImages || []
+  if (prevPreviewImages.length !== nextPreviewImages.length) return false
+  for (let i = 0; i < prevPreviewImages.length; i += 1) if (prevPreviewImages[i] !== nextPreviewImages[i]) return false
+  const prevParams = prevTask.params || {}
+  const nextParams = nextTask.params || {}
+  const prevParamKeys = Object.keys(prevParams)
+  const nextParamKeys = Object.keys(nextParams)
+  if (prevParamKeys.length !== nextParamKeys.length) return false
+  for (const key of prevParamKeys) if (prevParams[key] !== nextParams[key]) return false
+  return true
+}
+function arePropsEqual(prevProps, nextProps) {
+  if (!areTasksEqual(prevProps.task, nextProps.task)) return false
+  if (prevProps.selectMode !== nextProps.selectMode) return false
+  if (prevProps.checked !== nextProps.checked) return false
+  if (prevProps.username !== nextProps.username) return false
+  if (prevProps.thumbnailBlurred !== nextProps.thumbnailBlurred) return false
+  if (prevProps.thumbnailBlurKey !== nextProps.thumbnailBlurKey) return false
+  if (prevProps.masonry !== nextProps.masonry) return false
+  if (prevProps.progressNowTs !== nextProps.progressNowTs && ['pending', 'queued', 'processing', 'running', 'generating'].includes(nextProps.task?.status)) return false
+  if (prevProps.expiryNowTs !== nextProps.expiryNowTs && !!nextProps.task?.result_urls?.length) return false
+  if (prevProps.onAddImage !== nextProps.onAddImage) return false
+  if (prevProps.onAddPrompt !== nextProps.onAddPrompt) return false
+  if (prevProps.onAddToPromptLibrary !== nextProps.onAddToPromptLibrary) return false
+  if (prevProps.onRetry !== nextProps.onRetry) return false
+  if (prevProps.onToggleCheck !== nextProps.onToggleCheck) return false
+  if (prevProps.onViewDetail !== nextProps.onViewDetail) return false
+  if (prevProps.onToggleThumbnailBlur !== nextProps.onToggleThumbnailBlur) return false
+  return true
+}
+export default memo(GenerationCard, arePropsEqual)

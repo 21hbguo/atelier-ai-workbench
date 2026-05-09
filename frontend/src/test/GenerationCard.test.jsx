@@ -188,7 +188,7 @@ describe('GenerationCard', () => {
       const onAddImage = vi.fn()
       renderCard({}, { onAddImage })
       fireEvent.click(screen.getByText('参考图'))
-      expect(onAddImage).toHaveBeenCalledWith(expect.stringContaining('abc.png'))
+      expect(onAddImage).toHaveBeenCalledWith(expect.stringContaining('abc.png'), expect.objectContaining({ task_id: 't1' }))
     })
 
     it('renders "入库" button when onAddToPromptLibrary is provided', () => {

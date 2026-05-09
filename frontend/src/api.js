@@ -4,6 +4,23 @@ import { clearUser, writeUser } from './auth'
 const api = axios.create({ baseURL: '/api', timeout: 1800000, withCredentials: true, headers: { 'Content-Type': 'application/json' } })
 const refreshClient = axios.create({ baseURL: '/api', timeout: 1800000, withCredentials: true, headers: { 'Content-Type': 'application/json' } })
 let refreshPromise = null
+let promptCategoryCache = null
+let promptCategoryPromise = null
+const PROMPT_CATEGORY_CACHE_TTL = 60000
+function invalidatePromptCategoryCache() {
+  promptCategoryCache = null
+  promptCategoryPromise = null
+}
+function loadPromptCategories(force = false) {
+  const now = Date.now()
+  if (!force && promptCategoryCache && now - promptCategoryCache.ts < PROMPT_CATEGORY_CACHE_TTL) return Promise.resolve(promptCategoryCache.response)
+  if (!force && promptCategoryPromise) return promptCategoryPromise
+  promptCategoryPromise = api.get('/prompts/categories').then((res) => {
+    promptCategoryCache = { ts: Date.now(), response: res }
+    return res
+  }).finally(() => { promptCategoryPromise = null })
+  return promptCategoryPromise
+}
 
 api.interceptors.response.use(
   res => res,
@@ -53,7 +70,7 @@ export const uploadAPI = {
 }
 
 export const taskAPI = {
-  list: (limit = 50, offset = 0, userId, query) => { const params = { limit, offset }; if (userId) params.user_id = userId; if (query) params.query = query; return api.get('/tasks', { params }) },
+  list: (limit = 50, offset = 0, userId, query, options = {}) => { const params = { limit, offset }; if (userId) params.user_id = userId; if (query) params.query = query; return api.get('/tasks', { params, ...(options?.signal ? { signal: options.signal } : {}) }) },
   activeSummary: () => api.get('/tasks/active-summary'),
   getByClientRequestId: clientRequestId => api.get(`/tasks/by-client/${clientRequestId}`),
   get: id => api.get(`/tasks/${id}`),
@@ -63,7 +80,7 @@ export const taskAPI = {
 }
 
 export const imageAPI = {
-  list: (page = 1, pageSize = 20, userId) => { const params = { page, page_size: pageSize }; if (userId) params.user_id = userId; return api.get('/images', { params }) },
+  list: (page = 1, pageSize = 20, userId, options = {}) => { const params = { page, page_size: pageSize }; if (userId) params.user_id = userId; return api.get('/images', { params, ...(options?.signal ? { signal: options.signal } : {}) }) },
   get: filename => api.get(`/images/${filename}`),
   getBlobByUrl: url => api.get((url || '').startsWith('/api/') ? (url || '').slice(4) : (url || ''), { responseType: 'blob' }),
   downloadBatch: filenames => api.post('/images/download-batch', { filenames }, { responseType: 'blob' }),
@@ -76,10 +93,10 @@ export const imageAPI = {
 export const promptAPI = {
   list: (query, tags, scope = 'private', sort = 'likes', category, page = 1, size = 50, authorId, authorName) => { const params = { scope, sort, page, size }; if (query) params.query = query; if (tags) params.tags = tags; if (category) params.category = category; if (authorId) params.author_id = authorId; if (authorName) params.author_name = authorName; return api.get('/prompts', { params }) },
   listPublic: (query, sort = 'likes', category, page = 1, size = 50, authorId, authorName) => { const params = { sort, page, size }; if (query) params.query = query; if (category) params.category = category; if (authorId) params.author_id = authorId; if (authorName) params.author_name = authorName; return api.get('/prompts/public', { params }) },
-  categories: () => api.get('/prompts/categories'),
-  createCategory: data => api.post('/prompts/categories', data),
-  updateCategory: (id, data) => api.put(`/prompts/categories/${id}`, data),
-  deleteCategory: id => api.post(`/prompts/categories/${id}/delete`),
+  categories: (force = false) => loadPromptCategories(force),
+  createCategory: data => api.post('/prompts/categories', data).then((res) => { invalidatePromptCategoryCache(); return res }),
+  updateCategory: (id, data) => api.put(`/prompts/categories/${id}`, data).then((res) => { invalidatePromptCategoryCache(); return res }),
+  deleteCategory: id => api.post(`/prompts/categories/${id}/delete`).then((res) => { invalidatePromptCategoryCache(); return res }),
   like: promptId => api.post(`/prompts/like?prompt_id=${promptId}`),
   create: data => api.post('/prompts', data),
   createPublic: data => api.post('/prompts/public', data),
