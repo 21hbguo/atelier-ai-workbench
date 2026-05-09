@@ -1,9 +1,11 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-
+const buildId=process.env.APP_BUILD_ID||String(Date.now())
+const versionAssetPlugin=()=>({name:'version-asset',generateBundle(){this.emitFile({type:'asset',fileName:'version.json',source:JSON.stringify({buildId})})}})
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  define:{'import.meta.env.VITE_APP_BUILD_ID':JSON.stringify(buildId)},
+  plugins: [react(), tailwindcss(), versionAssetPlugin()],
   test: { environment: 'jsdom', setupFiles: './src/test/setup.js' },
   server: {
     host: '0.0.0.0',

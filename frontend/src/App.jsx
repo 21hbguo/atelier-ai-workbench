@@ -5,6 +5,7 @@ import { LayoutModeProvider } from './LayoutModeContext'
 import ErrorBoundary from './components/ErrorBoundary'
 import AppDialogProvider from './components/AppDialogProvider'
 import { useUserSync } from './hooks/useUserSync'
+import { useVersionSync } from './hooks/useVersionSync'
 import AnnouncementModal from './components/AnnouncementModal'
 import WelcomeModal from './components/WelcomeModal'
 import { announcementAPI, authAPI } from './api'
@@ -75,6 +76,7 @@ function AppContent() {
   const [authReady, setAuthReady] = useState(!!cachedUser)
   const [welcomePoints, setWelcomePoints] = useState(null)
   useUserSync()
+  useVersionSync()
   useEffect(() => {
     let active = true
     const sync = () => active && setUser(readUser())
