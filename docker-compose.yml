@@ -21,7 +21,7 @@ services:
     build: .
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-5173}:80"
+      - "127.0.0.1:${APP_PORT:-5173}:80"
     env_file: .env
     environment:
       DATABASE_URL: postgresql://${PG_USER:-app_user}:${PG_PASSWORD:-CHANGE_ME}@db:5432/${PG_DB:-app_db}
