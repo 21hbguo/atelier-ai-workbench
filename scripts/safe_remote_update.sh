@@ -18,5 +18,5 @@ if [ ! -f "$package_path" ]; then
   exit 0
 fi
 scp -o StrictHostKeyChecking=no "$package_path" "$remote_host":"$remote_dir/../"
-ssh -o StrictHostKeyChecking=no "$remote_host" "cd '$remote_dir' && bash scripts/server_backup.sh >/dev/null 2>&1 || true && bash deploy-update.sh"
+ssh -o StrictHostKeyChecking=no "$remote_host" "cd '$remote_dir' && bash scripts/server_backup.sh >/dev/null 2>&1 || true && if [ -f deploy-update.sh ]; then bash deploy-update.sh; else bash update.sh; fi"
 echo "$package_path"
