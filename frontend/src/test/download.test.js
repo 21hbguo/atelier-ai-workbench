@@ -21,6 +21,7 @@ describe('saveBlob', () => {
     vi.spyOn(document, 'createElement').mockReturnValue({
       href: '',
       download: '',
+      style: {},
       click: clickSpy,
       remove: removeSpy,
     })
@@ -41,10 +42,10 @@ describe('saveBlob', () => {
     expect(document.createElement).toHaveBeenCalledWith('a')
     expect(appendSpy).toHaveBeenCalled()
     expect(clickSpy).toHaveBeenCalled()
-    expect(removeSpy).toHaveBeenCalled()
     expect(result).toBe(true)
 
     vi.runAllTimers()
+    expect(removeSpy).toHaveBeenCalled()
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-url')
   })
 
@@ -59,7 +60,17 @@ describe('saveBlob', () => {
     await expect(saveBlob(new Blob(), 'fail.png')).rejects.toThrow('click failed')
 
     vi.runAllTimers()
+    expect(removeSpy).toHaveBeenCalled()
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-url')
+  })
+
+  it('can trigger sequential downloads repeatedly', async () => {
+    await saveBlob(new Blob(['1']), 'first.png')
+    await saveBlob(new Blob(['2']), 'second.png')
+    expect(document.createElement).toHaveBeenCalledTimes(2)
+    expect(clickSpy).toHaveBeenCalledTimes(2)
+    vi.runAllTimers()
+    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(2)
   })
 })
 
@@ -119,6 +130,7 @@ describe('downloadImageByUrl', () => {
     vi.spyOn(document, 'createElement').mockReturnValue({
       href: '',
       download: '',
+      style: {},
       click: vi.fn(),
       remove: vi.fn(),
     })

@@ -11,6 +11,7 @@ import WelcomeModal from './components/WelcomeModal'
 import { announcementAPI, authAPI } from './api'
 import { clearUser, readUser, writeUser } from './auth'
 import ChatPage from './pages/ChatPage'
+const WorksPage = lazy(() => import('./pages/WorksPage'))
 const PromptsPage = lazy(() => import('./pages/PromptsPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
@@ -132,6 +133,7 @@ function AppContent() {
           <Route path="/notifications" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><NotificationsPage /></ProtectedRoute>} />
           <Route path="/announcements" element={<Navigate to="/notifications" replace />} />
           <Route path="/" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><ChatPage /></ProtectedRoute>} />
+          <Route path="/works" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><WorksPage /></ProtectedRoute>} />
           <Route path="/square" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><SquarePage /></ProtectedRoute>} />
           <Route path="/prompts" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><PromptsPage /></ProtectedRoute>} />
           <Route path="/favorites" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><Navigate to="/square" state={{ tab: 'favorites' }} replace /></ProtectedRoute>} />

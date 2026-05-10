@@ -374,6 +374,7 @@ export default function WalletPage() {
         if (data.status === 'approved') {
           if (countdownRef.current) clearInterval(countdownRef.current)
           setPollingStatus('success')
+          setRechargeMsg(null)
           setSuccessPayload({
             points: Number(data.points || activeRequest?.points || 0),
             amount: Number(data.amount || activeRequest?.amount || 0),
@@ -411,6 +412,7 @@ export default function WalletPage() {
         if (data.status === 'approved') {
           if (countdownRef.current) clearInterval(countdownRef.current)
           setPollingStatus('success')
+          setRechargeMsg(null)
           setSuccessPayload({
             points: Number(data.points || baseRequest?.points || 0),
             amount: Number(data.amount || baseRequest?.amount || 0),
@@ -454,8 +456,11 @@ export default function WalletPage() {
       setCountdown(prev => {
         if (prev <= 1) {
           clearInterval(countdownRef.current)
-          setPollingStatus(current => current === 'success' ? current : 'expired')
-          setRechargeMsg({ type: 'error', text: '当前金额已失效，请重新生成金额' })
+          setPollingStatus(current => {
+            if (current === 'success') return current
+            setRechargeMsg({ type: 'error', text: '当前金额已失效，请重新生成金额' })
+            return 'expired'
+          })
           return 0
         }
         return prev - 1
@@ -1085,7 +1090,12 @@ export default function WalletPage() {
               <X size={16} />
             </button>
             <div className="shrink-0 border-b px-6 pt-6 pb-4 text-left" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-              {pollingStatus === 'expired' ? (
+              {pollingStatus === 'success' ? (
+                <div className="rounded-2xl border px-4 py-3" style={{ background: 'rgba(34,197,94,0.12)', borderColor: 'rgba(34,197,94,0.2)' }}>
+                  <div className="text-sm font-semibold mb-1" style={{ color: 'var(--color-success)' }}>支付已确认</div>
+                  <div className="text-xs leading-6" style={{ color: 'var(--text-primary)' }}>积分已经到账，本次捐赠处理完成。</div>
+                </div>
+              ) : pollingStatus === 'expired' ? (
                 <div className="rounded-2xl border px-4 py-3" style={{ background: 'rgba(239,68,68,0.12)', borderColor: 'rgba(239,68,68,0.2)' }}>
                   <div className="text-sm font-semibold mb-1" style={{ color: 'var(--color-error)' }}>支付时间已到</div>
                   <div className="text-xs leading-6" style={{ color: 'var(--text-primary)' }}>请不要继续支付旧金额，必须重新生成后再支付。</div>

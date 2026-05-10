@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useLocation, Link, useNavigate } from 'react-router-dom'
-import { Sun, Moon, BookOpen, MessageSquare, X, Globe, LogOut, User, Shield, Coins, Wallet, Bell, Settings, LayoutGrid } from 'lucide-react'
+import { Sun, Moon, BookOpen, Sparkles, Image, X, Globe, LogOut, User, Shield, Coins, Wallet, Bell, Settings, LayoutGrid } from 'lucide-react'
 import { useTheme } from '../ThemeContext'
 import { useLayoutMode } from '../LayoutModeContext'
 import { announcementAPI, authAPI, pointsAPI, notificationAPI } from '../api'
@@ -8,7 +8,8 @@ import { clearUser, readUser } from '../auth'
 import { useAppDialog } from './AppDialogProvider'
 
 const navItems = [
-  { path: '/', icon: MessageSquare, label: 'AI绘画' },
+  { path: '/', icon: Sparkles, label: 'AI绘画' },
+  { path: '/works', icon: Image, label: '我的作品' },
   { path: '/square', icon: Globe, label: '广场' },
   { path: '/prompts', icon: BookOpen, label: '我的提示词' },
   { path: '/wallet', icon: Wallet, label: '积分详情' },
@@ -78,7 +79,7 @@ export default function Sidebar({ open, onClose }) {
       {open && <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={onClose} />}
       <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-40 flex flex-col transition-transform duration-200 ease-out ${open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
         style={{ background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border-color)' }}>
-        <div className="px-3 py-2 border-b flex items-center" style={{ borderColor: 'var(--border-color)' }}>
+        <div className="h-11 px-3 border-b flex items-center" style={{ borderColor: 'var(--border-color)' }}>
           <h1 className="flex-1 truncate" style={{ color: 'var(--text-primary)', fontFamily: "'Alex Brush', cursive", fontSize: '2.5rem', lineHeight: '1' }}>Atelier</h1>
           <button className="lg:hidden p-1 rounded-lg hover:bg-[var(--bg-hover)]" onClick={onClose}><X size={16} /></button>
         </div>

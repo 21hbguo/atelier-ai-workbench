@@ -5,7 +5,8 @@ import Sidebar from './Sidebar'
 import { announcementAPI, notificationAPI } from '../api'
 
 const quickNavItems = [
-  { label: '生成', path: '/' },
+  { label: '绘画', path: '/' },
+  { label: '作品', path: '/works' },
   { label: '广场', path: '/square' },
   { label: '提示词', path: '/prompts' },
   { label: '积分详情', path: '/wallet' },

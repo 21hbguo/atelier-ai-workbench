@@ -54,6 +54,15 @@ describe('uploadAPI', () => {
     expect(opts.signal).toBe(ctrl.signal)
   })
 
+  it('upload progress falls back to file size when event total is missing', () => {
+    const file = new File(['data'], 'test.png')
+    const onProgress = vi.fn()
+    api.uploadAPI.upload(file, { onProgress })
+    const opts = mockApi.post.mock.calls[0][2]
+    opts.onUploadProgress({ loaded: 2 })
+    expect(onProgress).toHaveBeenCalledWith(50, expect.objectContaining({ loaded: 2 }))
+  })
+
   it('uploadLocal posts to /upload/local', () => {
     const file = new File(['data'], 'test.png')
     api.uploadAPI.uploadLocal(file)

@@ -61,9 +61,15 @@ api.interceptors.response.use(
 )
 
 export const generateAPI = { submitText: data => api.post('/generate/text', data), submitTextImage: data => api.post('/generate/text-image', data) }
+function resolveUploadPercent(event,fileSize=0){
+  const total=Number(event?.total)||Number(fileSize)||0
+  const loaded=Math.max(0,Number(event?.loaded)||0)
+  if(total<=0)return 0
+  return Math.max(0,Math.min(100,Math.round(loaded/total*100)))
+}
 
 export const uploadAPI = {
-  upload: (file,options={}) => { const fd = new FormData(); fd.append('file', file); return api.post('/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' }, signal: options?.signal, onUploadProgress: e => { if (!options?.onProgress) return; const total = Number(e?.total) || 0; const loaded = Number(e?.loaded) || 0; options.onProgress(total > 0 ? Math.round(loaded / total * 100) : 0, e) } }) },
+  upload: (file,options={}) => { const fd = new FormData(); fd.append('file', file); return api.post('/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' }, signal: options?.signal, onUploadProgress: e => { if (!options?.onProgress) return; options.onProgress(resolveUploadPercent(e,file?.size), e) } }) },
   uploadLocal: file => { const fd = new FormData(); fd.append('file', file); return api.post('/upload/local', fd, { headers: { 'Content-Type': 'multipart/form-data' } }) },
   uploadLocalPublic: file => { const fd = new FormData(); fd.append('file', file); return api.post('/upload/local/public', fd, { headers: { 'Content-Type': 'multipart/form-data' } }) },
   uploadBatch: files => { const fd = new FormData(); files.forEach(f => fd.append('files', f)); return api.post('/upload/batch', fd, { headers: { 'Content-Type': 'multipart/form-data' } }) },

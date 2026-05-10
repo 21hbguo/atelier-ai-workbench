@@ -1,0 +1,1530 @@
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { createPortal } from 'react-dom'
+import { useDragSelection } from '../hooks/useDragSelection'
+import { useNavigate } from 'react-router-dom'
+import { Download, Trash2, RefreshCw, Coins, ChevronDown } from 'lucide-react'
+import { CardGridSkeleton } from '../components/CardGrid'
+import GenerationCard from '../components/GenerationCard'
+import PortfolioShowcaseCard from '../components/PortfolioShowcaseCard'
+import SearchInput from '../components/SearchInput'
+import MainLayout from '../components/MainLayout'
+import UnifiedDetailModal from '../components/UnifiedDetailModal'
+import Pagination from '../components/Pagination'
+import { useAppDialog } from '../components/AppDialogProvider'
+import { useLayoutMode } from '../LayoutModeContext'
+import { generateAPI, uploadAPI, taskAPI, imageAPI, squareAPI, adminAPI, pointsAPI, configAPI, promptAPI } from '../api'
+import { readUser } from '../auth'
+import { getPrunedSubmissionQueue, pruneSubmissionQueueItems, setSubmissionQueue } from '../utils/imageDB'
+
+function formatLocalTime(d) {
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+function withTimeout(promise, ms, message) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms)
+    promise.then(v => { clearTimeout(timer); resolve(v) }).catch(e => { clearTimeout(timer); reject(e) })
+  })
+}
+function makeTaskId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') { const b = crypto.getRandomValues(new Uint8Array(16)); b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128; const h = Array.from(b, v => v.toString(16).padStart(2, '0')).join(''); return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}` }
+  return `task-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`
+}
+function getExpiryByFilename(map, filename) { return (filename && map && map[filename]) ? map[filename] : {} }
+function parseTaskTime(value) {
+  const s = String(value || '')
+  // 数据库存储的是北京时间（无时区后缀），添加 +08:00 确保正确解析
+  const withTz = s.includes('T') ? (s.includes('+') || s.includes('Z') ? s : s + '+08:00') : s.replace(' ', 'T') + '+08:00'
+  const ts = Date.parse(withTz)
+  return Number.isNaN(ts) ? 0 : ts
+}
+function getUploadExt(type, name = '') {
+  const mime = String(type || '').split(';')[0].trim().toLowerCase()
+  if (mime === 'image/png') return 'png'
+  if (mime === 'image/jpeg') return 'jpg'
+  if (mime === 'image/webp') return 'webp'
+  const match = String(name || '').toLowerCase().match(/\.([a-z0-9]+)$/)
+  const ext = match?.[1] || ''
+  return ['png', 'jpg', 'jpeg', 'webp'].includes(ext) ? (ext === 'jpeg' ? 'jpg' : ext) : 'png'
+}
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename || `download_${Date.now()}`
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  setTimeout(() => { a.remove(); URL.revokeObjectURL(url) }, 1500)
+}
+async function saveBlob(blob, filename) {
+  if (window.isSecureContext && typeof window.showSaveFilePicker === 'function') {
+    try {
+      const ext = filename.includes('.') ? `.${filename.split('.').pop().toLowerCase()}` : ''
+      const handle = await window.showSaveFilePicker({ suggestedName: filename, types: [{ description: 'Download', accept: { [blob.type || 'application/octet-stream']: ext ? [ext] : ['.bin'] } }] })
+      const writable = await handle.createWritable()
+      await writable.write(blob)
+      await writable.close()
+      return true
+    } catch (e) {
+      if (e?.name === 'AbortError') return false
+      throw e
+    }
+  }
+  downloadBlob(blob, filename)
+  return true
+}
+function getDownloadFilename(headers, fallback) {
+  const raw = headers?.['content-disposition'] || headers?.['Content-Disposition'] || ''
+  const utf8 = raw.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  if (utf8) return decodeURIComponent(utf8)
+  const plain = raw.match(/filename="?([^"]+)"?/i)?.[1]
+  return plain || fallback
+}
+function normalizeUploadName(name, type, url = '') {
+  const raw = String(name || '').trim() || decodeURIComponent(String(url || '').split('?')[0].split('/').pop() || '')
+  const base = (raw.replace(/\.[^.]+$/, '') || 'reference').replace(/[^\w.-]/g, '_').replace(/^\.+/, '') || 'reference'
+  return `${base}.${getUploadExt(type, raw)}`
+}
+const TASK_CONFIRM_TIMEOUT_MS = 40 * 60 * 1000
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)) }
+function shouldRetryNetworkError(message = '') { const s = String(message || '').toLowerCase(); return !!s && ['timeout', 'network error', 'fetch', 'socket', 'econn', 'etimedout', 'abort', 'connection', 'not found', '502', '503', '504'].some(k => s.includes(k)) }
+function normalizeGenerationError(message = '') { const s = String(message || ''); const lower = s.toLowerCase(); if (lower.includes('image url failed') || lower.includes('image_url_failed') || lower.includes('invalid image url') || lower.includes('image url invalid')) return '参考图链接失效或不可访问，请重新上传参考图'; return s }
+function isVipModel(modelId=''){return modelId==='grsai-vip'}
+function getGenerationModeLabel(params={}){return params?.image_urls?.length?'图生图':'文生图'}
+function getVipResolutionLabel(value=''){return value==='low'?'1K':value==='medium'?'2K':value==='high'?'4K':'1K'}
+function getImageRatioLabel(value=''){return value||'自动'}
+function getVipResolutionCost(params={},fallback=10){const costs=params?._resolution_costs||params?.resolution_costs||{};const key=params?.resolution||'auto';const value=costs[key]??costs.auto??params?._points_cost;const num=Number(value);return num>0?Math.round(num):fallback}
+function getModelCost(params={},fallback=10){return isVipModel(params?.model_id)?getVipResolutionCost(params,fallback):(Number(params?._points_cost)>0?Math.round(Number(params._points_cost)):fallback)}
+function getGenerationSizeLabel(params={}){if(isVipModel(params?.model_id)){const resolution=params?.resolution||'low';const ratio=params?.size||params?.aspect_ratio||params?.aspectRatio||'auto';const quality=params?.quality||'';const parts=[`比例:${getImageRatioLabel(ratio)}`,`分辨率:${getVipResolutionLabel(resolution)}`];if(quality)parts.push(`画质:${quality}`);return parts.join(' / ')}const size=params?.size||'';return size?`比例:${getImageRatioLabel(size)}`:''}
+function normalizeSubmissionParams(params={}){const next={...(params||{})};if(isVipModel(next.model_id)){next.size=next.size||'auto';next.resolution=next.resolution||'low';next.aspect_ratio=next.size&&next.size!=='auto'?next.size:''}return next}
+function formatSubmitSettings(params, shareToSquare, imageCount) {
+  const modelLabel = params?._model_label || params?.model_id || '默认模型'
+  const lines = [`模型：${modelLabel}`]
+  const sizeLabel=getGenerationSizeLabel(params)
+  if (sizeLabel) lines.push(sizeLabel)
+  const extra = Object.entries(params || {}).filter(([key, value]) => !['size','resolution','aspect_ratio','aspectRatio','quality', 'model_id', '_model_label', '_points_cost', '_resolution_costs', 'resolution_costs', 'roll_count', 'optimize_stream'].includes(key) && value !== undefined && value !== null && value !== '')
+  for (const [key, value] of extra) lines.push(`${key}：${value}`)
+  lines.push(`参考图：${imageCount || 0} 张`)
+  lines.push(`分享：${shareToSquare ? '开启' : '关闭'}`)
+  return lines.join('\n')
+}
+function makePromptLibraryName(prompt=''){const clean=String(prompt||'').replace(/\s+/g,' ').trim();return(clean.slice(0,20)||'未命名提示词')+(clean.length>20?'...':'')}
+function getThumbnailBlurStorageKey(user){const id=user?.id??user?.user_id??user?.username??'guest';return`chat_thumbnail_blur_${id}`}
+function getThumbnailBlurMap(user){try{return JSON.parse(localStorage.getItem(getThumbnailBlurStorageKey(user))||'{}')}catch{return {}}}
+function getThumbnailBlurItemKey(task){return String(task?.result_urls?.[0]?.split('/').pop()||task?.task_id||'')}
+function buildDetailCardsFromTask(task, expiryByFilename = {}, squareIdMap = {}) {
+  const prompt = task?.params?.prompt || task?.prompt || ''
+  const params = task?.params || {}
+  return (task?.result_urls || []).map((url, idx) => {
+    const filename = url.split('/').pop()
+    const exp = getExpiryByFilename(expiryByFilename, filename)
+    const expired = typeof exp.expired === 'boolean' ? exp.expired : !!task.expired
+    return {
+      _type: 'image',
+      _raw: {
+        filename,
+        metadata: {
+          prompt,
+          task_id: task.task_id,
+          created_at: task.created_at,
+          started_at: task.started_at,
+          completed_at: task.completed_at,
+          type: getGenerationModeLabel(params),
+          size: getGenerationSizeLabel(params),
+          input_urls: params?.image_urls,
+        },
+      },
+      id: `${task.task_id}-${idx}`,
+      prompt,
+      fullUrl: `/api/images/file/${filename}`,
+      filename,
+      expiresAt: exp.expires_at || task.expires_at || null,
+      is_permanent: typeof exp.is_permanent === 'boolean' ? exp.is_permanent : !!task.is_permanent,
+      daysLeft: typeof exp.days_left === 'number' ? exp.days_left : task.days_left,
+      expired,
+      square_image_id: squareIdMap[filename] || exp.square_image_id || task.square_image_id || null,
+    }
+  })
+}
+function mergeTasksById(list = []) {
+  const map = new Map()
+  for (const task of list) {
+    if (!task?.task_id) continue
+    map.set(task.task_id, { ...(map.get(task.task_id) || {}), ...task })
+  }
+  return Array.from(map.values())
+}
+
+function buildSubmissionImages(items = []) {
+  return items.map((img, idx) => ({
+    id: img?.id || `reference-${idx}`,
+    name: img?.name || img?.file?.name || `reference-${idx}`,
+    type: img?.type || img?.file?.type || 'image/png',
+    url: img?.url || '',
+    preview: img?.preview || img?.url || '',
+    file: img?.file || null,
+    uploadStatus: img?.uploadStatus || '',
+    uploadProgress: Number(img?.uploadProgress) || 0,
+    uploadedUrl: img?.uploadedUrl || '',
+    uploadedStorageName: img?.uploadedStorageName || '',
+    uploadError: img?.uploadError || '',
+  }))
+}
+
+function buildPendingTaskFromSubmission(item) {
+  const prompt = item?.prompt || item?.params?.prompt || ''
+  return {
+    task_id: item.real_task_id || item.temp_task_id,
+    status: item.status || 'processing',
+    prompt,
+    params: { ...(item.params || {}), prompt },
+    previewImages: (item.images || []).map((img) => img?.preview || img?.url).filter(Boolean),
+    created_at: item.created_at || formatLocalTime(new Date()),
+    started_at: item.started_at || item.created_at || formatLocalTime(new Date()),
+    completed_at: item.completed_at || null,
+    error: item.error || null,
+    _active: false,
+    _local_submission: true,
+    _points_consumed: !!item.points_consumed,
+    type: item.type || ((item.images || []).length ? 'text_image' : 'text'),
+  }
+}
+function normalizeTaskResultUrls(task, imageFilenameSet) { const urls = (task?.result_urls || []).filter(Boolean); if (!urls.length) return urls; return urls.filter(url => imageFilenameSet.has(url.split('/').pop())) }
+function normalizeUploadedImageParams(uploaded = []) { const image_urls = uploaded.map(r => r?.data?.url).filter(Boolean); const local_image_urls = uploaded.map(r => r?.data?.storage_name || r?.data?.url).filter(Boolean); return { image_urls, local_image_urls } }
+
+export default function WorksPage() {
+  const dialog = useAppDialog()
+  const { layoutMode } = useLayoutMode()
+  const [currentUser, setCurrentUser] = useState(() => readUser())
+  const isAdmin = Boolean(currentUser?.is_admin)
+  const activeStatuses = ['pending', 'queued', 'processing', 'running', 'generating']
+  const activeCacheKey = currentUser?.id ? `active_tasks_${currentUser.id}` : 'active_tasks_guest'
+  const [tasks, setTasks] = useState([])
+  const loading = false
+  const [loaded, setLoaded] = useState(false)
+  const [selectMode, setSelectMode] = useState(false)
+  const [checked, setChecked] = useState(new Set())
+  const [searchQuery, setSearchQuery] = useState('')
+  const [timeRange, setTimeRange] = useState('all')
+  const [refreshing, setRefreshing] = useState(false)
+  const [timeRangeOpen, setTimeRangeOpen] = useState(false)
+  const [timeRangeMenuPos, setTimeRangeMenuPos] = useState(null)
+  const [userList, setUserList] = useState([])
+  const [selectedUserId, setSelectedUserId] = useState(null)
+  const [points, setPoints] = useState(currentUser?.points ?? 0)
+  const [homePageSize, setHomePageSize] = useState(24)
+  const [homePage, setHomePage] = useState(1)
+  const [requestCost, setRequestCost] = useState(10)
+  const [optimizeCost, setOptimizeCost] = useState(10)
+  const [refineOptimizeCost, setRefineOptimizeCost] = useState(20)
+  const [extendCostPerImage, setExtendCostPerImage] = useState(2)
+  const [loadError, setLoadError] = useState('')
+  const [selectedCardIndex, setSelectedCardIndex] = useState(null)
+  const [selectedDetailTaskId, setSelectedDetailTaskId] = useState(null)
+  const [detailCards, setDetailCards] = useState([])
+  const [downloadProgress, setDownloadProgress] = useState({ open: false, phase: 'idle', current: 0, total: 0, percent: 0, filename: '' })
+  const [deleteProgress, setDeleteProgress] = useState({ open: false, current: 0, total: 0, percent: 0, text: '' })
+  const [thumbnailBlurMap, setThumbnailBlurMap] = useState({})
+  const [progressNowTs, setProgressNowTs] = useState(() => Date.now())
+  const [expiryNowTs, setExpiryNowTs] = useState(() => Date.now())
+  const [expiryByFilenameMap, setExpiryByFilenameMap] = useState({})
+  const [feedLayoutReady, setFeedLayoutReady] = useState(layoutMode !== 'masonry')
+  const [pendingSubmissions, setPendingSubmissions] = useState([])
+  const feedRef = useRef(null)
+  const cardGridRef = useRef(null)
+  const feedRevealTimerRef = useRef(null)
+  const feedLayoutInitializedRef = useRef(false)
+  const { selectionRect, dragSelected, wasDraggedRef } = useDragSelection({
+    enabled: selectMode,
+    selected: checked,
+    onSelectionChange: setChecked,
+    containerRef: cardGridRef,
+  })
+  const downloadLockRef = useRef(false)
+  const recoveringRef = useRef(new Set())
+  const submissionProcessingRef = useRef(new Set())
+  const squareIdMapRef = useRef({})
+  const timeRangeMenuRef = useRef(null)
+  const timeRangeButtonRef = useRef(null)
+  const timeRangePanelRef = useRef(null)
+  const prevUserCacheKeyRef = useRef(activeCacheKey)
+  const refreshSeqRef = useRef(0)
+  const refreshAbortRef = useRef(null)
+  const navigate = useNavigate()
+  const timeRangeOptions = useMemo(() => ([{ k: '1d', l: '近1天' }, { k: '3d', l: '近3天' }, { k: '7d', l: '近7天' }, { k: 'all', l: '全部' }]), [])
+  const visibleTasks = useMemo(() => {
+    const now = Date.now()
+    const limit = timeRange === 'all' ? 0 : timeRange === '1d' ? 24 * 60 * 60 * 1000 : timeRange === '3d' ? 3 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000
+    return tasks.filter(t => {
+      if (t.expired) return false
+      if (!limit) return true
+      const ts = parseTaskTime(t.created_at)
+      return ts > 0 ? now - ts <= limit : true
+    })
+  }, [tasks, timeRange])
+  const homeTotalPages = useMemo(() => Math.max(1, Math.ceil(visibleTasks.length / Math.max(1, homePageSize || 24))), [visibleTasks.length, homePageSize])
+  const pagedVisibleTasks = useMemo(() => {
+    const size = Math.max(1, homePageSize || 24)
+    const current = Math.min(Math.max(1, homePage), Math.max(1, Math.ceil(visibleTasks.length / size)))
+    const start = (current - 1) * size
+    return visibleTasks.slice(start, start + size)
+  }, [visibleTasks, homePage, homePageSize])
+  const showPortfolioEmptyState = visibleTasks.length === 0 && !searchQuery && (!isAdmin || !selectedUserId)
+  const loadCachedActiveTasks = useCallback(() => {
+    try {
+      const raw = localStorage.getItem(activeCacheKey)
+      if (!raw) return []
+      const arr = JSON.parse(raw)
+      if (!Array.isArray(arr)) return []
+      return arr.filter(t => t?.task_id && activeStatuses.includes(t.status))
+    } catch {
+      return []
+    }
+  }, [activeCacheKey])
+  const saveCachedActiveTasks = useCallback((taskList) => {
+    try {
+      const arr = (Array.isArray(taskList) ? taskList : [])
+        .filter((t) => t?.task_id && activeStatuses.includes(t.status))
+        .map((t) => ({
+          task_id: t.task_id,
+          status: t.status,
+          progress: t.progress ?? 0,
+          error: t.error || null,
+          type: t.type || 'text',
+          params: t.params || {},
+          prompt: t.prompt || '',
+          created_at: t.created_at || '',
+          started_at: t.started_at || '',
+          completed_at: t.completed_at || null,
+          result_urls: t.result_urls || [],
+          previewImages: t.previewImages || [],
+          _active: !!t._active,
+          _local_submission: !!t._local_submission,
+          _points_consumed: !!t._points_consumed,
+        }))
+      localStorage.setItem(activeCacheKey, JSON.stringify(arr.slice(0, 100)))
+    } catch {}
+  }, [activeCacheKey])
+  const submissionQueueKey = currentUser?.id ? `submission_queue_${currentUser.id}` : 'submission_queue_guest'
+  const savePendingSubmissions = useCallback(async (list) => { try { await setSubmissionQueue(submissionQueueKey, list) } catch {} }, [submissionQueueKey])
+  const syncPendingSubmissions = useCallback((updater) => {
+    setPendingSubmissions(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater
+      void savePendingSubmissions(next)
+      return next
+    })
+  }, [savePendingSubmissions])
+
+  const refreshTasks = useCallback(async () => {
+    refreshAbortRef.current?.abort()
+    const controller = new AbortController()
+    refreshAbortRef.current = controller
+    const seq = ++refreshSeqRef.current
+    const uid = isAdmin ? selectedUserId : undefined
+    const q = searchQuery || undefined
+    let allTasks = []
+    let allImages = []
+    const taskPromise = withTimeout(taskAPI.list(50, 0, uid, q, { signal: controller.signal }), 10000, '任务列表加载超时，请重试')
+    const imagePromise = withTimeout(imageAPI.list(1, 100, uid, { signal: controller.signal }), 12000, '图片列表加载超时，已仅显示任务列表')
+    try {
+      const taskRes = await taskPromise
+      if (controller.signal.aborted || seq !== refreshSeqRef.current) return
+      allTasks = taskRes.data || []
+    } catch (e) {
+      if (controller.signal.aborted || seq !== refreshSeqRef.current) return
+      setLoadError(e.message || '任务列表加载失败')
+      const cached = loadCachedActiveTasks()
+      if (cached.length > 0) setTasks(prev => [...cached, ...prev.filter(t => !cached.some(c => c.task_id === t.task_id))])
+      else if (!loaded) setTasks([])
+      if (!loaded) setLoaded(true)
+      return
+    }
+    const cachedActive = loadCachedActiveTasks()
+    const serverHasActive = allTasks.some(t => activeStatuses.includes(t?.status))
+    if (cachedActive.length > 0 && serverHasActive) {
+      const ids = new Set(allTasks.map(t => t.task_id))
+      for (const t of cachedActive) {
+        if (!ids.has(t.task_id)) allTasks.push(t)
+      }
+    } else if (cachedActive.length > 0 && !serverHasActive) {
+      saveCachedActiveTasks([])
+    }
+    try {
+      const imgRes = await imagePromise
+      if (controller.signal.aborted || seq !== refreshSeqRef.current) return
+      allImages = imgRes.data.images || []
+      setLoadError('')
+    } catch (e) {
+      if (controller.signal.aborted || seq !== refreshSeqRef.current) return
+      allImages = []
+      setLoadError(e.message || '图片列表加载失败，已仅显示任务列表')
+    }
+    if (controller.signal.aborted || seq !== refreshSeqRef.current) return
+    const latestMap = {}
+    for (const img of allImages || []) {
+      if (img?.filename && img?.square_image_id) latestMap[img.filename] = img.square_image_id
+    }
+    squareIdMapRef.current = { ...squareIdMapRef.current, ...latestMap }
+    const taskImageFiles = new Set()
+    for (const t of allTasks) {
+      for (const u of (t.result_urls || [])) taskImageFiles.add(u.split('/').pop())
+    }
+    const imageFilenameSet = new Set(allImages.map(img => img.filename).filter(Boolean))
+    const expiryByFilename = Object.fromEntries(allImages.map(img => [img.filename, { expires_at: img.expires_at, is_permanent: !!img.is_permanent, days_left: img.days_left, expired: !!img.expired, width: img.width || null, height: img.height || null, square_image_id: img.square_image_id || null }]))
+    setExpiryByFilenameMap(expiryByFilename)
+    let orphans = allImages.filter(img => !taskImageFiles.has(img.filename)).map(img => ({
+      task_id: 'img-' + img.filename,
+      status: 'completed',
+      result_urls: [img.url],
+      params: img.metadata || {},
+      created_at: img.created_at,
+      started_at: img.created_at,
+      completed_at: img.created_at,
+      username: img.username || '',
+      expires_at: img.expires_at,
+      is_permanent: !!img.is_permanent,
+      days_left: img.days_left,
+      expired: !!img.expired,
+      width: img.width || null,
+      height: img.height || null,
+      square_image_id: img.square_image_id || null,
+    }))
+    if (q) {
+      const lower = q.toLowerCase()
+      orphans = orphans.filter(o => ((o.params?.prompt || '').toLowerCase().includes(lower)))
+    }
+    const merged = [
+      ...orphans,
+      ...allTasks
+        .map((t) => {
+          const result_urls = normalizeTaskResultUrls(t, imageFilenameSet)
+          const fn = result_urls?.[0]?.split('/').pop()
+          const exp = getExpiryByFilename(expiryByFilename, fn)
+          const allExpired =
+            result_urls.length > 0 &&
+            result_urls.every((u) => {
+              const f = u.split('/').pop()
+              const e = getExpiryByFilename(expiryByFilename, f)
+              return typeof e.expired === 'boolean' ? e.expired : false
+            })
+          return {
+            ...t,
+            result_urls,
+            expires_at: exp.expires_at || t.expires_at,
+            is_permanent:
+              typeof exp.is_permanent === 'boolean' ? exp.is_permanent : t.is_permanent,
+            days_left: typeof exp.days_left === 'number' ? exp.days_left : t.days_left,
+            expired: allExpired
+              ? true
+              : typeof exp.expired === 'boolean'
+                ? exp.expired
+                : !!t.expired,
+            width: exp.width || t.width || null,
+            height: exp.height || t.height || null,
+            square_image_id: exp.square_image_id || t.square_image_id || null,
+          }
+        })
+        .filter((t) => t.status !== 'completed' || (t.result_urls?.length || 0) > 0),
+    ].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))
+    if (controller.signal.aborted || seq !== refreshSeqRef.current) return
+    setTasks(merged)
+    const completedMerged = merged.filter(t => t.status === 'completed' && t.result_urls?.length)
+    setDetailCards(completedMerged.flatMap(task => buildDetailCardsFromTask(task, expiryByFilename, squareIdMapRef.current)))
+    saveCachedActiveTasks(merged.filter(t => activeStatuses.includes(t?.status)))
+    if (!loaded) setLoaded(true)
+    if ((!isAdmin || !uid) && merged.some(t => (t.result_urls?.length || 0) > 0 && !t.square_image_id)) {
+      squareAPI.my(1, 200).then(({ data }) => {
+        if (controller.signal.aborted || seq !== refreshSeqRef.current) return
+        const shareMap = Object.fromEntries((data?.images || []).filter(s => s?.filename && s?.id).map(s => [s.filename, s.id]))
+        if (!Object.keys(shareMap).length) return
+        squareIdMapRef.current = { ...squareIdMapRef.current, ...shareMap }
+        setTasks(prev => prev.map(t => { const filename = t.result_urls?.[0]?.split('/').pop(); return filename && shareMap[filename] && !t.square_image_id ? { ...t, square_image_id: shareMap[filename] } : t }))
+        setDetailCards(prev => prev.map(c => c.filename && shareMap[c.filename] && !c.square_image_id ? { ...c, square_image_id: shareMap[c.filename] } : c))
+      }).catch(() => {})
+    }
+  }, [loaded, isAdmin, selectedUserId, searchQuery, loadCachedActiveTasks, saveCachedActiveTasks])
+
+  useEffect(() => { refreshTasks() }, [refreshTasks])
+  useEffect(() => () => refreshAbortRef.current?.abort(), [])
+  useEffect(() => {
+    if (loaded) return
+    const cached = loadCachedActiveTasks()
+    if (cached.length > 0) setTasks(prev => prev.length ? prev : cached)
+  }, [loaded, loadCachedActiveTasks])
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const list = await getPrunedSubmissionQueue(submissionQueueKey)
+        if (!cancelled) setPendingSubmissions(Array.isArray(list) ? list : [])
+      } catch {}
+    })()
+    return () => { cancelled = true }
+  }, [submissionQueueKey])
+  useEffect(() => {
+    const cleaned = pruneSubmissionQueueItems(pendingSubmissions)
+    if (cleaned.length !== pendingSubmissions.length) {
+      setPendingSubmissions(cleaned)
+      void savePendingSubmissions(cleaned)
+      return
+    }
+    if (!cleaned.length) return
+    const localTasks = cleaned.map(buildPendingTaskFromSubmission)
+    if (!localTasks.length) return
+    setTasks(prev => {
+      const existingIds = new Set(prev.map(t => t.task_id))
+      const merged = [...prev]
+      for (const task of localTasks) if (!existingIds.has(task.task_id)) merged.push(task)
+      const next = mergeTasksById(merged)
+      saveCachedActiveTasks(next)
+      return next
+    })
+  }, [pendingSubmissions, saveCachedActiveTasks])
+
+  useEffect(() => {
+    if (!isAdmin) return
+    adminAPI.users(1, 100).then(({ data }) => setUserList(data.users || [])).catch(() => {})
+  }, [isAdmin])
+
+  useEffect(() => {
+    const syncUser = () => setCurrentUser(readUser())
+    window.addEventListener('auth-changed', syncUser)
+    window.addEventListener('points-updated', syncUser)
+    return () => { window.removeEventListener('auth-changed', syncUser); window.removeEventListener('points-updated', syncUser) }
+  }, [])
+  useEffect(() => {
+    setPoints(currentUser?.points ?? 0)
+  }, [currentUser])
+  useEffect(() => {
+    if (prevUserCacheKeyRef.current !== activeCacheKey) {
+      try { localStorage.removeItem(prevUserCacheKeyRef.current) } catch {}
+      prevUserCacheKeyRef.current = activeCacheKey
+    }
+  }, [activeCacheKey])
+  useEffect(() => {
+    setThumbnailBlurMap(getThumbnailBlurMap(currentUser))
+  }, [currentUser?.id,currentUser?.user_id,currentUser?.username])
+  useEffect(() => {
+    try { localStorage.setItem(getThumbnailBlurStorageKey(currentUser), JSON.stringify(thumbnailBlurMap)) } catch {}
+  }, [thumbnailBlurMap,currentUser?.id,currentUser?.user_id,currentUser?.username])
+  useEffect(() => {
+    pointsAPI.balance().then(res => setPoints(res.data.points)).catch(() => {})
+    const handleUpdate = () => {
+      const u = readUser()
+      setCurrentUser(u)
+      if (u) setPoints(u.points ?? 0)
+    }
+    window.addEventListener('points-updated', handleUpdate)
+    return () => window.removeEventListener('points-updated', handleUpdate)
+  }, [])
+  useEffect(() => {
+    configAPI.get().then(res => {
+      setHomePageSize(Math.max(1, Number(res.data?.home_page_size) || 24))
+      setRequestCost(Math.max(0, Number(res.data?.points_cost_per_generation) || 10))
+      setOptimizeCost(Math.max(0, Number(res.data?.points_cost_per_optimize) || 10))
+      setRefineOptimizeCost(Math.max(0, Number(res.data?.points_cost_per_optimize_refine) || 20))
+      setExtendCostPerImage(Math.max(1, Number(res.data?.points_cost_per_image_extend) || 2))
+    }).catch(() => { setRequestCost(10); setOptimizeCost(10); setRefineOptimizeCost(20) })
+  }, [])
+  useEffect(() => { setHomePage(1) }, [searchQuery, timeRange, selectedUserId, homePageSize])
+  useEffect(() => { if (homePage > homeTotalPages) setHomePage(homeTotalPages) }, [homePage, homeTotalPages])
+
+  useEffect(() => {
+    if (loaded && feedRef.current) {
+      feedRef.current.scrollTop = feedRef.current.scrollHeight
+    }
+  }, [loaded])
+  useEffect(() => {
+    if (!timeRangeOpen) return
+    const updateTimeRangeMenuPos = () => {
+      const rect = timeRangeButtonRef.current?.getBoundingClientRect()
+      if (!rect) return
+      setTimeRangeMenuPos({ top: rect.bottom + 8, left: rect.right, width: Math.max(rect.width, 112) })
+    }
+    const handlePointerDown = (e) => { if (!timeRangeMenuRef.current?.contains(e.target) && !timeRangePanelRef.current?.contains(e.target)) setTimeRangeOpen(false) }
+    updateTimeRangeMenuPos()
+    window.addEventListener('pointerdown', handlePointerDown)
+    window.addEventListener('resize', updateTimeRangeMenuPos)
+    window.addEventListener('scroll', updateTimeRangeMenuPos, true)
+    return () => { window.removeEventListener('pointerdown', handlePointerDown); window.removeEventListener('resize', updateTimeRangeMenuPos); window.removeEventListener('scroll', updateTimeRangeMenuPos, true) }
+  }, [timeRangeOpen])
+  useEffect(() => {
+    if (layoutMode !== 'masonry') { feedLayoutInitializedRef.current = false; setFeedLayoutReady(true); return }
+    if (!loaded || visibleTasks.length === 0 || feedLayoutInitializedRef.current) return
+    const el = cardGridRef.current
+    if (!el) return
+    let observer = null
+    const reveal = () => { if (feedRevealTimerRef.current) clearTimeout(feedRevealTimerRef.current); feedRevealTimerRef.current = setTimeout(() => { observer?.disconnect(); feedLayoutInitializedRef.current = true; setFeedLayoutReady(true) }, 60) }
+    setFeedLayoutReady(false)
+    reveal()
+    observer = new ResizeObserver(() => reveal())
+    observer.observe(el)
+    return () => {
+      observer?.disconnect()
+      if (feedRevealTimerRef.current) { clearTimeout(feedRevealTimerRef.current); feedRevealTimerRef.current = null }
+    }
+  }, [layoutMode, loaded, visibleTasks.length])
+  useEffect(() => {
+    const hasActiveTask = tasks.some(t => ['pending', 'queued', 'processing', 'running', 'generating'].includes(t.status))
+    if (!hasActiveTask) return
+    const tick = () => setProgressNowTs(Date.now())
+    tick()
+    const timer = setInterval(tick, 1000)
+    return () => clearInterval(timer)
+  }, [tasks])
+  useEffect(() => {
+    const tick = () => setExpiryNowTs(Date.now())
+    tick()
+    const timer = setInterval(tick, 60000)
+    return () => clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
+    const handler = () => refreshTasks()
+    window.addEventListener('gallery-updated', handler)
+    return () => window.removeEventListener('gallery-updated', handler)
+  }, [refreshTasks])
+  useEffect(() => {
+    const vk = navigator.virtualKeyboard
+    if (!vk) return
+    const prev = vk.overlaysContent
+    vk.overlaysContent = true
+    return () => { vk.overlaysContent = prev }
+  }, [])
+
+  const scroll = useCallback(() => {
+    const el = feedRef.current
+    if (el) setTimeout(() => el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }), 50)
+  }, [])
+
+  const handleAddPrompt = useCallback((input) => {
+    const promptText = typeof input === 'object' ? input?.prompt : input
+    localStorage.setItem('pending_prompt', String(promptText || ''))
+    window.dispatchEvent(new Event('pending-prompt-updated'))
+    navigate('/')
+  }, [navigate])
+  const handleAddImageToInput = useCallback((input) => {
+    const url = typeof input === 'string' ? input : input?.fullUrl || input?.thumbUrl2x || input?.thumbUrl || ''
+    const name = typeof input === 'string' ? input.split('/').pop() || 'reference.png' : input?.filename || input?.name || 'reference.png'
+    if (!url) return
+    const stored = JSON.parse(localStorage.getItem('ref_images') || '[]')
+    if (!stored.some(i => i.url === url)) {
+      stored.push({ url, name })
+      localStorage.setItem('ref_images', JSON.stringify(stored))
+    }
+    window.dispatchEvent(new Event('pending-image-updated'))
+    navigate('/')
+  }, [navigate])
+  const handleAddToPromptLibrary = useCallback(async (task) => {
+    if (!isAdmin) return
+    const promptText=String(task?.params?.prompt||task?.prompt||'').trim()
+    if (!promptText) { dialog.alert('该作品没有可入库的提示词'); return }
+    if (!await dialog.confirm('确定将该作品的提示词加入提示词库吗？\n作者将显示为 system。')) return
+    const filename = task?.result_urls?.[0]?.split('/').pop() || task?.filename || task?._raw?.filename
+    try {
+      const imagePath = filename || null
+      await promptAPI.createPublic({ name: makePromptLibraryName(promptText), prompt: promptText, negative_prompt: '', tags: [], category: null, image_path: imagePath })
+      dialog.alert('已加入提示词库')
+    } catch (e) {
+      try {
+        const { data } = await promptAPI.listPublic(promptText, 'time', null, 1, 10)
+        const exists = (data?.prompts || []).some(item => String(item?.prompt || '').trim() === promptText)
+        if (exists) {
+          dialog.alert('已加入提示词库')
+          return
+        }
+      } catch {}
+      dialog.alert(e?.message || '加入提示词库失败')
+    }
+  }, [dialog,isAdmin])
+  const handleBatchAddToPromptLibrary = useCallback(async () => {
+    if (!isAdmin) return
+    const targets = visibleTasks.filter(t => checked.has(t.task_id) && (t.result_urls || []).length > 0 && String(t.params?.prompt || t.prompt || '').trim())
+    if (targets.length === 0) { dialog.alert('没有可入库的提示词'); return }
+    if (!await dialog.confirm(`确定将选中的 ${targets.length} 条提示词加入提示词库吗？`)) return
+    let ok = 0
+    for (const task of targets) {
+      try { await handleAddToPromptLibrary(task); ok += 1 } catch {}
+    }
+    await refreshTasks()
+    window.dispatchEvent(new Event('gallery-updated'))
+    setTimeout(() => window.dispatchEvent(new Event('gallery-updated')), 2500)
+    dialog.alert(`已处理 ${ok} 条`)
+  }, [checked, visibleTasks, isAdmin, dialog, handleAddToPromptLibrary, refreshTasks])
+  const markSquareShared = useCallback((filename, shareId) => {
+    if (!filename || !shareId) return
+    squareIdMapRef.current[filename] = shareId
+    setDetailCards(prev => prev.map(c => c.filename === filename ? { ...c, square_image_id: shareId } : c))
+  }, [])
+
+  const updateTask = useCallback((taskId, updates) => {
+    setTasks(prev => {
+      const next = prev.map(t => t.task_id === taskId ? { ...t, ...updates } : t)
+      saveCachedActiveTasks(next)
+      return next
+    })
+  }, [saveCachedActiveTasks])
+  const shareImageToSquare = useCallback(async (filename, prompt, params, hasImages, imageUrls) => {
+    try {
+      const { data } = await squareAPI.share({
+        filename,
+        prompt,
+        metadata: { size: getGenerationSizeLabel(params||{}), type: hasImages ? 'image' : 'text', input_urls: imageUrls?.length ? imageUrls : undefined },
+      })
+      markSquareShared(filename, data?.id)
+      setTimeout(() => window.dispatchEvent(new Event('gallery-updated')), 2500)
+    } catch {}
+  }, [markSquareShared])
+  const handleBatchShareToSquare = useCallback(async () => {
+    const targets = visibleTasks.filter(t => checked.has(t.task_id) && (t.result_urls || []).length > 0)
+    if (targets.length === 0) { dialog.alert('没有可分享的作品'); return }
+    if (!await dialog.confirm(`确定将选中的 ${targets.length} 项分享到广场吗？`)) return
+    let ok = 0
+    for (const task of targets) {
+      try {
+        const filename = task.result_urls?.[0]?.split('/').pop()
+        if (!filename) continue
+        await shareImageToSquare(filename, task.params?.prompt || task.prompt || '', task.params || {}, !!task.params?.image_urls?.length, task.params?.local_image_urls || task.params?.image_urls)
+        ok += 1
+      } catch {}
+    }
+    await refreshTasks()
+    window.dispatchEvent(new Event('gallery-updated'))
+    setTimeout(() => window.dispatchEvent(new Event('gallery-updated')), 2500)
+    dialog.alert(`已分享 ${ok} 项`)
+  }, [checked, visibleTasks, dialog, shareImageToSquare, refreshTasks])
+  const refreshPointsOnFailed = useCallback(() => {
+    pointsAPI.balance().then(res => {
+      setPoints(res.data.points)
+      const u = readUser()
+      if (u) { u.points = res.data.points; localStorage.setItem('user', JSON.stringify(u)) }
+      window.dispatchEvent(new Event('points-updated'))
+    }).catch(() => {})
+  }, [])
+  const finalizeSubmissionQueueItem = useCallback((clientRequestId, updater) => {
+    if (!clientRequestId) return
+    syncPendingSubmissions(prev => prev.flatMap(item => {
+      if (item.client_request_id !== clientRequestId) return [item]
+      const next = typeof updater === 'function' ? updater(item) : { ...item, ...(updater || {}) }
+      return next ? [next] : []
+    }))
+  }, [syncPendingSubmissions])
+  const consumeLocalPointsOnce = useCallback((item, submissionId, taskId, modelCost, params) => {
+    if (item?.points_consumed) return
+    setPoints(p => Math.max(0, p - modelCost))
+    const u = readUser()
+    if (u) { u.points = Math.max(0, (u.points ?? 0) - modelCost); localStorage.setItem('user', JSON.stringify(u)) }
+    window.dispatchEvent(new Event('points-updated'))
+    finalizeSubmissionQueueItem(submissionId, current => current ? { ...current, real_task_id: taskId, points_consumed: true, params: params || current.params } : null)
+    updateTask(taskId, { _points_consumed: true })
+  }, [finalizeSubmissionQueueItem, updateTask])
+  const markSubmissionFailed = useCallback((item, message) => {
+    if (!item) return
+    const normalized = normalizeGenerationError(message || '提交失败') || '提交失败'
+    finalizeSubmissionQueueItem(item.client_request_id, { ...item, status: 'failed', error: normalized, real_task_id: item.real_task_id || null, completed_at: formatLocalTime(new Date()) })
+    updateTask(item.real_task_id || item.temp_task_id, { status: 'failed', error: normalized, _active: false, _local_submission: false })
+  }, [finalizeSubmissionQueueItem, updateTask])
+  const getTaskStatusWithRecovery = useCallback(async (taskId, clientRequestId) => {
+    try { return (await taskAPI.get(taskId)).data } catch (e) { const msg = e?.message || ''; if (clientRequestId && (msg.includes('404') || msg.includes('任务不存在') || msg.toLowerCase().includes('not found'))) return (await taskAPI.getByClientRequestId(clientRequestId)).data; throw e }
+  }, [])
+  const submitGenerationWithRecovery = useCallback(async ({ hasImages, prompt, imageUrls, baseParams, realTaskId, submissionId, shareToSquare, localImageUrls }) => {
+    let lastError = null
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const payloadBase={prompt,size:baseParams?.size||'auto',resolution:baseParams?.resolution||undefined,aspect_ratio:baseParams?.aspect_ratio??baseParams?.aspectRatio??undefined,quality:baseParams?.quality||undefined,model_id:baseParams?.model_id,task_id:realTaskId,client_request_id:submissionId,share_to_square:!!shareToSquare}
+        const req = hasImages ? generateAPI.submitTextImage({ ...payloadBase, image_urls: imageUrls, local_image_urls: localImageUrls }) : generateAPI.submitText(payloadBase)
+        return (await req).data
+      } catch (e) {
+        lastError = e
+        try { return await getTaskStatusWithRecovery(realTaskId, submissionId) } catch (reconcileError) { lastError = reconcileError }
+        if (!shouldRetryNetworkError(lastError?.message || lastError) || attempt >= 2) break
+        await sleep(1200 * (attempt + 1))
+      }
+    }
+    throw lastError || new Error('提交失败')
+  }, [getTaskStatusWithRecovery])
+  const uploadSubmissionImage = useCallback(async (img) => {
+    let lastError = null
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (img.file) { const type = img.file.type || img.type || 'image/png'; return await uploadAPI.upload(new File([img.file], normalizeUploadName(img.name || img.file.name, type), { type })) }
+        if (img.url) { const r = await fetch(img.url, img.url.startsWith('/') ? { credentials: 'include' } : undefined); if (!r.ok) throw new Error(`fetch ${r.status}`); const blob = await r.blob(); const type = blob.type || r.headers.get('content-type') || img.type || 'image/png'; return await uploadAPI.upload(new File([blob], normalizeUploadName(img.name, type, img.url), { type })) }
+        return { data: { url: '', storage_name: '' } }
+      } catch (e) {
+        lastError = e
+        if (!shouldRetryNetworkError(e?.message || e) || attempt >= 2) break
+        await sleep(800 * (attempt + 1))
+      }
+    }
+    throw lastError || new Error('图片上传失败')
+  }, [])
+  const uploadSubmissionImagesOnce = useCallback(async (images) => {
+    const list = Array.isArray(images) ? images : []
+    if (!list.length) return { image_urls: [], local_image_urls: [] }
+    const uploaded = await Promise.all(list.map(uploadSubmissionImage))
+    const out = normalizeUploadedImageParams(uploaded)
+    if (out.image_urls.length !== list.length || out.local_image_urls.length !== list.length) throw new Error('参考图上传不完整')
+    return out
+  }, [uploadSubmissionImage])
+
+  const pollTask = useCallback(async (taskId, startTime, shareToSquare, prompt, params, hasImages, clientRequestId, confirmDeadlineTs) => {
+    const maxWaitMs = 15 * 60 * 1000
+    const getDelay = (elapsed) => {
+      if (elapsed >= 50_000 && elapsed < 120_000) return 6000
+      if (elapsed < 50_000) return 10000
+      return 90000
+    }
+    let missingCount = 0
+    let errorCount = 0
+    const releaseRecovery = () => { recoveringRef.current.delete(taskId) }
+    const hardDeadline = Number.isFinite(confirmDeadlineTs) ? confirmDeadlineTs : Date.now() + TASK_CONFIRM_TIMEOUT_MS
+
+    for (let attempt = 0; Date.now() - startTime < maxWaitMs; attempt++) {
+      if (Date.now() >= hardDeadline) {
+        updateTask(taskId, { status: 'failed', error: '任务确认超时，请重试', _active: false })
+        releaseRecovery()
+        refreshPointsOnFailed()
+        syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
+        return
+      }
+      const elapsed = Date.now() - startTime
+      await new Promise(r => setTimeout(r, getDelay(elapsed)))
+      try {
+        const taskStatus = await getTaskStatusWithRecovery(taskId, clientRequestId)
+        missingCount = 0
+        errorCount = 0
+        if (taskStatus.status === 'completed') {
+          const completedTask = { ...taskStatus, _active: false, task_id: taskId }
+          updateTask(taskId, completedTask)
+          if (taskStatus.result_urls?.length) {
+            const cardPrompt = taskStatus.params?.prompt || taskStatus.prompt || prompt
+            const newCards = taskStatus.result_urls.map((url, idx) => {
+              const filename = url.split('/').pop()
+              return {
+                _type: 'image',
+                _raw: {
+                  filename,
+                  metadata: {
+                    prompt: cardPrompt,
+                    task_id: taskId,
+                    created_at: taskStatus.created_at,
+                    started_at: taskStatus.started_at,
+                    completed_at: taskStatus.completed_at,
+                    type: getGenerationModeLabel(taskStatus.params || {}),
+                    size: getGenerationSizeLabel(taskStatus.params || {}),
+                    input_urls: taskStatus.params?.local_image_urls || taskStatus.params?.image_urls,
+                  },
+                },
+                id: `${taskId}-${idx}`,
+                prompt: cardPrompt,
+                fullUrl: `/api/images/file/${filename}`,
+                filename,
+              }
+            })
+            setDetailCards(prev => {
+              const existing = new Set(prev.map(c => c.id))
+              const toAdd = newCards.filter(c => !existing.has(c.id))
+              return toAdd.length ? [...prev, ...toAdd] : prev
+            })
+          }
+          releaseRecovery()
+          syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
+          return
+        }
+        if (taskStatus.status === 'failed') {
+          updateTask(taskId, { ...taskStatus, _active: false })
+          releaseRecovery()
+          refreshPointsOnFailed()
+          syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
+          return
+        }
+        updateTask(taskId, { ...taskStatus, _active: true })
+      } catch (e) {
+        const msg = (e?.message || '').toLowerCase()
+        if (msg.includes('404') || msg.includes('任务不存在') || msg.includes('not found')) {
+          missingCount += 1
+          if (missingCount >= 8) {
+            if (Date.now() + 30000 >= hardDeadline) {
+              updateTask(taskId, { status: 'failed', error: '任务确认超时，请重试', _active: false })
+              releaseRecovery()
+              refreshPointsOnFailed()
+              syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
+              return
+            }
+            updateTask(taskId, { error: '状态同步延迟，正在继续确认', _active: true })
+            window.setTimeout(() => { void pollTask(taskId, Date.now(), shareToSquare, prompt, params, hasImages, clientRequestId, hardDeadline) }, 30000)
+            return
+          }
+        } else {
+          errorCount += 1
+          if (errorCount >= 10 && !shouldRetryNetworkError(msg)) {
+            if (Date.now() + 45000 >= hardDeadline) {
+              updateTask(taskId, { status: 'failed', error: '任务确认超时，请重试', _active: false })
+              releaseRecovery()
+              refreshPointsOnFailed()
+              syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
+              return
+            }
+            updateTask(taskId, { error: '任务状态同步异常，正在继续确认', _active: true })
+            window.setTimeout(() => { void pollTask(taskId, Date.now(), shareToSquare, prompt, params, hasImages, clientRequestId, hardDeadline) }, 45000)
+            return
+          }
+        }
+      }
+    }
+    if (Date.now() + 60000 >= hardDeadline) {
+      updateTask(taskId, { status: 'failed', error: '任务确认超时，请重试', _active: false })
+      releaseRecovery()
+      refreshPointsOnFailed()
+      syncPendingSubmissions(prev => prev.filter(item => item.real_task_id !== taskId))
+      return
+    }
+    updateTask(taskId, { error: '生成耗时较长，正在继续确认', _active: true })
+    window.setTimeout(() => { void pollTask(taskId, Date.now(), shareToSquare, prompt, params, hasImages, clientRequestId, hardDeadline) }, 60000)
+  }, [getTaskStatusWithRecovery, updateTask, refreshPointsOnFailed, syncPendingSubmissions])
+
+  const processSubmission = useCallback(async (item) => {
+    const submissionId = item?.client_request_id
+    if (!submissionId || submissionProcessingRef.current.has(submissionId)) return
+    if (item.status === 'failed' || item.status === 'completed') return
+    submissionProcessingRef.current.add(submissionId)
+    const createdAt = item.created_at || formatLocalTime(new Date())
+    const startedAt = item.started_at || formatLocalTime(new Date())
+    const prompt = item.prompt || item?.params?.prompt || ''
+    const baseParams = normalizeSubmissionParams({ ...(item.params || {}), prompt, share_to_square: !!item.shareToSquare })
+    const modelCost = getModelCost(baseParams,requestCost)
+    const realTaskId = item.real_task_id || makeTaskId()
+    const hasExistingRealTask = !!item.real_task_id
+    if (!hasExistingRealTask) {
+      finalizeSubmissionQueueItem(submissionId, current => current ? { ...current, real_task_id: realTaskId, status: 'processing', started_at: startedAt } : null)
+      setTasks(prev => {
+        const next = prev.map(task => task.task_id === item.temp_task_id ? { ...task, task_id: realTaskId, started_at: startedAt, _local_submission: false } : task)
+        saveCachedActiveTasks(next)
+        return next
+      })
+    } else {
+      updateTask(realTaskId, { status: 'processing', started_at: startedAt, _active: true })
+    }
+    const images = buildSubmissionImages(item.images)
+    let imageUrls = Array.isArray(baseParams.image_urls) ? baseParams.image_urls.filter(Boolean) : []
+    let localImageUrls = Array.isArray(baseParams.local_image_urls) ? baseParams.local_image_urls.filter(Boolean) : []
+    let hasImages = imageUrls.length > 0
+    try {
+      if (!hasImages && images.length > 0) {
+        const uploaded = await uploadSubmissionImagesOnce(images)
+        imageUrls = uploaded.image_urls
+        localImageUrls = uploaded.local_image_urls
+        hasImages = imageUrls.length > 0
+      }
+    } catch (e) {
+      markSubmissionFailed({ ...item, real_task_id: realTaskId }, '图片上传失败: ' + (e?.message || '未知错误'))
+      submissionProcessingRef.current.delete(submissionId)
+      return
+    }
+    const confirmDeadlineTs = Number(baseParams._confirm_deadline_ts) > 0 ? Number(baseParams._confirm_deadline_ts) : Date.now() + TASK_CONFIRM_TIMEOUT_MS
+    const requestParams = { ...baseParams, image_urls: imageUrls, local_image_urls: localImageUrls, client_request_id: submissionId, _confirm_deadline_ts: confirmDeadlineTs }
+    try {
+      const data = await submitGenerationWithRecovery({ hasImages, prompt, imageUrls, baseParams, realTaskId, submissionId, shareToSquare: !!item.shareToSquare, localImageUrls })
+      const finalTaskId = data.task_id || realTaskId
+      consumeLocalPointsOnce(item, submissionId, finalTaskId, modelCost, requestParams)
+      setTasks(prev => {
+        const next = prev.map(task => task.task_id === realTaskId || task.task_id === item.temp_task_id ? { ...task, task_id: finalTaskId, status: data.status || 'processing', params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: data.status !== 'completed', _points_consumed: true } : task)
+        saveCachedActiveTasks(next)
+        return next
+      })
+      finalizeSubmissionQueueItem(submissionId, current => current ? { ...current, real_task_id: finalTaskId, points_consumed: !!(current.points_consumed || item.points_consumed), status: data.status || 'processing', params: requestParams } : null)
+      syncPendingSubmissions(prev => prev.filter(queueItem => queueItem.client_request_id !== submissionId))
+      if (data.status === 'completed') {
+        updateTask(finalTaskId, {
+          status: 'completed',
+          result_urls: data.result_urls || [],
+          params: requestParams,
+          prompt,
+          created_at: createdAt,
+          started_at: startedAt,
+          _active: false,
+        })
+        if (data.result_urls?.length) {
+          const newCards = data.result_urls.map((url, idx) => {
+            const filename = url.split('/').pop()
+            return {
+              _type: 'image',
+              _raw: {
+                filename,
+                metadata: {
+                  prompt,
+                  task_id: finalTaskId,
+                  created_at: createdAt,
+                  started_at: startedAt,
+                  completed_at: formatLocalTime(new Date()),
+                  type: getGenerationModeLabel(baseParams),
+                  size: getGenerationSizeLabel(baseParams),
+                  input_urls: localImageUrls.length ? localImageUrls : imageUrls,
+                },
+              },
+              id: `${finalTaskId}-${idx}`,
+              prompt,
+              fullUrl: `/api/images/file/${filename}`,
+              filename,
+              expired: false,
+            }
+          })
+          setDetailCards((prev) => {
+            const existing = new Set(prev.map((card) => card.id))
+            const toAdd = newCards.filter((card) => !existing.has(card.id))
+            return toAdd.length ? [...prev, ...toAdd] : prev
+          })
+        }
+      } else {
+        pollTask(finalTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages, submissionId, confirmDeadlineTs)
+      }
+    } catch (e) {
+      const msg = normalizeGenerationError(e?.message || '')
+      if (msg.includes('积分不足') || msg.includes('402')) {
+        markSubmissionFailed({ ...item, real_task_id: realTaskId }, '积分不足，请先获取更多积分后重试')
+        dialog.alert(msg.includes('积分不足') ? msg : '积分不足，请先获取更多积分后重试')
+        refreshPointsOnFailed()
+        submissionProcessingRef.current.delete(submissionId)
+        return
+      }
+      const isTimeout = msg.includes('timeout') || msg.includes('超时')
+      if (isTimeout) {
+        try {
+          const taskStatus = await getTaskStatusWithRecovery(realTaskId, submissionId)
+          syncPendingSubmissions(prev => prev.filter(queueItem => queueItem.client_request_id !== submissionId))
+          if (taskStatus.status === 'completed') {
+            updateTask(realTaskId, { ...taskStatus, params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: false, _points_consumed: true })
+          } else if (taskStatus.status === 'failed') {
+            updateTask(realTaskId, { ...taskStatus, params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: false, _points_consumed: true })
+            refreshPointsOnFailed()
+          } else {
+            updateTask(realTaskId, { ...taskStatus, params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: true, _points_consumed: true })
+            pollTask(realTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages, submissionId, confirmDeadlineTs)
+          }
+          submissionProcessingRef.current.delete(submissionId)
+          return
+        } catch (se) {
+          const sm = (se?.message || '').toLowerCase()
+          if (sm.includes('404') || sm.includes('任务不存在') || sm.includes('not found')) {
+            finalizeSubmissionQueueItem(submissionId, current => current ? { ...current, real_task_id: realTaskId, status: 'processing', started_at: startedAt, params: requestParams, points_consumed: !!(current.points_consumed || item.points_consumed) } : null)
+            submissionProcessingRef.current.delete(submissionId)
+            setTimeout(() => {
+              const latest = pendingSubmissions.find(queueItem => queueItem.client_request_id === submissionId)
+              void processSubmission(latest || { ...item, real_task_id: realTaskId, started_at: startedAt, params: requestParams, points_consumed: item.points_consumed })
+            }, 1500)
+            return
+          }
+        }
+        syncPendingSubmissions(prev => prev.filter(queueItem => queueItem.client_request_id !== submissionId))
+        pollTask(realTaskId, Date.now(), !!item.shareToSquare, prompt, requestParams, hasImages, submissionId, confirmDeadlineTs)
+      } else {
+        if (shouldRetryNetworkError(msg)) {
+          consumeLocalPointsOnce(item, submissionId, realTaskId, modelCost, requestParams)
+          finalizeSubmissionQueueItem(submissionId, current => current ? { ...current, real_task_id: realTaskId, status: 'processing', started_at: startedAt, params: requestParams, points_consumed: !!(current.points_consumed || item.points_consumed) } : null)
+          updateTask(realTaskId, { status: 'processing', error: '提交结果确认中', params: requestParams, prompt, created_at: createdAt, started_at: startedAt, _active: true })
+          submissionProcessingRef.current.delete(submissionId)
+          window.setTimeout(() => {
+            const latest = pendingSubmissions.find(queueItem => queueItem.client_request_id === submissionId)
+            void processSubmission(latest || { ...item, real_task_id: realTaskId, started_at: startedAt, params: requestParams, points_consumed: true })
+          }, 2000)
+          return
+        }
+        markSubmissionFailed({ ...item, real_task_id: realTaskId }, '提交失败: ' + (msg || '未知错误'))
+      }
+    }
+    submissionProcessingRef.current.delete(submissionId)
+  }, [consumeLocalPointsOnce, finalizeSubmissionQueueItem, getTaskStatusWithRecovery, markSubmissionFailed, pendingSubmissions, pollTask, refreshPointsOnFailed, requestCost, saveCachedActiveTasks, submitGenerationWithRecovery, syncPendingSubmissions, updateTask, uploadSubmissionImagesOnce])
+
+  const handleSubmit = useCallback(async ({ prompt, images, params, shareToSquare, rollCount = 1, clearInput }) => {
+    const batchCount = Math.min(5, Math.max(1, Number(rollCount) || 1))
+    const modelCost = getModelCost(params,requestCost)
+    const totalCost = batchCount * modelCost
+    if (points < totalCost) {
+      dialog.alert(`积分不足，当前仅剩 ${points} 积分，本次需要 ${totalCost} 积分。`)
+      return false
+    }
+    try {
+      const { data } = await taskAPI.activeSummary()
+      const activeCount = Math.max(0, Number(data?.active_count) || 0)
+      const globalLimit = Math.max(1, Number(data?.global_limit) || 20)
+      if (activeCount + batchCount > globalLimit) {
+        dialog.alert(`当前全站正在生成 ${activeCount} 张，最多同时 ${globalLimit} 张。请稍后再试。`)
+        return false
+      }
+    } catch (e) {
+      dialog.alert(e?.message || '提交前检查失败，请稍后再试')
+      return false
+    }
+    const submitMessage = batchCount > 1 ? `本次将提交 ${batchCount} 次生成，预计消耗 ${totalCost} 积分，是否继续？` : `本次将提交 1 次生成，预计消耗 ${modelCost} 积分，是否继续？`
+    if (!await dialog.confirm(`${submitMessage}\n\n当前设置\n${formatSubmitSettings(params, shareToSquare, images?.length || 0)}`)) return false
+    try {
+      const now = formatLocalTime(new Date())
+      const baseImages = buildSubmissionImages(images || [])
+      const activeImages = baseImages.filter(img => img?.uploadStatus !== 'error')
+      const successImages = activeImages.filter(img => img?.uploadStatus === 'success' && img?.uploadedUrl && (img?.uploadedStorageName || img?.uploadedUrl))
+      if (activeImages.length !== successImages.length) {
+        dialog.alert('存在未完成上传的参考图，请等待上传完成或删除失败图片后再提交')
+        return false
+      }
+      const sharedUploadParams = successImages.length > 0 ? { image_urls: successImages.map(img => img.uploadedUrl).filter(Boolean), local_image_urls: successImages.map(img => img.uploadedStorageName || img.uploadedUrl).filter(Boolean) } : {}
+      const normalizedParams = normalizeSubmissionParams({ ...params, ...sharedUploadParams, prompt, share_to_square: !!shareToSquare })
+      const submissions = Array.from({ length: batchCount }, (_, index) => ({ client_request_id: makeTaskId(), temp_task_id: `pending-${Date.now()}-${index}-${Math.random().toString(16).slice(2, 8)}`, real_task_id: null, prompt, images: successImages, params: normalizedParams, shareToSquare: !!shareToSquare, type: successImages.length ? 'text_image' : 'text', status: 'processing', created_at: now, started_at: now, error: null }))
+      const stagedTasks = submissions.map(buildPendingTaskFromSubmission)
+      setTasks(prev => {
+        const next = mergeTasksById([...prev, ...stagedTasks])
+        saveCachedActiveTasks(next)
+        return next
+      })
+      syncPendingSubmissions(prev => [...prev, ...submissions])
+      clearInput?.()
+      scroll()
+      for (const submission of submissions) void processSubmission(submission)
+      return 'cleared'
+    } catch (e) {
+      dialog.alert('提交失败: ' + (e?.message || '未知错误'))
+      return false
+    }
+  }, [dialog, points, processSubmission, requestCost, saveCachedActiveTasks, scroll, syncPendingSubmissions, uploadSubmissionImagesOnce])
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true)
+    await refreshTasks()
+    setRefreshing(false)
+  }, [refreshTasks])
+
+  const handleRetry = useCallback(async (taskId) => {
+    try {
+      await taskAPI.retry(taskId)
+      await refreshTasks()
+    } catch (e) { dialog.alert(e.message || '重试失败') }
+  }, [refreshTasks, dialog])
+
+  // 刷新后自动恢复 processing 任务的轮询
+  useEffect(() => {
+    for (const t of tasks) {
+      if (!String(t.task_id).startsWith('pending-') && ['pending', 'queued', 'processing', 'running', 'generating'].includes(t.status) && !t._active && !recoveringRef.current.has(t.task_id)) {
+        recoveringRef.current.add(t.task_id)
+        updateTask(t.task_id, { _active: true })
+        const p = t.params || {}
+        const confirmDeadlineTs = Number(p._confirm_deadline_ts) > 0 ? Number(p._confirm_deadline_ts) : ((parseTaskTime(t.created_at) || Date.now()) + TASK_CONFIRM_TIMEOUT_MS)
+        pollTask(t.task_id, Date.now(), !!p.share_to_square, p.prompt || '', p, t.type === 'text_image', p.client_request_id, confirmDeadlineTs)
+      }
+    }
+  }, [tasks, pollTask, updateTask])
+  useEffect(() => {
+    for (const item of pendingSubmissions) {
+      if (!item?.client_request_id || item.status === 'failed' || item.status === 'completed') continue
+      if (item.real_task_id && tasks.some(t => t.task_id === item.real_task_id && ['pending', 'queued', 'processing', 'running', 'generating'].includes(t.status) && t._active)) continue
+      void processSubmission(item)
+    }
+  }, [pendingSubmissions, processSubmission, tasks])
+
+  const allDetailCards = useMemo(() => {
+    const result = []
+    for (const task of pagedVisibleTasks) {
+      if (!task.result_urls?.length) continue
+      const cards = buildDetailCardsFromTask(task, expiryByFilenameMap, squareIdMapRef.current)
+      for (const c of cards) {
+        if (!c.expired) result.push(c)
+      }
+    }
+    return result
+  }, [pagedVisibleTasks, expiryByFilenameMap])
+
+  const handleCardViewDetail = useCallback((taskId) => {
+    const task = pagedVisibleTasks.find(t => t.task_id === taskId && t.result_urls?.length)
+    if (!task) return
+    const cards = buildDetailCardsFromTask(task, expiryByFilenameMap, squareIdMapRef.current)
+    if (cards.every(c => c.expired)) return
+    const firstNonExpired = cards.findIndex(c => !c.expired)
+    let offset = 0
+    for (const t of pagedVisibleTasks) {
+      if (!t.result_urls?.length) continue
+      const tc = buildDetailCardsFromTask(t, expiryByFilenameMap, squareIdMapRef.current)
+      if (t.task_id === taskId) { offset += firstNonExpired; break }
+      offset += tc.filter(c => !c.expired).length
+    }
+    setSelectedDetailTaskId(taskId)
+    setSelectedCardIndex(offset)
+  }, [pagedVisibleTasks, expiryByFilenameMap])
+
+  const handleModalNavigate = useCallback((newIndex) => {
+    setSelectedCardIndex(newIndex)
+    let offset = 0
+    for (const task of pagedVisibleTasks) {
+      if (!task.result_urls?.length) continue
+      const cards = buildDetailCardsFromTask(task, expiryByFilenameMap, squareIdMapRef.current)
+      const count = cards.filter(c => !c.expired).length
+      if (count === 0) continue
+      if (newIndex < offset + count) {
+        setSelectedDetailTaskId(task.task_id)
+        return
+      }
+      offset += count
+    }
+  }, [pagedVisibleTasks, expiryByFilenameMap])
+  useEffect(() => {
+    if (!selectedDetailTaskId) return
+    if (allDetailCards.length === 0) { setSelectedCardIndex(null); setSelectedDetailTaskId(null); return }
+    if (selectedCardIndex === null) setSelectedCardIndex(0)
+    else if (selectedCardIndex >= allDetailCards.length) setSelectedCardIndex(allDetailCards.length - 1)
+  }, [allDetailCards, selectedDetailTaskId, selectedCardIndex])
+  const handleDetailShare = useCallback(async (card) => {
+    try {
+      const { data } = await squareAPI.share({ filename: card.filename, prompt: card.prompt || '', metadata: { size: card?._raw?.metadata?.size, type: card?._raw?.metadata?.type || 'text', input_urls: card?._raw?.metadata?.input_urls } })
+      markSquareShared(card.filename, data?.id)
+      window.dispatchEvent(new Event('gallery-updated'))
+      setTimeout(() => window.dispatchEvent(new Event('gallery-updated')), 2500)
+    } catch (e) {
+      dialog.alert(e?.response?.data?.detail || e.message || '分享失败')
+    }
+  }, [dialog, markSquareShared])
+  const handleDetailUnshare = useCallback(async (card) => {
+    let sid = card.square_image_id || squareIdMapRef.current[card.filename]
+    if (!sid) {
+      await refreshTasks()
+      sid = squareIdMapRef.current[card.filename]
+    }
+    if (!sid) { dialog.alert('无法找到分享记录'); return }
+    if (!await dialog.confirm('确定撤回该分享？')) return
+    try {
+      await squareAPI.unshare(sid)
+      delete squareIdMapRef.current[card.filename]
+      setDetailCards(prev => prev.map(c => c.filename === card.filename ? { ...c, square_image_id: null, is_permanent: false } : c))
+      window.dispatchEvent(new Event('gallery-updated'))
+    } catch (e) {
+      dialog.alert(e?.response?.data?.detail || e.message || '撤回失败')
+    }
+  }, [dialog, refreshTasks])
+  const handleExtendImages = useCallback(async (filenames) => {
+    const uniq = [...new Set((filenames || []).filter(Boolean))]
+    if (uniq.length === 0) { dialog.alert('没有可延长的图片'); return }
+    try {
+      const { data } = await imageAPI.extend(uniq)
+      if (typeof data.points === 'number') {
+        setPoints(data.points)
+        const u = readUser()
+        if (u) { u.points = data.points; localStorage.setItem('user', JSON.stringify(u)) }
+        window.dispatchEvent(new Event('points-updated'))
+      }
+      await refreshTasks()
+      const msg = `成功${data.success_count||0}，跳过${data.skipped_count||0}，失败${data.failed_count||0}${data.total_cost ? `，扣除${data.total_cost}积分` : ''}`
+      dialog.alert(msg)
+    } catch (e) {
+      dialog.alert(e?.message || '延长失败')
+    }
+  }, [refreshTasks, dialog])
+  const handleDetailExtend = useCallback(async (card) => {
+    if (!await dialog.confirm(`确定延长3天？将扣除${extendCostPerImage}积分`)) return
+    await handleExtendImages([card.filename])
+  }, [handleExtendImages, dialog, extendCostPerImage])
+
+  const toggleCheck = useCallback((taskId) => {
+    setChecked(prev => { const next = new Set(prev); next.has(taskId) ? next.delete(taskId) : next.add(taskId); return next })
+  }, [])
+  const handleToggleThumbnailBlur = useCallback((taskKey) => {
+    setThumbnailBlurMap(prev => ({ ...prev, [taskKey]: !prev[taskKey] }))
+  }, [])
+  const handleTaskViewDetail = useCallback((taskId) => {
+    handleCardViewDetail(taskId)
+  }, [handleCardViewDetail])
+
+  const toggleSelectAll = useCallback(() => {
+    if (checked.size === pagedVisibleTasks.length) setChecked(new Set())
+    else setChecked(new Set(pagedVisibleTasks.map(t => t.task_id)))
+  }, [checked.size, pagedVisibleTasks])
+
+  const handleBatchDownload = useCallback(async () => {
+    if (downloadLockRef.current || downloadProgress.open) return
+    const files = []
+    for (const task of pagedVisibleTasks) {
+      if (!checked.has(task.task_id)) continue
+      for (const url of (task.result_urls || [])) {
+        const filename = url.split('/').pop()
+        const apiUrl = `/api/images/file/${filename}`
+        files.push({ url: apiUrl, name: filename })
+      }
+    }
+    if (files.length === 0) return
+    downloadLockRef.current = true
+    const asZip = files.length > 1 ? await dialog.choose(`下载 ${files.length} 张图片`, [{ label: '打包 ZIP', value: 'zip' }, { label: '逐个 PNG', value: 'png' }]) === 'zip' : false
+    if (asZip) {
+      try {
+        setDownloadProgress({ open: true, phase: 'zip', current: 0, total: files.length, percent: 10, filename: `${files.length} files` })
+        const resp = await imageAPI.downloadBatch(files.map(file => file.name))
+        setDownloadProgress(v => ({ ...v, phase: 'zip', current: files.length, total: files.length, percent: 95 }))
+        const saved = await saveBlob(resp.data, getDownloadFilename(resp.headers, `images_${Date.now()}.zip`))
+        if (!saved) return
+        setDownloadProgress(v => ({ ...v, phase: 'done', current: files.length, total: files.length, percent: 100 }))
+      } catch (e) {
+        dialog.alert(e?.message || '打包下载失败')
+      } finally {
+        setTimeout(() => { setDownloadProgress({ open: false, phase: 'idle', current: 0, total: 0, percent: 0, filename: '' }); downloadLockRef.current = false }, 400)
+      }
+    } else {
+      try {
+        setDownloadProgress({ open: true, phase: 'single', current: 0, total: files.length, percent: 0, filename: '' })
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i]
+          setDownloadProgress(v => ({ ...v, phase: 'single', current: i, total: files.length, percent: Math.min(85, Math.round(i / files.length * 85)), filename: file.name }))
+          const resp = await imageAPI.getBlobByUrl(file.url)
+          const saved = await saveBlob(resp.data, getDownloadFilename(resp.headers, file.name))
+          if (!saved) return
+          setDownloadProgress(v => ({ ...v, phase: 'single', current: i + 1, total: files.length, percent: Math.min(95, Math.round((i + 1) / files.length * 95)), filename: file.name }))
+        }
+        setDownloadProgress(v => ({ ...v, phase: 'done', current: files.length, total: files.length, percent: 100 }))
+      } catch (e) {
+        dialog.alert(e?.message || '下载失败')
+      } finally {
+        setTimeout(() => { setDownloadProgress({ open: false, phase: 'idle', current: 0, total: 0, percent: 0, filename: '' }); downloadLockRef.current = false }, 400)
+      }
+    }
+  }, [checked, pagedVisibleTasks, dialog, downloadProgress.open])
+
+  const handleBatchDelete = useCallback(async () => {
+    if (deleteProgress.open) return
+    if (!await dialog.confirm(`确定删除选中的 ${checked.size} 项？`)) return
+    const ids = [...checked]
+    const imageIds = []
+    const taskIds = []
+    for (const taskId of ids) taskId.startsWith('img-') ? imageIds.push(taskId.replace('img-', '')) : taskIds.push(taskId)
+    const total = imageIds.length + taskIds.length
+    const deleted = new Set()
+    const failed = []
+    setDeleteProgress({ open: true, current: 0, total, percent: total ? 10 : 100, text: '正在准备删除' })
+    try {
+      if (imageIds.length > 0) {
+        setDeleteProgress({ open: true, current: 0, total, percent: Math.max(10, Math.round(100 / Math.max(total, 1))), text: `正在删除图片 ${imageIds.length} 项` })
+        const { data } = await imageAPI.batchDelete(imageIds)
+        for (const filename of (data?.deleted_filenames || [])) deleted.add(`img-${filename}`)
+        failed.push(...((data?.failed || []).map(item => item?.filename || '').filter(Boolean)))
+        setDeleteProgress({ open: true, current: imageIds.length, total, percent: Math.min(60, Math.round(imageIds.length / Math.max(total, 1) * 100)), text: `已删除图片 ${data?.deleted || 0}/${imageIds.length}` })
+      }
+      if (taskIds.length > 0) {
+        setDeleteProgress({ open: true, current: imageIds.length, total, percent: Math.max(60, Math.round(imageIds.length / Math.max(total, 1) * 100)), text: `正在删除记录 ${taskIds.length} 项` })
+        const { data } = await taskAPI.batchDelete(taskIds)
+        for (const taskId of (data?.deleted_ids || [])) deleted.add(taskId)
+        failed.push(...((data?.failed || []).map(item => item?.id || '').filter(Boolean)))
+        setDeleteProgress({ open: true, current: total, total, percent: 100, text: `已删除 ${deleted.size}/${total}` })
+      } else {
+        setDeleteProgress(v => ({ ...v, current: total, percent: 100, text: `已删除 ${deleted.size}/${total}` }))
+      }
+      setChecked(new Set())
+      setSelectMode(false)
+      if (deleted.size > 0) setTasks(prev => prev.filter(t => !deleted.has(t.task_id)))
+      try { await refreshTasks() } catch (e) { console.error('刷新任务列表失败:', e) }
+      window.dispatchEvent(new Event('gallery-updated'))
+      if (failed.length > 0) dialog.alert(`${failed.length} 项删除失败`)
+    } catch (e) {
+      dialog.alert(e?.message || '批量删除失败')
+    } finally {
+      setTimeout(() => setDeleteProgress({ open: false, current: 0, total: 0, percent: 0, text: '' }), 500)
+    }
+  }, [checked, refreshTasks, dialog, deleteProgress.open])
+  const handleBatchExtend = useCallback(async () => {
+    const filenames = []
+    for (const task of pagedVisibleTasks) {
+      if (!checked.has(task.task_id)) continue
+      for (const url of (task.result_urls || [])) filenames.push(url.split('/').pop())
+    }
+    if (filenames.length === 0) return
+    if (!await dialog.confirm(`确定延长选中的 ${filenames.length} 张图片3天？将扣除 ${filenames.length * extendCostPerImage} 积分`)) return
+    await handleExtendImages(filenames)
+  }, [checked, pagedVisibleTasks, handleExtendImages, dialog, extendCostPerImage])
+
+  const exitSelectMode = useCallback(() => { setSelectMode(false); setChecked(new Set()) }, [])
+
+  return (
+    <MainLayout>
+      <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+      {selectMode && checked.size > 0 && (
+        <div className="px-4 py-3 flex items-center gap-3 border-b" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
+          <span className="text-sm" style={{ color: 'var(--text-primary)' }}>已选 {checked.size} 项</span>
+          <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
+            {checked.size === pagedVisibleTasks.length ? '取消全选' : '全选'}
+          </button>
+          <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
+            {isAdmin && <button onClick={handleBatchAddToPromptLibrary} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--accent)' }}>批量入库</button>}
+            <button onClick={handleBatchShareToSquare} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--color-success)' }}>批量分享</button>
+            <button onClick={handleBatchExtend} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white" style={{ background: 'var(--color-info)' }}>延长3天</button>
+            <button onClick={handleBatchDownload} disabled={downloadProgress.open} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-white disabled:opacity-50" style={{ background: 'var(--accent)' }}><Download size={14} /> {downloadProgress.open ? '处理中' : '下载'}</button>
+            <button onClick={handleBatchDelete} disabled={deleteProgress.open} className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-sm font-medium text-[var(--color-error)] hover:bg-[var(--color-error)]/10 disabled:opacity-50"><Trash2 size={14} /> {deleteProgress.open ? '删除中' : '删除'}</button>
+          </div>
+        </div>
+      )}
+      <div className="flex-shrink-0 px-4 pt-3 pb-1 overflow-visible">
+      <div className="flex min-h-10 items-center gap-2 overflow-x-auto overflow-y-visible scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
+        <button onClick={() => navigate('/wallet')} className="flex h-8 flex-shrink-0 items-center gap-1.5 px-3 rounded-2xl text-sm font-semibold transition-all hover:scale-105" style={{ background: 'var(--accent)', color: '#fff' }}>
+          <Coins size={15} />
+          <span className="tabular-nums">{points}</span>
+        </button>
+        {isAdmin && userList.length > 0 && (
+          <select
+            value={selectedUserId || ''}
+            onChange={e => setSelectedUserId(e.target.value ? Number(e.target.value) : null)}
+            className="h-8 px-2 rounded-2xl text-xs border-0 outline-none"
+            style={{ background: 'var(--border-color)', color: 'var(--text-primary)' }}
+          >
+            <option value="">全部用户</option>
+            {userList.map(u => (
+              <option key={u.id} value={u.id}>{u.nickname || u.username}</option>
+            ))}
+          </select>
+        )}
+        <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="搜索提示词..." />
+        <button onClick={handleRefresh} disabled={refreshing}
+          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-2xl hover:bg-bg-hover transition-colors disabled:opacity-50"
+          style={{ color: 'var(--text-secondary)' }}>
+          <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
+        </button>
+        <div ref={timeRangeMenuRef} className="relative flex-shrink-0">
+          <button ref={timeRangeButtonRef} onClick={() => setTimeRangeOpen(v => !v)} className="flex h-8 items-center gap-1.5 rounded-2xl px-3 text-xs font-medium transition-colors hover:bg-bg-hover" style={{ background: 'var(--bg-active)', color: 'var(--text-primary)' }}>
+            <span>{timeRangeOptions.find(v => v.k === timeRange)?.l || '近1天'}</span>
+            <ChevronDown size={14} className={`transition-transform duration-200 ${timeRangeOpen ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
+        {selectMode ? (
+          <button onClick={exitSelectMode} className="ml-auto flex h-8 items-center px-3 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
+        ) : (
+          <button onClick={() => setSelectMode(true)} className="ml-auto flex h-8 items-center px-3 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>选择</button>
+        )}
+      </div>
+      </div>
+      {loadError && (
+        <div className="mx-4 mt-2 px-3 py-2 rounded-2xl text-xs" style={{ background: 'color-mix(in srgb, var(--color-warning) 12%, transparent)', color: 'var(--color-warning)' }}>
+          {loadError}
+        </div>
+      )}
+      {downloadProgress.open && (
+        <div className="fixed left-4 right-4 bottom-24 sm:left-auto sm:right-4 sm:bottom-6 sm:w-80 z-40 pointer-events-none">
+          <div className="rounded-2xl p-4 border shadow-lg" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                {downloadProgress.phase === 'zip' ? '正在打包 ZIP' : downloadProgress.phase === 'single' ? '正在逐个下载' : downloadProgress.phase === 'done' ? '处理完成' : '正在准备下载'}
+              </div>
+              <div className="text-xs tabular-nums" style={{ color: 'var(--accent)' }}>{downloadProgress.percent}%</div>
+            </div>
+            <div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
+              {downloadProgress.phase === 'zip'
+                ? `已下载 ${downloadProgress.total}/${downloadProgress.total} 张，正在压缩`
+                : `已处理 ${downloadProgress.current}/${downloadProgress.total} 张`}
+            </div>
+            {downloadProgress.filename && (
+              <div className="mt-1 text-[11px] truncate" style={{ color: 'var(--text-secondary)', opacity: 0.8 }}>
+                {downloadProgress.filename}
+              </div>
+            )}
+            <div className="mt-3 h-2 rounded-full overflow-hidden" style={{ background: 'var(--border-color)' }}>
+              <div className="h-full rounded-full transition-all duration-300" style={{ width: `${downloadProgress.percent}%`, background: 'var(--accent)' }} />
+            </div>
+          </div>
+        </div>
+      )}
+      {deleteProgress.open && (
+        <div className="fixed left-4 right-4 bottom-24 sm:left-auto sm:right-4 sm:bottom-[8.5rem] sm:w-80 z-40 pointer-events-none">
+          <div className="rounded-2xl p-4 border shadow-lg" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>正在批量删除</div>
+              <div className="text-xs tabular-nums" style={{ color: 'var(--color-error)' }}>{deleteProgress.percent}%</div>
+            </div>
+            <div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
+              {deleteProgress.text || `已处理 ${deleteProgress.current}/${deleteProgress.total} 项`}
+            </div>
+            <div className="mt-3 h-2 rounded-full overflow-hidden" style={{ background: 'var(--border-color)' }}>
+              <div className="h-full rounded-full transition-all duration-300" style={{ width: `${deleteProgress.percent}%`, background: 'var(--color-error)' }} />
+            </div>
+          </div>
+        </div>
+      )}
+      <div ref={feedRef} className="flex-1 min-h-0 overflow-y-auto px-4 pb-6">
+        {!loaded ? (
+          <div className="pt-4"><CardGridSkeleton layoutMode={layoutMode} label="加载中..." /></div>
+        ) : visibleTasks.length === 0 ? (
+          showPortfolioEmptyState ? (
+            <div className="flex min-h-full items-center justify-center py-8 sm:py-12">
+              <PortfolioShowcaseCard onUsePrompt={handleAddPrompt} />
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-center py-20">
+              <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+                当前筛选下没有记录
+              </h2>
+              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                换个时间范围，或者直接开始下一次生成
+              </p>
+            </div>
+          )
+        ) : (
+          <div>
+          <div ref={cardGridRef} className={`${layoutMode === 'masonry' ? 'card-feed-masonry' : 'card-feed-grid'} pt-4`} style={{ position: 'relative' }}>
+            {layoutMode === 'masonry' && !feedLayoutReady && <div className="card-feed-loading-mask" />}
+            {pagedVisibleTasks.map(task => (
+              <GenerationCard
+                key={task.task_id}
+                task={task}
+                onAddImage={handleAddImageToInput}
+                onAddPrompt={handleAddPrompt}
+                onAddToPromptLibrary={isAdmin ? handleAddToPromptLibrary : undefined}
+                onRetry={handleRetry}
+                selectMode={selectMode}
+                checked={checked.has(task.task_id) || dragSelected.has(String(task.task_id))}
+                onToggleCheck={toggleCheck}
+                wasDraggedRef={wasDraggedRef}
+                showUsername={isAdmin}
+                username={task.username}
+                thumbnailBlurred={!!thumbnailBlurMap[getThumbnailBlurItemKey(task)]}
+                thumbnailBlurKey={getThumbnailBlurItemKey(task)}
+                onToggleThumbnailBlur={handleToggleThumbnailBlur}
+                onViewDetail={handleTaskViewDetail}
+                masonry={layoutMode === 'masonry'}
+                progressNowTs={progressNowTs}
+                expiryNowTs={expiryNowTs}
+                data-card-id={String(task.task_id)}
+              />
+            ))}
+            {selectionRect && selectionRect.width > 5 && selectionRect.height > 5 && (
+              <div className="drag-selection-rect" style={{ position: 'fixed', left: selectionRect.left, top: selectionRect.top, width: selectionRect.width, height: selectionRect.height }} />
+            )}
+          </div>
+          <Pagination page={homePage} totalPages={homeTotalPages} onPageChange={setHomePage} />
+          </div>
+        )}
+      </div>
+      {timeRangeOpen && timeRangeMenuPos && createPortal(
+        <div ref={timeRangePanelRef} className="fixed z-[120] rounded-2xl border p-1 shadow-lg" style={{ top: `${timeRangeMenuPos.top}px`, left: `${timeRangeMenuPos.left}px`, minWidth: `${timeRangeMenuPos.width}px`, transform: 'translateX(-100%)', background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+          {timeRangeOptions.map(({ k, l }) => (
+            <button key={k} onClick={() => { setTimeRange(k); setTimeRangeOpen(false) }} className={`flex w-full items-center rounded-xl px-3 py-2 text-left text-xs font-medium transition-colors ${timeRange === k ? 'bg-[var(--bg-active)]' : 'hover:bg-bg-hover'}`} style={{ color: timeRange === k ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{l}</button>
+          ))}
+        </div>,
+        document.body
+      )}
+
+      {selectedCardIndex !== null && allDetailCards.length > 0 && allDetailCards[selectedCardIndex] && (() => {
+        const currentCard = allDetailCards[selectedCardIndex]
+        const currentShareId = currentCard?.square_image_id || squareIdMapRef.current[currentCard?.filename] || null
+        const isShared = Boolean(currentShareId || currentCard?.is_permanent)
+        return (
+        <UnifiedDetailModal
+          card={currentCard}
+          cards={allDetailCards}
+          currentIndex={selectedCardIndex}
+          onNavigate={handleModalNavigate}
+          onClose={() => { setSelectedCardIndex(null); setSelectedDetailTaskId(null) }}
+          onUseImage={handleAddImageToInput}
+          onUsePrompt={handleAddPrompt}
+          onAddToPromptLibrary={isAdmin ? handleAddToPromptLibrary : undefined}
+          onShare={isShared ? undefined : handleDetailShare}
+          onUnshare={isShared ? handleDetailUnshare : undefined}
+          onExtend={handleDetailExtend}
+          title="生成详情"
+          allowMetadataEdit
+          nowTs={expiryNowTs}
+        />
+        )
+      })()}
+      </div>
+    </MainLayout>
+  )
+}

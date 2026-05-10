@@ -8,6 +8,7 @@ const {
   submitTextImageMock,
   alertMock,
   confirmMock,
+  submissionQueueStore,
 } = vi.hoisted(() => ({
   uploadMock: vi.fn(),
   activeSummaryMock: vi.fn(),
@@ -15,6 +16,7 @@ const {
   submitTextImageMock: vi.fn(),
   alertMock: vi.fn(),
   confirmMock: vi.fn(async () => true),
+  submissionQueueStore: new Map(),
 }))
 
 vi.mock('../components/AppDialogProvider', () => ({
@@ -23,6 +25,18 @@ vi.mock('../components/AppDialogProvider', () => ({
     confirm: confirmMock,
     choose: vi.fn(async () => null),
   }),
+}))
+
+vi.mock('../utils/imageDB', () => ({
+  getCachedImages: vi.fn(async () => []),
+  setCachedImages: vi.fn(async () => {}),
+  getPendingImage: vi.fn(async () => null),
+  clearPendingImage: vi.fn(async () => {}),
+  setSubmissionQueue: vi.fn(async (key, items) => {
+    submissionQueueStore.set(key, Array.isArray(items) ? items : [])
+  }),
+  getPrunedSubmissionQueue: vi.fn(async (key) => submissionQueueStore.get(key) || []),
+  getSubmissionQueue: vi.fn(async (key) => submissionQueueStore.get(key) || []),
 }))
 
 vi.mock('../api', () => {
@@ -192,9 +206,11 @@ import ChatPage from '../pages/ChatPage'
 import { LayoutModeProvider } from '../LayoutModeContext'
 import { ThemeProvider } from '../ThemeContext'
 import { MemoryRouter } from 'react-router-dom'
+import { getSubmissionQueue } from '../utils/imageDB'
 
 beforeEach(() => {
   cleanup()
+  submissionQueueStore.clear()
   localStorage.clear()
   localStorage.setItem(
     'user',
@@ -268,6 +284,32 @@ describe('reference upload flow', () => {
     expect(onSubmit).not.toHaveBeenCalled()
   })
 
+  it('switches thumbnail from percent to processing before upload resolves', async () => {
+    let resolveUpload
+    uploadMock.mockImplementationOnce(() => new Promise(resolve => { resolveUpload = resolve }))
+    const { container } = render(
+      <ChatInput
+        onSubmit={vi.fn(async () => true)}
+        loading={false}
+        requestCost={10}
+        optimizeCost={10}
+        refineOptimizeCost={20}
+      />
+    )
+    fireEvent.change(container.querySelector('input[type="file"]'), {
+      target: { files: [new File(['img'], 'progress.png', { type: 'image/png' })] },
+    })
+    await waitFor(() => expect(uploadMock).toHaveBeenCalledTimes(1))
+    const options = uploadMock.mock.calls[0][1]
+    options.onProgress(60)
+    await waitFor(() => expect(screen.getByText('60%')).toBeInTheDocument())
+    options.onProgress(100)
+    await waitFor(() => expect(screen.getByText('处理中')).toBeInTheDocument())
+    expect(screen.queryByText('100%')).not.toBeInTheDocument()
+    resolveUpload({ data: { url: 'https://cdn.example/progress.png', storage_name: 'uploads/progress.png' } })
+    await waitFor(() => expect(screen.queryByText('处理中')).not.toBeInTheDocument())
+  })
+
   it('shows gpt-image-2 ratio only', async () => {
     render(
       <ChatInput
@@ -286,7 +328,7 @@ describe('reference upload flow', () => {
     expect(screen.queryByText('画质')).not.toBeInTheDocument()
   })
 
-  it('submits only preuploaded success images', async () => {
+  it('queues only preuploaded success images', async () => {
     uploadMock.mockResolvedValue({
       data: { url: 'https://cdn.example/ref.png', storage_name: 'uploads/ref.png' },
     })
@@ -309,13 +351,11 @@ describe('reference upload flow', () => {
     fireEvent.click(screen.getByTitle('生成'))
     await screen.findByText('批量生成')
     fireEvent.click(screen.getByText('确认生成'))
-    await waitFor(() => expect(submitTextImageMock).toHaveBeenCalledTimes(1))
-    expect(submitTextImageMock.mock.calls[0][0].image_urls).toEqual([
-      'https://cdn.example/ref.png',
-    ])
-    expect(submitTextImageMock.mock.calls[0][0].local_image_urls).toEqual([
-      'uploads/ref.png',
-    ])
+    const queueKey = 'submission_queue_1'
+    await waitFor(async () => expect((await getSubmissionQueue(queueKey)).length).toBe(1))
+    const items = await getSubmissionQueue(queueKey)
+    expect(items[0].images.map(img => img.uploadedUrl)).toEqual(['https://cdn.example/ref.png'])
+    expect(items[0].images.map(img => img.uploadedStorageName)).toEqual(['uploads/ref.png'])
     expect(uploadMock).toHaveBeenCalledTimes(1)
   })
 

@@ -1,6 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Tags, Play, ArrowLeft, Check, X, Plus, Loader2, RefreshCw } from 'lucide-react'
+import { Check, X } from 'lucide-react'
 import { adminAPI, promptAPI } from '../../api'
+import AdminTitleManagePanel from './AdminTitleManagePanel'
+import AdminCategoryManagePanel from './AdminCategoryManagePanel'
+import AdminClassificationModeTabs from './AdminClassificationModeTabs'
+import AdminAiTaskListPanel from './AdminAiTaskListPanel'
+import AdminAiTaskDetailPanel from './AdminAiTaskDetailPanel'
+import AdminAuditSuggestion from './AdminAuditSuggestion'
+import AdminCategorySuggestion from './AdminCategorySuggestion'
+import AdminClassificationDebugPanel from './AdminClassificationDebugPanel'
 
 const STATUS_MAP = {
   processing: { label: '处理中', color: 'var(--accent)' },
@@ -242,6 +250,23 @@ export default function AdminClassificationTab({
       onRefreshTasks()
     } catch {}
   }
+  const handleAuditSuggestionChange = async (resultId, data) => {
+    await adminAPI.updateAuditResult(resultId, data)
+    const { data: next } = await adminAPI.getAuditTask(activeDetail.id)
+    setAuditDetail(next)
+  }
+  const handleApproveAuditSingle = async resultId => {
+    await adminAPI.approveAudit(activeDetail.id, [resultId])
+    const { data } = await adminAPI.getAuditTask(activeDetail.id)
+    setAuditDetail(data)
+    onRefreshAuditTasks()
+  }
+  const handleRejectAuditSingle = async resultId => {
+    await adminAPI.rejectAudit(activeDetail.id, [resultId])
+    const { data } = await adminAPI.getAuditTask(activeDetail.id)
+    setAuditDetail(data)
+    onRefreshAuditTasks()
+  }
   const refreshCategories = async () => {
     try {
       const { data } = await promptAPI.categories()
@@ -269,791 +294,47 @@ export default function AdminClassificationTab({
       await refreshCategories()
     } catch {}
   }
+  const switchMode=k=>{
+    setMode(k)
+    setSelected(new Set())
+    setAuditSelected(new Set())
+    if (k !== 'classification') setDetail(null)
+    if (k !== 'audit') setAuditDetail(null)
+  }
+  const modeTabs=[
+    { k: 'classification', l: '分类任务' },
+    { k: 'audit', l: '内容审核' },
+    { k: 'title', l: '标题生成' },
+    { k: 'categories', l: '分类管理' },
+  ]
 
   if (!activeDetail) {
-    const totalPages = Math.ceil(activeTotal / 20)
+    const decoratedTasks=activeTasks.map(t=>({ ...t, status_label: STATUS_MAP[t.status]?.label || t.status, status_color: STATUS_MAP[t.status]?.color }))
     return (
       <div className="space-y-4">
-        <div className="flex items-center gap-2">
-          {[
-            { k: 'classification', l: '分类任务' },
-            { k: 'audit', l: '内容审核' },
-            { k: 'title', l: '标题生成' },
-            { k: 'categories', l: '分类管理' },
-          ].map(i => (
-            <button
-              key={i.k}
-              onClick={() => setMode(i.k)}
-              className="px-3 py-1.5 rounded-2xl text-xs font-medium border"
-              style={mode === i.k
-                ? { background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' }
-                : { borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
-            >
-              {i.l}
-            </button>
-          ))}
-        </div>
-        {mode === 'title' && <TitleManagePanel />}
-        {mode === 'categories' && (
-          <div className="space-y-4">
-            <div className="rounded-2xl border p-4 space-y-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
-              <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                {categoryDraft.id ? '编辑分类' : '新建分类'}
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-[12rem_minmax(0,1fr)_auto] gap-2">
-                <input
-                  value={categoryDraft.slug}
-                  onChange={e => setCategoryDraft(prev => ({ ...prev, slug: e.target.value }))}
-                  disabled={!!categoryDraft.id}
-                  placeholder="slug"
-                  className="px-3 py-2 rounded-2xl border text-sm"
-                  style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
-                />
-                <input
-                  value={categoryDraft.label}
-                  onChange={e => setCategoryDraft(prev => ({ ...prev, label: e.target.value }))}
-                  placeholder="分类名称"
-                  className="px-3 py-2 rounded-2xl border text-sm"
-                  style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
-                />
-                <button
-                  onClick={handleSaveCategory}
-                  disabled={savingCategory || !categoryDraft.slug || !categoryDraft.label}
-                  className="px-4 py-2 rounded-2xl text-sm text-white disabled:opacity-50"
-                  style={{ background: 'var(--accent)' }}
-                >
-                  {savingCategory ? '保存中...' : categoryDraft.id ? '保存' : '新增'}
-                </button>
-              </div>
-              {categoryDraft.id && (
-                <button onClick={() => setCategoryDraft({ id: null, slug: '', label: '' })} className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                  取消编辑
-                </button>
-              )}
-            </div>
-            <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr style={{ background: 'var(--bg-ai-bubble)' }}>
-                    <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>ID</th>
-                    <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>Slug</th>
-                    <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>名称</th>
-                    <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {categories.length === 0 ? (
-                    <tr><td colSpan={4} className="px-3 py-8 text-center" style={{ color: 'var(--text-secondary)' }}>暂无分类</td></tr>
-                  ) : categories.map(c => (
-                    <tr key={c.id || c.slug} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
-                      <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{c.id || '-'}</td>
-                      <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{c.slug}</td>
-                      <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{c.label}</td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => setCategoryDraft({ id: c.id, slug: c.slug, label: c.label })} className="text-xs font-medium hover:underline" style={{ color: 'var(--accent)' }}>编辑</button>
-                          <button onClick={() => handleDeleteCategory(c.id)} className="text-xs font-medium hover:underline" style={{ color: 'var(--color-error)' }}>删除</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-        {mode!=='categories'&&<>
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{mode==='classification'?'AI 自动分类':'AI 内容审核'}</h3>
-          <div className="flex gap-2 items-center flex-wrap">
-            <select value={createType} onChange={e => setCreateType(e.target.value)} className="px-2 py-1.5 rounded-2xl text-xs border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}>
-              <option value="prompt">提示词</option>
-              <option value="image">作品</option>
-            </select>
-            <select value={taskLimit} onChange={e=>setTaskLimit(Number(e.target.value)||200)} className="px-2 py-1.5 rounded-2xl text-xs border" style={{ borderColor:'var(--border-color)', background:'var(--bg-card)', color:'var(--text-primary)' }}>
-              <option value={50}>50条</option>
-              <option value={100}>100条</option>
-              <option value={200}>200条</option>
-              <option value={500}>500条</option>
-            </select>
-            <button onClick={mode==='classification'?onRefreshTasks:onRefreshAuditTasks} className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover transition-colors" style={{ color: 'var(--text-secondary)' }}>
-              <RefreshCw size={14} /> 刷新
-            </button>
-            <button onClick={mode==='classification'?handleCreate:handleCreateAudit} disabled={creating} className="flex items-center gap-1.5 px-4 py-1.5 rounded-2xl text-xs font-medium text-white hover:opacity-90 transition-opacity disabled:opacity-50" style={{ background: 'var(--accent)' }}>
-              {creating ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-              {creating ? '创建中...' : mode==='classification'?'开始新分类':'开始新审核'}
-            </button>
-            {mode==='classification'&&<div className="flex items-center gap-1.5">
-              <select value={reviewCategory} onChange={e => setReviewCategory(e.target.value)} className="px-2 py-1.5 rounded-2xl text-xs border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}>
-                <option value="all">全部分类</option>
-                <option value="">选择具体分类...</option>
-                {categories.map(c => <option key={c.slug} value={c.slug}>{c.label}</option>)}
-              </select>
-              <button onClick={handleReview} disabled={!reviewCategory || reviewing} className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-medium text-white hover:opacity-90 disabled:opacity-50" style={{ background: 'var(--color-warning)' }}>
-                {reviewing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                {reviewing ? '审查中...' : '重新审查'}
-              </button>
-            </div>}
-          </div>
-        </div>
-        <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
-          <table className="w-full text-sm">
-            <thead>
-              <tr style={{ background: 'var(--bg-ai-bubble)' }}>
-                <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>ID</th>
-                <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>类型</th>
-                <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>状态</th>
-                <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>总数</th>
-                <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>已处理</th>
-                <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>创建时间</th>
-                <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {activeTasks.length === 0 ? (
-                <tr><td colSpan={7} className="px-3 py-8 text-center" style={{ color: 'var(--text-secondary)' }}>暂无{mode==='classification'?'分类':'审核'}任务</td></tr>
-              ) : activeTasks.map(t => (
-                <tr key={t.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
-                  <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>#{t.id}</td>
-                  <td className="px-3 py-2">
-                    <span className="px-2 py-0.5 rounded-full text-xs" style={{ background: 'var(--bg-ai-bubble)', color: 'var(--text-secondary)' }}>
-                      {t.item_type === 'image' ? '作品' : '提示词'}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2">
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: STATUS_MAP[t.status]?.color + '20', color: STATUS_MAP[t.status]?.color }}>
-                      {STATUS_MAP[t.status]?.label || t.status}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{t.total_items}</td>
-                  <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{t.processed_items}</td>
-                  <td className="px-3 py-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{t.created_at?.slice(0, 19)}</td>
-                  <td className="px-3 py-2">
-                    <button onClick={() => { setActiveDetail(null); (mode==='classification'?adminAPI.getClassificationTask(t.id):adminAPI.getAuditTask(t.id)).then(r => setActiveDetail(r.data)) }} className="text-xs font-medium hover:underline" style={{ color: 'var(--accent)' }}>
-                      查看详情
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {totalPages > 1 && (
-          <div className="flex justify-center gap-2">
-            <button onClick={() => setActivePage(Math.max(1, activePage - 1))} disabled={activePage === 1} className="px-3 py-1 rounded-lg text-xs" style={{ color: 'var(--text-secondary)' }}>上一页</button>
-            <span className="text-xs px-2 py-1" style={{ color: 'var(--text-secondary)' }}>{activePage}/{totalPages}</span>
-            <button onClick={() => setActivePage(Math.min(totalPages, activePage + 1))} disabled={activePage === totalPages} className="px-3 py-1 rounded-lg text-xs" style={{ color: 'var(--text-secondary)' }}>下一页</button>
-          </div>
-        )}
-
-        {/* 实时日志区域 */}
-        {showLiveLogs && (
-          <div className="rounded-2xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
-            <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid var(--border-color)' }}>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
-                  任务 #{liveTaskId} 实时输出
-                </span>
-                {liveLogs.some(l => l.type === 'complete') ? (
-                  <span className="px-2 py-0.5 rounded-full text-xs" style={{ background: 'var(--color-success)20', color: 'var(--color-success)' }}>已完成</span>
-                ) : (
-                  <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--accent)' }}>
-                    <Loader2 size={12} className="animate-spin" /> 处理中
-                  </span>
-                )}
-              </div>
-              <button onClick={() => setShowLiveLogs(false)} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
-                <X size={14} />
-              </button>
-            </div>
-            <div className="p-3 text-xs font-mono overflow-auto max-h-80" style={{ color: 'var(--text-primary)', background: 'var(--bg-ai-bubble)' }}>
-              {liveLogs.length === 0 ? (
-                <span style={{ color: 'var(--text-secondary)' }}>等待输出...</span>
-              ) : liveLogs.map((log, i) => (
-                <div key={i} className="mb-1">
-                  {log.type === 'token' ? (
-                    <span>{log.message}</span>
-                  ) : log.type === 'error' ? (
-                    <span style={{ color: 'var(--color-error)' }}>[错误] {log.message}</span>
-                  ) : log.type === 'result' ? (
-                    <span style={{ color: 'var(--color-success)' }}>[结果] {log.message}</span>
-                  ) : log.type === 'complete' ? (
-                    <span style={{ color: 'var(--color-success)' }}>[完成] {log.message}</span>
-                  ) : (
-                    <span style={{ color: 'var(--text-secondary)' }}>[信息] {log.message}</span>
-                  )}
-                </div>
-              ))}
-              <div ref={logEndRef} />
-            </div>
-          </div>
-        )}
-
-        {/* LLM 调试区域 */}
-        {mode==='classification'&&<LLMDebugPanel createType={createType} />}
-        {mode==='title'&&<TitleManagePanel />}
-        </>}
+        <AdminClassificationModeTabs mode={mode} modeTabs={modeTabs} onSwitch={switchMode} />
+        {mode === 'title' && <AdminTitleManagePanel />}
+        {mode === 'categories' && <AdminCategoryManagePanel categories={categories} categoryDraft={categoryDraft} setCategoryDraft={setCategoryDraft} savingCategory={savingCategory} handleSaveCategory={handleSaveCategory} handleDeleteCategory={handleDeleteCategory} />}
+        {(mode==='classification'||mode==='audit')&&<AdminAiTaskListPanel mode={mode} activeTasks={decoratedTasks} activeTotal={activeTotal} activePage={activePage} setActivePage={setActivePage} createType={createType} setCreateType={setCreateType} taskLimit={taskLimit} setTaskLimit={setTaskLimit} categories={categories} reviewCategory={reviewCategory} setReviewCategory={setReviewCategory} reviewing={reviewing} creating={creating} onRefreshTasks={mode==='classification'?onRefreshTasks:onRefreshAuditTasks} onCreate={mode==='classification'?handleCreate:handleCreateAudit} onReview={handleReview} onOpenDetail={async taskId=>{setActiveDetail(null);const resp=mode==='classification'?await adminAPI.getClassificationTask(taskId):await adminAPI.getAuditTask(taskId);setActiveDetail(resp.data)}} showLiveLogs={showLiveLogs} setShowLiveLogs={setShowLiveLogs} liveTaskId={liveTaskId} liveLogs={liveLogs} logEndRef={logEndRef} renderDebug={mode==='classification'&&<AdminClassificationDebugPanel createType={createType} />} />}
+      </div>
+    )
+  }
+  if (mode === 'title' || mode === 'categories') {
+    return (
+      <div className="space-y-4">
+        <AdminClassificationModeTabs mode={mode} modeTabs={modeTabs} onSwitch={switchMode} />
+        {mode === 'title' ? <AdminTitleManagePanel /> : <AdminCategoryManagePanel categories={categories} categoryDraft={categoryDraft} setCategoryDraft={setCategoryDraft} savingCategory={savingCategory} handleSaveCategory={handleSaveCategory} handleDeleteCategory={handleDeleteCategory} />}
       </div>
     )
   }
 
-  const filteredResults = getFilteredResults()
+  const filteredResults = getFilteredResults().map(r=>({ ...r, display_status: getResultDisplayStatus(r) }))
   const statusInfo = STATUS_MAP[activeDetail.status]
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        {[
-          { k: 'classification', l: '分类任务' },
-          { k: 'audit', l: '内容审核' },
-          { k: 'title', l: '标题生成' },
-          { k: 'categories', l: '分类管理' },
-        ].map(i => (
-          <button
-            key={i.k}
-            onClick={() => { setMode(i.k); setSelected(new Set()); setAuditSelected(new Set()) }}
-            className="px-3 py-1.5 rounded-2xl text-xs font-medium border"
-            style={mode === i.k
-              ? { background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)' }
-              : { borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
-          >
-            {i.l}
-          </button>
-        ))}
-      </div>
-      <div className="flex items-center gap-3">
-        <button onClick={() => { setActiveDetail(null); setActiveSelected(new Set()) }} className="flex items-center gap-1 text-sm hover:underline" style={{ color: 'var(--accent)' }}>
-          <ArrowLeft size={16} /> 返回列表
-        </button>
-        <span className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{mode==='classification'?'分类':'审核'}任务 #{activeDetail.id}</span>
-        <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: statusInfo?.color + '20', color: statusInfo?.color }}>
-          {statusInfo?.label || activeDetail.status}
-        </span>
-        {activeDetail.status === 'processing' && (
-          <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
-            <Loader2 size={14} className="animate-spin" /> {activeDetail.processed_items}/{activeDetail.total_items}
-          </div>
-        )}
-      </div>
-
-      {activeDetail.status === 'processing' && (
-        <div className="w-full rounded-full h-2" style={{ background: 'var(--border-color)' }}>
-          <div className="h-2 rounded-full transition-all" style={{ width: `${(activeDetail.processed_items / activeDetail.total_items * 100)}%`, background: 'var(--accent)' }} />
-        </div>
-      )}
-
-      <div className="flex items-center gap-2 flex-wrap">
-        {(mode==='classification'?['all', 'pending', 'applied', 'rejected', 'failed']:['all', 'pending', 'applied', 'rejected']).map(f => (
-          <button key={f} onClick={() => setResultFilter(f)} className="px-3 py-1 rounded-full text-xs font-medium transition-colors"
-            style={{ background: resultFilter === f ? 'var(--accent)' : 'var(--bg-ai-bubble)', color: resultFilter === f ? '#fff' : 'var(--text-secondary)', border: '1px solid', borderColor: resultFilter === f ? 'var(--accent)' : 'var(--border-color)' }}>
-            {f === 'all' ? '全部' : RESULT_STATUS_MAP[f]?.label} ({f === 'all' ? activeDetail.results?.length || 0 : f === 'failed' ? (activeDetail.results?.filter(r => r.status === 'failed' || (r.status === 'pending' && r.suggested_category === '_error')).length || 0) : (activeDetail.results?.filter(r => r.status === f).length || 0)})
-          </button>
-        ))}
-      </div>
-
-      {(activeDetail.status === 'pending_review' || activeDetail.status === 'processing') && (
-        <div className="flex items-center gap-2">
-          <button onClick={toggleSelectAll} className="px-3 py-1.5 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
-            {activeSelected.size === filteredResults.length ? '取消全选' : '全选'}
-          </button>
-          {activeSelected.size > 0 && (
-            <>
-              <button onClick={handleApprove} className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-medium bg-[var(--color-success)] text-white hover:opacity-90">
-                <Check size={14} /> 通过 {activeSelected.size} 项
-              </button>
-              <button onClick={handleReject} className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl text-xs font-medium bg-[var(--color-error)] text-white hover:opacity-90">
-                <X size={14} /> 拒绝 {activeSelected.size} 项
-              </button>
-            </>
-          )}
-        </div>
-      )}
-
-      <div className="rounded-2xl border overflow-x-auto" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
-        <table className="w-full text-sm">
-          <thead>
-            <tr style={{ background: 'var(--bg-ai-bubble)' }}>
-              {(activeDetail.status === 'pending_review' || activeDetail.status === 'processing') && <th className="px-3 py-2 w-8"></th>}
-              <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>项目信息</th>
-              <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>{mode==='classification'?'当前分类':'当前分类/作者'}</th>
-              <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>{mode==='classification'?'建议分类':'风险建议'}</th>
-              <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>置信度</th>
-              <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>状态</th>
-              {(activeDetail.status === 'pending_review' || activeDetail.status === 'processing') && <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>操作</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {filteredResults.length === 0 ? (
-              <tr><td colSpan={(activeDetail.status === 'pending_review' || activeDetail.status === 'processing') ? 7 : 5} className="px-3 py-8 text-center" style={{ color: 'var(--text-secondary)' }}>暂无数据</td></tr>
-            ) : filteredResults.map(r => (
-              <tr key={r.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
-                {(activeDetail.status === 'pending_review' || activeDetail.status === 'processing') && (
-                  <td className="px-3 py-2">
-                    <input type="checkbox" checked={activeSelected.has(r.id)} onChange={() => toggleSelect(r.id)} className="rounded" />
-                  </td>
-                )}
-                <td className="px-3 py-2 max-w-xs">
-                  <div className="flex items-center gap-2">
-                    {mode==='audit'&&r.item_thumb_url&&<img src={r.item_thumb_url} alt="" className="w-10 h-10 rounded-lg object-cover border shrink-0" style={{ borderColor:'var(--border-color)' }} loading="lazy" />}
-                    <div className="min-w-0">
-                      <div className="font-medium truncate" style={{ color: 'var(--text-primary)' }}>{r.item_name || '(无标题)'}</div>
-                      <div className="text-xs truncate mt-0.5" style={{ color: 'var(--text-secondary)' }}>{r.item_prompt?.slice(0, 80)}</div>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-3 py-2">
-                  {mode==='classification' ? (r.item_category ? (
-                    <span className="px-2 py-0.5 rounded-full text-xs" style={{ background: 'var(--bg-ai-bubble)', color: 'var(--text-secondary)' }}>{r.item_category}</span>
-                  ) : (
-                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>无</span>
-                  )) : <div className="space-y-1"><div>{r.item_category ? <span className="px-2 py-0.5 rounded-full text-xs" style={{ background: 'var(--bg-ai-bubble)', color: 'var(--text-secondary)' }}>{r.item_category}</span> : <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>无分类</span>}</div><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>{r.item_author || '-'}</div></div>}
-                </td>
-                <td className="px-3 py-2">
-                  {mode==='classification' ? (r.suggested_category && r.suggested_category !== '_error' && r.suggested_category !== '_removed' && r.status !== 'failed' ? (
-                    <CategorySuggestion
-                      result={r}
-                      categories={categories}
-                      canEdit={activeDetail.status === 'pending_review' && r.status === 'pending' && r.suggested_category !== '_error'}
-                      onRemove={() => handleRemoveSuggestion(r.id)}
-                      onChange={handleChangeCategory}
-                    />
-                  ) : r.suggested_category === '_removed' ? (
-                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>已移除</span>
-                  ) : (
-                    <span className="text-xs" style={{ color: 'var(--color-error)' }}>分类失败</span>
-                  )):<AuditSuggestion result={r} canEdit={activeDetail.status==='pending_review'&&r.status==='pending'} onChange={async data=>{await adminAPI.updateAuditResult(r.id,data);const { data:next } = await adminAPI.getAuditTask(activeDetail.id);setAuditDetail(next)}}/>}
-                </td>
-                <td className="px-3 py-2">
-                  <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{CONFIDENCE_MAP[r.confidence] || '-'}</span>
-                </td>
-                <td className="px-3 py-2">
-                  {(() => { const s = getResultDisplayStatus(r); return (
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: s.color + '20', color: s.color }}>
-                      {s.label}
-                    </span>
-                  )})()}
-                </td>
-                {(activeDetail.status === 'pending_review' || activeDetail.status === 'processing') && (
-                  <td className="px-3 py-2">
-                    {mode==='classification'&&r.status === 'pending' && r.suggested_category !== '_error' && r.status !== 'failed' && (
-                      <div className="flex gap-1">
-                        <button onClick={() => handleApproveSingle(r.id)} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--color-success)' }} title="通过">
-                          <Check size={14} />
-                        </button>
-                        <button onClick={() => handleRejectSingle(r.id)} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--color-error)' }} title="拒绝">
-                          <X size={14} />
-                        </button>
-                      </div>
-                    )}
-                    {mode==='classification'&&(r.status === 'failed' || (r.status === 'pending' && r.suggested_category === '_error')) && (
-                      <button onClick={() => handleRejectSingle(r.id)} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--color-error)' }} title="移除">
-                        <X size={14} />
-                      </button>
-                    )}
-                    {mode === 'audit' && r.status === 'pending' && (
-                      <div className="flex gap-1">
-                        <button
-                          onClick={async () => {
-                            await adminAPI.approveAudit(activeDetail.id, [r.id])
-                            const { data } = await adminAPI.getAuditTask(activeDetail.id)
-                            setAuditDetail(data)
-                            onRefreshAuditTasks()
-                          }}
-                          className="p-1 rounded-lg hover:bg-bg-hover"
-                          style={{ color: 'var(--color-success)' }}
-                          title="执行建议"
-                        >
-                          <Check size={14} />
-                        </button>
-                        <button
-                          onClick={async () => {
-                            await adminAPI.rejectAudit(activeDetail.id, [r.id])
-                            const { data } = await adminAPI.getAuditTask(activeDetail.id)
-                            setAuditDetail(data)
-                            onRefreshAuditTasks()
-                          }}
-                          className="p-1 rounded-lg hover:bg-bg-hover"
-                          style={{ color: 'var(--color-error)' }}
-                          title="忽略建议"
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
-                    )}
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-function AuditSuggestion({ result, canEdit, onChange }) {
-  const [draft, setDraft] = useState({
-    risk_level: result.risk_level || 'medium',
-    confidence: result.confidence || 'medium',
-    suggested_action: result.suggested_action || 'review',
-    reason_summary: result.reason_summary || '',
-    reason_detail: result.reason_detail || '',
-    hit_rules: Array.isArray(result.hit_rules) ? result.hit_rules.join('、') : (result.hit_rules || ''),
-  })
-
-  if (!canEdit) {
-    const riskColor = result.risk_level === 'high' ? 'var(--color-error)' : result.risk_level === 'medium' ? 'var(--color-warning)' : 'var(--color-success)'
-    const riskLabel = result.risk_level === 'high' ? '高风险' : result.risk_level === 'medium' ? '中风险' : '低风险'
-    const actionLabel = result.suggested_action === 'freeze' ? '建议冻结' : result.suggested_action === 'delete' ? '建议删除' : result.suggested_action === 'keep' ? '建议保留' : '建议复核'
-    return (
-      <div className="space-y-1">
-        <div className="flex items-center gap-1 flex-wrap">
-          <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: riskColor + '20', color: riskColor }}>
-            {riskLabel}
-          </span>
-          <span className="px-2 py-0.5 rounded-full text-xs" style={{ background: 'var(--bg-ai-bubble)', color: 'var(--text-secondary)' }}>
-            {actionLabel}
-          </span>
-        </div>
-        <div className="text-xs" style={{ color: 'var(--text-primary)' }}>{result.reason_summary || '-'}</div>
-        <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>{result.reason_detail || '-'}</div>
-        <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-          {Array.isArray(result.hit_rules) && result.hit_rules.length ? `命中：${result.hit_rules.join('、')}` : '未命中规则'}
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-1 min-w-[260px]">
-      <div className="flex gap-1 flex-wrap">
-        <select
-          value={draft.risk_level}
-          onChange={e => setDraft(prev => ({ ...prev, risk_level: e.target.value }))}
-          className="px-1.5 py-0.5 rounded-lg text-xs border"
-          style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
-        >
-          <option value="high">高风险</option>
-          <option value="medium">中风险</option>
-          <option value="low">低风险</option>
-        </select>
-        <select
-          value={draft.suggested_action}
-          onChange={e => setDraft(prev => ({ ...prev, suggested_action: e.target.value }))}
-          className="px-1.5 py-0.5 rounded-lg text-xs border"
-          style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
-        >
-          <option value="freeze">冻结</option>
-          <option value="delete">删除</option>
-          <option value="review">复核</option>
-          <option value="keep">保留</option>
-        </select>
-      </div>
-      <input
-        value={draft.reason_summary}
-        onChange={e => setDraft(prev => ({ ...prev, reason_summary: e.target.value }))}
-        placeholder="摘要"
-        className="w-full px-1.5 py-0.5 rounded-lg text-xs border"
-        style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
-      />
-      <input
-        value={draft.reason_detail}
-        onChange={e => setDraft(prev => ({ ...prev, reason_detail: e.target.value }))}
-        placeholder="原因"
-        className="w-full px-1.5 py-0.5 rounded-lg text-xs border"
-        style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
-      />
-      <input
-        value={draft.hit_rules}
-        onChange={e => setDraft(prev => ({ ...prev, hit_rules: e.target.value }))}
-        placeholder="命中词，用、分隔"
-        className="w-full px-1.5 py-0.5 rounded-lg text-xs border"
-        style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
-      />
-      <button
-        onClick={() => onChange({ ...draft, hit_rules: String(draft.hit_rules || '').split(/[、,，]/).map(s => s.trim()).filter(Boolean) })}
-        className="px-2 py-0.5 rounded-lg text-xs text-white"
-        style={{ background: 'var(--accent)' }}
-      >
-        保存
-      </button>
-    </div>
-  )
-}
-
-function CategorySuggestion({ result, categories, canEdit, onRemove, onChange }) {
-  const [showPicker, setShowPicker] = useState(false)
-  const [customSlug, setCustomSlug] = useState('')
-  const [customLabel, setCustomLabel] = useState('')
-
-  if (!canEdit) {
-    return (
-      <div className="flex items-center gap-1">
-        <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: result.is_new_category ? 'var(--color-warning)' + '20' : 'var(--accent)' + '20', color: result.is_new_category ? 'var(--color-warning)' : 'var(--accent)' }}>
-          {result.suggested_category_label || result.suggested_category}
-          {result.is_new_category && ' (新)'}
-        </span>
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center gap-1 flex-wrap">
-        <span className="px-2 py-0.5 rounded-full text-xs font-medium flex items-center gap-1" style={{ background: result.is_new_category ? 'var(--color-warning)' + '20' : 'var(--accent)' + '20', color: result.is_new_category ? 'var(--color-warning)' : 'var(--accent)' }}>
-          {result.suggested_category_label || result.suggested_category}
-          {result.is_new_category && ' (新)'}
-          <button onClick={onRemove} className="ml-0.5 hover:opacity-70"><X size={10} /></button>
-        </span>
-        <button onClick={() => setShowPicker(!showPicker)} className="p-0.5 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }} title="更改分类">
-          <Plus size={12} />
-        </button>
-      </div>
-      {showPicker && (
-        <div className="flex flex-wrap gap-1 mt-1">
-          {categories.filter(c => c.slug !== result.suggested_category).map(c => (
-            <button key={c.slug} onClick={() => { onChange(result.id, c.slug, c.label, false); setShowPicker(false) }}
-              className="px-2 py-0.5 rounded-full text-xs hover:opacity-80" style={{ background: 'var(--bg-ai-bubble)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)' }}>
-              {c.label}
-            </button>
-          ))}
-          <div className="flex gap-1 items-center">
-            <input value={customSlug} onChange={e => setCustomSlug(e.target.value)} placeholder="slug" className="w-20 px-1.5 py-0.5 rounded-lg text-xs border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }} />
-            <input value={customLabel} onChange={e => setCustomLabel(e.target.value)} placeholder="名称" className="w-20 px-1.5 py-0.5 rounded-lg text-xs border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }} />
-            <button onClick={() => { if (customSlug && customLabel) { onChange(result.id, customSlug, customLabel, true); setShowPicker(false); setCustomSlug(''); setCustomLabel('') } }}
-              className="px-2 py-0.5 rounded-lg text-xs text-white" style={{ background: 'var(--accent)' }}>添加</button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function LLMDebugPanel({ createType }) {
-  const [output, setOutput] = useState('')
-  const [testing, setTesting] = useState(false)
-  const [useStream, setUseStream] = useState(true)
-  const outputRef = useRef(null)
-
-  const handleTest = async () => {
-    setTesting(true)
-    setOutput('')
-
-    try {
-      if (useStream) {
-        const resp = await fetch('/api/admin/classification/test', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ stream: true, item_type: createType }),
-        })
-
-        const reader = resp.body.getReader()
-        const decoder = new TextDecoder()
-        let fullText = ''
-
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          const chunk = decoder.decode(value, { stream: true })
-          const lines = chunk.split('\n')
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6))
-                if (data.type === 'token') {
-                  fullText += data.text
-                  setOutput(fullText)
-                } else if (data.type === 'done') {
-                  fullText = data.full_text || fullText
-                  setOutput(fullText)
-                } else if (data.type === 'error') {
-                  setOutput(prev => prev + '\n[错误] ' + data.message)
-                }
-              } catch {}
-            }
-          }
-        }
-      } else {
-        const resp = await fetch('/api/admin/classification/test', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ stream: false, item_type: createType }),
-        })
-        const data = await resp.json()
-        if (data.type === 'done') {
-          setOutput(data.full_text)
-        } else if (data.type === 'error') {
-          setOutput('[错误] ' + data.message)
-        }
-      }
-    } catch (e) {
-      setOutput('[请求失败] ' + e.message)
-    }
-    setTesting(false)
-  }
-
-  const handleClear = () => setOutput('')
-
-  useEffect(() => {
-    if (outputRef.current) {
-      outputRef.current.scrollTop = outputRef.current.scrollHeight
-    }
-  }, [output])
-
-  return (
-    <div className="rounded-2xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
-      <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid var(--border-color)' }}>
-        <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>LLM 调试</span>
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-            <input type="checkbox" checked={useStream} onChange={e => setUseStream(e.target.checked)} className="rounded" />
-            流式
-          </label>
-          <button onClick={handleClear} disabled={testing} className="px-2 py-1 rounded-lg text-xs hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>
-            清空
-          </button>
-          <button onClick={handleTest} disabled={testing} className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium text-white hover:opacity-90 disabled:opacity-50" style={{ background: 'var(--accent)' }}>
-            {testing ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
-            {testing ? '测试中...' : '测试调用'}
-          </button>
-        </div>
-      </div>
-      <div ref={outputRef} className="p-3 text-xs font-mono overflow-auto max-h-60" style={{ color: 'var(--text-primary)', background: 'var(--bg-ai-bubble)' }}>
-        {output || <span style={{ color: 'var(--text-secondary)' }}>点击"测试调用"查看 LLM 输出...</span>}
-      </div>
-    </div>
-  )
-}
-
-function TitleManagePanel() {
-  const [itemType,setItemType]=useState('prompt')
-  const [query,setQuery]=useState('')
-  const [onlyMissing,setOnlyMissing]=useState(true)
-  const [page,setPage]=useState(1)
-  const [loading,setLoading]=useState(false)
-  const [applying,setApplying]=useState(false)
-  const [items,setItems]=useState([])
-  const [total,setTotal]=useState(0)
-  const [checked,setChecked]=useState(new Set())
-  const [previewLoading,setPreviewLoading]=useState('')
-  const load=useCallback(async()=>{setLoading(true);try{const { data }=await adminAPI.titleItems(itemType,query,page,20,onlyMissing);setItems(data?.items||[]);setTotal(data?.total||0)}catch{}setLoading(false)},[itemType,query,page,onlyMissing])
-  useEffect(()=>{load()},[load])
-  useEffect(()=>{setPage(1)},[itemType,onlyMissing,query])
-  const toggle=id=>setChecked(prev=>{const next=new Set(prev);next.has(id)?next.delete(id):next.add(id);return next})
-  const toggleAll=()=>{if(checked.size===items.length)setChecked(new Set());else setChecked(new Set(items.map(i=>i.id)))}
-  const generateOne=async item=>{setPreviewLoading(item.id);try{const { data }=await adminAPI.testTitle({ prompt:item.prompt||'', raw_name:item.name||'', prefer_prompt:itemType==='prompt' });setItems(prev=>prev.map(v=>v.id===item.id?{...v,suggested_title:data?.title||''}:v))}catch(e){setItems(prev=>prev.map(v=>v.id===item.id?{...v,suggested_title:e?.message||'生成失败'}:v))}setPreviewLoading('')}
-  const applySelected=async(force=false)=>{const ids=items.filter(i=>checked.has(i.id)).map(i=>i.id);if(!ids.length)return;setApplying(true);try{await adminAPI.applyTitles({ item_type:itemType, item_ids:ids, force });setChecked(new Set());await load()}catch{}setApplying(false)}
-  const totalPages = Math.ceil(total / 20)
-  return (
-    <div className="space-y-4">
-      <div className="rounded-2xl border p-4 space-y-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
-        <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>现有库标题管理</div>
-        <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-          这里处理现有提示词库和作品库，不是手动测试输入框。可先筛出缺标题项目，再生成并批量应用。
-        </div>
-        <div className="flex flex-wrap gap-2 items-center">
-          <select
-            value={itemType}
-            onChange={e => setItemType(e.target.value)}
-            className="px-3 py-2 rounded-2xl text-sm border"
-            style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
-          >
-            <option value="prompt">提示词库</option>
-            <option value="image">作品库</option>
-          </select>
-          <input
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="搜索标题、提示词、作者"
-            className="flex-1 min-w-[220px] px-3 py-2 rounded-2xl border text-sm"
-            style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
-          />
-          <label className="flex items-center gap-2 px-3 py-2 rounded-2xl border text-sm" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-secondary)' }}>
-            <input type="checkbox" checked={onlyMissing} onChange={e => setOnlyMissing(e.target.checked)} className="rounded" />
-            仅看缺标题
-          </label>
-          <button onClick={load} disabled={loading} className="px-4 py-2 rounded-2xl text-sm text-white disabled:opacity-50" style={{ background: 'var(--accent)' }}>
-            {loading ? '刷新中...' : '刷新'}
-          </button>
-        </div>
-      </div>
-      <div className="flex items-center justify-between">
-        <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-          共 {total} 项，当前 {items.length} 项，已选 {checked.size} 项
-        </div>
-        <div className="flex items-center gap-2">
-          {items.length > 0 && (
-            <button onClick={toggleAll} className="px-3 py-1.5 rounded-2xl text-xs border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
-              {checked.size === items.length ? '取消全选' : '全选'}
-            </button>
-          )}
-          <button onClick={() => applySelected(false)} disabled={applying || checked.size === 0} className="px-3 py-1.5 rounded-2xl text-xs text-white disabled:opacity-50" style={{ background: 'var(--accent)' }}>
-            {applying ? '应用中...' : '应用标题'}
-          </button>
-          <button onClick={() => applySelected(true)} disabled={applying || checked.size === 0} className="px-3 py-1.5 rounded-2xl text-xs text-white disabled:opacity-50" style={{ background: 'var(--color-warning)' }}>
-            强制覆盖
-          </button>
-        </div>
-      </div>
-      <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
-        <table className="w-full text-sm">
-          <thead>
-            <tr style={{ background: 'var(--bg-ai-bubble)' }}>
-              <th className="px-3 py-2 w-8"></th>
-              <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>项目</th>
-              <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>当前标题</th>
-              <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>建议标题</th>
-              <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-secondary)' }}>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={5} className="px-3 py-8 text-center" style={{ color: 'var(--text-secondary)' }}>加载中...</td></tr>
-            ) : items.length === 0 ? (
-              <tr><td colSpan={5} className="px-3 py-8 text-center" style={{ color: 'var(--text-secondary)' }}>暂无可处理项目</td></tr>
-            ) : items.map(item => (
-              <tr key={item.id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
-                <td className="px-3 py-2">
-                  <input type="checkbox" checked={checked.has(item.id)} onChange={() => toggle(item.id)} className="rounded" />
-                </td>
-                <td className="px-3 py-2">
-                  <div className="flex items-center gap-3">
-                    {item.thumb_url ? (
-                      <img src={item.thumb_url} alt="" className="w-12 h-12 rounded-lg object-cover border shrink-0" style={{ borderColor: 'var(--border-color)' }} loading="lazy" />
-                    ) : null}
-                    <div className="min-w-0">
-                      <div className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
-                        {itemType === 'prompt' ? '提示词库' : '作品库'} · {item.author || '-'} · {item.category || '未分类'}
-                      </div>
-                      <div className="font-medium truncate" style={{ color: 'var(--text-primary)' }}>{item.name || '(无标题)'}</div>
-                      <div className="text-xs truncate mt-1" style={{ color: 'var(--text-secondary)' }}>{item.prompt || '-'}</div>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{item.name || '-'}</td>
-                <td className="px-3 py-2" style={{ color: 'var(--accent)' }}>{item.suggested_title || '-'}</td>
-                <td className="px-3 py-2">
-                  <button
-                    onClick={() => generateOne(item)}
-                    disabled={previewLoading === item.id}
-                    className="px-3 py-1.5 rounded-2xl text-xs text-white disabled:opacity-50"
-                    style={{ background: 'var(--accent)' }}
-                  >
-                    {previewLoading === item.id ? '生成中...' : '生成建议'}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {totalPages > 1 && (
-        <div className="flex justify-center gap-2">
-          <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1} className="px-3 py-1 rounded-lg text-xs" style={{ color: 'var(--text-secondary)' }}>上一页</button>
-          <span className="text-xs px-2 py-1" style={{ color: 'var(--text-secondary)' }}>{page}/{totalPages}</span>
-          <button onClick={() => setPage(Math.min(totalPages, page + 1))} disabled={page === totalPages} className="px-3 py-1 rounded-lg text-xs" style={{ color: 'var(--text-secondary)' }}>下一页</button>
-        </div>
-      )}
+      <AdminClassificationModeTabs mode={mode} modeTabs={modeTabs} onSwitch={switchMode} />
+      <AdminAiTaskDetailPanel mode={mode} activeDetail={activeDetail} statusInfo={statusInfo} resultFilter={resultFilter} setResultFilter={setResultFilter} activeSelected={activeSelected} filteredResults={filteredResults} toggleSelectAll={toggleSelectAll} handleApprove={handleApprove} handleReject={handleReject} onBack={() => { setActiveDetail(null); setActiveSelected(new Set()) }} toggleSelect={toggleSelect} renderSuggestion={r=>mode==='classification' ? (r.suggested_category && r.suggested_category !== '_error' && r.suggested_category !== '_removed' && r.status !== 'failed' ? <AdminCategorySuggestion result={r} categories={categories} canEdit={activeDetail.status === 'pending_review' && r.status === 'pending' && r.suggested_category !== '_error'} onRemove={() => handleRemoveSuggestion(r.id)} onChange={handleChangeCategory} /> : r.suggested_category === '_removed' ? <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>已移除</span> : <span className="text-xs" style={{ color: 'var(--color-error)' }}>分类失败</span>) : <AdminAuditSuggestion result={r} canEdit={activeDetail.status==='pending_review'&&r.status==='pending'} onChange={data=>handleAuditSuggestionChange(r.id,data)} />} renderRowActions={r=>{if(mode==='classification'&&r.status === 'pending' && r.suggested_category !== '_error' && r.status !== 'failed') return <div className="flex gap-1"><button onClick={() => handleApproveSingle(r.id)} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--color-success)' }} title="通过"><Check size={14} /></button><button onClick={() => handleRejectSingle(r.id)} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--color-error)' }} title="拒绝"><X size={14} /></button></div>;if(mode==='classification'&&(r.status === 'failed' || (r.status === 'pending' && r.suggested_category === '_error'))) return <button onClick={() => handleRejectSingle(r.id)} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--color-error)' }} title="移除"><X size={14} /></button>;if(mode === 'audit' && r.status === 'pending') return <div className="flex gap-1"><button onClick={() => handleApproveAuditSingle(r.id)} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--color-success)' }} title="执行建议"><Check size={14} /></button><button onClick={() => handleRejectAuditSingle(r.id)} className="p-1 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--color-error)' }} title="忽略建议"><X size={14} /></button></div>;return null}} confidenceMap={CONFIDENCE_MAP} />
     </div>
   )
 }

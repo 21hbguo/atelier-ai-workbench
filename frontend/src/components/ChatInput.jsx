@@ -133,6 +133,7 @@ function createInputImageItem(input={},fallback=`reference-${Date.now()}`){
   const uploadedUrl=String(input?.uploadedUrl||'').trim();
   const uploadedStorageName=String(input?.uploadedStorageName||'').trim();
   const uploadStatus=input?.uploadStatus||(uploadedUrl&&(uploadedStorageName||uploadedUrl)?'success':'pending');
+  const uploadPhase=input?.uploadPhase||(uploadStatus==='success'?'done':'uploading');
   return{
     id:input?.id||createImageId(),
     name,
@@ -141,6 +142,7 @@ function createInputImageItem(input={},fallback=`reference-${Date.now()}`){
     url:input?.url||'',
     file,
     uploadStatus,
+    uploadPhase,
     uploadProgress:uploadStatus==='success'?100:Math.max(0,Math.min(100,Number(input?.uploadProgress)||0)),
     uploadedUrl,
     uploadedStorageName:uploadedStorageName||uploadedUrl,
@@ -156,6 +158,7 @@ function snapshotInputImages(list=[]){
     url:img?.url||'',
     file:img?.file||null,
     uploadStatus:img?.uploadStatus||'pending',
+    uploadPhase:img?.uploadPhase||(img?.uploadStatus==='success'?'done':'uploading'),
     uploadProgress:Number(img?.uploadProgress)||0,
     uploadedUrl:img?.uploadedUrl||'',
     uploadedStorageName:img?.uploadedStorageName||'',
@@ -168,6 +171,9 @@ function normalizeInputFile(file,fallback=`reference-${Date.now()}`){
   if((file?.size||0)>20*1024*1024)return null;
   const name=normalizeImageName(file?.name||fallback,type,fallback);
   return file instanceof File&&file.name===name?file:new File([file],name,{type:type||'image/png'})
+}
+function clampUploadingProgress(value){
+  return Math.max(0,Math.min(95,Number(value)||0))
 }
 function getClipboardImageFiles(event){
   const items=Array.from(event?.clipboardData?.items||[]);
@@ -677,6 +683,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
     updateImageItem(item.id,img=>({
       ...(img||item),
       uploadStatus:'uploading',
+      uploadPhase:'uploading',
       uploadProgress:0,
       uploadError:'',
       uploadedUrl:'',
@@ -697,7 +704,8 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
         onProgress:(percent)=>updateImageItem(item.id,img=>img&&img.uploadStatus!=='success'?{
           ...img,
           uploadStatus:'uploading',
-          uploadProgress:Math.max(0,Math.min(100,Number(percent)||0)),
+          uploadPhase:Number(percent)>=100?'processing':'uploading',
+          uploadProgress:clampUploadingProgress(percent),
           uploadError:''
         }:img)
       })
@@ -706,6 +714,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
         ...img,
         url:data?.url||img.url,
         uploadStatus:'success',
+        uploadPhase:'done',
         uploadProgress:100,
         uploadedUrl:data?.url||'',
         uploadedStorageName:data?.storage_name||data?.url||'',
@@ -716,6 +725,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
       updateImageItem(item.id,img=>img?{
         ...img,
         uploadStatus:'error',
+        uploadPhase:'uploading',
         uploadProgress:0,
         uploadedUrl:'',
         uploadedStorageName:'',
@@ -1041,34 +1051,34 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
             <Layers size={13} />
             <span>{type || '类型'}</span>
           </button>
-          <button
-            onClick={() => setShowSelector(showSelector === 'style' ? null : 'style')}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
-            style={{
-              background: style ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'var(--bg-card)',
-              borderColor: style ? 'var(--accent)' : 'var(--border-color)',
-              color: style ? 'var(--accent)' : 'var(--text-secondary)',
-            }}
-          >
-            <Palette size={13} />
-            <span>{style || '风格'}</span>
-          </button>
-          <button
-            onClick={() => setShowSelector(showSelector === 'mood' ? null : 'mood')}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
-            style={{
-              background: mood ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'var(--bg-card)',
-              borderColor: mood ? 'var(--accent)' : 'var(--border-color)',
-              color: mood ? 'var(--accent)' : 'var(--text-secondary)',
-            }}
-          >
-            <Wind size={13} />
-            <span>{mood || '氛围'}</span>
-          </button>
-          <button onClick={handleClearAll} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
-            <X size={13} />
-            <span>清空</span>
-          </button>
+            <button
+              onClick={() => setShowSelector(showSelector === 'style' ? null : 'style')}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
+              style={{
+                background: style ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'var(--bg-card)',
+                borderColor: style ? 'var(--accent)' : 'var(--border-color)',
+                color: style ? 'var(--accent)' : 'var(--text-secondary)',
+              }}
+            >
+              <Palette size={13} />
+              <span>{style || '风格'}</span>
+            </button>
+            <button
+              onClick={() => setShowSelector(showSelector === 'mood' ? null : 'mood')}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
+              style={{
+                background: mood ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'var(--bg-card)',
+                borderColor: mood ? 'var(--accent)' : 'var(--border-color)',
+                color: mood ? 'var(--accent)' : 'var(--text-secondary)',
+              }}
+            >
+              <Wind size={13} />
+              <span>{mood || '氛围'}</span>
+            </button>
+            <button onClick={handleClearAll} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
+              <X size={13} />
+              <span>清空</span>
+            </button>
         </div>
         <div
           className="rounded-2xl border transition-all duration-300"
@@ -1096,12 +1106,21 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
                   {img.uploadStatus==='uploading'&&(
                     <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
                       <div className="relative flex items-center justify-center w-9 h-9 rounded-full bg-black/45 text-white">
-                        <svg className="-rotate-90" width="30" height="30" viewBox="0 0 36 36">
-                          <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,.25)" strokeWidth="3"/>
-                          <circle cx="18" cy="18" r="15" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"
-                            strokeDasharray={`${Math.max(0,Math.min(100,Number(img.uploadProgress)||0))*0.94} 100`}/>
-                        </svg>
-                        <span className="absolute text-[9px] font-semibold">{Math.max(0,Math.min(100,Math.round(Number(img.uploadProgress)||0)))}%</span>
+                        {img.uploadPhase==='processing'?(
+                          <>
+                            <Loader2 size={15} className="animate-spin-slow" />
+                            <span className="absolute -bottom-3 text-[8px] font-semibold whitespace-nowrap">处理中</span>
+                          </>
+                        ):(
+                          <>
+                            <svg className="-rotate-90" width="30" height="30" viewBox="0 0 36 36">
+                              <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,.25)" strokeWidth="3"/>
+                              <circle cx="18" cy="18" r="15" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"
+                                strokeDasharray={`${Math.max(0,Math.min(100,Number(img.uploadProgress)||0))*0.94} 100`}/>
+                            </svg>
+                            <span className="absolute text-[9px] font-semibold">{Math.max(0,Math.min(100,Math.round(Number(img.uploadProgress)||0)))}%</span>
+                          </>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1123,7 +1142,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
           )}
           <div className="px-2 pt-2 pb-2">
             {(type || style || mood) && (
-              <div className="flex gap-1.5 mb-1 flex-wrap">
+              <div className="flex gap-1.5 mb-2 flex-wrap">
                 {type && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium" style={{ background: 'color-mix(in srgb, var(--accent) 15%, transparent)', color: 'var(--accent)' }}>
                     {type}
@@ -1180,8 +1199,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
               </div>
               <div className="min-w-0 flex items-center justify-end gap-1 flex-1">
                 {prompt.length > 0 && <span className="text-[10px] tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{prompt.length}</span>}
-                {sendDisabledReason&&!requestSubmitting&&<span className="text-[10px] flex-shrink-0 font-medium" style={{ color: hasErrorImages ? 'var(--color-error)' : 'var(--accent)' }}>{sendDisabledReason}</span>}
-                {requestSubmitting&&<span className="text-[10px] flex-shrink-0 font-medium" style={{ color: 'var(--accent)' }}>正在提交...</span>}
+                {!hasUploadingImages&&sendDisabledReason&&!requestSubmitting&&<span className="text-[10px] flex-shrink-0 font-medium" style={{ color: hasErrorImages ? 'var(--color-error)' : 'var(--accent)' }}>{sendDisabledReason}</span>}
                 <button
                   onClick={() => {
                     if(sendDisabledReason){setToast({ message: sendDisabledReason, type: 'error' });return}
