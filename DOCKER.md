@@ -7,8 +7,8 @@
 git clone <repo> && cd app_v1
 
 # 一键部署（自动安装 Docker、构建镜像、迁移数据）
-chmod +x deploy.sh
-./deploy.sh
+chmod +x deploy-first-time.sh
+./deploy-first-time.sh
 ```
 
 访问 `http://服务器IP:5173`
@@ -108,7 +108,7 @@ APP_PORT=8080 docker compose up -d
 2. 在新服务器部署：
    ```bash
    git clone <repo> && cd app_v1
-   ./deploy.sh
+   ./deploy-first-time.sh
    ```
 
 3. 导入数据：

@@ -5,6 +5,9 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
+export TZ=Asia/Shanghai
+PROJECT_NAME="$(basename "$(pwd)")"
+UPDATE_PACKAGE="../${PROJECT_NAME}_update.tar.gz"
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}   更新应用${NC}"
@@ -28,15 +31,10 @@ if [ "$CURRENT_TZ" != "$EXPECTED_TZ" ]; then
 fi
 
 # 检查是否有新版本包
-if [ -f "../app_v1_incremental.tar.gz" ]; then
-    echo -e "${YELLOW}[1/4] 发现增量包，正在解压...${NC}"
-    tar xzf ../app_v1_incremental.tar.gz --strip-components=1
-    rm ../app_v1_incremental.tar.gz
-    echo -e "  ${GREEN}增量更新完成${NC}"
-elif [ -f "../app_v1_update.tar.gz" ]; then
+if [ -f "$UPDATE_PACKAGE" ]; then
     echo -e "${YELLOW}[1/4] 发现更新包，正在解压...${NC}"
-    tar xzf ../app_v1_update.tar.gz --strip-components=1 --exclude='data' --exclude='.env' --exclude='*.db'
-    rm ../app_v1_update.tar.gz
+    tar xzf "$UPDATE_PACKAGE" --strip-components=1 --exclude='.env' --exclude='.env.*' --exclude='data/config.json' --exclude='data/.jwt_secret' --exclude='data/uploads' --exclude='data/images' --exclude='data/thumbs' --exclude='data/evo_images' --exclude='data/evo_thumbs' --exclude='data/backups' --exclude='data/*.db' --exclude='data/*.sqlite' --exclude='data/*.sqlite3'
+    rm "$UPDATE_PACKAGE"
     echo -e "  ${GREEN}代码更新完成${NC}"
 else
     echo -e "${YELLOW}[1/4] 未发现更新包，跳过代码更新${NC}"
@@ -63,7 +61,7 @@ docker compose run --rm app alembic upgrade head 2>/dev/null || echo -e "  ${YEL
 # 重启服务
 echo ""
 echo -e "${YELLOW}[4/4] 重启服务...${NC}"
-docker compose up -d
+docker compose up -d --force-recreate
 
 echo ""
 echo -e "${GREEN}========================================${NC}"

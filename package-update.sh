@@ -8,7 +8,7 @@ NC='\033[0m'
 export TZ=Asia/Shanghai
 
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}   打包增量包（更新用）${NC}"
+echo -e "${GREEN}   打包更新包${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
@@ -25,19 +25,25 @@ echo ""
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_NAME=$(basename "$PROJECT_DIR")
 PARENT_DIR=$(dirname "$PROJECT_DIR")
-OUTPUT="$PARENT_DIR/${PROJECT_NAME}_incremental.tar.gz"
+OUTPUT="$PARENT_DIR/${PROJECT_NAME}_update.tar.gz"
 
 # 检查上次打包时间
-if [ ! -f "$PROJECT_DIR/.last_full_package" ] && [ ! -f "$PROJECT_DIR/.last_incremental_package" ]; then
+if [ ! -f "$PROJECT_DIR/.last_all_package" ] && [ ! -f "$PROJECT_DIR/.last_update_package" ] && [ ! -f "$PROJECT_DIR/.last_full_package" ] && [ ! -f "$PROJECT_DIR/.last_incremental_package" ]; then
     echo -e "${YELLOW}[警告] 未找到上次打包时间，将使用完整包${NC}"
-    echo -e "${YELLOW}请先运行 package-full.sh${NC}"
+    echo -e "${YELLOW}请先运行 package-all.sh${NC}"
     exit 1
 fi
 
 # 获取上次打包时间
-if [ -f "$PROJECT_DIR/.last_incremental_package" ]; then
+if [ -f "$PROJECT_DIR/.last_update_package" ]; then
+    LAST_PACKAGE=$(cat "$PROJECT_DIR/.last_update_package")
+    LAST_PACKAGE_FILE="$PROJECT_DIR/.last_update_package"
+elif [ -f "$PROJECT_DIR/.last_incremental_package" ]; then
     LAST_PACKAGE=$(cat "$PROJECT_DIR/.last_incremental_package")
     LAST_PACKAGE_FILE="$PROJECT_DIR/.last_incremental_package"
+elif [ -f "$PROJECT_DIR/.last_all_package" ]; then
+    LAST_PACKAGE=$(cat "$PROJECT_DIR/.last_all_package")
+    LAST_PACKAGE_FILE="$PROJECT_DIR/.last_all_package"
 else
     LAST_PACKAGE=$(cat "$PROJECT_DIR/.last_full_package")
     LAST_PACKAGE_FILE="$PROJECT_DIR/.last_full_package"
@@ -58,7 +64,7 @@ if [ "$INCLUDE_DATA" = true ]; then
     fi
 fi
 
-echo -e "${YELLOW}[2/2] 正在打包增量文件...${NC}"
+echo -e "${YELLOW}[2/2] 正在打包更新文件...${NC}"
 cd "$PROJECT_DIR"
 
 # 查找有变化的文件
@@ -71,6 +77,10 @@ CHANGED_FILES=$(find . -type f -newer "$LAST_PACKAGE_FILE" \
     ! -name '*.pyc' \
     ! -name '*.tar.gz' \
     ! -name '.last_*_package' \
+    ! -name '.last_full_package' \
+    ! -name '.last_incremental_package' \
+    ! -name '.last_all_package' \
+    ! -name '.last_update_package' \
     2>/dev/null || true)
 
 if [ -z "$CHANGED_FILES" ]; then
@@ -79,7 +89,7 @@ if [ -z "$CHANGED_FILES" ]; then
     exit 0
 fi
 
-# 打包增量文件
+# 打包更新文件
 cd "$PARENT_DIR"
 
 EXCLUDES=(
@@ -91,7 +101,7 @@ EXCLUDES=(
     --exclude='*.tar.gz'
     --exclude='.claude'
     --exclude='markdown'
-    --newer-mtime="$LAST_PACKAGE_FILE"
+    --newer="$LAST_PACKAGE_FILE"
 )
 
 if [ "$INCLUDE_DATA" = false ]; then
@@ -104,7 +114,7 @@ SIZE=$(du -h "$OUTPUT" | cut -f1)
 FILE_COUNT=$(tar tzf "$OUTPUT" | wc -l)
 
 # 记录打包时间
-date +%s > "$PROJECT_DIR/.last_incremental_package"
+date +%s > "$PROJECT_DIR/.last_update_package"
 
 echo ""
 echo -e "${GREEN}打包完成！${NC}"
@@ -119,5 +129,5 @@ echo -e "  ${YELLOW}scp ${OUTPUT} user@server:/path/${PROJECT_NAME}/../${NC}"
 echo -e ""
 echo -e "  ${YELLOW}# 在服务器上执行更新${NC}"
 echo -e "  ${YELLOW}cd ${PROJECT_NAME}${NC}"
-echo -e "  ${YELLOW}./update.sh${NC}"
+echo -e "  ${YELLOW}./deploy-update.sh${NC}"
 echo ""

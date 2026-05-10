@@ -56,7 +56,7 @@ if [ "$INCLUDE_DATA" = true ]; then
 fi
 
 # 记录打包时间
-date +%s > "$PROJECT_DIR/.last_full_package"
+date +%s > "$PROJECT_DIR/.last_all_package"
 
 echo -e "${YELLOW}[2/2] 正在打包...${NC}"
 cd "$PARENT_DIR"
@@ -92,5 +92,5 @@ echo -e ""
 echo -e "  ${YELLOW}# 在服务器上解压并部署${NC}"
 echo -e "  ${YELLOW}tar xzf $(basename "$OUTPUT")${NC}"
 echo -e "  ${YELLOW}cd ${PROJECT_NAME}${NC}"
-echo -e "  ${YELLOW}./deploy.sh${NC}"
+echo -e "  ${YELLOW}./deploy-first-time.sh${NC}"
 echo ""
