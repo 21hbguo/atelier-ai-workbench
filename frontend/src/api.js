@@ -241,7 +241,7 @@ export const adminAPI = {
   approveAudit: (taskId, resultIds) => api.post(`/admin/audit/tasks/${taskId}/approve`, { result_ids: resultIds }),
   rejectAudit: (taskId, resultIds) => api.post(`/admin/audit/tasks/${taskId}/reject`, { result_ids: resultIds }),
   updateAuditResult: (resultId, data) => api.post(`/admin/audit/results/${resultId}`, data),
-  titleItems: (itemType = 'prompt', query = '', page = 1, size = 20, onlyMissing = true) => api.get('/admin/title/items', { params: { item_type: itemType, query, page, size, only_missing: onlyMissing } }),
+  titleItems: (itemType = 'prompt', query = '', page = 1, size = 20, onlyMissing = true, filters = {}) => { const params = { item_type: itemType, query, page, size, only_missing: onlyMissing }; if (filters.language) params.language = filters.language; if (filters.minChars !== '' && filters.minChars != null) params.min_chars = filters.minChars; if (filters.maxChars !== '' && filters.maxChars != null) params.max_chars = filters.maxChars; return api.get('/admin/title/items', { params }) },
   applyTitles: data => api.post('/admin/title/apply', data),
   testTitle: data => api.post('/admin/title/test', data),
 }

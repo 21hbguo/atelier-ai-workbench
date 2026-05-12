@@ -41,6 +41,11 @@ class GenGateway:
             h["opened_until"]=cls._now()+timedelta(seconds=cooldown)
         cls._health[provider_id]=h
     @classmethod
+    def _mark_business_fail(cls, provider_id: str):
+        h=cls._health.get(provider_id) or {"fails":0}
+        h["last_business_fail"]=cls._now()
+        cls._health[provider_id]=h
+    @classmethod
     def resolve_model(cls, model_id: Optional[str]) -> Dict[str, Any]:
         models=get_generation_models() or {}
         final_model_id=model_id or get_default_model_id()
@@ -80,8 +85,11 @@ class GenGateway:
                 tried.append({"provider_id":pid,"ok":True})
                 return {"model_id":chain["model_id"],"provider_id":pid,"external_task_id":ret["external_task_id"],"provider_trace":tried}
             except Exception as e:
-                cls._mark_fail(pid,conf)
                 retryable=impl.is_retryable_error(e) if hasattr(impl,"is_retryable_error") else False
+                if retryable:
+                    cls._mark_fail(pid,conf)
+                else:
+                    cls._mark_business_fail(pid)
                 tried.append({"provider_id":pid,"ok":False,"retryable":bool(retryable),"error":str(e)})
                 errors.append(str(e))
                 if not retryable: break

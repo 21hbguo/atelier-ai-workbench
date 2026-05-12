@@ -8,6 +8,9 @@ export default function AdminTitleManagePanel() {
   const [itemType,setItemType]=useState('prompt')
   const [query,setQuery]=useState('')
   const [onlyMissing,setOnlyMissing]=useState(true)
+  const [language,setLanguage]=useState('all')
+  const [minChars,setMinChars]=useState('')
+  const [maxChars,setMaxChars]=useState('')
   const [page,setPage]=useState(1)
   const [loading,setLoading]=useState(false)
   const [applying,setApplying]=useState(false)
@@ -15,13 +18,31 @@ export default function AdminTitleManagePanel() {
   const [total,setTotal]=useState(0)
   const [checked,setChecked]=useState(new Set())
   const [previewLoading,setPreviewLoading]=useState('')
-  const load=useCallback(async()=>{setLoading(true);try{const { data }=await adminAPI.titleItems(itemType,query,page,20,onlyMissing);setItems(data?.items||[]);setTotal(data?.total||0)}catch{}setLoading(false)},[itemType,query,page,onlyMissing])
+  const [applyingId,setApplyingId]=useState('')
+  const load=useCallback(async()=>{setLoading(true);try{const { data }=await adminAPI.titleItems(itemType,query,page,20,onlyMissing,{language,minChars,maxChars});setItems(data?.items||[]);setTotal(data?.total||0)}catch{}setLoading(false)},[itemType,query,page,onlyMissing,language,minChars,maxChars])
   useEffect(()=>{load()},[load])
-  useEffect(()=>{setPage(1);setChecked(new Set())},[itemType,onlyMissing,query])
+  useEffect(()=>{setPage(1);setChecked(new Set())},[itemType,onlyMissing,query,language,minChars,maxChars])
   const toggle=id=>setChecked(prev=>{const next=new Set(prev);next.has(id)?next.delete(id):next.add(id);return next})
   const toggleAll=()=>{if(checked.size===items.length)setChecked(new Set());else setChecked(new Set(items.map(i=>i.id)))}
   const generateOne=async item=>{setPreviewLoading(item.id);try{const { data }=await adminAPI.testTitle({ prompt:getItemPrompt(item), raw_name:getItemName(item), prefer_prompt:itemType==='prompt' });setItems(prev=>prev.map(v=>v.id===item.id?{...v,suggested_title:data?.title||''}:v))}catch(e){setItems(prev=>prev.map(v=>v.id===item.id?{...v,suggested_title:e?.message||'生成失败'}:v))}setPreviewLoading('')}
-  const applySelected=async(force=false)=>{const ids=items.filter(i=>checked.has(i.id)).map(i=>i.id);if(!ids.length)return;setApplying(true);try{await adminAPI.applyTitles({ item_type:itemType, item_ids:ids, force });setChecked(new Set());await load()}catch{}setApplying(false)}
+  const applySelected=async(force=false)=>{
+    const targets=items.filter(i=>checked.has(i.id));
+    if(!targets.length)return;
+    setApplying(true);
+    for(const item of targets){
+      setApplyingId(item.id);
+      try{
+        const {data}=await adminAPI.applyTitles({ item_type:itemType, item_ids:[item.id], force });
+        const updated=(data?.updated||[]).find(v=>String(v.id)===String(item.id));
+        const skipped=(data?.skipped||[]).find(v=>String(v.id)===String(item.id));
+        if(updated?.title)setItems(prev=>prev.map(v=>v.id===item.id?{...v,name:updated.title,title:updated.title,suggested_title:updated.title,apply_status:'已应用'}:v));
+        else setItems(prev=>prev.map(v=>v.id===item.id?{...v,apply_status:skipped?.reason||'已跳过'}:v));
+        setChecked(prev=>{const next=new Set(prev);next.delete(item.id);return next})
+      }catch(e){setItems(prev=>prev.map(v=>v.id===item.id?{...v,apply_status:e?.message||'处理失败'}:v))}
+    }
+    setApplyingId('');
+    setApplying(false);
+  }
   const totalPages = Math.ceil(total / 20)
   return (
     <div className="space-y-4">
@@ -38,6 +59,15 @@ export default function AdminTitleManagePanel() {
             <input type="checkbox" checked={onlyMissing} onChange={e => setOnlyMissing(e.target.checked)} className="rounded" />
             仅看缺标题
           </label>
+          <select value={language} onChange={e=>setLanguage(e.target.value)} className="px-3 py-2 rounded-2xl text-sm border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+            <option value="all">全部语言</option>
+            <option value="zh">中文</option>
+            <option value="en">英文</option>
+            <option value="mixed">中英混合</option>
+            <option value="other">其他</option>
+          </select>
+          <input value={minChars} onChange={e=>setMinChars(e.target.value.replace(/[^\d]/g,''))} placeholder="最少字数" className="w-24 px-3 py-2 rounded-2xl border text-sm" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+          <input value={maxChars} onChange={e=>setMaxChars(e.target.value.replace(/[^\d]/g,''))} placeholder="最多字数" className="w-24 px-3 py-2 rounded-2xl border text-sm" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
           <button onClick={load} disabled={loading} className="px-4 py-2 rounded-2xl text-sm text-white disabled:opacity-50" style={{ background: 'var(--accent)' }}>
             {loading ? '刷新中...' : '刷新'}
           </button>
@@ -81,7 +111,7 @@ export default function AdminTitleManagePanel() {
                   </div>
                 </td>
                 <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{getItemName(item) || '-'}</td>
-                <td className="px-3 py-2" style={{ color: 'var(--accent)' }}>{item.suggested_title || '-'}</td>
+                <td className="px-3 py-2" style={{ color: 'var(--accent)' }}>{applyingId===item.id?'处理中...':(item.apply_status||item.suggested_title||'-')}</td>
                 <td className="px-3 py-2">
                   <button onClick={() => generateOne(item)} disabled={previewLoading === item.id} className="px-3 py-1.5 rounded-2xl text-xs text-white disabled:opacity-50" style={{ background: 'var(--accent)' }}>
                     {previewLoading === item.id ? '生成中...' : '生成建议'}

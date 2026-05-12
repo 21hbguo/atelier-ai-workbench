@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Coins } from 'lucide-react'
 import ChatInput from '../components/ChatInput'
 import MainLayout from '../components/MainLayout'
+import PortfolioShowcaseCard from '../components/PortfolioShowcaseCard'
 import { useAppDialog } from '../components/AppDialogProvider'
 import { taskAPI, pointsAPI, configAPI } from '../api'
 import { readUser } from '../auth'
@@ -84,6 +85,7 @@ export default function ChatPage(){
       <ChatInput ref={inputRef} onSubmit={handleSubmit} loading={loading} requestCost={requestCost} optimizeCost={optimizeCost} refineOptimizeCost={refineOptimizeCost}/>
     </div>
   )
+  const handleUsePrompt=useCallback((prompt)=>{inputRef.current?.setPrompt(String(prompt||''))},[])
 
   return(
     <MainLayout dragProps={dragProps}>
@@ -113,6 +115,9 @@ export default function ChatPage(){
                   </button>
                 </div>
               </div>
+            </div>
+            <div className="mx-auto flex w-full max-w-6xl justify-center px-4 pt-6 sm:pt-10 lg:px-6">
+              <PortfolioShowcaseCard onUsePrompt={handleUsePrompt} />
             </div>
           </div>
         </div>

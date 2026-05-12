@@ -1388,17 +1388,37 @@ async def test_title_generation(body: dict, admin=Depends(require_admin)):
     return {"title": title, "prompt": prompt, "raw_name": raw_name}
 
 @router.get("/title/items")
-async def list_title_items(item_type: str = Query("prompt"), query: str = Query(""), page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), only_missing: bool = Query(True), admin=Depends(require_admin)):
+async def list_title_items(item_type: str = Query("prompt"), query: str = Query(""), page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), only_missing: bool = Query(True), language: str = Query("all"), min_chars: int = Query(None, ge=0), max_chars: int = Query(None, ge=0), admin=Depends(require_admin)):
     if item_type not in {"prompt", "image"}:
         raise HTTPException(status_code=400, detail="item_type 仅支持 prompt 或 image")
+    if language not in {"all","zh","en","mixed","other"}:
+        raise HTTPException(status_code=400, detail="language 仅支持 all/zh/en/mixed/other")
     offset = (page - 1) * size
     q = f"%{query.strip()}%" if query and query.strip() else ""
     with get_db() as conn:
         if item_type == "prompt":
-            where = ["COALESCE(is_deleted,FALSE)=FALSE"]
+            title_expr = "COALESCE(name,'')"
+            has_is_deleted = conn.execute("SELECT 1 FROM information_schema.columns WHERE table_name='prompts' AND column_name='is_deleted'").fetchone() is not None
+            where = ["COALESCE(is_frozen,FALSE)=FALSE"]
+            if has_is_deleted:
+                where.append("COALESCE(is_deleted,FALSE)=FALSE")
             params = []
             if only_missing:
                 where.append("(name IS NULL OR BTRIM(name) = '' OR CHAR_LENGTH(BTRIM(name)) <= 2)")
+            if min_chars is not None:
+                where.append(f"CHAR_LENGTH(BTRIM({title_expr})) >= %s")
+                params.append(min_chars)
+            if max_chars is not None:
+                where.append(f"CHAR_LENGTH(BTRIM({title_expr})) <= %s")
+                params.append(max_chars)
+            if language == "zh":
+                where.append(f"{title_expr} ~ '[一-龥]' AND {title_expr} !~ '[A-Za-z]'")
+            elif language == "en":
+                where.append(f"{title_expr} ~ '[A-Za-z]' AND {title_expr} !~ '[一-龥]'")
+            elif language == "mixed":
+                where.append(f"{title_expr} ~ '[一-龥]' AND {title_expr} ~ '[A-Za-z]'")
+            elif language == "other":
+                where.append(f"{title_expr} !~ '[一-龥]' AND {title_expr} !~ '[A-Za-z]'")
             if q:
                 where.append("(COALESCE(name,'') ILIKE %s OR COALESCE(prompt,'') ILIKE %s OR COALESCE(author,'') ILIKE %s)")
                 params.extend([q, q, q])
@@ -1407,10 +1427,25 @@ async def list_title_items(item_type: str = Query("prompt"), query: str = Query(
             rows = conn.execute(f"SELECT id,name,prompt,author,category,image_path,created_at FROM prompts WHERE {where_sql} ORDER BY created_at DESC,id DESC LIMIT %s OFFSET %s", [*params, size, offset]).fetchall()
             items = [{"id": str(r["id"]), "item_type": "prompt", "name": r["name"] or "", "prompt": r["prompt"] or "", "author": r["author"] or "", "category": r["category"] or "", "image_path": r["image_path"] or "", "thumb_url": (f"/api/prompts/evo-thumb/{r['image_path']}?size=400" if r["image_path"] and "/" in str(r["image_path"]) else (f"/api/prompts/image/{r['image_path']}" if r["image_path"] else "")), "created_at": str(r["created_at"]) if r["created_at"] else ""} for r in rows]
         else:
+            title_expr = "COALESCE(si.metadata->>'title','')"
             where = ["COALESCE(si.is_frozen,FALSE)=FALSE"]
             params = []
             if only_missing:
                 where.append("(si.metadata->>'title' IS NULL OR BTRIM(si.metadata->>'title') = '' OR CHAR_LENGTH(BTRIM(si.metadata->>'title')) <= 2)")
+            if min_chars is not None:
+                where.append(f"CHAR_LENGTH(BTRIM({title_expr})) >= %s")
+                params.append(min_chars)
+            if max_chars is not None:
+                where.append(f"CHAR_LENGTH(BTRIM({title_expr})) <= %s")
+                params.append(max_chars)
+            if language == "zh":
+                where.append(f"{title_expr} ~ '[一-龥]' AND {title_expr} !~ '[A-Za-z]'")
+            elif language == "en":
+                where.append(f"{title_expr} ~ '[A-Za-z]' AND {title_expr} !~ '[一-龥]'")
+            elif language == "mixed":
+                where.append(f"{title_expr} ~ '[一-龥]' AND {title_expr} ~ '[A-Za-z]'")
+            elif language == "other":
+                where.append(f"{title_expr} !~ '[一-龥]' AND {title_expr} !~ '[A-Za-z]'")
             if q:
                 where.append("(COALESCE(si.filename,'') ILIKE %s OR COALESCE(si.prompt,'') ILIKE %s OR COALESCE(u.username,'') ILIKE %s OR COALESCE(u.nickname,'') ILIKE %s OR COALESCE(si.metadata->>'title','') ILIKE %s)")
                 params.extend([q, q, q, q, q])
@@ -1437,7 +1472,7 @@ async def apply_titles(body: dict, admin=Depends(require_admin)):
     with get_db() as conn:
         for item_id in item_ids:
             if item_type == "prompt":
-                row = conn.execute("SELECT id,name,prompt FROM prompts WHERE id = %s AND COALESCE(is_deleted,FALSE)=FALSE", (item_id,)).fetchone()
+                row = conn.execute("SELECT id,name,prompt FROM prompts WHERE id = %s", (item_id,)).fetchone()
                 if not row:
                     skipped.append({"id": item_id, "reason": "记录不存在"})
                     continue

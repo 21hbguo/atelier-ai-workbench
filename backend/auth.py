@@ -181,6 +181,7 @@ def get_current_user(request: Request, credentials: Optional[HTTPAuthorizationCr
         data = dict(user)
         if data["is_frozen"]:
             raise HTTPException(status_code=403, detail="账号已被冻结")
+        conn.execute("UPDATE users SET last_active = NOW(), last_ip = COALESCE(NULLIF(%s,''), last_ip) WHERE id = %s AND (last_active IS NULL OR last_active < NOW() - interval '1 minute' OR COALESCE(last_ip,'') <> COALESCE(NULLIF(%s,''),COALESCE(last_ip,'')))", (get_client_ip(request), user_id, get_client_ip(request)))
     return {"user_id": data["id"], "account": data["username"], "username": data["username"], "nickname": data["nickname"], "is_admin": bool(data["is_admin"]), "points": data["points"]}
 
 

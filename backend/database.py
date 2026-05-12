@@ -482,6 +482,8 @@ def init_db():
                 conn.execute("ALTER TABLE square_images ADD COLUMN is_frozen BOOLEAN DEFAULT FALSE")
             if not _column_exists(conn, "prompts", "is_frozen"):
                 conn.execute("ALTER TABLE prompts ADD COLUMN is_frozen BOOLEAN DEFAULT FALSE")
+            if not _column_exists(conn, "prompts", "is_deleted"):
+                conn.execute("ALTER TABLE prompts ADD COLUMN is_deleted BOOLEAN DEFAULT FALSE")
             if not _column_exists(conn, "image_metadata", "expires_at"):
                 conn.execute("ALTER TABLE image_metadata ADD COLUMN expires_at TIMESTAMP")
             if not _column_exists(conn, "image_metadata", "is_permanent"):
@@ -507,6 +509,7 @@ def init_db():
             conn.execute("CREATE INDEX IF NOT EXISTS idx_image_metadata_expires_at ON image_metadata(expires_at)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_image_metadata_is_permanent ON image_metadata(is_permanent)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_is_deleted ON tasks(is_deleted)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_prompts_is_deleted ON prompts(is_deleted)")
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_point_tx_request_key ON point_transactions(request_key) WHERE request_key IS NOT NULL")
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_user_client_req ON tasks(user_id, ((params->>'client_request_id'))) WHERE params ? 'client_request_id'")
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_favorites_user_target ON favorites(user_id,target_type,target_id)")

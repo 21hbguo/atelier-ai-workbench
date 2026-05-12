@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Sparkles, Wand2 } from 'lucide-react'
+import { Heart, Sparkles, Wand2 } from 'lucide-react'
 import { promptAPI } from '../api'
 function normalizeText(v=''){return String(v||'').replace(/\s+/g,' ').trim()}
 function getCardTag(item){
@@ -29,8 +29,10 @@ function ArtworkPreview({item}){
 }
 export default function PortfolioShowcaseCard({onUsePrompt}){
   const [items,setItems]=useState([]);
+  const [likingId,setLikingId]=useState('');
   useEffect(()=>{
     let dead=false;
+    if(typeof promptAPI.listPublic!=='function')return;
     promptAPI.listPublic('', 'likes', undefined, 1, 3).then(({data})=>{
       if(dead)return;
       const rows=(data?.prompts||[]).slice(0,3).map((item,idx)=>{
@@ -44,13 +46,26 @@ export default function PortfolioShowcaseCard({onUsePrompt}){
           subtitle:(item.author||'system').slice(0,24),
           prompt:item.prompt||'',
           thumbUrl:imageUrl,
-          likesCount:item.likes_count||0
+          likesCount:item.likes_count||0,
+          isLiked:!!item.is_liked,
+          canLike:true
         }
       });
       setItems(rows)
     }).catch(()=>setItems([]));
     return()=>{dead=true}
   },[]);
+  const handleLike=async(e,item)=>{
+    e.stopPropagation();
+    if(!item?.canLike||!item?.id||typeof promptAPI.like!=='function'||likingId)return;
+    setLikingId(item.id);
+    try{
+      const {data}=await promptAPI.like(item.id);
+      const liked=!!data?.liked;
+      setItems(prev=>prev.map(v=>v.id===item.id?{...v,isLiked:liked,likesCount:Math.max(0,Number(v.likesCount||0)+(liked?1:-1))}:v))
+    }catch{}
+    setLikingId('');
+  }
   const top=items[0];
   return (
     <section
@@ -81,7 +96,7 @@ export default function PortfolioShowcaseCard({onUsePrompt}){
                 没有作品时，先从提示词库里最受欢迎的作品开始
               </h2>
               <p className="mt-3 max-w-xl text-sm sm:text-[15px]" style={{color:'var(--text-secondary)'}}>
-                这里显示提示词库里点赞最高的 3 条内容。点任意卡片就会把提示词放进输入框，你可以直接生成或继续补充参考图。
+                点任意卡片就会把提示词放进输入框，你可以直接生成或继续补充参考图。
               </p>
             </div>
             <button
@@ -94,10 +109,13 @@ export default function PortfolioShowcaseCard({onUsePrompt}){
             </button>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
-            {items.map(item=>(
-              <button
+            {(items.length?items:[{id:'starter-1',tag:'入门',title:'写一句画面描述',subtitle:'快速开始',prompt:'一只戴着小红帽的猫坐在月光下的窗台上，温暖灯光，细腻插画风格',likesCount:0},{id:'starter-2',tag:'进阶',title:'补充风格和氛围',subtitle:'快速开始',prompt:'雨后的未来城市街角，霓虹倒影，电影感构图，赛博朋克氛围，高细节',likesCount:0},{id:'starter-3',tag:'参考图',title:'上传图片做同款',subtitle:'快速开始',prompt:'基于参考图生成同款构图，保留主体姿态，改为清新日系水彩风格',likesCount:0}]).map(item=>(
+              <div
                 key={item.id}
                 onClick={()=>item.prompt&&onUsePrompt?.(item.prompt)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={e=>{if((e.key==='Enter'||e.key===' ')&&item.prompt){e.preventDefault();onUsePrompt?.(item.prompt)}}}
                 className="group relative overflow-hidden rounded-[1.6rem] border p-3 text-left transition-all duration-300 hover:-translate-y-1"
                 style={{background:'color-mix(in srgb,var(--bg-card) 82%,#fff 18%)',borderColor:'color-mix(in srgb,var(--accent) 14%,var(--border-color))',boxShadow:'0 12px 36px rgba(26,39,32,0.08)'}}
               >
@@ -110,10 +128,22 @@ export default function PortfolioShowcaseCard({onUsePrompt}){
                   </div>
                 </div>
                 <p className="mt-3 line-clamp-3 text-xs leading-5" style={{color:'var(--text-secondary)'}}>{item.prompt}</p>
-                <div className="mt-3 inline-flex rounded-full px-3 py-1 text-[11px] font-medium" style={{background:'color-mix(in srgb,var(--accent) 10%,transparent)',color:'var(--text-primary)'}}>
-                  点赞 {item.likesCount}
+                <div className="mt-3 flex items-center gap-2">
+                  {item.canLike ? (
+                    <button
+                      type="button"
+                      onClick={e=>handleLike(e,item)}
+                      disabled={likingId===item.id}
+                      className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-medium transition-colors disabled:opacity-60"
+                      style={{background:item.isLiked?'color-mix(in srgb,#ef4444 14%,transparent)':'color-mix(in srgb,var(--accent) 10%,transparent)',color:item.isLiked?'#ef4444':'var(--text-primary)'}}
+                    >
+                      <Heart size={12} className={item.isLiked?'fill-red-500 text-red-500':''} />点赞 {item.likesCount}
+                    </button>
+                  ) : (
+                    <div className="inline-flex rounded-full px-3 py-1 text-[11px] font-medium" style={{background:'color-mix(in srgb,var(--accent) 10%,transparent)',color:'var(--text-primary)'}}>示例</div>
+                  )}
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         </div>

@@ -552,6 +552,7 @@ describe('adminAPI', () => {
   it('rejectAudit', () => { api.adminAPI.rejectAudit('t1', ['r1']); expect(mockApi.post).toHaveBeenCalledWith('/admin/audit/tasks/t1/reject', { result_ids: ['r1'] }) })
   it('updateAuditResult', () => { api.adminAPI.updateAuditResult('r1', { ok: true }); expect(mockApi.post).toHaveBeenCalledWith('/admin/audit/results/r1', { ok: true }) })
   it('titleItems', () => { api.adminAPI.titleItems(); expect(mockApi.get).toHaveBeenCalledWith('/admin/title/items', { params: { item_type: 'prompt', query: '', page: 1, size: 20, only_missing: true } }) })
+  it('titleItems with filters', () => { api.adminAPI.titleItems('image', 'q', 2, 10, false, { language: 'zh', minChars: '3', maxChars: '8' }); expect(mockApi.get).toHaveBeenCalledWith('/admin/title/items', { params: { item_type: 'image', query: 'q', page: 2, size: 10, only_missing: false, language: 'zh', min_chars: '3', max_chars: '8' } }) })
   it('applyTitles', () => { api.adminAPI.applyTitles({ items: [] }); expect(mockApi.post).toHaveBeenCalledWith('/admin/title/apply', { items: [] }) })
   it('testTitle', () => { api.adminAPI.testTitle({ text: 't' }); expect(mockApi.post).toHaveBeenCalledWith('/admin/title/test', { text: 't' }) })
 })
