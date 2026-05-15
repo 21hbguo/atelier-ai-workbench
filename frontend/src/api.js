@@ -83,6 +83,7 @@ export const taskAPI = {
   retry: id => api.post(`/tasks/${id}/retry`),
   delete: id => api.post(`/tasks/${id}/delete`),
   batchDelete: ids => api.post('/tasks/batch-delete', { ids }),
+  deleteFailed: userId => { const params = {}; if (userId) params.user_id = userId; return api.post('/tasks/delete-failed', null, { params }) },
 }
 
 export const imageAPI = {

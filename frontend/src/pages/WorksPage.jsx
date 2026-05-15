@@ -265,6 +265,7 @@ export default function WorksPage() {
     })
   }, [tasks, timeRange])
   const homeTotalPages = useMemo(() => Math.max(1, Math.ceil(visibleTasks.length / Math.max(1, homePageSize || 24))), [visibleTasks.length, homePageSize])
+  const failedTaskCount = useMemo(() => visibleTasks.filter(t => t.status === 'failed' && !String(t.task_id || '').startsWith('img-')).length, [visibleTasks])
   const pagedVisibleTasks = useMemo(() => {
     const size = Math.max(1, homePageSize || 24)
     const current = Math.min(Math.max(1, homePage), Math.max(1, Math.ceil(visibleTasks.length / size)))
@@ -1323,6 +1324,30 @@ export default function WorksPage() {
       setTimeout(() => setDeleteProgress({ open: false, current: 0, total: 0, percent: 0, text: '' }), 500)
     }
   }, [checked, refreshTasks, dialog, deleteProgress.open])
+  const handleDeleteFailedTasks = useCallback(async () => {
+    if (deleteProgress.open) return
+    if (failedTaskCount === 0) { dialog.alert('当前没有失败任务'); return }
+    const scopeText = isAdmin && selectedUserId ? '该用户' : isAdmin ? '当前范围' : '你的'
+    if (!await dialog.confirm(`确定删除${scopeText}全部失败任务？当前筛选可见 ${failedTaskCount} 项失败任务。`)) return
+    setDeleteProgress({ open: true, current: 0, total: failedTaskCount, percent: 10, text: '正在删除失败任务' })
+    try {
+      const { data } = await taskAPI.deleteFailed(isAdmin ? selectedUserId : undefined)
+      const deletedIds = new Set(data?.deleted_ids || [])
+      setTasks(prev => prev.filter(t => !deletedIds.has(t.task_id)))
+      setChecked(prev => {
+        const next = new Set(prev)
+        for (const id of deletedIds) next.delete(id)
+        return next
+      })
+      setDeleteProgress({ open: true, current: data?.deleted || 0, total: data?.deleted || failedTaskCount, percent: 100, text: `已删除失败任务 ${data?.deleted || 0} 项` })
+      await refreshTasks()
+      window.dispatchEvent(new Event('gallery-updated'))
+    } catch (e) {
+      dialog.alert(e?.message || '删除失败任务失败')
+    } finally {
+      setTimeout(() => setDeleteProgress({ open: false, current: 0, total: 0, percent: 0, text: '' }), 500)
+    }
+  }, [deleteProgress.open, failedTaskCount, isAdmin, selectedUserId, dialog, refreshTasks])
   const handleBatchExtend = useCallback(async () => {
     const filenames = []
     for (const task of pagedVisibleTasks) {
@@ -1386,7 +1411,10 @@ export default function WorksPage() {
           </button>
         </div>
         {selectMode ? (
-          <button onClick={exitSelectMode} className="ml-auto flex h-8 items-center px-3 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
+          <div className="ml-auto flex flex-shrink-0 items-center gap-2">
+            <button onClick={handleDeleteFailedTasks} disabled={deleteProgress.open || failedTaskCount === 0} className="flex h-8 items-center gap-1.5 rounded-2xl px-3 text-xs font-medium transition-colors disabled:opacity-40" style={{ color: 'var(--color-error)', background: 'color-mix(in srgb, var(--color-error) 10%, transparent)' }}><Trash2 size={13} />删除全部失败</button>
+            <button onClick={exitSelectMode} className="flex h-8 items-center px-3 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>取消</button>
+          </div>
         ) : (
           <button onClick={() => setSelectMode(true)} className="ml-auto flex h-8 items-center px-3 rounded-2xl text-xs font-medium hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}>选择</button>
         )}

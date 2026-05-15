@@ -346,6 +346,30 @@ class TaskManager:
             task["deleted_by_role"] = deleted_by_role
             task["updated_at"] = now
         return existing
+    @classmethod
+    def soft_delete_failed_tasks(cls, user_id: int = None, deleted_by_role: str = "user") -> List[str]:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        clauses = ["LOWER(status) = 'failed'", "COALESCE(is_deleted,FALSE)=FALSE"]
+        params: List[Any] = []
+        if user_id is not None:
+            clauses.append("user_id = %s")
+            params.append(user_id)
+        where_sql = " AND ".join(clauses)
+        with get_db() as conn:
+            rows = conn.execute(f"SELECT task_id FROM tasks WHERE {where_sql}", params).fetchall()
+            ids = [r["task_id"] for r in rows]
+            if not ids:
+                return []
+            conn.execute("UPDATE tasks SET is_deleted = %s, deleted_at = %s, deleted_by_role = %s, updated_at = %s WHERE task_id = ANY(%s)", (True, now, deleted_by_role, now, ids))
+        for task_id in ids:
+            task = cls._tasks.get(task_id)
+            if not task:
+                continue
+            task["is_deleted"] = True
+            task["deleted_at"] = now
+            task["deleted_by_role"] = deleted_by_role
+            task["updated_at"] = now
+        return ids
 
     @classmethod
     async def start_polling(cls, task_id: str, external_task_id: str):

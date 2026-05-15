@@ -134,6 +134,10 @@ describe('taskAPI', () => {
     api.taskAPI.batchDelete(['t1', 't2'])
     expect(mockApi.post).toHaveBeenCalledWith('/tasks/batch-delete', { ids: ['t1', 't2'] })
   })
+  it('deleteFailed', () => {
+    api.taskAPI.deleteFailed(7)
+    expect(mockApi.post).toHaveBeenCalledWith('/tasks/delete-failed', null, { params: { user_id: 7 } })
+  })
 })
 
 describe('imageAPI', () => {

@@ -158,3 +158,9 @@ async def batch_delete_tasks(body: BatchDeleteTasksRequest, user=Depends(get_cur
         if task_id not in deleted_set:
             failed.append({"id": task_id, "reason": "删除失败"})
     return {"deleted": len(deleted_ids), "deleted_ids": deleted_ids, "failed": failed}
+
+@router.post("/tasks/delete-failed")
+async def delete_failed_tasks(user_id: int = Query(None), user=Depends(get_current_user)):
+    target_user_id = user_id if user.get("is_admin") else user["user_id"]
+    deleted_ids = TaskManager.soft_delete_failed_tasks(target_user_id, "admin" if user.get("is_admin") else "user")
+    return {"deleted": len(deleted_ids), "deleted_ids": deleted_ids}
