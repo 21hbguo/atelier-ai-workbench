@@ -69,9 +69,17 @@ def _default_title(content: str) -> str:
     return (t[:20] + "…") if len(t) > 20 else (t or "新对话")
 
 
+def _chat_cost_per_request() -> float:
+    """单次聊天扣费：优先取激活模型的按次定价（points_per_request），未定价则回退全局配置。"""
+    price = get_active_model().get("points_per_request")
+    if price is not None and price > 0:
+        return float(price)
+    return float(get_limit_config()["points_cost_per_chat"])
+
+
 @router.get("/cost")
 async def chat_cost(user=Depends(get_current_user)):
-    return {"cost_per_chat": get_limit_config()["points_cost_per_chat"]}
+    return {"cost_per_chat": _chat_cost_per_request()}
 
 
 @router.get("/model")
@@ -183,7 +191,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
 
     _check_rate_limit(user_id)
 
-    cost_per = get_limit_config()["points_cost_per_chat"]
+    cost_per = _chat_cost_per_request()
     req_id = str(uuid.uuid4())
 
     # 思考档位按模型档案校验：不在档案档位列表内则回退该模型默认档位

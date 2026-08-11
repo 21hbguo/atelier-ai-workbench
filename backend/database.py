@@ -632,6 +632,11 @@ def init_db():
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite_code_unique ON users(invite_code) WHERE invite_code IS NOT NULL AND invite_code<>''")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_users_inviter_user_id ON users(inviter_user_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_recharge_inviter_user_id ON recharge_requests(inviter_user_id)")
+            # 迁移：积分支持小数（内测 0.5 积分/次的聊天定价）；ALTER TYPE 幂等，重复执行无副作用
+            conn.execute("ALTER TABLE users ALTER COLUMN points TYPE NUMERIC(12,2)")
+            conn.execute("ALTER TABLE point_transactions ALTER COLUMN amount TYPE NUMERIC(12,2)")
+            conn.execute("ALTER TABLE point_transactions ALTER COLUMN balance_after TYPE NUMERIC(12,2)")
+            conn.execute("ALTER TABLE tasks ALTER COLUMN points_balance_after TYPE NUMERIC(12,2)")
 
         # 初始化默认分类
             count = conn.execute("SELECT COUNT(*) AS cnt FROM categories").fetchone()["cnt"]

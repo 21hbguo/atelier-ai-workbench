@@ -22,13 +22,13 @@ class PointsService:
         return get_limit_config()["points_migration_amount"]
 
     @classmethod
-    def get_balance(cls, user_id: int) -> int:
+    def get_balance(cls, user_id: int) -> float:
         with get_db() as conn:
             row = conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()
-            return row["points"] if row else 0
+            return float(row["points"]) if row else 0.0
 
     @classmethod
-    def has_enough(cls, user_id: int, amount: int) -> bool:
+    def has_enough(cls, user_id: int, amount: float) -> bool:
         with get_db() as conn:
             user = conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()
             if not user:
@@ -36,14 +36,14 @@ class PointsService:
             return user["points"] >= amount
 
     @classmethod
-    def consume(cls, user_id: int, amount: int, description: str = "", tx_type: str = "generate_consume", request_key: str = "", conn=None) -> int:
+    def consume(cls, user_id: int, amount: float, description: str = "", tx_type: str = "generate_consume", request_key: str = "", conn=None) -> float:
         if conn is not None:
             return cls._consume_in_conn(conn, user_id, amount, description, tx_type, request_key)
         with get_db() as c:
             return cls._consume_in_conn(c, user_id, amount, description, tx_type, request_key)
 
     @classmethod
-    def refund(cls, user_id: int, amount: int, description: str = "", request_key: str = "") -> int:
+    def refund(cls, user_id: int, amount: float, description: str = "", request_key: str = "") -> float:
         with get_db() as conn:
             user = conn.execute("SELECT id FROM users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
             if not user:
@@ -51,9 +51,9 @@ class PointsService:
             if request_key:
                 existing = conn.execute("SELECT balance_after FROM point_transactions WHERE request_key = %s", (request_key,)).fetchone()
                 if existing:
-                    return existing["balance_after"]
+                    return float(existing["balance_after"])
             conn.execute("UPDATE users SET points = points + %s WHERE id = %s", (amount, user_id))
-            new_balance = conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()["points"]
+            new_balance = float(conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()["points"])
             if request_key:
                 conn.execute("INSERT INTO point_transactions (user_id, amount, balance_after, type, description, request_key) VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING", (user_id, amount, new_balance, "generate_refund", description, request_key))
             else:
@@ -61,7 +61,7 @@ class PointsService:
             return new_balance
 
     @classmethod
-    def add_points(cls, user_id: int, amount: int, tx_type: str, description: str = "", conn=None, request_key: str = "", recharge_request_id=None) -> int:
+    def add_points(cls, user_id: int, amount: float, tx_type: str, description: str = "", conn=None, request_key: str = "", recharge_request_id=None) -> float:
         if conn is not None:
             return cls._add_points_in_conn(conn, user_id, amount, tx_type, description, request_key=request_key, recharge_request_id=recharge_request_id)
         with get_db() as c:
@@ -141,34 +141,34 @@ class PointsService:
                 count += 1
             return {"migrated": count}
     @classmethod
-    def _add_points_in_conn(cls, conn, user_id: int, amount: int, tx_type: str, description: str = "", request_key: str = "", recharge_request_id=None) -> int:
+    def _add_points_in_conn(cls, conn, user_id: int, amount: float, tx_type: str, description: str = "", request_key: str = "", recharge_request_id=None) -> float:
         if request_key:
             existing=conn.execute("SELECT balance_after FROM point_transactions WHERE request_key = %s",(request_key,)).fetchone()
             if existing:
-                return existing["balance_after"]
+                return float(existing["balance_after"])
         conn.execute("UPDATE users SET points = points + %s WHERE id = %s", (amount, user_id))
         row = conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()
         if not row:
             raise ValueError("用户不存在")
-        new_balance = row["points"]
+        new_balance = float(row["points"])
         if request_key:
             conn.execute("INSERT INTO point_transactions (user_id, amount, balance_after, type, description, request_key, recharge_request_id) VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",(user_id, amount, new_balance, tx_type, description, request_key, recharge_request_id))
         else:
             conn.execute("INSERT INTO point_transactions (user_id, amount, balance_after, type, description, recharge_request_id) VALUES (%s, %s, %s, %s, %s, %s)",(user_id, amount, new_balance, tx_type, description, recharge_request_id))
         return new_balance
     @classmethod
-    def _consume_in_conn(cls, conn, user_id: int, amount: int, description: str = "", tx_type: str = "generate_consume", request_key: str = "") -> int:
+    def _consume_in_conn(cls, conn, user_id: int, amount: float, description: str = "", tx_type: str = "generate_consume", request_key: str = "") -> float:
         user = conn.execute("SELECT points FROM users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
         if not user:
             raise ValueError("用户不存在")
         if request_key:
             existing = conn.execute("SELECT balance_after FROM point_transactions WHERE request_key = %s", (request_key,)).fetchone()
             if existing:
-                return existing["balance_after"]
+                return float(existing["balance_after"])
         if user["points"] < amount:
             raise ValueError("积分不足")
         conn.execute("UPDATE users SET points = points - %s WHERE id = %s", (amount, user_id))
-        new_balance = conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()["points"]
+        new_balance = float(conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()["points"])
         if request_key:
             conn.execute("INSERT INTO point_transactions (user_id, amount, balance_after, type, description, request_key) VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING", (user_id, -amount, new_balance, tx_type, description, request_key))
         else:
