@@ -334,7 +334,7 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
                 <ChevronDown size={11} className={modelOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
               </button>
               {modelOpen && (
-                <div className="absolute left-0 top-full mt-1.5 z-50 w-72 max-h-80 overflow-y-auto rounded-xl p-1"
+                <div className="absolute left-0 bottom-full mb-1.5 z-50 w-72 max-h-[45dvh] overflow-y-auto rounded-xl p-1 model-dropdown-scroll"
                   style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-md)' }}>
                   {models.map(m => (
                     <button key={m.model_id} onClick={() => { onSelectModel(m.model_id); setModelOpen(false) }}
