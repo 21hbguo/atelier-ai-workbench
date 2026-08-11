@@ -499,6 +499,9 @@ export default function ChatAssistantPage() {
   const activeSession = sessions.find(s => s.id === activeId) || null
   // 当前选中的模型档案（未选或记忆无效 → 激活模型）
   const chatModel = models.find(m => m.model_id === chatModelId) || modelInfo
+  // 可选模型：仅列出已配置接口（base_url/api_key 至少一个）的模型；一个都没配置时退化为激活模型
+  const configuredModels = models.filter(m => m.base_url || m.api_key)
+  const selectableModels = configuredModels.length ? configuredModels : (modelInfo ? [modelInfo] : [])
 
   // latest-ref：每次渲染后同步，让异步回调能读到最新值
   useEffect(() => {
@@ -516,9 +519,11 @@ export default function ChatAssistantPage() {
     chatAPI.models().then(res => {
       const items = (res.data?.items || []).filter(m => m.enabled)
       setModels(items)
-      // 本地记忆的模型不存在/未启用时回退激活模型
+      // 本地记忆的模型必须已配置接口（base_url/api_key 至少一个）；未配置或不存在时回退激活模型
       const saved = (() => { try { return localStorage.getItem('chat_model_id') || '' } catch { return '' } })()
-      if (!saved || !items.some(m => m.model_id === saved)) {
+      const usable = items.filter(m => m.base_url || m.api_key)
+      const savedOk = saved && (usable.length ? usable.some(m => m.model_id === saved) : false)
+      if (!savedOk) {
         setChatModelId('')
         try { localStorage.removeItem('chat_model_id') } catch {}
       }
@@ -992,7 +997,7 @@ export default function ChatAssistantPage() {
             reasoningEffort={reasoningEffort} onReasoningEffort={handleReasoningEffort}
             efforts={chatModel?.reasoning_efforts} modelLabel={chatModel?.label || modelInfo?.label || modelInfo?.model_id}
             pendingQueue={pendingQueue} onEditPending={editPending} onRemovePending={removePending}
-            models={models} chatModelId={chatModelId} onSelectModel={handleSelectModel} />
+            models={selectableModels} chatModelId={chatModelId} onSelectModel={handleSelectModel} />
         </div>
       </div>
       <style>{MD_STYLES}</style>

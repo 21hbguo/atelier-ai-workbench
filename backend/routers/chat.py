@@ -226,6 +226,10 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
             raise HTTPException(status_code=400, detail="模型不存在")
         if not target_model.get("enabled", True):
             raise HTTPException(status_code=400, detail="模型未启用")
+        # 未配置接口（base_url/api_key 均空）且不是激活模型 → 拒绝，避免打到错误的全局接口
+        if not target_model.get("base_url") and not target_model.get("api_key") \
+                and body.model_id != (active_model.get("model_id") or ""):
+            raise HTTPException(status_code=400, detail="该模型未配置接口，请在模型档案中填写 API 地址和 Key")
 
     cost_per = _chat_cost_per_request(target_model)
     req_id = str(uuid.uuid4())
