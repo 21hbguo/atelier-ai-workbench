@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { MessageCircle, Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, ChevronLeft, Brain, AlertCircle, CheckSquare, Cpu, ChevronDown, Check, Paperclip, FileText } from 'lucide-react'
+import { MessageCircle, Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, ChevronLeft, Brain, AlertCircle, CheckSquare, Cpu, ChevronDown, Check, Paperclip, FileText, Settings } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
 import { useAppDialog } from '../components/AppDialogProvider'
 import { chatAPI, pointsAPI } from '../api'
@@ -230,7 +230,26 @@ function MessageItem({ msg, onCopy }) {
       <div className="relative max-w-[85%] sm:max-w-[78%] rounded-2xl px-4 py-3"
         style={{ background: isUser ? 'var(--bg-user-bubble)' : 'var(--bg-ai-bubble)', boxShadow: isUser ? 'none' : 'var(--shadow-md)' }}>
         {isUser ? (
-          <div className="text-sm whitespace-pre-wrap break-words" style={{ color: 'var(--text-primary)' }}>{msg.content}</div>
+          <>
+            {/* 用户消息关联的文件（会话上下文，后端 messages 接口返回 files） */}
+            {msg.files?.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {msg.files.map((f, i) => (
+                  <span key={f.id || `${f.original_name}-${i}`} title={f.original_name || '文件'}
+                    className="inline-flex items-center gap-1 max-w-full px-2 py-0.5 rounded-full text-[11px] font-medium border"
+                    style={{
+                      background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+                      borderColor: 'color-mix(in srgb, var(--accent) 25%, var(--border-color))',
+                      color: 'var(--accent)',
+                    }}>
+                    <Paperclip size={11} className="flex-shrink-0" />
+                    <span className="min-w-0 truncate">{f.original_name || '文件'}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="text-sm whitespace-pre-wrap break-words" style={{ color: 'var(--text-primary)' }}>{msg.content}</div>
+          </>
         ) : msg.error ? (
           <div className="flex items-start gap-1.5 text-sm" style={{ color: 'var(--color-error)' }}>
             <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
@@ -264,6 +283,19 @@ function StreamBubble({ sending, onStop, onRetry }) {
     <div className="flex justify-start mb-4 animate-fade-in-up">
       <div className="max-w-[85%] sm:max-w-[78%] rounded-2xl px-4 py-3" style={{ background: 'var(--bg-ai-bubble)', boxShadow: 'var(--shadow-md)' }}>
         <ThinkingBlock text={sending.thinking} />
+        {/* 工具调用状态（agent 模式：tool_status 事件，executing 显示加载中，done 时已清除） */}
+        {sending.toolStatus && (
+          <div className="mb-2 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs"
+            style={{
+              background: 'color-mix(in srgb, var(--accent) 8%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--accent) 25%, var(--border-color))',
+              color: 'var(--text-secondary)',
+            }}>
+            <Settings size={13} className="animate-spin flex-shrink-0" style={{ color: 'var(--accent)' }} />
+            <span className="flex-shrink-0 font-medium" style={{ color: 'var(--accent)' }}>正在调用工具</span>
+            <span className="min-w-0 truncate">{sending.toolStatus.name || '…'}</span>
+          </div>
+        )}
         {hasText ? (
           <div className="md-body text-sm" style={{ color: 'var(--text-primary)' }}
             dangerouslySetInnerHTML={{ __html: mdToHtml(sending.text) }} />
@@ -572,7 +604,7 @@ export default function ChatAssistantPage() {
   const [messages, setMessages] = useState([])
   const [messagesLoading, setMessagesLoading] = useState(false)
   const [input, setInput] = useState('')
-  const [sending, setSending] = useState(null) // { sessionId, content, text, stopped, error }
+  const [sending, setSending] = useState(null) // { sessionId, content, text, thinking, toolStatus, stopped, error, manual }
   const [cost, setCost] = useState(0)
   const [points, setPoints] = useState(() => readUser()?.points ?? 0)
   const [reasoningEffort, setReasoningEffort] = useState(() => localStorage.getItem('chat_reasoning_effort') || 'auto')
@@ -696,7 +728,7 @@ export default function ChatAssistantPage() {
   // 发送锁：防止 createSession 等异步间隙出现并发发送（占位 sessionId=null，startStream 会覆盖）
   const acquireSendLock = useCallback((content) => {
     if (sendingRef.current && !sendingRef.current.stopped) return false
-    sendingRef.current = { sessionId: null, content, text: '', stopped: false, error: '', manual: false }
+    sendingRef.current = { sessionId: null, content, text: '', thinking: '', toolStatus: null, stopped: false, error: '', manual: false }
     return true
   }, [])
   const releaseSendLock = useCallback(() => { sendingRef.current = null }, [])
@@ -803,7 +835,7 @@ export default function ChatAssistantPage() {
   const startStream = useCallback((sessionId, content, reasoningEffort = 'auto') => {
     const controller = new AbortController()
     abortRef.current = controller
-    const st = { sessionId, content, text: '', thinking: '', stopped: false, error: '', manual: false }
+    const st = { sessionId, content, text: '', thinking: '', toolStatus: null, stopped: false, error: '', manual: false }
     sendingRef.current = st
     setSending(st)
     chatAPI.sendStream(sessionId, content, {
@@ -814,11 +846,17 @@ export default function ChatAssistantPage() {
         (prev && prev.sessionId === sessionId) ? { ...prev, text: (prev.text || '') + String(data.text || '') } : prev),
       onThinking: data => setSending(prev =>
         (prev && prev.sessionId === sessionId) ? { ...prev, thinking: (prev.thinking || '') + String(data.text || '') } : prev),
+      onToolStatus: data => setSending(prev =>
+        (prev && prev.sessionId === sessionId)
+          ? { ...prev, toolStatus: data?.status === 'done' ? null : { name: data?.name || '', status: data?.status || 'executing' } }
+          : prev),
       onDone: data => {
         const full = String(data.text || '')
         const thinking = String(data.thinking || '')
         manualStopRef.current = false
         setMessages(prev => [...prev, { id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, role: 'assistant', content: full, thinking, created_at: new Date().toISOString() }])
+        // 发送成功：文件已上传为会话上下文，清空上传区（失败时保留 docs 便于重试）
+        setDocs([])
         // 仅当仍是本次会话的流时才清理状态，避免并发时旧流清掉新流
         if (sendingRef.current?.sessionId === sessionId) {
           sendingRef.current = null

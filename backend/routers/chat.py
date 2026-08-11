@@ -19,7 +19,8 @@ from backend.services.banned_words import BannedWordsService
 from backend.services.chat_service import ChatService, build_system_prompt
 from backend.services.document_parser import parse_file
 from backend.services.llm_client import LLMClient, LLMError
-from backend.services.agent import AgentContext, run_agent
+from backend.services.agent import AgentContext
+from backend.services.agent.loop import run_agent_stream
 from backend.services.llm_model_service import get_active as get_active_model, get_all as get_all_models, get_by_model_id
 
 logger = logging.getLogger(__name__)
@@ -361,21 +362,57 @@ async def list_messages(session_id: int, user=Depends(get_current_user)):
     with get_db() as conn:
         _owns_session(conn, session_id, user_id)
         rows = conn.execute(
-            "SELECT id, role, content, thinking, created_at FROM chat_messages WHERE session_id = %s ORDER BY id ASC",
+            "SELECT id, role, content, thinking, file_ids, created_at FROM chat_messages WHERE session_id = %s ORDER BY id ASC",
             (session_id,),
         ).fetchall()
-    return {
-        "items": [
-            {
-                "id": r["id"],
-                "role": r["role"],
-                "content": r["content"],
-                "thinking": r["thinking"] or "",
-                "created_at": r["created_at"].isoformat() if r["created_at"] else None,
-            }
-            for r in rows
-        ]
-    }
+    # 收集所有消息引用的文件 id，一次性查 chat_files 避免 N+1
+    wanted: set[int] = set()
+    for r in rows:
+        try:
+            fids = json.loads(r["file_ids"]) if r["file_ids"] else []
+        except (TypeError, ValueError):
+            fids = []
+        for fid in fids:
+            try:
+                wanted.add(int(fid))
+            except (TypeError, ValueError):
+                continue
+    files_by_id: dict[int, dict] = {}
+    if wanted:
+        try:
+            with get_db() as conn:
+                frows = conn.execute(
+                    "SELECT id, original_name FROM chat_files WHERE id = ANY(%s)",
+                    (list(wanted),),
+                ).fetchall()
+            files_by_id = {f["id"]: {"id": f["id"], "original_name": f["original_name"]} for f in frows}
+        except Exception:
+            logger.exception("[chat/messages] 查询关联文件失败，回退空列表")
+            files_by_id = {}
+    items = []
+    for r in rows:
+        files = []
+        if r["file_ids"]:
+            try:
+                fids = json.loads(r["file_ids"])
+            except (TypeError, ValueError):
+                fids = []
+            for fid in fids:
+                try:
+                    f = files_by_id.get(int(fid))
+                except (TypeError, ValueError):
+                    f = None
+                if f:
+                    files.append(f)
+        items.append({
+            "id": r["id"],
+            "role": r["role"],
+            "content": r["content"],
+            "thinking": r["thinking"] or "",
+            "files": files,  # 关联文件 [{id, original_name}]；file_ids 为空/查询失败时 []
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+        })
+    return {"items": items}
 
 
 @router.post("/sessions/{session_id}/messages")
@@ -431,11 +468,16 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
     except ValueError as e:
         raise HTTPException(status_code=402, detail=str(e))
 
-    # 再落库用户消息
+    # 再落库用户消息（file_ids 快照会话当前已解析文件 id，前端据此显示关联文件图标）
     with get_db() as conn:
+        file_rows = conn.execute(
+            "SELECT id, original_name, page_content FROM chat_files WHERE session_id = %s AND status = 'parsed' ORDER BY id ASC",
+            (session_id,),
+        ).fetchall()
+        file_ids = [r["id"] for r in file_rows]
         conn.execute(
-            "INSERT INTO chat_messages (session_id, role, content) VALUES (%s, 'user', %s)",
-            (session_id, content),
+            "INSERT INTO chat_messages (session_id, role, content, file_ids) VALUES (%s, 'user', %s, %s::jsonb)",
+            (session_id, content, json.dumps(file_ids)),
         )
         # 首轮自动生成标题
         if (session["title"] or "").strip() in ("", "新对话") and msg_cnt == 0:
@@ -447,11 +489,6 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
             conn.execute("UPDATE chat_sessions SET updated_at = NOW() WHERE id = %s", (session_id,))
         history_rows = conn.execute(
             "SELECT role, content FROM chat_messages WHERE session_id = %s ORDER BY id ASC",
-            (session_id,),
-        ).fetchall()
-        # 会话已解析文档：注入上下文（anything-llm attached_documents 思路）
-        file_rows = conn.execute(
-            "SELECT original_name, page_content FROM chat_files WHERE session_id = %s AND status = 'parsed' ORDER BY id ASC",
             (session_id,),
         ).fetchall()
 
@@ -481,35 +518,44 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
         refunded = False
         try:
             if use_agent:
-                # 会话有上传文档：agent 工具循环（一次非流式多轮调用，自动模式无需前端指定）
+                # 会话有上传文档：agent 工具循环（流式多轮；自动模式无需前端指定）
                 try:
                     ctx = AgentContext(session_id=session_id, user_id=user_id)
                     messages = ChatService.build_llm_messages(history, target_model, attached_docs)
-                    result = await run_agent(
+                    async for event in run_agent_stream(
                         system=build_system_prompt(target_model),
                         messages=messages,
                         tools_names=_AGENT_TOOLS,
                         max_tool_calls=5,  # 收紧轮数：agent 多轮 LLM 调用会放大 API 成本
                         override=override,
                         ctx=ctx,
-                    )
-                    text = str(result.get("text") or "")
-                    thinking = str(result.get("thinking") or "").strip()
+                    ):
+                        etype = event["type"]
+                        if etype == "chunk":
+                            # 实时透传文本增量，前端 StreamBubble 逐字展示
+                            yield f"event: chunk\ndata: {json.dumps({'text': event['text']}, ensure_ascii=False)}\n\n"
+                        elif etype == "thinking":
+                            # 实时透传思考增量（多轮合并展示由前端累积）
+                            yield f"event: thinking\ndata: {json.dumps({'text': event['text']}, ensure_ascii=False)}\n\n"
+                        elif etype == "tool_status":
+                            data = {"type": "tool_status", "name": event["name"], "status": event["status"]}
+                            if event.get("result_len") is not None:
+                                data["result_len"] = event["result_len"]
+                            yield f"event: tool_status\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+                        elif etype == "done":
+                            text = str(event.get("text") or "")
+                            thinking = str(event.get("thinking") or "").strip()
+                            with get_db() as conn:
+                                conn.execute(
+                                    "INSERT INTO chat_messages (session_id, role, content, thinking) VALUES (%s, 'assistant', %s, %s)",
+                                    (session_id, text, thinking or None),
+                                )
+                            finished = True
+                            yield f"event: done\ndata: {json.dumps({'text': text, 'thinking': thinking, 'points_balance': balance_after}, ensure_ascii=False)}\n\n"
                 except LLMError as e:
                     refunded = True
                     _refund_once()
                     yield f"event: error\ndata: {json.dumps({'detail': str(e)}, ensure_ascii=False)}\n\n"
-                    return
-                if thinking:
-                    # 一次性全量推送（多轮思考合并），前端 StreamBubble 实时展示
-                    yield f"event: thinking\ndata: {json.dumps({'text': thinking}, ensure_ascii=False)}\n\n"
-                with get_db() as conn:
-                    conn.execute(
-                        "INSERT INTO chat_messages (session_id, role, content, thinking) VALUES (%s, 'assistant', %s, %s)",
-                        (session_id, text, thinking or None),
-                    )
-                finished = True
-                yield f"event: done\ndata: {json.dumps({'text': text, 'thinking': thinking, 'points_balance': balance_after}, ensure_ascii=False)}\n\n"
                 return
             async for event in ChatService.chat_stream(history, body.reasoning_effort, model=target_model, attached_docs=attached_docs):
                 if event["type"] == "chunk":

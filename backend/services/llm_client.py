@@ -207,6 +207,31 @@ class LLMClient:
         return "".join(parts)
 
     @staticmethod
+    def _extract_tool_call_deltas(event: dict) -> list:
+        """流式事件取 delta.tool_calls 增量（openai 兼容协议，如 DeepSeek/Kimi）。
+
+        返回 [{"index": int, "id": str|None, "name": str|None, "arguments": str|None}]：
+        - index 区分同一轮多个并行 tool call
+        - id/type 仅在对应分片首次出现时携带，name 同样只在首片出现
+        - arguments 为 JSON 字符串的逐块增量，需要按 index 拼接成完整串
+        anthropic 流式协议（content_block_delta）无此字段，返回 []。
+        """
+        choices = event.get("choices") or []
+        if not choices:
+            return []
+        delta = (choices[0] or {}).get("delta") or {}
+        out = []
+        for tc in delta.get("tool_calls") or []:
+            fn = tc.get("function") or {}
+            out.append({
+                "index": tc.get("index"),
+                "id": tc.get("id"),
+                "name": fn.get("name"),
+                "arguments": fn.get("arguments"),
+            })
+        return out
+
+    @staticmethod
     def _extract_tool_calls(data: dict, proto: str) -> list:
         """非流式响应提取 tool calls，统一格式 [{"id","name","arguments"(dict|None),"arguments_raw"(str)}]。
         - openai: choices[0].message.tool_calls[].function（arguments 为 JSON 字符串，解析失败时 arguments=None）
@@ -329,8 +354,56 @@ class LLMClient:
             yield event
 
     @classmethod
+    async def stream_tools(cls, *, system: str = "", messages: list | None = None,
+                           tools: list | None = None, max_tokens: int = 2000,
+                           reasoning_effort: str = "auto", temperature: float | None = None,
+                           override: dict | None = None):
+        """带 tools（function calling）的流式调用，供 agent 工具系统使用。
+
+        tools: [{"name","description","parameters"(JSON Schema)}]（统一格式，与 complete_tools 一致）。
+        产出事件：
+        - {"type":"chunk","text":增量文本}
+        - {"type":"thinking","text":思考增量}
+        - {"type":"done","text":完整文本,"thinking":思考(有则带),"tool_calls":[...]}（tool_calls 格式同 complete_tools）
+        - {"type":"error","detail":...}
+
+        流式调用失败（异常）时自动降级：同一轮改用 complete_tools 非流式重试一次，
+        成功则 yield done；重试仍失败才 yield error（保底逻辑，用户无感）。
+        前置校验类错误（未配置/空消息）重试无意义，直接透传 error。
+        """
+        async for event in cls._stream_impl(system=system, messages=messages or [],
+                                            max_tokens=max_tokens, reasoning_effort=reasoning_effort,
+                                            temperature=temperature, extra_body=None, stream=True,
+                                            tools=tools, override=override):
+            if event["type"] != "error":
+                yield event
+                continue
+            detail = str(event.get("detail") or "")
+            if "未配置" in detail or "消息内容为空" in detail:
+                yield event
+                return
+            # 流式失败 → 降级非流式重试一次（同一轮、同一 tools）
+            try:
+                resp = await cls.complete_tools(
+                    system=system, messages=messages or [], tools=tools,
+                    max_tokens=max_tokens, reasoning_effort=reasoning_effort,
+                    temperature=temperature, override=override,
+                )
+            except LLMError:
+                yield event  # 重试也失败 → 透传流式 error
+                return
+            done = {"type": "done", "text": str(resp.get("text") or ""),
+                    "tool_calls": resp.get("tool_calls") or []}
+            thinking = str(resp.get("thinking") or "")
+            if thinking:
+                done["thinking"] = thinking
+            yield done
+            return
+
+    @classmethod
     async def _stream_impl(cls, *, system, messages, max_tokens, reasoning_effort,
-                           temperature, extra_body, stream: bool, override: dict | None = None):
+                           temperature, extra_body, stream: bool, override: dict | None = None,
+                           tools: list | None = None):
         llm_cfg = dict(get_llm_config())
         # per-model 覆盖：模型档案填了 base_url/api_key/protocol 等则优先使用
         if override:
@@ -348,6 +421,7 @@ class LLMClient:
 
         url, headers, body = cls._build_request(
             llm_cfg, system, messages, max_tokens, reasoning_effort, temperature, extra_body,
+            tools=tools,
         )
         if stream:
             body["stream"] = True
@@ -358,6 +432,8 @@ class LLMClient:
             if stream:
                 full_text = ""
                 full_thinking = ""
+                # delta.tool_calls 按 index 分片：内部先按 index 累积 id/name/arguments 字符串
+                tool_calls_buf: dict[int, dict] = {}
                 async with client.stream("POST", url, headers=headers, json=body, timeout=timeout) as resp:
                     resp.raise_for_status()
                     async for line in resp.aiter_lines():
@@ -378,10 +454,39 @@ class LLMClient:
                         if thinking:
                             full_thinking += thinking
                             yield {"type": "thinking", "text": thinking}
-                if not full_text.strip() and not full_thinking.strip():
+                        for d in cls._extract_tool_call_deltas(event):
+                            idx = d.get("index")
+                            if idx is None:
+                                continue
+                            buf = tool_calls_buf.setdefault(idx, {"id": "", "name": "", "arguments": ""})
+                            if d.get("id"):
+                                buf["id"] = d["id"]
+                            if d.get("name"):
+                                buf["name"] = d["name"]
+                            if d.get("arguments"):
+                                buf["arguments"] += d["arguments"]
+                # 统一格式 [{id,name,arguments(dict|None),arguments_raw}]，复用 _extract_tool_calls 的 JSON 解析容错思路
+                full_tool_calls = []
+                for idx in sorted(tool_calls_buf):
+                    b = tool_calls_buf[idx]
+                    raw = b["arguments"] or "{}"
+                    try:
+                        parsed = json.loads(raw)
+                        if not isinstance(parsed, dict):
+                            parsed = None
+                    except json.JSONDecodeError:
+                        parsed = None
+                    full_tool_calls.append({
+                        "id": b["id"],
+                        "name": b["name"],
+                        "arguments": parsed,
+                        "arguments_raw": raw,
+                    })
+                # 纯工具调用轮（无文本/思考）不算空返回
+                if not full_text.strip() and not full_thinking.strip() and not full_tool_calls:
                     yield {"type": "error", "detail": "LLM 暂无返回内容，请重试"}
                     return
-                done_event = {"type": "done", "text": full_text}
+                done_event = {"type": "done", "text": full_text, "tool_calls": full_tool_calls}
                 if full_thinking:
                     done_event["thinking"] = full_thinking
                 yield done_event

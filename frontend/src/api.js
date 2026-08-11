@@ -181,7 +181,7 @@ export const chatAPI = {
   },
   // SSE 流式发送消息：仿 promptOptimizeAPI.optimizeStream 的 fetch + ReadableStream 解析
   // 模式自动判定：会话有上传文件 → agent 工具链路；无 → 普通聊天（后端决定，前端不传 mode）
-  sendStream: async (sessionId, content, { onChunk, onDone, onError, onThinking, signal, reasoning_effort = 'auto', model_id = '' } = {}) => {
+  sendStream: async (sessionId, content, { onChunk, onDone, onError, onThinking, onToolStatus, signal, reasoning_effort = 'auto', model_id = '' } = {}) => {
     try {
       const resp = await fetch(`/api/chat/sessions/${sessionId}/messages`, {
         method: 'POST',
@@ -217,6 +217,7 @@ export const chatAPI = {
             if (!data) continue
             if (eventType === 'chunk') onChunk?.(data)
             else if (eventType === 'thinking') onThinking?.(data)
+            else if (eventType === 'tool_status') onToolStatus?.(data)
             else if (eventType === 'done') onDone?.(data)
             else if (eventType === 'error') onError?.(data.detail)
           }

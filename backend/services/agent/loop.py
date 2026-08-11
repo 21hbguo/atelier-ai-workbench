@@ -1,6 +1,6 @@
 """Agent 主循环（aibitat handleExecution 的轻量 Python 版）。
 
-流程：组装 messages → LLMClient.complete_tools(tools=注册工具 schema) →
+流程：组装 messages → LLMClient.stream_tools(tools=注册工具 schema) 流式多轮 →
 无 tool_calls 返回文本；有 tool_calls 逐个执行（参数三级容错解析，handler 异常转错误文本）
 → 以 openai 格式 {"role":"tool","tool_call_id","content"} 回填 messages → 循环；
 累计工具调用达 max_tool_calls 后下一轮不再传 tools，强制模型直接回答。
@@ -30,7 +30,7 @@ _EXEC_ERROR_MSG = "工具 {name} 执行出错，请换一种方式重试或向�
 _EMPTY_FINAL_MSG = "抱歉，我暂时无法完成这个任务，请换个说法再试一次。"
 
 
-async def run_agent(
+async def run_agent_stream(
     *,
     system: str = "",
     messages: list,
@@ -38,8 +38,8 @@ async def run_agent(
     max_tool_calls: int = DEFAULT_MAX_TOOL_CALLS,
     override: Optional[dict] = None,
     ctx: Optional[AgentContext] = None,
-) -> str:
-    """agent 主循环：多轮 tool_calls 执行，返回最终文本回复。
+):
+    """agent 主循环（流式版）：多轮 tool_calls 执行，边收边吐事件。
 
     Args:
         system: 系统提示词（透传给 LLMClient）。
@@ -49,15 +49,18 @@ async def run_agent(
         override: per-model 覆盖（base_url/api_key/protocol/model），透传 LLMClient。
         ctx: 工具执行上下文（session_id/user_id 等）。
 
-    Returns:
-        {"text": 最终文本回复, "thinking": 各轮思考过程拼接（无则空串）}。
+    Yields:
+        {"type": "chunk", "text": 增量文本} / {"type": "thinking", "text": 思考增量}：LLM 流式透传
+        {"type": "tool_status", "name": 工具名, "status": "executing"}：执行工具前
+        {"type": "tool_status", "name": 工具名, "status": "done", "result_len": N}：执行完
+        {"type": "done", "text": 最终文本回复, "thinking": 各轮思考过程合并}：最终回复
 
     Raises:
-        LLMError: LLM 调用失败（未配置/超时/无返回），由上层（chat.py）处理退款与报错。
+        LLMError: LLM 调用失败（含流式降级非流式重试后仍失败），由上层（chat.py）处理退款与报错。
         ValueError: messages 为空。
     """
     if not messages:
-        raise ValueError("run_agent: messages 不能为空")
+        raise ValueError("run_agent_stream: messages 不能为空")
     ctx = ctx or AgentContext()
     # 复制消息，避免污染调用方列表（后续要追加 assistant/tool 消息）
     work = [dict(m) for m in messages]
@@ -68,8 +71,12 @@ async def run_agent(
     # 最多 max_tool_calls + 1 轮 LLM 调用：最后一轮不带 tools
     for _round in range(max_tool_calls + 1):
         send_tools = get_tools_schema(tools_names) if executed_calls < max_tool_calls else []
+        round_text = ""
+        round_thinking = ""
+        round_calls: list = []
+        round_error: Optional[str] = None
         try:
-            resp = await LLMClient.complete_tools(
+            async for event in LLMClient.stream_tools(
                 system=system,
                 messages=work,
                 tools=send_tools or None,
@@ -77,13 +84,31 @@ async def run_agent(
                 reasoning_effort="auto",
                 temperature=None,
                 override=override,
-            )
+            ):
+                etype = event["type"]
+                if etype == "chunk":
+                    round_text += str(event.get("text") or "")
+                    yield {"type": "chunk", "text": event["text"]}
+                elif etype == "thinking":
+                    round_thinking += str(event.get("text") or "")
+                    yield {"type": "thinking", "text": event["text"]}
+                elif etype == "done":
+                    # done 事件携带本轮完整文本/思考/tool_calls（覆盖增量累积值）
+                    round_text = str(event.get("text") or "")
+                    round_thinking = str(event.get("thinking") or "")
+                    round_calls = event.get("tool_calls") or []
+                elif etype == "error":
+                    round_error = str(event.get("detail") or "LLM 调用失败")
         except LLMError:
             raise
 
-        text = str(resp.get("text") or "")
-        calls = resp.get("tool_calls") or []
-        thinking = str(resp.get("thinking") or "").strip()
+        if round_error:
+            # 流式失败且降级非流式重试也失败 → 抛给上层（退款 + error 事件）
+            raise LLMError(round_error)
+
+        text = round_text
+        calls = round_calls
+        thinking = round_thinking.strip()
         if thinking:
             thinking_parts.append(thinking)
         logger.info(
@@ -94,10 +119,12 @@ async def run_agent(
         if not calls:
             # 无 tool_calls → 直接返回文本
             if text.strip():
-                return {"text": text, "thinking": "\n\n".join(thinking_parts)}
+                yield {"type": "done", "text": text, "thinking": "\n\n".join(thinking_parts)}
+                return
             if not send_tools:
-                # 已不再传 tools 仍无内容（理论上 complete_tools 已兜底），防御退出
-                return {"text": _EMPTY_FINAL_MSG, "thinking": "\n\n".join(thinking_parts)}
+                # 已不再传 tools 仍无内容（理论上 stream_tools 已兜底），防御退出
+                yield {"type": "done", "text": _EMPTY_FINAL_MSG, "thinking": "\n\n".join(thinking_parts)}
+                return
             continue  # 防御：空响应再走一轮
 
         # 有 tool_calls：先回填 assistant 消息（openai 协议要求 id/function 与 tool 消息对应）
@@ -121,6 +148,8 @@ async def run_agent(
         for call in calls:
             name = str(call.get("name") or "").strip()
             call_id = str(call.get("id") or "")
+
+            yield {"type": "tool_status", "name": name, "status": "executing"}
 
             # 参数：优先用 LLMClient 已解析的 dict，否则三级容错解析原始串
             args = call.get("arguments")
@@ -146,9 +175,47 @@ async def run_agent(
                     name, int((time.monotonic() - started) * 1000), len(result),
                 )
 
+            yield {"type": "tool_status", "name": name, "status": "done", "result_len": len(result)}
             work.append({"role": "tool", "tool_call_id": call_id, "content": result})
         executed_calls += len(calls)
 
     # 理论上已由「最后一轮不带 tools」保证返回；此处防御兜底
     logger.warning("[agent/loop] 达到最大轮数仍未得到文本回复，返回兜底文案")
-    return _EMPTY_FINAL_MSG
+    yield {"type": "done", "text": _EMPTY_FINAL_MSG, "thinking": "\n\n".join(thinking_parts)}
+
+
+async def run_agent(
+    *,
+    system: str = "",
+    messages: list,
+    tools_names: Optional[list[str]] = None,
+    max_tool_calls: int = DEFAULT_MAX_TOOL_CALLS,
+    override: Optional[dict] = None,
+    ctx: Optional[AgentContext] = None,
+) -> dict:
+    """agent 主循环（非流式薄包装）：收集 run_agent_stream 的全部事件，返回最终回复。
+
+    Args:
+        同 run_agent_stream。
+
+    Returns:
+        {"text": 最终文本回复, "thinking": 各轮思考过程拼接（无则空串）}。
+
+    Raises:
+        LLMError: LLM 调用失败，由上层（chat.py）处理退款与报错。
+        ValueError: messages 为空。
+    """
+    text = ""
+    thinking = ""
+    async for event in run_agent_stream(
+        system=system,
+        messages=messages,
+        tools_names=tools_names,
+        max_tool_calls=max_tool_calls,
+        override=override,
+        ctx=ctx,
+    ):
+        if event["type"] == "done":
+            text = str(event.get("text") or "")
+            thinking = str(event.get("thinking") or "")
+    return {"text": text, "thinking": thinking}
