@@ -144,11 +144,14 @@ class LLMClient:
     @classmethod
     async def complete(cls, *, system: str = "", messages: list | None = None,
                        max_tokens: int = 2000, reasoning_effort: str = "auto",
-                       temperature: float | None = None, extra_body: dict | None = None) -> str:
-        """非流式调用，返回完整文本。失败抛 LLMError。"""
+                       temperature: float | None = None, extra_body: dict | None = None,
+                       override: dict | None = None) -> str:
+        """非流式调用，返回完整文本。失败抛 LLMError。
+        override: 可选 per-model 覆盖（base_url/api_key/protocol/model/timeout_seconds），留空用全局配置。"""
         async for event in cls._stream_impl(system=system, messages=messages or [],
                                             max_tokens=max_tokens, reasoning_effort=reasoning_effort,
-                                            temperature=temperature, extra_body=extra_body, stream=False):
+                                            temperature=temperature, extra_body=extra_body, stream=False,
+                                            override=override):
             if event["type"] == "done":
                 return event["text"]
             if event["type"] == "error":
@@ -158,17 +161,27 @@ class LLMClient:
     @classmethod
     async def stream(cls, *, system: str = "", messages: list | None = None,
                      max_tokens: int = 2000, reasoning_effort: str = "auto",
-                     temperature: float | None = None, extra_body: dict | None = None):
-        """流式调用，yield {"type":"chunk","text":...} … {"type":"done","text":...} / {"type":"error","detail":...}"""
+                     temperature: float | None = None, extra_body: dict | None = None,
+                     override: dict | None = None):
+        """流式调用，yield {"type":"chunk","text":...} … {"type":"done","text":...} / {"type":"error","detail":...}
+        override: 可选 per-model 覆盖（base_url/api_key/protocol/model/timeout_seconds），留空用全局配置。"""
         async for event in cls._stream_impl(system=system, messages=messages or [],
                                             max_tokens=max_tokens, reasoning_effort=reasoning_effort,
-                                            temperature=temperature, extra_body=extra_body, stream=True):
+                                            temperature=temperature, extra_body=extra_body, stream=True,
+                                            override=override):
             yield event
 
     @classmethod
     async def _stream_impl(cls, *, system, messages, max_tokens, reasoning_effort,
-                           temperature, extra_body, stream: bool):
-        llm_cfg = get_llm_config()
+                           temperature, extra_body, stream: bool, override: dict | None = None):
+        llm_cfg = dict(get_llm_config())
+        # per-model 覆盖：模型档案填了 base_url/api_key/protocol 等则优先使用
+        if override:
+            for k in ("base_url", "api_key", "protocol", "model", "timeout_seconds"):
+                if override.get(k):
+                    llm_cfg[k] = override[k]
+            if override.get("enabled") is not None:
+                llm_cfg["enabled"] = override["enabled"]
         if not llm_cfg["enabled"] or not llm_cfg.get("api_key"):
             yield {"type": "error", "detail": "LLM 服务未配置或未启用，请联系管理员"}
             return

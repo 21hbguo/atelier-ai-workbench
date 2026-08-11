@@ -1,4 +1,5 @@
 import logging
+import os
 from pathlib import Path
 from backend.config import DATA_DIR, get_llm_config, get_limit_config
 from backend.services.llm_client import LLMClient
@@ -51,8 +52,16 @@ def _load_system_prompt() -> str:
     return content
 
 
+def _resolve_secret(value: str) -> str:
+    """api_key 支持 env:VAR_NAME 语法引用环境变量，避免密钥明文落盘。"""
+    v = str(value or "").strip()
+    if v.startswith("env:"):
+        return os.environ.get(v[4:], "")
+    return v
+
+
 class ChatService:
-    """AI 绘画助手聊天服务：多轮对话 + 统一 LLMClient 流式输出"""
+    """AI 助手聊天服务：多轮对话 + 统一 LLMClient 流式输出"""
 
     # 携带的历史消息条数上限（配合字符预算双保险）
     MAX_CONTEXT_MESSAGES = 200
@@ -60,13 +69,14 @@ class ChatService:
     MAX_MESSAGE_CHARS = 8000
 
     @classmethod
-    def build_llm_messages(cls, history: list[dict]) -> list[dict]:
+    def build_llm_messages(cls, history: list[dict], model: dict | None = None) -> list[dict]:
         """把会话历史转换为标准 messages 格式（role: user/assistant）。
-        按「字符预算」从最新消息向前累积：优先用当前模型档案的 context_budget_chars，
+        按「字符预算」从最新消息向前累积：优先用所调用模型档案的 context_budget_chars，
         否则用全局配置（默认 256K 字符 ≈ 8-13 万 token）。"""
         from backend.services.llm_model_service import get_active
+        model = model or get_active()
         try:
-            budget = max(1000, int(get_active().get("context_budget_chars") or 0))
+            budget = max(1000, int(model.get("context_budget_chars") or 0))
         except Exception:
             budget = 0
         if budget <= 0:
@@ -94,15 +104,28 @@ class ChatService:
         return out
 
     @classmethod
-    async def chat_stream(cls, history: list[dict], reasoning_effort: str = "auto"):
+    async def chat_stream(cls, history: list[dict], reasoning_effort: str = "auto", model: dict | None = None):
         """流式对话。history 最后一条必须是当前用户消息。
         reasoning_effort: auto/low/medium/high/max/xhigh（auto 不传，用 API 默认）
+        model: 模型档案 dict（可含 base_url/api_key/protocol/model_id），None 时用激活模型 + 全局配置。
         产出事件：{"type":"chunk","text":...} → {"type":"done","text":完整文本} / {"type":"error","detail":...}
         """
-        messages = cls.build_llm_messages(history)
+        messages = cls.build_llm_messages(history, model)
         if not messages:
             yield {"type": "error", "detail": "消息内容为空"}
             return
+
+        # per-model 覆盖：档案填了 base_url/api_key 等则优先使用，否则回退全局 .env 配置
+        override = {}
+        if model:
+            if model.get("base_url"):
+                override["base_url"] = model["base_url"]
+            if model.get("api_key"):
+                override["api_key"] = _resolve_secret(model["api_key"])
+            if model.get("protocol"):
+                override["protocol"] = model["protocol"]
+            if model.get("model_id"):
+                override["model"] = model["model_id"]
 
         # 思考模式会占用 max_tokens（reasoning_tokens），适当放宽
         max_tokens = max(get_llm_config()["max_tokens"], 4000)
@@ -112,6 +135,7 @@ class ChatService:
                 messages=messages,
                 max_tokens=max_tokens,
                 reasoning_effort=reasoning_effort,
+                override=override,
             ):
                 if event["type"] == "chunk":
                     yield {"type": "chunk", "text": event["text"]}

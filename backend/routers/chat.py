@@ -13,7 +13,7 @@ from backend.config import get_limit_config
 from backend.services.points_service import PointsService
 from backend.services.banned_words import BannedWordsService
 from backend.services.chat_service import ChatService
-from backend.services.llm_model_service import get_active as get_active_model, get_all as get_all_models
+from backend.services.llm_model_service import get_active as get_active_model, get_all as get_all_models, get_by_model_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -24,8 +24,10 @@ _RATE_BUCKET_MAX = 20000  # 桶数上限，超出后清理过期桶，防止内�
 
 
 class ChatSendRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
     content: str = Field(..., min_length=1, max_length=2000)
     reasoning_effort: str = Field("auto", pattern="^(auto|low|medium|high|max|xhigh)$")
+    model_id: str = Field("", max_length=128)
 
 
 class ChatRenameRequest(BaseModel):
@@ -69,17 +71,23 @@ def _default_title(content: str) -> str:
     return (t[:20] + "…") if len(t) > 20 else (t or "新对话")
 
 
-def _chat_cost_per_request() -> float:
-    """单次聊天扣费：优先取激活模型的按次定价（points_per_request），未定价则回退全局配置。"""
-    price = get_active_model().get("points_per_request")
+def _chat_cost_per_request(model=None) -> float:
+    """单次聊天扣费：优先模型档案的按次定价（points_per_request），未定价则回退全局配置。"""
+    m = model or get_active_model()
+    price = m.get("points_per_request")
     if price is not None and price > 0:
         return float(price)
     return float(get_limit_config()["points_cost_per_chat"])
 
 
 @router.get("/cost")
-async def chat_cost(user=Depends(get_current_user)):
-    return {"cost_per_chat": _chat_cost_per_request()}
+async def chat_cost(model_id: str = Query("", max_length=128), user=Depends(get_current_user)):
+    model = None
+    if model_id:
+        model = get_by_model_id(model_id)
+        if not model:
+            raise HTTPException(status_code=400, detail="模型不存在")
+    return {"cost_per_chat": _chat_cost_per_request(model)}
 
 
 @router.get("/model")
@@ -209,14 +217,23 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
 
     _check_rate_limit(user_id)
 
-    cost_per = _chat_cost_per_request()
+    # 模型解析：model_id 留空 = 激活模型；指定则校验档案存在且已启用
+    active_model = get_active_model()
+    target_model = active_model
+    if body.model_id:
+        target_model = get_by_model_id(body.model_id)
+        if not target_model:
+            raise HTTPException(status_code=400, detail="模型不存在")
+        if not target_model.get("enabled", True):
+            raise HTTPException(status_code=400, detail="模型未启用")
+
+    cost_per = _chat_cost_per_request(target_model)
     req_id = str(uuid.uuid4())
 
     # 思考档位按模型档案校验：不在档案档位列表内则回退该模型默认档位
-    active_model = get_active_model()
-    efforts = active_model.get("reasoning_efforts") or ["auto"]
+    efforts = target_model.get("reasoning_efforts") or ["auto"]
     if body.reasoning_effort not in efforts:
-        body.reasoning_effort = active_model.get("default_reasoning_effort") or "auto"
+        body.reasoning_effort = target_model.get("default_reasoning_effort") or "auto"
 
     # 校验会话归属 + 消息上限（先校验后扣费，避免 402 留下孤儿消息）
     with get_db() as conn:
@@ -266,7 +283,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
         finished = False
         refunded = False
         try:
-            async for event in ChatService.chat_stream(history, body.reasoning_effort):
+            async for event in ChatService.chat_stream(history, body.reasoning_effort, model=target_model):
                 if event["type"] == "chunk":
                     yield f"event: chunk\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
                 elif event["type"] == "done":

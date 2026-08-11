@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 CSV_PATH = Path(DATA_DIR) / "llm_models.csv"
 _FIELDNAMES = [
     "model_id", "label", "provider", "protocol",
+    "base_url", "api_key",
     "max_input_tokens", "max_output_tokens",
     "input_price_per_million", "output_price_per_million", "cache_read_price_per_million", "price_currency",
     "input_points_per_million", "output_points_per_million", "points_per_request",
@@ -33,6 +34,8 @@ FALLBACK_MODEL = {
     "label": "",
     "provider": "",
     "protocol": "openai",
+    "base_url": "",
+    "api_key": "",
     "max_input_tokens": 1000000,
     "max_output_tokens": 128000,
     "input_price_per_million": None,
@@ -81,6 +84,8 @@ def _row_to_dict(r: dict) -> dict:
         "label": str(r.get("label") or "").strip(),
         "provider": str(r.get("provider") or "").strip(),
         "protocol": str(r.get("protocol") or "openai").strip() or "openai",
+        "base_url": str(r.get("base_url") or "").strip(),
+        "api_key": str(r.get("api_key") or "").strip(),
         "max_input_tokens": max(1024, int(r.get("max_input_tokens") or 1000000)),
         "max_output_tokens": max(1, int(r.get("max_output_tokens") or 128000)),
         "reasoning_efforts": _split_semicolon(r.get("reasoning_efforts")) or ["auto"],
@@ -128,6 +133,7 @@ def _write_all(rows: list[dict]):
                 w.writerow({
                     "model_id": r["model_id"], "label": r["label"], "provider": r.get("provider", ""),
                     "protocol": r["protocol"],
+                    "base_url": r.get("base_url", ""), "api_key": r.get("api_key", ""),
                     "max_input_tokens": r["max_input_tokens"], "max_output_tokens": r["max_output_tokens"],
                     "input_price_per_million": _fmt_price(r.get("input_price_per_million")),
                     "output_price_per_million": _fmt_price(r.get("output_price_per_million")),
@@ -212,6 +218,8 @@ def upsert(data: dict) -> dict:
             "label": str(_pick("label") or model_id),
             "provider": str(_pick("provider") or "").strip(),
             "protocol": str(_pick("protocol") or "openai"),
+            "base_url": str(_pick("base_url") or "").strip(),
+            "api_key": str(_pick("api_key") or "").strip(),
             "max_input_tokens": max(1024, int(_pick("max_input_tokens") or _pick("context_tokens") or 1000000)),
             "max_output_tokens": max(1, int(_pick("max_output_tokens") or _pick("output_tokens") or 128000)),
             "reasoning_efforts": efforts,
