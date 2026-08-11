@@ -31,6 +31,43 @@ def test_parse_csv():
         os.unlink(p)
 
 
+def test_parse_markdown():
+    p = "/tmp/_test.md"
+    with open(p, "w", encoding="utf-8") as f:
+        f.write("# 标题\n\n正文 **加粗** 内容")
+    try:
+        text = parse_file(p, "md")
+        assert "# 标题" in text and "加粗" in text
+    finally:
+        os.unlink(p)
+
+
+def test_parse_json():
+    p = "/tmp/_test.json"
+    with open(p, "w", encoding="utf-8") as f:
+        f.write('{"name": "测试", "items": [1, 2]}')
+    try:
+        text = parse_file(p, "json")
+        assert "测试" in text
+    finally:
+        os.unlink(p)
+
+
+def test_parse_pptx():
+    from pptx import Presentation
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[5])
+    tb = slide.shapes.add_textbox(0, 0, 100, 50)
+    tb.text_frame.text = "PPT 正文内容"
+    p = "/tmp/_test.pptx"
+    prs.save(p)
+    try:
+        text = parse_file(p, "pptx")
+        assert "PPT 正文内容" in text
+    finally:
+        os.unlink(p)
+
+
 def test_parse_docx():
     from docx import Document
     d = Document()
