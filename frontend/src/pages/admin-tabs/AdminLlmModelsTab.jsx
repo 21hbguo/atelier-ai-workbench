@@ -8,7 +8,7 @@ const EMPTY_DRAFT = {
   model_id: '', label: '', provider: '', protocol: 'openai',
   base_url: '', api_key: '',
   max_input_tokens: 1000000, max_output_tokens: 128000,
-  reasoning_efforts_text: 'auto,low,medium,high,max,xhigh',
+  reasoning_efforts_text: 'auto,low,medium,high,xhigh,max',
   default_reasoning_effort: 'auto', thinking_default: 'enabled',
   context_budget_chars: 256000,
   input_price_per_million: '', output_price_per_million: '', cache_read_price_per_million: '', price_currency: 'usd',
@@ -243,7 +243,7 @@ export default function AdminLlmModelsTab({ items, loading, onRefresh, onSave, o
               </div>
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>思考档位（逗号分隔）</label>
-                <input value={editing.draft.reasoning_efforts_text} onChange={e => setDraft({ reasoning_efforts_text: e.target.value })} placeholder="auto,low,medium,high,max,xhigh"
+                <input value={editing.draft.reasoning_efforts_text} onChange={e => setDraft({ reasoning_efforts_text: e.target.value })} placeholder="auto,low,medium,high,xhigh,max"
                   className="w-full px-3 py-2 rounded-2xl text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
               <div>

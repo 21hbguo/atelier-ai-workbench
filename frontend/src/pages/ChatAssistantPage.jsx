@@ -361,12 +361,19 @@ function EmptyState({ onPick }) {
 
 // ============ 底部输入区 ============
 const EFFORT_LABELS = { auto: '自动', low: '低', medium: '中', high: '高', max: '最高', xhigh: '超高' }
+// 思考强度固定顺序（auto 最左、max 最右）：UI 展示不依赖模型档案/CSV 的原始顺序
+const EFFORT_ORDER = ['auto', 'low', 'medium', 'high', 'xhigh', 'max']
 
 function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, reasoningEffort, onReasoningEffort, efforts, modelLabel, pendingQueue, onEditPending, onRemovePending, models, chatModelId, onSelectModel, onUploadClick, docs, onRemoveDoc, uploadingCount, uploadNote }) {
   const [effortOpen, setEffortOpen] = useState(false)
   const [modelOpen, setModelOpen] = useState(false)
-  const EFFORT_OPTIONS = (Array.isArray(efforts) && efforts.length ? efforts : ['auto', 'low', 'medium', 'high', 'max', 'xhigh'])
+  const EFFORT_OPTIONS = (Array.isArray(efforts) && efforts.length ? efforts : ['auto', 'low', 'medium', 'high', 'xhigh', 'max'])
     .map(v => ({ value: v, label: EFFORT_LABELS[v] || v }))
+    .sort((a, b) => {
+      const ia = EFFORT_ORDER.indexOf(a.value)
+      const ib = EFFORT_ORDER.indexOf(b.value)
+      return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib)  // 未知档位排最后
+    })
   const activeModel = models.find(m => m.model_id === chatModelId) || null
   useEffect(() => {
     if (!value && inputRef.current) inputRef.current.style.height = 'auto'
