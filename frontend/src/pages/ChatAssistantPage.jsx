@@ -499,9 +499,13 @@ export default function ChatAssistantPage() {
   const activeSession = sessions.find(s => s.id === activeId) || null
   // 当前选中的模型档案（未选或记忆无效 → 激活模型）
   const chatModel = models.find(m => m.model_id === chatModelId) || modelInfo
-  // 可选模型：仅列出已配置接口（base_url/api_key 至少一个）的模型；一个都没配置时退化为激活模型
+  // 可选模型：已配置接口（base_url/api_key 至少一个）的模型 + 激活模型（走全局配置，始终可选）
   const configuredModels = models.filter(m => m.base_url || m.api_key)
-  const selectableModels = configuredModels.length ? configuredModels : (modelInfo ? [modelInfo] : [])
+  const activeModelItem = modelInfo ? (models.find(m => m.model_id === modelInfo.model_id) || modelInfo) : null
+  const selectableModels = [...configuredModels]
+  if (activeModelItem && !selectableModels.some(m => m.model_id === activeModelItem.model_id)) {
+    selectableModels.push(activeModelItem)
+  }
 
   // latest-ref：每次渲染后同步，让异步回调能读到最新值
   useEffect(() => {
