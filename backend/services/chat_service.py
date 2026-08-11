@@ -103,8 +103,8 @@ class ChatService:
     # ---- 上下文压缩参数（对齐 openai-agents 的 compaction 设计） ----
     # 总占用（system + 全部消息字符）超过预算该比例时触发压缩
     COMPACT_TRIGGER_RATIO = 0.85
-    # 压缩时保留的最近消息条数档位：从摘要最多的一档开始尝试
-    RECENT_KEEP_OPTIONS = (16, 8, 4, 2)
+    # 压缩目标：压缩后总占用降到预算该比例以下（为后续追加留足空间，避免频繁压缩）
+    COMPACT_TARGET_RATIO = 0.5
     # 单次压缩至多执行的轮数（每轮把更老区间摘要后重建）
     COMPACT_MAX_ROUNDS = 2
     # 单次生成摘要的 max_tokens 上限
@@ -139,7 +139,8 @@ class ChatService:
     def build_llm_messages(cls, history: list[dict], model: dict | None = None,
                            attached_docs: list[dict] | None = None,
                            summary: dict | None = None,
-                           system_chars: int = 0) -> list[dict]:
+                           system_chars: int = 0,
+                           hard_truncate: bool = True) -> list[dict]:
         """把会话历史转换为标准 messages 格式（role: user/assistant）。
 
         三区块结构（每轮请求的前缀逐轮字节稳定，命中大模型服务商前缀 KV 缓存）：
@@ -148,8 +149,12 @@ class ChatService:
         3. [区块3b] 未压缩历史消息 → 预算内全量追加，不做中间改写。
 
         预算：优先模型档案 context_budget_chars，否则全局配置；system 提示词、区块2/3a 的
-        占用先从预算扣除，剩余为历史预算。历史超预算时从最老丢弃作为硬兜底——正常流程不会
-        发生（prepare_session_messages 会先压缩），仅在极端情况下触发（会破坏前缀稳定性）。
+        占用先从预算扣除，剩余为历史预算。
+
+        hard_truncate=True（默认）：历史超出完整预算时从最老丢弃作为硬兜底——正常流程不会
+        发生（prepare_session_messages 会先压缩），仅作极端兜底（会破坏前缀稳定性）。
+        hard_truncate=False：历史全量追加（仅单条截断与条数上限），供 prepare_session_messages
+        以「未截断全量」判断是否需要压缩，避免截断掩盖超预算导致压缩永不触发。
 
         history 元素可含 id（压缩边界用），仅 role/content 参与消息组装。
         summary: {"until": int, "text": str} | None —— 会话压缩状态（来自 chat_sessions）。
@@ -173,11 +178,12 @@ class ChatService:
             out.append({"role": "user", "content": summary_block})
             total += len(summary_block)
 
-        # ---- 区块3b：未压缩历史（纯追加；从最新向前累积到历史预算内）----
-        history_budget = max(0, budget - system_chars - total)
+        # ---- 区块3b：未压缩历史（纯追加；从最新向前累积）----
         recent = history[-cls.MAX_CONTEXT_MESSAGES:]
         kept: list[dict] = []
         used = 0
+        # 硬截断线 = 完整预算 - system 占用（messages 之外），避免截断后总占用仍超预算
+        hard_limit = max(0, budget - int(system_chars or 0))
         for msg in reversed(recent):
             role = msg.get("role")
             if role not in ("user", "assistant"):
@@ -187,7 +193,7 @@ class ChatService:
                 continue
             if len(content) > cls.MAX_MESSAGE_CHARS:
                 content = content[: cls.MAX_MESSAGE_CHARS] + "…"
-            if kept and used + len(content) > history_budget:
+            if hard_truncate and kept and total + used + len(content) > hard_limit:
                 break  # 硬兜底：丢弃更早的消息（至少保留最新一条）
             kept.append({"role": role, "content": content})
             used += len(content)
@@ -248,7 +254,9 @@ class ChatService:
         history = [{"id": r["id"], "role": r["role"], "content": r["content"]} for r in rows]
         summary = {"until": summary_until, "text": summary_text} if summary_until and summary_text else None
 
-        messages = cls.build_llm_messages(history, model, attached_docs, summary=summary, system_chars=system_chars)
+        # 全量构建（不硬截断历史）：以未截断全量判断压缩，避免截断掩盖超预算导致压缩永不触发
+        messages = cls.build_llm_messages(history, model, attached_docs, summary=summary,
+                                          system_chars=system_chars, hard_truncate=False)
 
         # 上下文压缩：仅在超预算时对最老的区块3片段做摘要，最多 COMPACT_MAX_ROUNDS 轮
         for _ in range(cls.COMPACT_MAX_ROUNDS):
@@ -256,7 +264,10 @@ class ChatService:
                 break
             compacted = await cls._compact_session(session_id, model, attached_docs, system_prompt, override)
             if compacted is None:
-                break  # 无可压缩内容，接受硬兜底截断
+                # 无可压缩内容或并发被抢占：用硬兜底重建（截断到预算内），避免把超预算全量发给 LLM
+                messages = cls.build_llm_messages(history, model, attached_docs, summary=summary,
+                                                  system_chars=system_chars, hard_truncate=True)
+                break
             history, summary, messages = compacted
         return messages
 
@@ -296,7 +307,12 @@ class ChatService:
             ).fetchall()
             history = [{"id": r["id"], "role": r["role"], "content": r["content"]} for r in rows]
 
-            cut = cls._compact_cut_index(history)
+            # 区块2 文档块占用计入压缩目标（避免压缩后 docs+目标仍超触发线导致反复压缩）
+            docs_block = cls._build_attached_docs_block(attached_docs, cls._resolve_budget(model))
+            cut = cls._compact_cut_index(history, cls._resolve_budget(model),
+                                         system_chars=len(system_prompt or ""),
+                                         summary_text=cur_text,
+                                         docs_chars=len(docs_block))
             if cut <= 0:
                 return None
             segment = history[:cut]
@@ -309,13 +325,17 @@ class ChatService:
             merged = merged[-cls.SUMMARY_TEXT_MAX:]
 
         # ---- 阶段3：条件更新（并发安全）----
+        # 新插入消息的 id 必大于阶段1 快照的最大 id（max_id_at_phase1），
+        # 因此若摘要区间 (cut_id 及之前) 出现 id > max_id_at_phase1 的消息，说明发生了
+        # 并发插入覆盖摘要边界（防御：正常 SERIAL 自增下不会发生），此时放弃压缩。
+        max_id_at_phase1 = int(history[-1]["id"]) if history else 0
         with get_db() as conn:
             cur = conn.execute(
                 "UPDATE chat_sessions SET summary_until = %s, summary_text = %s "
                 "WHERE id = %s AND summary_until = %s "
                 "AND NOT EXISTS (SELECT 1 FROM chat_messages "
                 "                 WHERE session_id = %s AND id > %s AND id <= %s)",
-                (cut_id, merged, session_id, cur_until, session_id, cur_until, cut_id),
+                (cut_id, merged, session_id, cur_until, session_id, max_id_at_phase1, cut_id),
             )
             if cur.rowcount == 0:
                 # 并发压缩已推进，或摘要区间出现了并发插入的新消息 → 放弃本次压缩
@@ -329,22 +349,43 @@ class ChatService:
             return history[cut:], summary, messages
 
     @classmethod
-    def _compact_cut_index(cls, history: list[dict]) -> int:
+    def _compact_cut_index(cls, history: list[dict], budget: int,
+                           system_chars: int = 0, summary_text: str = "",
+                           docs_chars: int = 0) -> int:
         """返回应被摘要压缩的历史条数（保留部分从该下标开始）；无可压缩返回 0。
 
-        从摘要最多的一档（RECENT_KEEP_OPTIONS 首位）开始尝试；
-        保留部分第一条必须是 user（完整轮次边界，对齐 openai-agents 的轮次切分思想），
-        否则边界后移少摘要一条，直到保留区以 user 开头。
+        预算驱动：压缩后（按估算摘要长度）总占用应 ≤ budget × COMPACT_TARGET_RATIO，
+        为后续纯追加留足空间，避免压缩后立刻再次触发压缩；
+        保留区第一条必须是 user（完整轮次边界，对齐 openai-agents 的轮次切分思想），
+        否则把更早一条并入保留区，直到保留区以 user 开头；至少保留最新一条。
+        docs_chars: 区块2 attached_documents 块占用（压缩目标需为其预留空间）。
         """
-        for keep in cls.RECENT_KEEP_OPTIONS:
-            if len(history) <= keep:
+        est_summary = min(max(len(summary_text or ""), 100) + 200, cls.SUMMARY_TEXT_MAX)
+        target = (int(budget * cls.COMPACT_TARGET_RATIO) - int(system_chars or 0)
+                  - int(docs_chars or 0) - est_summary)
+        kept: list[dict] = []
+        used = 0
+        for msg in reversed(history):
+            role = msg.get("role")
+            if role not in ("user", "assistant"):
                 continue
-            cut = len(history) - keep
-            while cut < len(history) and history[cut].get("role") != "user":
-                cut += 1
-            if 0 < cut < len(history):
-                return cut
-        return 0
+            content = str(msg.get("content") or "").strip()
+            if not content:
+                continue
+            if len(content) > cls.MAX_MESSAGE_CHARS:
+                content = content[: cls.MAX_MESSAGE_CHARS]
+            if kept and used + len(content) > target:
+                break  # 已满足压缩目标，更早的交给摘要
+            kept.append(msg)
+            used += len(content)
+        kept.reverse()
+        # 轮次边界对齐：保留区首条必须是 user，否则把更早一条并入保留区
+        while kept and kept[0].get("role") != "user":
+            idx = len(history) - len(kept) - 1
+            if idx < 0:
+                break
+            kept.insert(0, history[idx])
+        return max(len(history) - len(kept), 0)
 
     @classmethod
     async def _generate_summary(cls, segment: list[dict], model: dict | None,
