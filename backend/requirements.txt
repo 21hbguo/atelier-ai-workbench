@@ -15,3 +15,9 @@ alembic==1.15.2
 numpy==2.2.6
 onnxruntime==1.22.0
 fastembed==0.8.0
+# 聊天文档解析（anything-llm 集成阶段 1）
+PyMuPDF>=1.24          # pdf 文本提取
+python-docx>=1.1       # docx 段落+表格提取
+openpyxl>=3.1          # xlsx 单元格提取
+python-pptx>=1.0       # pptx shape 文本提取
+json-repair>=0.25      # tool call 参数 JSON 容错

@@ -497,6 +497,28 @@ def init_db():
                 notes TEXT DEFAULT '',
                 created_at TIMESTAMP DEFAULT NOW()
             )""",
+            """CREATE TABLE IF NOT EXISTS chat_files (
+                id SERIAL PRIMARY KEY,
+                session_id INTEGER NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                storage_name VARCHAR(255) NOT NULL UNIQUE,
+                original_name VARCHAR(255) NOT NULL,
+                content_type VARCHAR(128),
+                page_content TEXT NOT NULL,
+                char_count INTEGER DEFAULT 0,
+                status VARCHAR(16) DEFAULT 'parsed',
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_chat_files_session ON chat_files(session_id)",
+            """CREATE TABLE IF NOT EXISTS chat_file_chunks (
+                id SERIAL PRIMARY KEY,
+                file_id INTEGER NOT NULL REFERENCES chat_files(id) ON DELETE CASCADE,
+                chunk_index INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                embedding JSONB,
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_chunks_file ON chat_file_chunks(file_id)",
         ]
             for sql in statements:
                 conn.execute(sql)
