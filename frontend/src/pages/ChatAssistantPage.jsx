@@ -276,6 +276,39 @@ function MessageItem({ msg, onCopy }) {
   )
 }
 
+// ============ 排队中的待发送消息（对话区即时回显） ============
+// 成功入队的消息立即在对话区显示「用户问题 + 等待动画」，轮到它时占位移除、
+// 由 sendQueuedNext 正常进入流式（用户消息入 messages + StreamBubble）。
+function PendingQueueBubbles({ items }) {
+  return (
+    <>
+      {items.map(item => (
+        <div key={item.id}>
+          {/* 用户消息（已成功排队，立即回显） */}
+          <div className="flex justify-end mb-4 animate-fade-in-up">
+            <div className="relative max-w-[85%] sm:max-w-[78%] rounded-2xl px-4 py-3"
+              style={{ background: 'var(--bg-user-bubble)' }}>
+              <div className="text-sm whitespace-pre-wrap break-words" style={{ color: 'var(--text-primary)' }}>{item.text}</div>
+            </div>
+          </div>
+          {/* 等待占位（模型思考动画） */}
+          <div className="flex justify-start mb-4 animate-fade-in-up">
+            <div className="max-w-[85%] sm:max-w-[78%] rounded-2xl px-4 py-3"
+              style={{ background: 'var(--bg-ai-bubble)', boxShadow: 'var(--shadow-md)' }}>
+              <div className="flex items-center gap-1.5 py-1">
+                <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--text-secondary)' }} />
+                <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--text-secondary)', animationDelay: '0.15s' }} />
+                <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--text-secondary)', animationDelay: '0.3s' }} />
+                <span className="ml-1.5 text-xs" style={{ color: 'var(--text-secondary)' }}>已排队，等待前面的回复完成后开始…</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </>
+  )
+}
+
 // ============ 流式输出中的 AI 气泡 ============
 function StreamBubble({ sending, onStop, onRetry }) {
   const hasText = sending.text.length > 0
@@ -639,6 +672,15 @@ export default function ChatAssistantPage() {
   const activeIdRef = useRef(activeId)
   const effortRef = useRef(reasoningEffort)
   const modelIdRef = useRef(chatModelId)
+  // 流式渲染节流：chunk/thinking 高频到达时按帧合并 setState，
+  // 避免 mdToHtml 全量重渲染导致 UI 卡顿（感知为「卡顿后一次性出大量文本」）
+  const streamBufRef = useRef({ sessionId: null, text: '', thinking: '' })
+  const streamRafRef = useRef(null)
+  const flushStreamBuf = useCallback(() => {
+    streamRafRef.current = null
+    const { sessionId: sid, text, thinking } = streamBufRef.current
+    setSending(prev => (prev && prev.sessionId === sid) ? { ...prev, text, thinking } : prev)
+  }, [])
   const [pendingQueue, setPendingQueue] = useState([])
 
   const activeSession = sessions.find(s => s.id === activeId) || null
@@ -724,7 +766,7 @@ export default function ChatAssistantPage() {
   useEffect(() => {
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [messages, messagesLoading, sending?.text, sending?.stopped])
+  }, [messages, messagesLoading, sending?.text, sending?.stopped, pendingQueue])
 
   const refreshSessions = useCallback(() => {
     chatAPI.sessions().then(res => setSessions(res.data?.items || [])).catch(() => {})
@@ -843,14 +885,23 @@ export default function ChatAssistantPage() {
     const st = { sessionId, content, text: '', thinking: '', toolStatus: null, stopped: false, error: '', manual: false }
     sendingRef.current = st
     setSending(st)
+    // 本次流开始：重置节流缓冲（避免残留上一流的未 flush 内容）
+    streamBufRef.current = { sessionId, text: '', thinking: '' }
+    if (streamRafRef.current) { cancelAnimationFrame(streamRafRef.current); streamRafRef.current = null }
     chatAPI.sendStream(sessionId, content, {
       signal: controller.signal,
       reasoning_effort: reasoningEffort,
       model_id: modelIdRef.current,
-      onChunk: data => setSending(prev =>
-        (prev && prev.sessionId === sessionId) ? { ...prev, text: (prev.text || '') + String(data.text || '') } : prev),
-      onThinking: data => setSending(prev =>
-        (prev && prev.sessionId === sessionId) ? { ...prev, thinking: (prev.thinking || '') + String(data.text || '') } : prev),
+      onChunk: data => {
+        const buf = streamBufRef.current
+        buf.text += String(data.text || '')
+        if (!streamRafRef.current) streamRafRef.current = requestAnimationFrame(flushStreamBuf)
+      },
+      onThinking: data => {
+        const buf = streamBufRef.current
+        buf.thinking += String(data.text || '')
+        if (!streamRafRef.current) streamRafRef.current = requestAnimationFrame(flushStreamBuf)
+      },
       onToolStatus: data => setSending(prev =>
         (prev && prev.sessionId === sessionId)
           ? { ...prev, toolStatus: data?.status === 'done' ? null : { name: data?.name || '', status: data?.status || 'executing' } }
@@ -900,7 +951,7 @@ export default function ChatAssistantPage() {
         }
       },
     }).finally(() => { if (abortRef.current === controller) abortRef.current = null })
-  }, [dialog, refreshSessions])
+  }, [dialog, refreshSessions, flushStreamBuf])
 
   // ============ 排队队列操作 ============
   const MAX_PENDING = 10
@@ -1244,6 +1295,7 @@ export default function ChatAssistantPage() {
                 <>
                   {messages.map(msg => <MessageItem key={msg.id} msg={msg} onCopy={handleCopy} />)}
                   {sending && <StreamBubble sending={sending} onStop={handleStop} onRetry={handleRetry} />}
+                  {pendingQueue.length > 0 && <PendingQueueBubbles items={pendingQueue} />}
                 </>
               )}
             </div>
