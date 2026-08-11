@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { MessageCircle, Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, ChevronLeft, Brain, AlertCircle } from 'lucide-react'
+import { MessageCircle, Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, ChevronLeft, Brain, AlertCircle, CheckSquare } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
 import { useAppDialog } from '../components/AppDialogProvider'
 import { chatAPI, pointsAPI } from '../api'
@@ -71,7 +71,8 @@ async function copyText(text) {
 
 // ============ 会话列表 ============
 function SessionList({ sessions, activeId, loading, sending, renaming, renamingValue,
-  onSelect, onCreate, onDelete, onStartRename, onRenamingChange, onRenamingCommit, onRenamingCancel }) {
+  onSelect, onCreate, onDelete, onStartRename, onRenamingChange, onRenamingCommit, onRenamingCancel,
+  batchMode, selectedIds, onEnterBatch, onSelectAll, onToggleSelect, onBatchDelete, onExitBatch }) {
   const renderActions = (s) => (
     <>
       <button onClick={(e) => { e.stopPropagation(); onStartRename(s) }}
@@ -87,29 +88,66 @@ function SessionList({ sessions, activeId, loading, sending, renaming, renamingV
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="p-3 pb-2 border-b flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
-        <button onClick={onCreate} disabled={sending}
-          className="w-full inline-flex items-center justify-center gap-1.5 h-9 rounded-xl text-sm font-medium text-white disabled:opacity-50 transition-colors"
-          style={{ background: 'var(--accent)' }}>
-          <Plus size={16} /> 新建对话
-        </button>
+        {batchMode ? (
+          <div className="flex items-center gap-1.5">
+            <span className="flex-1 min-w-0 text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+              已选 {selectedIds.length} 个
+            </span>
+            <button onClick={onSelectAll}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium hover:bg-bg-hover transition-colors"
+              style={{ color: 'var(--text-secondary)' }}>
+              <CheckSquare size={13} /> 全选
+            </button>
+            <button onClick={onBatchDelete} disabled={!selectedIds.length}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-white transition-colors disabled:opacity-40"
+              style={{ background: 'var(--accent)' }}>
+              <Trash2 size={13} /> 删除
+            </button>
+            <button onClick={onExitBatch}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium hover:bg-bg-hover transition-colors"
+              style={{ color: 'var(--text-secondary)' }}>
+              <X size={13} /> 取消
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5">
+            <button onClick={onCreate} disabled={sending}
+              className="flex-1 inline-flex items-center justify-center gap-1.5 h-9 rounded-xl text-sm font-medium text-white disabled:opacity-50 transition-colors"
+              style={{ background: 'var(--accent)' }}>
+              <Plus size={16} /> 新建对话
+            </button>
+            <button onClick={onEnterBatch} title="批量删除"
+              className="flex-shrink-0 w-9 h-9 inline-flex items-center justify-center rounded-xl transition-colors hover:bg-bg-hover"
+              style={{ color: 'var(--text-secondary)', border: '1px solid var(--border-color)' }}>
+              <Trash2 size={15} />
+            </button>
+          </div>
+        )}
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1">
         {loading && <div className="text-xs text-center py-8" style={{ color: 'var(--text-secondary)' }}>加载中…</div>}
         {!loading && sessions.length === 0 && (
-          <div className="text-xs text-center py-8" style={{ color: 'var(--text-secondary)' }}>暂无会话，点击上方新建对话</div>
+          <div className="text-xs text-center py-8" style={{ color: 'var(--text-secondary)' }}>
+            {batchMode ? '没有可删除的会话' : '暂无会话，点击上方新建对话'}
+          </div>
         )}
         {sessions.map(s => {
           const active = s.id === activeId
           const isRenaming = renaming && renaming.id === s.id
+          const checked = selectedIds.includes(s.id)
           return (
             <div key={s.id}
-              className={`group relative rounded-xl px-3 py-2.5 cursor-pointer transition-colors ${active ? '' : 'hover:bg-bg-hover'} ${sending ? 'opacity-60' : ''}`}
+              className={`group relative rounded-xl px-3 py-2.5 cursor-pointer transition-colors ${active && !batchMode ? '' : 'hover:bg-bg-hover'} ${sending ? 'opacity-60' : ''}`}
               style={{
-                background: active ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent',
-                border: `1px solid ${active ? 'color-mix(in srgb, var(--accent) 25%, var(--border-color))' : 'transparent'}`,
+                background: (active && !batchMode) ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : (batchMode && checked ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent'),
+                border: `1px solid ${batchMode && checked ? 'color-mix(in srgb, var(--accent) 45%, var(--border-color))' : (active && !batchMode ? 'color-mix(in srgb, var(--accent) 25%, var(--border-color))' : 'transparent')}`,
               }}
-              onClick={() => { if (!sending) onSelect(s.id) }}>
-              {isRenaming ? (
+              onClick={() => {
+                if (sending) return
+                if (batchMode) onToggleSelect(s.id)
+                else onSelect(s.id)
+              }}>
+              {isRenaming && !batchMode ? (
                 <input autoFocus value={renamingValue}
                   onChange={e => onRenamingChange(e.target.value)}
                   onClick={e => e.stopPropagation()}
@@ -123,19 +161,30 @@ function SessionList({ sessions, activeId, loading, sending, renaming, renamingV
                   style={{ background: 'var(--bg-input)', color: 'var(--text-primary)', border: '1px solid var(--accent)' }} />
               ) : (
                 <>
-                  <div className="text-sm font-medium truncate pr-9" style={{ color: active ? 'var(--accent)' : 'var(--text-primary)' }}>
+                  {batchMode && (
+                    <span className="absolute left-2.5 top-2.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={checked} onChange={() => onToggleSelect(s.id)}
+                        className="w-3.5 h-3.5 cursor-pointer"
+                        style={{ accentColor: 'var(--accent)' }} />
+                    </span>
+                  )}
+                  <div className={`text-sm font-medium truncate ${batchMode ? 'pl-6' : 'pr-9'}`} style={{ color: (active && !batchMode) ? 'var(--accent)' : 'var(--text-primary)' }}>
                     {s.title || '新对话'}
                   </div>
-                  <div className="text-xs truncate mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+                  <div className={`text-xs truncate mt-0.5 ${batchMode ? 'pl-6' : ''}`} style={{ color: 'var(--text-secondary)' }}>
                     {s.last_message || '暂无消息'}
                   </div>
-                  <div className="text-[10px] mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+                  <div className={`text-[10px] mt-0.5 ${batchMode ? 'pl-6' : ''}`} style={{ color: 'var(--text-secondary)' }}>
                     {formatTime(s.updated_at || s.created_at)}
                   </div>
-                  {/* 移动端常显操作按钮 */}
-                  <div className="absolute right-1.5 top-1.5 flex gap-0.5 lg:hidden">{renderActions(s)}</div>
-                  {/* 桌面端 hover 显示操作按钮 */}
-                  <div className="absolute right-1.5 top-1.5 hidden lg:flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">{renderActions(s)}</div>
+                  {!batchMode && (
+                    <>
+                      {/* 移动端常显操作按钮 */}
+                      <div className="absolute right-1.5 top-1.5 flex gap-0.5 lg:hidden">{renderActions(s)}</div>
+                      {/* 桌面端 hover 显示操作按钮 */}
+                      <div className="absolute right-1.5 top-1.5 hidden lg:flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">{renderActions(s)}</div>
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -389,6 +438,8 @@ export default function ChatAssistantPage() {
   const [modelInfo, setModelInfo] = useState(null) // { label, reasoning_efforts, ... }
   const [sessionListOpen, setSessionListOpen] = useState(false)
   const [renaming, setRenaming] = useState(null) // { id, title }
+  const [batchMode, setBatchMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState([])
   const renamingRef = useRef(null)
   const abortRef = useRef(null)
   const scrollRef = useRef(null)
@@ -699,6 +750,55 @@ export default function ChatAssistantPage() {
     }
   }
 
+  // ============ 批量删除 ============
+  const handleEnterBatch = () => {
+    cancelRename()
+    setBatchMode(true)
+    setSelectedIds([])
+  }
+  const handleToggleSelect = (id) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+  const handleSelectAll = () => {
+    setSelectedIds(prev => prev.length === sessions.length ? [] : sessions.map(s => s.id))
+  }
+  const handleExitBatch = () => {
+    setBatchMode(false)
+    setSelectedIds([])
+  }
+  const handleBatchDelete = async () => {
+    if (!selectedIds.length) return
+    const ok = await dialog.confirm(`确定删除选中的 ${selectedIds.length} 个会话吗？删除后聊天记录将无法恢复。`)
+    if (!ok) return
+    try {
+      const res = await chatAPI.batchDeleteSessions(selectedIds)
+      const deleted = Number(res.data?.deleted) || 0
+      const delSet = new Set(selectedIds)
+      const next = sessions.filter(s => !delSet.has(s.id))
+      setSessions(next)
+      if (delSet.has(activeId)) {
+        manualStopRef.current = true
+        abortRef.current?.abort()
+        sendingRef.current = null
+        setSending(null)
+        clearPending()
+        if (next.length) {
+          activeIdRef.current = next[0].id
+          setActiveId(next[0].id)
+        } else {
+          activeIdRef.current = null
+          setActiveId(null)
+          setMessages([])
+        }
+      }
+      setBatchMode(false)
+      setSelectedIds([])
+      dialog.alert(`已删除 ${deleted} 个会话`)
+    } catch (err) {
+      dialog.alert(err.message || '批量删除失败')
+    }
+  }
+
   const handleStop = () => { manualStopRef.current = true; abortRef.current?.abort() }
 
   const handleReasoningEffort = (v) => {
@@ -743,7 +843,11 @@ export default function ChatAssistantPage() {
             renaming={renaming} renamingValue={renaming?.title || ''}
             onSelect={handleSelectSession} onCreate={handleCreateSession} onDelete={handleDeleteSession}
             onStartRename={startRename} onRenamingChange={changeRename}
-            onRenamingCommit={commitRename} onRenamingCancel={cancelRename} />
+            onRenamingCommit={commitRename} onRenamingCancel={cancelRename}
+            batchMode={batchMode} selectedIds={selectedIds}
+            onEnterBatch={handleEnterBatch} onSelectAll={handleSelectAll}
+            onToggleSelect={handleToggleSelect} onBatchDelete={handleBatchDelete}
+            onExitBatch={handleExitBatch} />
         </aside>
 
         {/* 移动端会话列表覆盖层 */}
@@ -764,7 +868,11 @@ export default function ChatAssistantPage() {
                   renaming={renaming} renamingValue={renaming?.title || ''}
                   onSelect={handleSelectSession} onCreate={handleCreateSession} onDelete={handleDeleteSession}
                   onStartRename={startRename} onRenamingChange={changeRename}
-                  onRenamingCommit={commitRename} onRenamingCancel={cancelRename} />
+                  onRenamingCommit={commitRename} onRenamingCancel={cancelRename}
+                  batchMode={batchMode} selectedIds={selectedIds}
+                  onEnterBatch={handleEnterBatch} onSelectAll={handleSelectAll}
+                  onToggleSelect={handleToggleSelect} onBatchDelete={handleBatchDelete}
+                  onExitBatch={handleExitBatch} />
               </div>
             </div>
           </div>

@@ -157,6 +157,24 @@ async def delete_session(session_id: int, user=Depends(get_current_user)):
     return {"ok": True}
 
 
+class ChatBatchDeleteRequest(BaseModel):
+    ids: list[int] = Field(..., min_length=1)
+
+
+@router.post("/sessions/batch-delete")
+async def batch_delete_sessions(body: ChatBatchDeleteRequest, user=Depends(get_current_user)):
+    """批量删除会话（仅限本人，消息随会话级联删除）。"""
+    user_id = user["user_id"]
+    ids = list(dict.fromkeys(body.ids))  # 去重保序
+    with get_db() as conn:
+        cur = conn.execute(
+            "DELETE FROM chat_sessions WHERE id = ANY(%s) AND user_id = %s",
+            (ids, user_id),
+        )
+        deleted = cur.rowcount
+    return {"deleted": deleted}
+
+
 @router.get("/sessions/{session_id}/messages")
 async def list_messages(session_id: int, user=Depends(get_current_user)):
     user_id = user["user_id"]

@@ -164,6 +164,7 @@ export const chatAPI = {
   createSession: () => api.post('/chat/sessions'),
   renameSession: (id, title) => api.patch(`/chat/sessions/${id}`, { title }),
   deleteSession: id => api.delete(`/chat/sessions/${id}`),
+  batchDeleteSessions: ids => api.post('/chat/sessions/batch-delete', { ids }),
   messages: id => api.get(`/chat/sessions/${id}/messages`),
   model: () => api.get('/chat/model'),
   models: () => api.get('/chat/models'),
