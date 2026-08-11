@@ -6,6 +6,7 @@ import { announcementAPI, notificationAPI } from '../api'
 
 const quickNavItems = [
   { label: '绘画', path: '/' },
+  { label: '助手', path: '/chat' },
   { label: '作品', path: '/works' },
   { label: '广场', path: '/square' },
   { label: '提示词', path: '/prompts' },

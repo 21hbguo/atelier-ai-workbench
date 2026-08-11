@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useLocation, Link, useNavigate } from 'react-router-dom'
-import { Sun, Moon, BookOpen, Sparkles, Image, X, Globe, LogOut, User, Shield, Coins, Wallet, Bell, Settings, LayoutGrid } from 'lucide-react'
+import { Sun, Moon, BookOpen, Sparkles, Image, X, Globe, LogOut, User, Shield, Coins, Wallet, Bell, Settings, LayoutGrid, MessageCircle } from 'lucide-react'
 import { useTheme } from '../ThemeContext'
 import { useLayoutMode } from '../LayoutModeContext'
 import { announcementAPI, authAPI, pointsAPI, notificationAPI } from '../api'
@@ -9,6 +9,7 @@ import { useAppDialog } from './AppDialogProvider'
 
 const navItems = [
   { path: '/', icon: Sparkles, label: 'AI绘画' },
+  { path: '/chat', icon: MessageCircle, label: 'AI 助手' },
   { path: '/works', icon: Image, label: '我的作品' },
   { path: '/square', icon: Globe, label: '广场' },
   { path: '/prompts', icon: BookOpen, label: '我的提示词' },

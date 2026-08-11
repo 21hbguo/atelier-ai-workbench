@@ -28,6 +28,8 @@ class ConfigUpdate(BaseModel):
     points_cost_per_generation: Optional[int] = Field(None, ge=1)
     points_cost_per_optimize: Optional[int] = Field(None, ge=1)
     points_cost_per_optimize_refine: Optional[int] = Field(None, ge=1)
+    points_cost_per_chat: Optional[int] = Field(None, ge=1)
+    chat_context_max_chars: Optional[int] = Field(None, ge=1000)
     points_cost_per_image_extend: Optional[int] = Field(None, ge=1)
     points_checkin_reward: Optional[int] = Field(None, ge=0)
     points_register_bonus: Optional[int] = Field(None, ge=0)

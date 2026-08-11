@@ -158,6 +158,63 @@ export const promptOptimizeAPI = {
   },
 }
 
+export const chatAPI = {
+  cost: () => api.get('/chat/cost'),
+  sessions: () => api.get('/chat/sessions'),
+  createSession: () => api.post('/chat/sessions'),
+  renameSession: (id, title) => api.patch(`/chat/sessions/${id}`, { title }),
+  deleteSession: id => api.delete(`/chat/sessions/${id}`),
+  messages: id => api.get(`/chat/sessions/${id}/messages`),
+  model: () => api.get('/chat/model'),
+  models: () => api.get('/chat/models'),
+  // SSE 流式发送消息：仿 promptOptimizeAPI.optimizeStream 的 fetch + ReadableStream 解析
+  sendStream: async (sessionId, content, { onChunk, onDone, onError, signal, reasoning_effort = 'auto' } = {}) => {
+    try {
+      const resp = await fetch(`/api/chat/sessions/${sessionId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ content, reasoning_effort }),
+        signal,
+      })
+      if (!resp.ok) {
+        let detail = `请求失败 (${resp.status})`
+        try {
+          const data = await resp.json()
+          if (data?.detail) detail = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)
+        } catch {}
+        onError?.(detail)
+        return
+      }
+      const reader = resp.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop()
+        let eventType = ''
+        for (const line of lines) {
+          if (line.startsWith('event: ')) { eventType = line.slice(7).trim() }
+          else if (line.startsWith('data: ')) {
+            let data = null
+            try { data = JSON.parse(line.slice(6)) } catch {}
+            if (!data) continue
+            if (eventType === 'chunk') onChunk?.(data)
+            else if (eventType === 'done') onDone?.(data)
+            else if (eventType === 'error') onError?.(data.detail)
+          }
+        }
+      }
+    } catch (e) {
+      if (e?.name === 'AbortError') { onError?.('已停止生成'); return }
+      onError?.(e?.message || '网络错误')
+    }
+  },
+}
+
 export const authAPI = {
   register: data => api.post('/auth/register', data),
   login: data => api.post('/auth/login', data),

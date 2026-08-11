@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Trash2, Users, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket, Megaphone, Wallet, Key, SlidersHorizontal, BarChart3, Mail, Tags } from 'lucide-react'
+import { Trash2, Users, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket, Megaphone, Wallet, Key, SlidersHorizontal, BarChart3, Mail, Tags, MessageSquare, Cpu } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { adminAPI, announcementAPI, configAPI, statsAPI, promptAPI, uploadAPI } from '../api'
 import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts'
@@ -10,6 +10,8 @@ import Pagination from '../components/Pagination'
 import UnifiedCard from '../components/UnifiedCard'
 import AdminUsersTab from './admin-tabs/AdminUsersTab'
 import AdminHistoryTab from './admin-tabs/AdminHistoryTab'
+import AdminChatTab from './admin-tabs/AdminChatTab'
+import AdminLlmModelsTab from './admin-tabs/AdminLlmModelsTab'
 import AdminAnnouncementsTab from './admin-tabs/AdminAnnouncementsTab'
 import AdminBannedTab from './admin-tabs/AdminBannedTab'
 import AdminHostingTab from './admin-tabs/AdminHostingTab'
@@ -44,6 +46,18 @@ export default function AdminPage() {
   const [createUserDraft, setCreateUserDraft] = useState({ username: '', password: '', nickname: '' })
   const [creatingUser, setCreatingUser] = useState(false)
   const [historyQuery, setHistoryQuery] = useState('')
+
+  // 聊天记录
+  const [chatSessions, setChatSessions] = useState([])
+  const [chatTotal, setChatTotal] = useState(0)
+  const [chatPage, setChatPage] = useState(1)
+  const [chatQuery, setChatQuery] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chatViewSession, setChatViewSession] = useState(null)
+
+  // 模型档案
+  const [llmModels, setLlmModels] = useState([])
+  const [llmModelsLoading, setLlmModelsLoading] = useState(false)
 
   // 图床管理
   const [hostingImages, setHostingImages] = useState([])
@@ -191,12 +205,15 @@ export default function AdminPage() {
 
   useEffect(() => { setUserPage(1) }, [userQuery])
   useEffect(() => { setHistoryPage(1) }, [historyQuery])
+  useEffect(() => { setChatPage(1) }, [chatQuery])
   useEffect(() => { setBannedWordsPage(1) }, [bannedWordsQuery])
   useEffect(() => { setFinancePurchasePage(1) }, [financeProviderFilter])
   useEffect(() => { setFinanceTaskPage(1) }, [financeTaskProviderFilter, financeModelFilter, financeStatusFilter, financeRange])
 
   useEffect(() => { if (tab === 'users') fetchUsers() }, [tab, userPage, userQuery])
   useEffect(() => { if (tab === 'history') fetchHistory() }, [tab, historyPage, historyQuery])
+  useEffect(() => { if (tab === 'chat') fetchChatSessions() }, [tab, chatPage, chatQuery])
+  useEffect(() => { if (tab === 'llm_models') fetchLlmModels() }, [tab])
   useEffect(() => { if (tab === 'stats') fetchSystemStats(statsRange) }, [tab, statsRange])
   useEffect(() => { if (tab === 'hosting') { fetchHostingImages(); fetchHostingStats() } }, [tab, hostingPage, hostingTypeFilter])
   useEffect(() => { if (tab === 'banned') fetchBannedWords() }, [tab, bannedWordsPage, bannedWordsQuery])
@@ -234,7 +251,7 @@ export default function AdminPage() {
   }, [])
   useEffect(() => {
     const q=new URLSearchParams(location.search).get('tab')
-    if(q&&['stats','finance','users','history','hosting','banned','classification','codes','recharge_review','announcements','evlogs','config'].includes(q))setTab(q)
+    if(q&&['stats','finance','users','history','chat','llm_models','hosting','banned','classification','codes','recharge_review','announcements','evlogs','config'].includes(q))setTab(q)
   }, [location.search])
   const switchTab = useCallback((next) => { setTab(next); navigate(next==='users'?'/admin':`/admin?tab=${next}`, { replace: location.pathname === '/admin' }) }, [navigate,location.pathname])
 
@@ -486,6 +503,7 @@ export default function AdminPage() {
     const n = [
       'generate_concurrent_limit_per_user', 'home_page_size', 'square_page_size',
       'points_cost_per_generation', 'points_cost_per_optimize', 'points_cost_per_optimize_refine',
+      'points_cost_per_chat', 'chat_context_max_chars',
       'points_cost_per_image_extend', 'points_checkin_reward', 'points_register_bonus',
       'points_migration_amount', 'invite_register_reward_points', 'invite_recharge_rebate_percent',
       'invite_recharge_bonus_percent', 'login_rate_limit_per_minute_per_ip',
@@ -503,6 +521,8 @@ export default function AdminPage() {
       payload.points_cost_per_generation < 1 ||
       payload.points_cost_per_optimize < 1 ||
       payload.points_cost_per_optimize_refine < 1 ||
+      payload.points_cost_per_chat < 1 ||
+      payload.chat_context_max_chars < 1000 ||
       payload.points_cost_per_image_extend < 1 ||
       payload.login_rate_limit_per_minute_per_ip < 1 ||
       payload.register_rate_limit_per_minute_per_ip < 1 ||
@@ -854,6 +874,65 @@ export default function AdminPage() {
       fetchHistory()
     } catch (e) { dialog.alert(e.message || '删除失败') }
   }
+
+  const chatFetch = async (url, options = {}) => {
+    const res = await fetch(url, { credentials: 'include', ...options })
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}))
+      throw new Error(errData.detail || errData.message || `请求失败(${res.status})`)
+    }
+    return res.json()
+  }
+
+  const fetchChatSessions = async () => {
+    setChatLoading(true)
+    try {
+      const params = new URLSearchParams({ page: String(chatPage), size: '20' })
+      if (chatQuery) params.set('query', chatQuery)
+      const data = await chatFetch(`/api/admin/chat/sessions?${params.toString()}`)
+      setChatSessions(data.items || [])
+      setChatTotal(data.total || 0)
+    } catch (e) { dialog.alert(e.message || '加载失败') } finally { setChatLoading(false) }
+  }
+
+  const openChatSession = async (session) => {
+    setChatViewSession({ session, messages: null, loading: true, error: '' })
+    try {
+      const data = await chatFetch(`/api/admin/chat/sessions/${session.id}/messages`)
+      setChatViewSession(prev => prev?.session?.id === session.id ? { session, messages: data.items || [], loading: false, error: '' } : prev)
+    } catch (e) {
+      setChatViewSession(prev => prev?.session?.id === session.id ? { session, messages: [], loading: false, error: e.message } : prev)
+    }
+  }
+
+  const closeChatSession = () => setChatViewSession(null)
+
+  const handleDeleteChatSession = async (sessionId) => {
+    if (!await dialog.confirm('确定删除该聊天记录？删除后不可恢复。')) return
+    try {
+      await chatFetch(`/api/admin/chat/sessions/${sessionId}`, { method: 'DELETE' })
+      setChatViewSession(prev => prev?.session?.id === sessionId ? null : prev)
+      fetchChatSessions()
+    } catch (e) { dialog.alert(e.message || '删除失败') }
+  }
+
+  const fetchLlmModels = async () => {
+    setLlmModelsLoading(true)
+    try {
+      const data = await chatFetch('/api/admin/llm-models')
+      setLlmModels(data.items || [])
+    } catch (e) { dialog.alert(e.message || '加载失败') } finally { setLlmModelsLoading(false) }
+  }
+
+  const saveLlmModel = async (payload) => {
+    await chatFetch('/api/admin/llm-models', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    fetchLlmModels()
+  }
+
+  const deleteLlmModel = async (modelId) => {
+    await chatFetch(`/api/admin/llm-models/${encodeURIComponent(modelId)}`, { method: 'DELETE' })
+    fetchLlmModels()
+  }
   const handleCreateUser = async () => {
     const payload = { account: (createUserDraft.username || '').trim(), password: (createUserDraft.password || '').trim(), nickname: (createUserDraft.nickname || '').trim() }
     if (!/^[A-Za-z0-9_]{4,16}$/.test(payload.account)) { dialog.alert('账号需为4到16位字母、数字或下划线'); return }
@@ -921,6 +1000,8 @@ export default function AdminPage() {
             { k: 'finance', l: '财务中心', i: Wallet },
             { k: 'users', l: '用户管理', i: Users },
             { k: 'history', l: '生成历史', i: Clock },
+            { k: 'chat', l: '聊天记录', i: MessageSquare },
+            { k: 'llm_models', l: '模型档案', i: Cpu },
             { k: 'hosting', l: '图床管理', i: HardDrive },
             { k: 'banned', l: '违禁词管理', i: Ban },
             { k: 'classification', l: 'AI分类', i: Tags },
@@ -1457,6 +1538,8 @@ export default function AdminPage() {
                   { k: 'points_cost_per_generation', l: '默认生成扣分', min: 1 },
                   { k: 'points_cost_per_optimize', l: '简单优化扣分', min: 1 },
                   { k: 'points_cost_per_optimize_refine', l: '精细优化扣分', min: 1 },
+                  { k: 'points_cost_per_chat', l: 'AI助手对话扣分', min: 1 },
+                  { k: 'chat_context_max_chars', l: '聊天上下文预算(字符)', min: 1000 },
                   { k: 'points_cost_per_image_extend', l: '图片续期扣分/张', min: 1 },
                   { k: 'points_checkin_reward', l: '每日签到奖励', min: 0 },
                   { k: 'points_register_bonus', l: '注册送分', min: 0 },
@@ -1798,8 +1881,26 @@ export default function AdminPage() {
             </>
             ) : null}
           </div>
-        ) : (
+        ) : tab === 'llm_models' ? (
+          <AdminLlmModelsTab items={llmModels} loading={llmModelsLoading} onRefresh={fetchLlmModels}
+            onSave={saveLlmModel} onDelete={deleteLlmModel} dialog={dialog} />
+        ) : tab === 'history' ? (
           <AdminHistoryTab historyTotal={historyTotal} historyQuery={historyQuery} setHistoryQuery={setHistoryQuery} historySummary={historySummary} loading={loading} history={history} modelLabelMap={modelLabelMap} handleDeleteHistory={handleDeleteHistory} historyPage={historyPage} setHistoryPage={setHistoryPage} />
+        ) : (
+          <AdminChatTab
+            chatTotal={chatTotal}
+            chatQuery={chatQuery}
+            setChatQuery={setChatQuery}
+            loading={chatLoading}
+            sessions={chatSessions}
+            chatPage={chatPage}
+            setChatPage={setChatPage}
+            onRefresh={fetchChatSessions}
+            handleDeleteChatSession={handleDeleteChatSession}
+            openChatSession={openChatSession}
+            viewSession={chatViewSession}
+            closeChatSession={closeChatSession}
+          />
         )}
       </div>
 

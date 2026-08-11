@@ -105,6 +105,11 @@ _runtime_config = {
     "points_cost_per_generation": int(os.getenv("POINTS_COST_PER_GENERATION", "10")),
     "points_cost_per_optimize": int(os.getenv("POINTS_COST_PER_OPTIMIZE", "10")),
     "points_cost_per_optimize_refine": int(os.getenv("POINTS_COST_PER_OPTIMIZE_REFINE", "20")),
+    "points_cost_per_chat": int(os.getenv("POINTS_COST_PER_CHAT", "10")),
+    "chat_max_sessions": int(os.getenv("CHAT_MAX_SESSIONS", "50")),
+    "chat_max_messages": int(os.getenv("CHAT_MAX_MESSAGES", "100")),
+    "chat_rate_limit_per_minute": int(os.getenv("CHAT_RATE_LIMIT_PER_MINUTE", "10")),
+    "chat_context_max_chars": int(os.getenv("CHAT_CONTEXT_MAX_CHARS", "256000")),
     "points_checkin_reward": int(os.getenv("POINTS_CHECKIN_REWARD", "10")),
     "points_cost_per_image_extend": int(os.getenv("POINTS_COST_PER_IMAGE_EXTEND", "2")),
     "points_register_bonus": int(os.getenv("POINTS_REGISTER_BONUS", "50")),
@@ -238,7 +243,7 @@ def update_config(new_values: dict):
 def get_limit_config():
     cfg = get_config()
     out = {}
-    for k in ["generate_concurrent_limit_per_user", "home_page_size", "square_page_size", "points_cost_per_generation", "points_cost_per_optimize", "points_cost_per_optimize_refine", "points_cost_per_image_extend", "points_checkin_reward", "points_register_bonus", "points_migration_amount", "invite_register_reward_points", "login_rate_limit_per_minute_per_ip", "register_rate_limit_per_minute_per_ip"]:
+    for k in ["generate_concurrent_limit_per_user", "home_page_size", "square_page_size", "points_cost_per_generation", "points_cost_per_optimize", "points_cost_per_optimize_refine", "points_cost_per_chat", "chat_max_sessions", "chat_max_messages", "chat_rate_limit_per_minute", "chat_context_max_chars", "points_cost_per_image_extend", "points_checkin_reward", "points_register_bonus", "points_migration_amount", "invite_register_reward_points", "login_rate_limit_per_minute_per_ip", "register_rate_limit_per_minute_per_ip"]:
         try:
             v = int(cfg.get(k, _runtime_config_defaults[k]))
         except Exception:
@@ -250,6 +255,11 @@ def get_limit_config():
     if out["points_cost_per_generation"] < 1: out["points_cost_per_generation"] = 1
     if out["points_cost_per_optimize"] < 1: out["points_cost_per_optimize"] = 1
     if out["points_cost_per_optimize_refine"] < 1: out["points_cost_per_optimize_refine"] = 1
+    if out["points_cost_per_chat"] < 1: out["points_cost_per_chat"] = 1
+    if out["chat_max_sessions"] < 1: out["chat_max_sessions"] = 1
+    if out["chat_max_messages"] < 1: out["chat_max_messages"] = 1
+    if out["chat_rate_limit_per_minute"] < 1: out["chat_rate_limit_per_minute"] = 1
+    if out["chat_context_max_chars"] < 1000: out["chat_context_max_chars"] = 1000
     if out["points_cost_per_image_extend"] < 1: out["points_cost_per_image_extend"] = 1
     if out["points_checkin_reward"] < 0: out["points_checkin_reward"] = 0
     if out["points_register_bonus"] < 0: out["points_register_bonus"] = 0
@@ -381,6 +391,8 @@ def get_llm_config():
         "max_tokens": int(_runtime_config.get("llm_max_tokens", 2000)),
         "timeout_seconds": int(_runtime_config.get("llm_timeout_seconds", 30)),
         "enabled": bool(_runtime_config.get("prompt_optimize_enabled", True)),
+        # 协议：openai（OpenAI 兼容 /chat/completions）或 anthropic（/v1/messages）；留空则按 base_url 推断
+        "protocol": str(_runtime_config.get("llm_protocol", "")).strip().lower(),
     }
 
 

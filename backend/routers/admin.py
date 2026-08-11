@@ -1617,3 +1617,130 @@ async def stream_content_audit_logs(task_id: int, admin=Depends(require_admin)):
         async for log in ContentAuditService.get_task_logs(task_id):
             yield f"data: {json.dumps(log, ensure_ascii=False)}\n\n"
     return StreamingResponse(event_stream(),media_type="text/event-stream")
+
+
+# ============ 聊天记录管理 ============
+
+@router.get("/chat/sessions")
+async def admin_list_chat_sessions(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), query: str = Query(None), admin=Depends(require_admin)):
+    offset = (page - 1) * size
+    with get_db() as conn:
+        if query:
+            q = f"%{query}%"
+            total = conn.execute(
+                """SELECT COUNT(*) AS cnt FROM chat_sessions s
+                   LEFT JOIN users u ON s.user_id = u.id
+                   WHERE s.title LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s
+                      OR EXISTS (SELECT 1 FROM chat_messages m WHERE m.session_id = s.id AND m.content LIKE %s)""",
+                (q, q, q, q),
+            ).fetchone()["cnt"]
+            rows = conn.execute(
+                """SELECT s.id, s.title, s.user_id, u.username, u.nickname, s.created_at, s.updated_at,
+                          (SELECT COUNT(*) FROM chat_messages m WHERE m.session_id = s.id) AS message_count,
+                          (SELECT content FROM chat_messages m WHERE m.session_id = s.id ORDER BY m.id DESC LIMIT 1) AS last_message
+                   FROM chat_sessions s
+                   LEFT JOIN users u ON s.user_id = u.id
+                   WHERE s.title LIKE %s OR u.username LIKE %s OR u.nickname LIKE %s
+                      OR EXISTS (SELECT 1 FROM chat_messages m WHERE m.session_id = s.id AND m.content LIKE %s)
+                   ORDER BY s.updated_at DESC LIMIT %s OFFSET %s""",
+                (q, q, q, q, size, offset),
+            ).fetchall()
+        else:
+            total = conn.execute("SELECT COUNT(*) AS cnt FROM chat_sessions").fetchone()["cnt"]
+            rows = conn.execute(
+                """SELECT s.id, s.title, s.user_id, u.username, u.nickname, s.created_at, s.updated_at,
+                          (SELECT COUNT(*) FROM chat_messages m WHERE m.session_id = s.id) AS message_count,
+                          (SELECT content FROM chat_messages m WHERE m.session_id = s.id ORDER BY m.id DESC LIMIT 1) AS last_message
+                   FROM chat_sessions s
+                   LEFT JOIN users u ON s.user_id = u.id
+                   ORDER BY s.updated_at DESC LIMIT %s OFFSET %s""",
+                (size, offset),
+            ).fetchall()
+    return {
+        "total": total,
+        "items": [
+            {
+                "id": r["id"],
+                "title": r["title"],
+                "user_id": r["user_id"],
+                "username": r["username"] or "",
+                "nickname": r["nickname"] or "",
+                "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+                "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
+                "message_count": r["message_count"] or 0,
+                "last_message": r["last_message"] or "",
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.get("/chat/sessions/{session_id}/messages")
+async def admin_list_chat_messages(session_id: int, admin=Depends(require_admin)):
+    with get_db() as conn:
+        session = conn.execute("SELECT id FROM chat_sessions WHERE id = %s", (session_id,)).fetchone()
+        if not session:
+            raise HTTPException(status_code=404, detail="会话不存在")
+        rows = conn.execute(
+            "SELECT id, role, content, created_at FROM chat_messages WHERE session_id = %s ORDER BY id ASC",
+            (session_id,),
+        ).fetchall()
+    return {
+        "items": [
+            {
+                "id": r["id"],
+                "role": r["role"],
+                "content": r["content"],
+                "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.delete("/chat/sessions/{session_id}")
+@router.post("/chat/sessions/{session_id}/delete")
+async def admin_delete_chat_session(session_id: int, admin=Depends(require_admin)):
+    with get_db() as conn:
+        session = conn.execute("SELECT id FROM chat_sessions WHERE id = %s", (session_id,)).fetchone()
+        if not session:
+            raise HTTPException(status_code=404, detail="会话不存在")
+        conn.execute("DELETE FROM chat_sessions WHERE id = %s", (session_id,))
+    return {"session_id": session_id, "message": "会话已删除"}
+
+
+# ============ LLM 模型档案管理 ============
+
+@router.get("/llm-models")
+async def admin_list_llm_models(admin=Depends(require_admin)):
+    from backend.services.llm_model_service import get_all
+    return {"items": get_all()}
+
+
+@router.post("/llm-models")
+async def admin_upsert_llm_model(body: dict, admin=Depends(require_admin)):
+    from backend.services.llm_model_service import upsert
+    try:
+        return upsert(body)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.patch("/llm-models/{model_id}")
+async def admin_update_llm_model(model_id: str, body: dict, admin=Depends(require_admin)):
+    from backend.services.llm_model_service import upsert
+    payload = dict(body)
+    payload["model_id"] = model_id
+    try:
+        return upsert(payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/llm-models/{model_id}")
+@router.post("/llm-models/{model_id}/delete")
+async def admin_delete_llm_model(model_id: str, admin=Depends(require_admin)):
+    from backend.services.llm_model_service import delete
+    if not delete(model_id):
+        raise HTTPException(status_code=404, detail="模型档案不存在")
+    return {"model_id": model_id, "message": "已删除"}

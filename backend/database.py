@@ -463,9 +463,87 @@ def init_db():
             "CREATE INDEX IF NOT EXISTS idx_audit_results_task ON content_audit_results(task_id)",
             "CREATE INDEX IF NOT EXISTS idx_audit_results_status ON content_audit_results(status)",
             "ALTER TABLE content_audit_results ADD COLUMN IF NOT EXISTS item_thumb_url TEXT",
+            """CREATE TABLE IF NOT EXISTS chat_sessions (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                title VARCHAR(255) DEFAULT '新对话',
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_chat_sessions_user ON chat_sessions(user_id, updated_at DESC)",
+            """CREATE TABLE IF NOT EXISTS chat_messages (
+                id SERIAL PRIMARY KEY,
+                session_id INTEGER NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+                role VARCHAR(16) NOT NULL,
+                content TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, id)",
+            """CREATE TABLE IF NOT EXISTS llm_models (
+                id SERIAL PRIMARY KEY,
+                model_id VARCHAR(128) NOT NULL UNIQUE,
+                label VARCHAR(128) NOT NULL,
+                protocol VARCHAR(16) NOT NULL DEFAULT 'openai',
+                max_input_tokens INTEGER NOT NULL DEFAULT 1000000,
+                max_output_tokens INTEGER NOT NULL DEFAULT 128000,
+                reasoning_efforts JSONB DEFAULT '["auto","low","medium","high","max","xhigh"]'::jsonb,
+                default_reasoning_effort VARCHAR(16) NOT NULL DEFAULT 'auto',
+                thinking_default VARCHAR(16) NOT NULL DEFAULT 'enabled',
+                context_budget_chars INTEGER NOT NULL DEFAULT 256000,
+                input_price_per_million NUMERIC(12,4) DEFAULT NULL,
+                output_price_per_million NUMERIC(12,4) DEFAULT NULL,
+                price_currency VARCHAR(8) NOT NULL DEFAULT 'usd',
+                enabled BOOLEAN DEFAULT TRUE,
+                notes TEXT DEFAULT '',
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
         ]
             for sql in statements:
                 conn.execute(sql)
+
+        # 迁移：llm_models 旧列名 context_tokens/output_tokens → max_input_tokens/max_output_tokens
+            if _column_exists(conn, "llm_models", "context_tokens"):
+                conn.execute("ALTER TABLE llm_models RENAME COLUMN context_tokens TO max_input_tokens")
+            if _column_exists(conn, "llm_models", "output_tokens"):
+                conn.execute("ALTER TABLE llm_models RENAME COLUMN output_tokens TO max_output_tokens")
+            conn.execute("ALTER TABLE llm_models ADD COLUMN IF NOT EXISTS input_price_per_million NUMERIC(12,4)")
+            conn.execute("ALTER TABLE llm_models ADD COLUMN IF NOT EXISTS output_price_per_million NUMERIC(12,4)")
+            conn.execute("ALTER TABLE llm_models ADD COLUMN IF NOT EXISTS price_currency VARCHAR(8) NOT NULL DEFAULT 'usd'")
+
+        # llm_models 种子数据（放在列名迁移之后，保证新旧库都兼容）
+            conn.execute("""INSERT INTO llm_models (model_id, label, protocol, max_input_tokens, max_output_tokens, reasoning_efforts, default_reasoning_effort, thinking_default, context_budget_chars, input_price_per_million, output_price_per_million, price_currency, notes) VALUES
+                ('deepseek-v4-flash', 'DeepSeek V4 Flash', 'openai', 1000000, 384000, '["auto","low","medium","high","max","xhigh"]'::jsonb, 'auto', 'enabled', 256000, 1, 2, 'cny', '官方 1M 上下文/384K 输出；medium/xhigh 兼容映射为 high；价格：输入 1 元/百万（缓存未命中）'),
+                ('deepseek-v4-pro', 'DeepSeek V4 Pro', 'openai', 1000000, 384000, '["auto","low","high","max"]'::jsonb, 'auto', 'enabled', 256000, 3, 6, 'cny', '目前仅 high/max 两档（low 按 high、xhigh 按 max 处理）；价格：输入 3 元/百万'),
+                ('gpt-5.5', 'GPT-5.5', 'openai', 1050000, 128000, '["auto","low","medium","high","max"]'::jsonb, 'auto', 'enabled', 256000, 5, 30, 'usd', ''),
+                ('gpt-5.5-pro', 'GPT-5.5 Pro', 'openai', 1050000, 128000, '["auto","low","medium","high","max"]'::jsonb, 'auto', 'enabled', 256000, 30, 180, 'usd', ''),
+                ('gpt-5.6', 'GPT-5.6', 'openai', 1050000, 128000, '["auto","low","medium","high","max"]'::jsonb, 'auto', 'enabled', 256000, 5, 30, 'usd', ''),
+                ('gpt-5.6-luna', 'GPT-5.6 Luna', 'openai', 1050000, 128000, '["auto","low","medium","high","max"]'::jsonb, 'auto', 'enabled', 256000, 0.2, 1.2, 'usd', '轻量档，价格优势明显'),
+                ('gpt-5.6-terra', 'GPT-5.6 Terra', 'openai', 1050000, 128000, '["auto","low","medium","high","max"]'::jsonb, 'auto', 'enabled', 256000, 2, 12, 'usd', ''),
+                ('gpt-5.6-sol', 'GPT-5.6 Sol', 'openai', 1050000, 128000, '["auto","low","medium","high","max"]'::jsonb, 'auto', 'enabled', 256000, 5, 30, 'usd', ''),
+                ('kimi-k3', 'Kimi K3', 'openai', 1000000, 64000, '["auto","low","high","max"]'::jsonb, 'max', 'always', 256000, NULL, NULL, 'usd', '始终推理；官方档位 low/high/max 默认 max；输出限制与价格以官方文档为准'),
+                ('kimi-k2.7-code', 'Kimi K2.7 Code', 'openai', 256000, 64000, '["auto"]'::jsonb, 'auto', 'always', 256000, NULL, NULL, 'usd', 'Coding 模型，仅思考模式，256K 上下文；另有 HighSpeed 高速版；价格以官方文档为准'),
+                ('minimax-m2.5', 'MiniMax M2.5', 'openai', 1000000, 8192, '["auto","low","medium","high","max"]'::jsonb, 'auto', 'enabled', 256000, 0.3, 1.2, 'usd', ''),
+                ('minimax-m3', 'MiniMax M3', 'openai', 1000000, 128000, '["auto","low","medium","high","max"]'::jsonb, 'auto', 'enabled', 256000, 0.3, 1.2, 'usd', '2026 旗舰'),
+                ('claude-sonnet-5', 'Claude Sonnet 5', 'anthropic', 1000000, 128000, '["auto","low","medium","high","max","xhigh"]'::jsonb, 'auto', 'enabled', 256000, 2, 10, 'usd', ''),
+                ('claude-opus-5', 'Claude Opus 5', 'anthropic', 1000000, 128000, '["auto","low","medium","high","max","xhigh"]'::jsonb, 'auto', 'enabled', 256000, 5, 25, 'usd', ''),
+                ('claude-haiku-4-5', 'Claude Haiku 4.5', 'anthropic', 200000, 64000, '["auto","low","medium","high","max","xhigh"]'::jsonb, 'auto', 'enabled', 200000, 1, 5, 'usd', '轻量档'),
+                ('grok-4', 'Grok 4', 'openai', 256000, 256000, '["auto","low","high","max"]'::jsonb, 'auto', 'enabled', 256000, 3, 15, 'usd', ''),
+                ('grok-4.5', 'Grok 4.5', 'openai', 500000, 500000, '["auto","low","high","max"]'::jsonb, 'auto', 'enabled', 256000, 2, 6, 'usd', ''),
+                ('grok-code-fast-1', 'Grok Code Fast 1', 'openai', 256000, 256000, '["auto","low","high","max"]'::jsonb, 'auto', 'enabled', 256000, 0.2, 1.5, 'usd', 'Coding 专用'),
+                ('qwen3-coder-plus', 'Qwen3 Coder Plus', 'openai', 997952, 65536, '["auto","low","high","max"]'::jsonb, 'auto', 'enabled', 256000, NULL, NULL, 'cny', 'Coding 模型（百炼平台）；价格以官方计费为准'),
+                ('qwen3.7-max', 'Qwen3.7 Max', 'openai', 991808, 65536, '["auto","low","medium","high","max"]'::jsonb, 'auto', 'enabled', 256000, 2.5, 7.5, 'usd', '2026 新旗舰'),
+                ('mimo-v2.5', '小米 MiMo 2.5', 'openai', 128000, 16384, '["auto","low","high","max"]'::jsonb, 'auto', 'enabled', 128000, NULL, NULL, 'cny', '小米 MiMo；2026 Coding 版模型 ID 与价格以官方为准')
+            ON CONFLICT (model_id) DO UPDATE SET
+                label = EXCLUDED.label, protocol = EXCLUDED.protocol,
+                max_input_tokens = EXCLUDED.max_input_tokens, max_output_tokens = EXCLUDED.max_output_tokens,
+                reasoning_efforts = EXCLUDED.reasoning_efforts,
+                default_reasoning_effort = EXCLUDED.default_reasoning_effort,
+                thinking_default = EXCLUDED.thinking_default,
+                context_budget_chars = EXCLUDED.context_budget_chars,
+                input_price_per_million = EXCLUDED.input_price_per_million,
+                output_price_per_million = EXCLUDED.output_price_per_million,
+                price_currency = EXCLUDED.price_currency,
+                notes = EXCLUDED.notes""")
 
         # 唯一索引需要条件判断（source 可能为 NULL）
             conn.execute(
