@@ -698,12 +698,12 @@ export default function ChatAssistantPage() {
   const modelIdRef = useRef(chatModelId)
   // 流式渲染节流：chunk/thinking 高频到达时按帧合并 setState，
   // 避免 mdToHtml 全量重渲染导致 UI 卡顿（感知为「卡顿后一次性出大量文本」）
-  const streamBufRef = useRef({ sessionId: null, text: '', thinking: '' })
+  const streamBufRef = useRef({ streamId: null, text: '', thinking: '' })
   const streamRafRef = useRef(null)
   const flushStreamBuf = useCallback(() => {
     streamRafRef.current = null
-    const { sessionId: sid, text, thinking } = streamBufRef.current
-    setSending(prev => (prev && prev.sessionId === sid) ? { ...prev, text, thinking } : prev)
+    const { streamId: sid, text, thinking } = streamBufRef.current
+    setSending(prev => (prev && prev.streamId === sid) ? { ...prev, text, thinking } : prev)
   }, [])
   const [pendingQueue, setPendingQueue] = useState([])
 
@@ -906,11 +906,13 @@ export default function ChatAssistantPage() {
   const startStream = useCallback((sessionId, content, reasoningEffort = 'auto') => {
     const controller = new AbortController()
     abortRef.current = controller
-    const st = { sessionId, content, text: '', thinking: '', toolStatus: null, stopped: false, error: '', manual: false }
+    // 流的唯一身份：停止后立刻发新消息时，旧流的迟到回调不会误操作新流
+    const streamId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const st = { streamId, sessionId, content, text: '', thinking: '', toolStatus: null, stopped: false, error: '', manual: false }
     sendingRef.current = st
     setSending(st)
     // 本次流开始：重置节流缓冲（避免残留上一流的未 flush 内容）
-    streamBufRef.current = { sessionId, text: '', thinking: '' }
+    streamBufRef.current = { streamId, text: '', thinking: '' }
     if (streamRafRef.current) { cancelAnimationFrame(streamRafRef.current); streamRafRef.current = null }
     chatAPI.sendStream(sessionId, content, {
       signal: controller.signal,
@@ -918,16 +920,18 @@ export default function ChatAssistantPage() {
       model_id: modelIdRef.current,
       onChunk: data => {
         const buf = streamBufRef.current
+        if (buf.streamId !== streamId) return
         buf.text += String(data.text || '')
         if (!streamRafRef.current) streamRafRef.current = requestAnimationFrame(flushStreamBuf)
       },
       onThinking: data => {
         const buf = streamBufRef.current
+        if (buf.streamId !== streamId) return
         buf.thinking += String(data.text || '')
         if (!streamRafRef.current) streamRafRef.current = requestAnimationFrame(flushStreamBuf)
       },
       onToolStatus: data => setSending(prev =>
-        (prev && prev.sessionId === sessionId)
+        (prev && prev.streamId === streamId)
           ? { ...prev, toolStatus: data?.status === 'done' ? null : { name: data?.name || '', status: data?.status || 'executing' } }
           : prev),
       onDone: data => {
@@ -937,8 +941,8 @@ export default function ChatAssistantPage() {
         setMessages(prev => [...prev, { id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, role: 'assistant', content: full, thinking, created_at: new Date().toISOString() }])
         // 发送成功：文件已上传为会话上下文，清空上传区（失败时保留 docs 便于重试）
         setDocs([])
-        // 仅当仍是本次会话的流时才清理状态，避免并发时旧流清掉新流
-        if (sendingRef.current?.sessionId === sessionId) {
+        // 仅当仍是本次流时才清理状态（streamId 唯一身份，旧流迟到回调不影响新流）
+        if (sendingRef.current?.streamId === streamId) {
           sendingRef.current = null
           setSending(null)
         }
@@ -958,15 +962,15 @@ export default function ChatAssistantPage() {
         manualStopRef.current = false
         if (isManual) {
           // 手动停止：保留错误气泡 + 重试按钮，不自动继续队列
-          if (sendingRef.current?.sessionId === sessionId) {
+          if (sendingRef.current?.streamId === streamId) {
             sendingRef.current = { ...sendingRef.current, stopped: true, error: errMsg, manual: true }
           }
           setSending(prev =>
-            (prev && prev.sessionId === sessionId) ? { ...prev, stopped: true, error: errMsg, manual: true } : prev)
+            (prev && prev.streamId === streamId) ? { ...prev, stopped: true, error: errMsg, manual: true } : prev)
         } else {
           // 自动失败：错误追加为消息，清空状态让队列继续自动发送
-          if (sendingRef.current?.sessionId === sessionId) sendingRef.current = null
-          setSending(prev => (prev && prev.sessionId === sessionId) ? null : prev)
+          if (sendingRef.current?.streamId === streamId) sendingRef.current = null
+          setSending(prev => (prev && prev.streamId === streamId) ? null : prev)
           setMessages(prev => [...prev, { id: `err-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, role: 'assistant', content: '', error: errMsg, created_at: new Date().toISOString() }])
         }
         if (/积分不足|余额不足/.test(errMsg)) {
@@ -1345,7 +1349,7 @@ export default function ChatAssistantPage() {
             accept={DOC_ACCEPT}
             onChange={handleFilesSelected} />
           <ChatInputBar inputRef={inputRef} value={input} onChange={setInput}
-            onSend={handleSend} onStop={handleStop} sending={!!sending} cost={cost} points={points}
+            onSend={handleSend} onStop={handleStop} sending={!!sending && !sending?.stopped} cost={cost} points={points}
             reasoningEffort={reasoningEffort} onReasoningEffort={handleReasoningEffort}
             efforts={chatModel?.reasoning_efforts} modelLabel={chatModel?.label || modelInfo?.label || modelInfo?.model_id}
             pendingQueue={pendingQueue} onEditPending={editPending} onRemovePending={removePending}
