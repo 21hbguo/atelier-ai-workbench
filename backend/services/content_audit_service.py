@@ -5,6 +5,7 @@ import asyncio
 from typing import List, Dict, Any, Optional
 from backend.config import get_llm_config
 from backend.database import get_db
+from backend.services.llm_client import LLMClient
 
 logger=logging.getLogger(__name__)
 _task_logs:Dict[int,List[Dict]]={}
@@ -37,18 +38,9 @@ USER_TEMPLATE="请审核以下 {count} 个项目：\n{items}"
 BATCH_SIZE=5
 
 class ContentAuditService:
-    _client:httpx.AsyncClient|None=None
-    @classmethod
-    def _get_client(cls)->httpx.AsyncClient:
-        if cls._client is None or cls._client.is_closed:
-            llm_cfg=get_llm_config()
-            cls._client=httpx.AsyncClient(timeout=httpx.Timeout(float(llm_cfg["timeout_seconds"]),connect=5.0))
-        return cls._client
     @classmethod
     async def close(cls):
-        if cls._client and not cls._client.is_closed:
-            await cls._client.aclose()
-            cls._client=None
+        await LLMClient.close()
     @classmethod
     def _push_log(cls,task_id:int,log_type:str,message:str,data:Any=None):
         if task_id not in _task_logs:
@@ -165,15 +157,7 @@ class ContentAuditService:
             return []
         text=""
         try:
-            client=cls._get_client()
-            url=f"{llm_cfg['base_url'].rstrip('/')}/v1/messages"
-            headers={"x-api-key":llm_cfg["api_key"],"anthropic-version":"2023-06-01","content-type":"application/json"}
-            body={"model":llm_cfg["model"],"max_tokens":max(llm_cfg["max_tokens"],2200),"system":SYSTEM_TEMPLATE,"thinking":{"type":"disabled"},"messages":[{"role":"user","content":USER_TEMPLATE.format(count=len(items),items=json.dumps(items,ensure_ascii=False))}]}
-            resp=await client.post(url,headers=headers,json=body)
-            resp.raise_for_status()
-            data=resp.json()
-            for block in data.get("content",[]):
-                if block.get("type")=="text":text+=block.get("text","")
+            text=await LLMClient.complete(system=SYSTEM_TEMPLATE,messages=[{"role":"user","content":USER_TEMPLATE.format(count=len(items),items=json.dumps(items,ensure_ascii=False))}],max_tokens=max(llm_cfg["max_tokens"],2200))
             text=text.strip()
             if text.startswith("```"):
                 lines=text.split("\n")

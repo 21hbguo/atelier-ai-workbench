@@ -7,6 +7,7 @@ from backend.config import get_llm_config
 from backend.database import get_db
 from backend.services.category_service import CategoryService
 from backend.services.title_generator import TitleGenerator, needs_title_generation
+from backend.services.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -40,22 +41,9 @@ BATCH_SIZE = 5
 
 
 class ClassificationService:
-    _client: httpx.AsyncClient | None = None
-
-    @classmethod
-    def _get_client(cls) -> httpx.AsyncClient:
-        if cls._client is None or cls._client.is_closed:
-            llm_cfg = get_llm_config()
-            cls._client = httpx.AsyncClient(
-                timeout=httpx.Timeout(float(llm_cfg["timeout_seconds"]), connect=5.0),
-            )
-        return cls._client
-
     @classmethod
     async def close(cls):
-        if cls._client and not cls._client.is_closed:
-            await cls._client.aclose()
-            cls._client = None
+        await LLMClient.close()
 
     @classmethod
     def _push_log(cls, task_id: int, log_type: str, message: str, data: Any = None):
@@ -280,33 +268,15 @@ class ClassificationService:
             return []
 
         try:
-            client = cls._get_client()
-            url = f"{llm_cfg['base_url'].rstrip('/')}/v1/messages"
-            headers = {
-                "x-api-key": llm_cfg["api_key"],
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            }
             user_content = USER_TEMPLATE.format(
                 count=len(items),
                 items=json.dumps(items, ensure_ascii=False),
             )
-            body = {
-                "model": llm_cfg["model"],
-                "max_tokens": max(llm_cfg["max_tokens"], 2000),
-                "system": system_prompt,
-                "thinking": {"type": "disabled"},
-                "messages": [{"role": "user", "content": user_content}],
-            }
-            resp = await client.post(url, headers=headers, json=body)
-            resp.raise_for_status()
-
-            data = resp.json()
-            text = ""
-            for block in data.get("content", []):
-                if block.get("type") == "text":
-                    text += block.get("text", "")
-
+            text = await LLMClient.complete(
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_content}],
+                max_tokens=max(llm_cfg["max_tokens"], 2000),
+            )
             text = text.strip()
             if text.startswith("```"):
                 lines = text.split("\n")
@@ -509,61 +479,38 @@ class ClassificationService:
             yield {"type": "error", "message": "LLM 未启用或 API key 缺失"}
             return
 
-        client = cls._get_client()
-        url = f"{llm_cfg['base_url'].rstrip('/')}/v1/messages"
-        headers = {
-            "x-api-key": llm_cfg["api_key"],
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        }
         user_content = USER_TEMPLATE.format(
             count=len(items),
             items=json.dumps(items, ensure_ascii=False),
         )
-        body = {
-            "model": llm_cfg["model"],
-            "max_tokens": max(llm_cfg["max_tokens"], 2000),
-            "system": system_prompt,
-            "thinking": {"type": "disabled"},
-            "messages": [{"role": "user", "content": user_content}],
-        }
 
         if use_stream:
-            body["stream"] = True
             try:
-                async with client.stream("POST", url, headers=headers, json=body, timeout=60.0) as resp:
-                    resp.raise_for_status()
-                    full_text = ""
-                    async for line in resp.aiter_lines():
-                        if not line.startswith("data: "):
-                            continue
-                        data_str = line[6:]
-                        if data_str.strip() == "[DONE]":
-                            break
-                        try:
-                            event = json.loads(data_str)
-                            if event.get("type") == "content_block_delta":
-                                delta = event.get("delta", {})
-                                if delta.get("type") == "text_delta":
-                                    token = delta.get("text", "")
-                                    full_text += token
-                                    yield {"type": "token", "text": token}
-                        except json.JSONDecodeError:
-                            continue
-                    yield {"type": "done", "full_text": full_text}
+                full_text = ""
+                async for event in LLMClient.stream(
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": user_content}],
+                    max_tokens=max(llm_cfg["max_tokens"], 2000),
+                ):
+                    if event["type"] == "chunk":
+                        token = event["text"]
+                        full_text += token
+                        yield {"type": "token", "text": token}
+                    elif event["type"] == "done":
+                        yield {"type": "done", "full_text": full_text}
+                    elif event["type"] == "error":
+                        yield {"type": "error", "message": event["detail"]}
             except httpx.HTTPStatusError as e:
                 yield {"type": "error", "message": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
             except Exception as e:
                 yield {"type": "error", "message": f"流式请求失败: {type(e).__name__}: {str(e)[:200]}"}
         else:
             try:
-                resp = await client.post(url, headers=headers, json=body, timeout=60.0)
-                resp.raise_for_status()
-                data = resp.json()
-                text = ""
-                for block in data.get("content", []):
-                    if block.get("type") == "text":
-                        text += block.get("text", "")
+                text = await LLMClient.complete(
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": user_content}],
+                    max_tokens=max(llm_cfg["max_tokens"], 2000),
+                )
                 yield {"type": "done", "full_text": text.strip()}
             except httpx.HTTPStatusError as e:
                 yield {"type": "error", "message": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
