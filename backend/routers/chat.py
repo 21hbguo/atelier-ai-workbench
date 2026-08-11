@@ -470,6 +470,10 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
 
     # 再落库用户消息（file_ids 快照会话当前已解析文件 id，前端据此显示关联文件图标）
     with get_db() as conn:
+        # 会话行锁：与 ChatService 的上下文压缩（阶段1/3 同样 FOR UPDATE）串行化，
+        # 保证「本事务插入的消息」要么在压缩读取范围内、要么 id 大于压缩边界，
+        # 避免压缩期间插入的消息同时被摘要与 id > summary_until 过滤而永久丢失。
+        conn.execute("SELECT id FROM chat_sessions WHERE id = %s FOR UPDATE", (session_id,))
         file_rows = conn.execute(
             "SELECT id, original_name, page_content FROM chat_files WHERE session_id = %s AND status = 'parsed' ORDER BY id ASC",
             (session_id,),
@@ -487,12 +491,9 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
             )
         else:
             conn.execute("UPDATE chat_sessions SET updated_at = NOW() WHERE id = %s", (session_id,))
-        history_rows = conn.execute(
-            "SELECT role, content FROM chat_messages WHERE session_id = %s ORDER BY id ASC",
-            (session_id,),
-        ).fetchall()
 
-    history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
+    # 历史消息不在此处加载：由 ChatService.prepare_session_messages 带压缩状态（id > summary_until）
+    # 统一组装，保证三区块结构（区块2 文档块固定前缀 + 区块3 纯追加历史）逐轮稳定。
     attached_docs = [{"original_name": r["original_name"], "page_content": r["page_content"]} for r in file_rows]
 
     # 自动模式：会话有已解析文件 → 走 agent 工具链路（工具可检索/总结文档）；
@@ -521,7 +522,10 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                 # 会话有上传文档：agent 工具循环（流式多轮；自动模式无需前端指定）
                 try:
                     ctx = AgentContext(session_id=session_id, user_id=user_id)
-                    messages = ChatService.build_llm_messages(history, target_model, attached_docs)
+                    messages = await ChatService.prepare_session_messages(
+                        session_id, target_model, attached_docs,
+                        system_prompt=build_system_prompt(target_model), override=override,
+                    )
                     async for event in run_agent_stream(
                         system=build_system_prompt(target_model),
                         messages=messages,
@@ -557,7 +561,11 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                     _refund_once()
                     yield f"event: error\ndata: {json.dumps({'detail': str(e)}, ensure_ascii=False)}\n\n"
                 return
-            async for event in ChatService.chat_stream(history, body.reasoning_effort, model=target_model, attached_docs=attached_docs):
+            messages = await ChatService.prepare_session_messages(
+                session_id, target_model, attached_docs,
+                system_prompt=build_system_prompt(target_model), override=override,
+            )
+            async for event in ChatService.chat_stream([], body.reasoning_effort, model=target_model, attached_docs=attached_docs, prebuilt_messages=messages):
                 if event["type"] == "chunk":
                     yield f"event: chunk\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
                 elif event["type"] == "thinking":

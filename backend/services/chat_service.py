@@ -6,6 +6,15 @@ from backend.services.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 
+# =============================================================================
+# 上下文三区块结构（前缀缓存友好，对齐 openai-agents-python 最新版设计）：
+#   区块1（静态，LLMClient 组装）：system 提示词 + tools schema —— 会话生命周期内字节不变
+#   区块2（半静态）：attached_documents 块 —— 独立 user 消息固定在历史最前，文件未变则块不变
+#   区块3（纯追加）：conversation_summary（如有）→ 固定 user 消息；其后为全部未压缩历史。
+#                   历史只追加，从不从中间改写；唯一例外是上下文压缩（见 prepare_session_messages），
+#                   压缩把最老完整轮次摘要成一条固定消息，产物成为新的稳定前缀。
+# =============================================================================
+
 # 系统提示词存放在独立 md 文件（data/prompts/chat_system.md），直接编辑文件即可修改，
 # 带 mtime 缓存：文件变更后下一次请求自动加载新内容，无需重启服务。
 SYSTEM_PROMPT_PATH = Path(DATA_DIR) / "prompts" / "chat_system.md"
@@ -76,32 +85,99 @@ build_system_prompt = _build_system_prompt
 
 
 class ChatService:
-    """AI 助手聊天服务：多轮对话 + 统一 LLMClient 流式输出"""
+    """AI 助手聊天服务：多轮对话 + 统一 LLMClient 流式输出。
+
+    上下文按「三区块」结构组装（前缀缓存友好，对齐 openai-agents-python 最新版设计）：
+      区块1（静态，LLMClient 组装）：system 提示词 + tools schema —— 会话生命周期内字节不变；
+      区块2（半静态）：attached_documents 块，独立 user 消息固定在历史最前，文件未变则块不变；
+      区块3（纯追加）：conversation_summary（如有）+ 全部未压缩历史，只追加不改写；
+                     超预算时 prepare_session_messages 把最老完整轮次摘要压缩成固定摘要消息，
+                     产物成为新的稳定前缀（区块1/2 原封不动）。
+    """
 
     # 携带的历史消息条数上限（配合字符预算双保险）
     MAX_CONTEXT_MESSAGES = 200
     # 单条历史消息截断长度（字符），防止单条超长消息占满预算
     MAX_MESSAGE_CHARS = 8000
 
+    # ---- 上下文压缩参数（对齐 openai-agents 的 compaction 设计） ----
+    # 总占用（system + 全部消息字符）超过预算该比例时触发压缩
+    COMPACT_TRIGGER_RATIO = 0.85
+    # 压缩时保留的最近消息条数档位：从摘要最多的一档开始尝试
+    RECENT_KEEP_OPTIONS = (16, 8, 4, 2)
+    # 单次压缩至多执行的轮数（每轮把更老区间摘要后重建）
+    COMPACT_MAX_ROUNDS = 2
+    # 单次生成摘要的 max_tokens 上限
+    SUMMARY_MAX_TOKENS = 800
+    # 会话累计摘要文本上限（超出保留最新尾部）
+    SUMMARY_TEXT_MAX = 2400
+    # 摘要输入上限（字符，取最靠近保留区的尾部）
+    SUMMARY_INPUT_MAX_CHARS = 120000
+    # 摘要输入中单条消息截断长度（字符）
+    SUMMARY_MSG_CHARS = 1500
+
+    _SUMMARY_SYSTEM_PROMPT = (
+        "你是多轮对话压缩器。把给定的对话历史压缩成简洁的中文摘要，供后续对话作为背景上下文使用。\n"
+        "要求：\n"
+        "1. 保留关键事实、用户明确表达的偏好与要求、已得出的结论、未完成的待办；\n"
+        "2. 丢弃寒暄、重复内容、与主题无关的细节；\n"
+        "3. 用纯文本输出，不超过 400 字，不要使用 markdown 标题。"
+    )
+
     @classmethod
-    def build_llm_messages(cls, history: list[dict], model: dict | None = None, attached_docs: list[dict] | None = None) -> list[dict]:
-        """把会话历史转换为标准 messages 格式（role: user/assistant）。
-        按「字符预算」从最新消息向前累积：优先用所调用模型档案的 context_budget_chars，
-        否则用全局配置（默认 256K 字符 ≈ 8-13 万 token）。
-        attached_docs: list[dict]（含 original_name/page_content），非空时按
-        <attached_documents> 块注入最后一条 user 消息末尾（最后一条不是 user 则新增一条）。
-        不传 attached_docs 时行为与原来完全一致。"""
-        from backend.services.llm_model_service import get_active
-        model = model or get_active()
+    def _resolve_budget(cls, model: dict) -> int:
+        """字符预算：优先模型档案 context_budget_chars（0/缺失时回退全局配置）。"""
         try:
-            budget = max(1000, int(model.get("context_budget_chars") or 0))
+            budget = int(model.get("context_budget_chars") or 0)
         except Exception:
             budget = 0
         if budget <= 0:
             budget = max(1000, int(get_limit_config()["chat_context_max_chars"]))
-        recent = history[-cls.MAX_CONTEXT_MESSAGES:]
-        out = []
+        return budget
+
+    @classmethod
+    def build_llm_messages(cls, history: list[dict], model: dict | None = None,
+                           attached_docs: list[dict] | None = None,
+                           summary: dict | None = None,
+                           system_chars: int = 0) -> list[dict]:
+        """把会话历史转换为标准 messages 格式（role: user/assistant）。
+
+        三区块结构（每轮请求的前缀逐轮字节稳定，命中大模型服务商前缀 KV 缓存）：
+        1. [区块2] attached_documents 块 → 独立 user 消息，固定在最前（文件未变则块不变）；
+        2. [区块3a] conversation_summary 摘要消息（发生过压缩时）→ 紧随其后，固定直到下次压缩；
+        3. [区块3b] 未压缩历史消息 → 预算内全量追加，不做中间改写。
+
+        预算：优先模型档案 context_budget_chars，否则全局配置；system 提示词、区块2/3a 的
+        占用先从预算扣除，剩余为历史预算。历史超预算时从最老丢弃作为硬兜底——正常流程不会
+        发生（prepare_session_messages 会先压缩），仅在极端情况下触发（会破坏前缀稳定性）。
+
+        history 元素可含 id（压缩边界用），仅 role/content 参与消息组装。
+        summary: {"until": int, "text": str} | None —— 会话压缩状态（来自 chat_sessions）。
+        """
+        from backend.services.llm_model_service import get_active
+        model = model or get_active()
+        budget = cls._resolve_budget(model)
+
+        out: list[dict] = []
         total = 0
+
+        # ---- 区块2：attached_documents（半静态，固定在历史最前）----
+        docs_block = cls._build_attached_docs_block(attached_docs, budget)
+        if docs_block:
+            out.append({"role": "user", "content": docs_block})
+            total += len(docs_block)
+
+        # ---- 区块3a：conversation_summary（压缩产物，固定直到下次压缩）----
+        summary_block = cls._build_summary_block(summary)
+        if summary_block:
+            out.append({"role": "user", "content": summary_block})
+            total += len(summary_block)
+
+        # ---- 区块3b：未压缩历史（纯追加；从最新向前累积到历史预算内）----
+        history_budget = max(0, budget - system_chars - total)
+        recent = history[-cls.MAX_CONTEXT_MESSAGES:]
+        kept: list[dict] = []
+        used = 0
         for msg in reversed(recent):
             role = msg.get("role")
             if role not in ("user", "assistant"):
@@ -111,23 +187,194 @@ class ChatService:
                 continue
             if len(content) > cls.MAX_MESSAGE_CHARS:
                 content = content[: cls.MAX_MESSAGE_CHARS] + "…"
-            if out and total + len(content) > budget:
-                break  # 预算用尽，丢弃更早的消息（至少保留最新一条）
-            out.append({"role": role, "content": content})
-            total += len(content)
-        out.reverse()
-        # 首条必须是 user，否则 API 会报错
+            if kept and used + len(content) > history_budget:
+                break  # 硬兜底：丢弃更早的消息（至少保留最新一条）
+            kept.append({"role": role, "content": content})
+            used += len(content)
+        kept.reverse()
+        out.extend(kept)
+
+        # 防御：首条必须是 user，否则 API 会报错（正常结构下不会触发，且判断是确定性的）
         while out and out[0]["role"] != "user":
             out.pop(0)
-        # attached_documents 注入（文档预算独立于历史预算，占 context_budget_chars 的 40%）
-        if attached_docs:
-            block = cls._build_attached_docs_block(attached_docs, budget)
-            if block:
-                if out and out[-1]["role"] == "user":
-                    out[-1] = {"role": "user", "content": out[-1]["content"] + "\n\n" + block}
-                else:
-                    out.append({"role": "user", "content": block})
         return out
+
+    @classmethod
+    def _build_summary_block(cls, summary: dict | None) -> str:
+        """把会话压缩摘要包成固定格式的 user 消息内容（区块3a）。无摘要时返回空串。"""
+        if not summary:
+            return ""
+        text = str(summary.get("text") or "").strip()
+        if not text:
+            return ""
+        return (
+            "<conversation_summary>\n"
+            "（以下是对本会话较早对话的自动摘要，仅作背景参考，请勿当作新的用户提问）\n"
+            f"{text}\n"
+            "</conversation_summary>"
+        )
+
+    @classmethod
+    async def prepare_session_messages(cls, session_id: int, model: dict | None = None,
+                                       attached_docs: list[dict] | None = None,
+                                       system_prompt: str = "",
+                                       override: dict | None = None) -> list[dict]:
+        """按三区块结构组装某会话的完整 messages（含上下文压缩），供 LLM 调用使用。
+
+        流程：读会话压缩状态（chat_sessions.summary_until/summary_text）→ 构建 messages →
+        总占用超预算（COMPACT_TRIGGER_RATIO）→ 行锁事务内把最老完整轮次摘要压缩
+        （LLM 生成摘要，失败降级为固定占位文本）→ 更新压缩状态 → 重建 messages。
+
+        压缩铁律：只对最老旧的区块3片段做摘要改写，区块1/2 原封不动；
+        压缩产物（摘要消息）成为新的稳定前缀，后续继续纯追加。
+        """
+        from backend.database import get_db
+        from backend.services.llm_model_service import get_active
+        model = model or get_active()
+        budget = cls._resolve_budget(model)
+        system_chars = len(system_prompt or "")
+
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT summary_until, summary_text FROM chat_sessions WHERE id = %s", (session_id,)
+            ).fetchone()
+            summary_until = int(row["summary_until"] or 0) if row else 0
+            summary_text = (row["summary_text"] or "").strip() if row else ""
+            rows = conn.execute(
+                "SELECT id, role, content FROM chat_messages WHERE session_id = %s AND id > %s ORDER BY id ASC",
+                (session_id, summary_until),
+            ).fetchall()
+
+        history = [{"id": r["id"], "role": r["role"], "content": r["content"]} for r in rows]
+        summary = {"until": summary_until, "text": summary_text} if summary_until and summary_text else None
+
+        messages = cls.build_llm_messages(history, model, attached_docs, summary=summary, system_chars=system_chars)
+
+        # 上下文压缩：仅在超预算时对最老的区块3片段做摘要，最多 COMPACT_MAX_ROUNDS 轮
+        for _ in range(cls.COMPACT_MAX_ROUNDS):
+            if not cls._over_budget(messages, system_prompt, budget):
+                break
+            compacted = await cls._compact_session(session_id, model, attached_docs, system_prompt, override)
+            if compacted is None:
+                break  # 无可压缩内容，接受硬兜底截断
+            history, summary, messages = compacted
+        return messages
+
+    @classmethod
+    def _over_budget(cls, messages: list[dict], system_prompt: str, budget: int) -> bool:
+        """总占用（system + 全部消息字符）是否超过预算触发比例。"""
+        total = len(system_prompt or "") + sum(len(m.get("content") or "") for m in messages)
+        return total > budget * cls.COMPACT_TRIGGER_RATIO
+
+    @classmethod
+    async def _compact_session(cls, session_id: int, model: dict | None,
+                               attached_docs: list[dict] | None,
+                               system_prompt: str,
+                               override: dict | None) -> tuple[list[dict], dict, list[dict]] | None:
+        """执行一次压缩：把最老完整轮次摘要成固定摘要消息，更新会话压缩状态。
+
+        返回 (剩余历史, 新摘要状态, 重建后的 messages)；无可压缩内容或并发被抢占返回 None。
+        分三阶段执行，避免在同步连接池的行锁内长时间 await（阻塞事件循环）：
+          阶段1（短事务+行锁）：读压缩状态 + 历史，计算摘要区间边界；
+          阶段2（无锁）：LLM 生成摘要（失败降级为固定占位文本）；
+          阶段3（短事务+行锁）：条件 UPDATE——校验 summary_until 未被并发推进、且摘要区间
+            内没有并发插入的新消息（否则该消息会同时被摘要和 id>summary_until 过滤掉而永久丢失），
+            条件不满足则放弃本次压缩（消息不会丢失）。
+        """
+        from backend.database import get_db
+        # ---- 阶段1：锁内读状态 + 计算压缩边界 ----
+        with get_db() as conn:
+            conn.execute("SELECT id FROM chat_sessions WHERE id = %s FOR UPDATE", (session_id,))
+            row = conn.execute(
+                "SELECT summary_until, summary_text FROM chat_sessions WHERE id = %s", (session_id,)
+            ).fetchone()
+            cur_until = int(row["summary_until"] or 0) if row else 0
+            cur_text = (row["summary_text"] or "").strip() if row else ""
+            rows = conn.execute(
+                "SELECT id, role, content FROM chat_messages WHERE session_id = %s AND id > %s ORDER BY id ASC",
+                (session_id, cur_until),
+            ).fetchall()
+            history = [{"id": r["id"], "role": r["role"], "content": r["content"]} for r in rows]
+
+            cut = cls._compact_cut_index(history)
+            if cut <= 0:
+                return None
+            segment = history[:cut]
+            cut_id = int(segment[-1]["id"])
+
+        # ---- 阶段2：无锁生成摘要（连接已释放，不阻塞事件循环）----
+        new_text = await cls._generate_summary(segment, model, override)
+        merged = f"{cur_text}\n\n{new_text}" if cur_text else new_text
+        if len(merged) > cls.SUMMARY_TEXT_MAX:
+            merged = merged[-cls.SUMMARY_TEXT_MAX:]
+
+        # ---- 阶段3：条件更新（并发安全）----
+        with get_db() as conn:
+            cur = conn.execute(
+                "UPDATE chat_sessions SET summary_until = %s, summary_text = %s "
+                "WHERE id = %s AND summary_until = %s "
+                "AND NOT EXISTS (SELECT 1 FROM chat_messages "
+                "                 WHERE session_id = %s AND id > %s AND id <= %s)",
+                (cut_id, merged, session_id, cur_until, session_id, cur_until, cut_id),
+            )
+            if cur.rowcount == 0:
+                # 并发压缩已推进，或摘要区间出现了并发插入的新消息 → 放弃本次压缩
+                logger.warning("[chat_service] 会话 %s 压缩被并发更新抢占，放弃本次压缩", session_id)
+                return None
+            summary = {"until": cut_id, "text": merged}
+            messages = cls.build_llm_messages(
+                history[cut:], model, attached_docs, summary=summary,
+                system_chars=len(system_prompt or ""),
+            )
+            return history[cut:], summary, messages
+
+    @classmethod
+    def _compact_cut_index(cls, history: list[dict]) -> int:
+        """返回应被摘要压缩的历史条数（保留部分从该下标开始）；无可压缩返回 0。
+
+        从摘要最多的一档（RECENT_KEEP_OPTIONS 首位）开始尝试；
+        保留部分第一条必须是 user（完整轮次边界，对齐 openai-agents 的轮次切分思想），
+        否则边界后移少摘要一条，直到保留区以 user 开头。
+        """
+        for keep in cls.RECENT_KEEP_OPTIONS:
+            if len(history) <= keep:
+                continue
+            cut = len(history) - keep
+            while cut < len(history) and history[cut].get("role") != "user":
+                cut += 1
+            if 0 < cut < len(history):
+                return cut
+        return 0
+
+    @classmethod
+    async def _generate_summary(cls, segment: list[dict], model: dict | None,
+                                override: dict | None) -> str:
+        """把被压缩的历史片段（最老轮次）生成摘要文本。
+
+        LLM 失败时降级为固定占位文本（占位文本同样固定，不破坏前缀稳定性）。
+        """
+        parts = []
+        for msg in segment:
+            role = "用户" if msg.get("role") == "user" else "助手"
+            content = str(msg.get("content") or "").strip()
+            if not content:
+                continue
+            if len(content) > cls.SUMMARY_MSG_CHARS:
+                content = content[: cls.SUMMARY_MSG_CHARS] + "…"
+            parts.append(f"[{role}] {content}")
+        text = "\n".join(parts)
+        if len(text) > cls.SUMMARY_INPUT_MAX_CHARS:
+            text = text[-cls.SUMMARY_INPUT_MAX_CHARS:]
+        try:
+            return await LLMClient.complete(
+                system=cls._SUMMARY_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": text}],
+                max_tokens=cls.SUMMARY_MAX_TOKENS,
+                override=override,
+            )
+        except Exception:
+            logger.exception("[chat_service] 上下文摘要生成失败，降级为固定占位文本")
+            return f"（较早的 {len(segment)} 条对话因上下文长度限制已省略）"
 
     @classmethod
     def _build_attached_docs_block(cls, attached_docs: list[dict], total_budget: int) -> str:
@@ -182,13 +429,17 @@ class ChatService:
         return "<attached_documents>\n" + "\n".join(parts) + "\n</attached_documents>"
 
     @classmethod
-    async def chat_stream(cls, history: list[dict], reasoning_effort: str = "auto", model: dict | None = None, attached_docs: list[dict] | None = None):
+    async def chat_stream(cls, history: list[dict], reasoning_effort: str = "auto",
+                          model: dict | None = None, attached_docs: list[dict] | None = None,
+                          prebuilt_messages: list[dict] | None = None):
         """流式对话。history 最后一条必须是当前用户消息。
         reasoning_effort: auto/low/medium/high/max/xhigh（auto 不传，用 API 默认）
         model: 模型档案 dict（可含 base_url/api_key/protocol/model_id），None 时用激活模型 + 全局配置。
+        prebuilt_messages: 已组装好的三区块 messages（prepare_session_messages 产物），
+        传入时跳过内部构建（避免重复执行压缩判断）。
         产出事件：{"type":"chunk","text":...} → {"type":"done","text":完整文本} / {"type":"error","detail":...}
         """
-        messages = cls.build_llm_messages(history, model, attached_docs)
+        messages = prebuilt_messages if prebuilt_messages is not None else cls.build_llm_messages(history, model, attached_docs)
         if not messages:
             yield {"type": "error", "detail": "消息内容为空"}
             return
@@ -226,3 +477,5 @@ class ChatService:
         except Exception:
             logger.exception("[chat_service] LLM stream failed")
             yield {"type": "error", "detail": "回复失败，请重试"}
+
+

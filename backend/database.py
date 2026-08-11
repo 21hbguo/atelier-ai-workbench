@@ -471,6 +471,11 @@ def init_db():
                 updated_at TIMESTAMP DEFAULT NOW()
             )""",
             "CREATE INDEX IF NOT EXISTS idx_chat_sessions_user ON chat_sessions(user_id, updated_at DESC)",
+            # 迁移：会话上下文压缩状态（前缀缓存友好：历史纯追加，超预算时只把最老轮次摘要压缩）。
+            # summary_until = 已被摘要覆盖的最后一条 chat_messages.id（0 表示从未压缩）；
+            # summary_text = 当前合并后的摘要文本（不含包裹标签）。
+            "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS summary_until INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS summary_text TEXT",
             """CREATE TABLE IF NOT EXISTS chat_messages (
                 id SERIAL PRIMARY KEY,
                 session_id INTEGER NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
