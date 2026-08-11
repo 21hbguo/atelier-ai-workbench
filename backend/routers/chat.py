@@ -35,7 +35,6 @@ class ChatSendRequest(BaseModel):
     content: str = Field(..., min_length=1, max_length=2000)
     reasoning_effort: str = Field("auto", pattern="^(auto|low|medium|high|max|xhigh)$")
     model_id: str = Field("", max_length=128)
-    mode: str = Field("chat", pattern="^(chat|agent)$")
 
 
 class ChatRenameRequest(BaseModel):
@@ -407,15 +406,8 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
     cost_per = _chat_cost_per_request(target_model)
     req_id = str(uuid.uuid4())
 
-    # agent 模式：仅 OpenAI 兼容协议（tool_result 回填格式一期不支持 anthropic）
+    # per-model 覆盖（agent 自动分支与 chat_stream 内逻辑共用）
     override = _model_override(target_model)
-    if body.mode == "agent":
-        cfg = dict(get_llm_config())
-        for k, v in override.items():
-            if v:
-                cfg[k] = v
-        if LLMClient.protocol(cfg) != "openai":
-            raise HTTPException(status_code=400, detail="Agent 模式暂仅支持 OpenAI 兼容协议模型（如 DeepSeek），请切换模型或使用普通聊天")
 
     # 思考档位按模型档案校验：不在档案档位列表内则回退该模型默认档位
     efforts = target_model.get("reasoning_efforts") or ["auto"]
@@ -465,6 +457,17 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
     history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
     attached_docs = [{"original_name": r["original_name"], "page_content": r["page_content"]} for r in file_rows]
 
+    # 自动模式：会话有已解析文件 → 走 agent 工具链路（工具可检索/总结文档）；
+    # 无文件 → 普通聊天。仅 OpenAI 兼容协议支持工具回填（anthropic 一期降级普通聊天，文档注入仍生效）
+    use_agent = bool(attached_docs)
+    if use_agent:
+        cfg = dict(get_llm_config())
+        for k, v in override.items():
+            if v:
+                cfg[k] = v
+        if LLMClient.protocol(cfg) != "openai":
+            use_agent = False
+
     def _refund_once() -> None:
         # refund 幂等（request_key 唯一），重复调用安全
         try:
@@ -476,8 +479,8 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
         finished = False
         refunded = False
         try:
-            if body.mode == "agent":
-                # agent 模式：一次非流式工具调用循环（LLM 多轮调用在 run_agent 内部串行完成）
+            if use_agent:
+                # 会话有上传文档：agent 工具循环（一次非流式多轮调用，自动模式无需前端指定）
                 try:
                     ctx = AgentContext(session_id=session_id, user_id=user_id)
                     messages = ChatService.build_llm_messages(history, target_model, attached_docs)

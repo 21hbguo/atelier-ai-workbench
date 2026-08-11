@@ -299,7 +299,7 @@ function EmptyState({ onPick }) {
 // ============ 底部输入区 ============
 const EFFORT_LABELS = { auto: '自动', low: '低', medium: '中', high: '高', max: '最高', xhigh: '超高' }
 
-function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, reasoningEffort, onReasoningEffort, efforts, modelLabel, pendingQueue, onEditPending, onRemovePending, models, chatModelId, onSelectModel, mode, onModeChange, onUploadClick, docs, onRemoveDoc, uploadingCount, uploadNote }) {
+function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, reasoningEffort, onReasoningEffort, efforts, modelLabel, pendingQueue, onEditPending, onRemovePending, models, chatModelId, onSelectModel, onUploadClick, docs, onRemoveDoc, uploadingCount, uploadNote }) {
   const [effortOpen, setEffortOpen] = useState(false)
   const [modelOpen, setModelOpen] = useState(false)
   const EFFORT_OPTIONS = (Array.isArray(efforts) && efforts.length ? efforts : ['auto', 'low', 'medium', 'high', 'max', 'xhigh'])
@@ -407,20 +407,8 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
             ))}
           </div>
         )}
-        {/* 模式切换 + 上传文档（Agent 工具模式 / 会话文档上传，交互对齐 AI 绘画参考图） */}
+        {/* 上传文档（有文件自动走工具链路，无需手动切换模式） */}
         <div className="mb-2 flex items-center gap-2 flex-wrap">
-          <div className="flex rounded-lg border overflow-hidden flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
-            <button type="button" onClick={() => onModeChange('chat')}
-              className="px-2.5 py-1 text-[11px] transition-colors"
-              style={mode === 'chat' ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-secondary)', background: 'transparent' }}>
-              普通对话
-            </button>
-            <button type="button" onClick={() => onModeChange('agent')}
-              className="px-2.5 py-1 text-[11px] transition-colors"
-              style={mode === 'agent' ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-secondary)', background: 'transparent' }}>
-              Agent 工具
-            </button>
-          </div>
           <button type="button" onClick={onUploadClick} title="上传文档/代码（txt/md/csv/pdf/docx/xlsx/pptx/py/js/ts/go/yaml 等 50+ 格式，最多 20 个）"
             className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors"
             style={{ color: 'var(--text-secondary)' }}>
@@ -561,9 +549,6 @@ export default function ChatAssistantPage() {
   const [chatModelId, setChatModelId] = useState(() => {
     try { return localStorage.getItem('chat_model_id') || '' } catch { return '' }
   }) // '' = 激活模型
-  const [chatMode, setChatMode] = useState(() => {
-    try { return localStorage.getItem('chat_mode') || 'chat' } catch { /* localStorage 不可用时回退普通对话 */ return 'chat' }
-  }) // 'chat' | 'agent'（agent = 工具调用模式）
   const [uploadNote, setUploadNote] = useState('')
   // 会话文档列表（对齐 AI 绘画参考图交互）：{id,name,ext,size,status,progress,error,file_id,char_count,file}
   const [docs, setDocs] = useState([])
@@ -585,7 +570,6 @@ export default function ChatAssistantPage() {
   const activeIdRef = useRef(activeId)
   const effortRef = useRef(reasoningEffort)
   const modelIdRef = useRef(chatModelId)
-  const modeRef = useRef(chatMode)
   const [pendingQueue, setPendingQueue] = useState([])
 
   const activeSession = sessions.find(s => s.id === activeId) || null
@@ -605,7 +589,6 @@ export default function ChatAssistantPage() {
     activeIdRef.current = activeId
     effortRef.current = reasoningEffort
     modelIdRef.current = chatModelId
-    modeRef.current = chatMode
   })
 
   // 初始加载：模型档案、余额、会话列表
@@ -685,11 +668,6 @@ export default function ChatAssistantPage() {
     return true
   }, [])
   const releaseSendLock = useCallback(() => { sendingRef.current = null }, [])
-
-  const handleModeChange = useCallback(mode => {
-    setChatMode(mode)
-    try { localStorage.setItem('chat_mode', mode) } catch { /* 忽略 localStorage 写入失败 */ }
-  }, [])
 
   // 打开文件选择器（对齐 AI 绘画 openFilePicker：优先原生 showPicker）
   const openFilePicker = useCallback(() => {
@@ -795,7 +773,6 @@ export default function ChatAssistantPage() {
       signal: controller.signal,
       reasoning_effort: reasoningEffort,
       model_id: modelIdRef.current,
-      mode: modeRef.current,
       onChunk: data => setSending(prev =>
         (prev && prev.sessionId === sessionId) ? { ...prev, text: (prev.text || '') + String(data.text || '') } : prev),
       onDone: data => {
@@ -1198,7 +1175,6 @@ export default function ChatAssistantPage() {
             efforts={chatModel?.reasoning_efforts} modelLabel={chatModel?.label || modelInfo?.label || modelInfo?.model_id}
             pendingQueue={pendingQueue} onEditPending={editPending} onRemovePending={removePending}
             models={selectableModels} chatModelId={chatModelId} onSelectModel={handleSelectModel}
-            mode={chatMode} onModeChange={handleModeChange}
             onUploadClick={openFilePicker} docs={docs} onRemoveDoc={removeDoc}
             uploadingCount={docs.filter(d => d.status === 'uploading' || d.status === 'pending').length}
             uploadNote={uploadNote} />
