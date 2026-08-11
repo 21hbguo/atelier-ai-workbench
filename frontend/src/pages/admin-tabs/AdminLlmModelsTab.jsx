@@ -6,6 +6,7 @@ const THINKING_LABELS = { enabled: '默认思考', disabled: '默认不思考', 
 
 const EMPTY_DRAFT = {
   model_id: '', label: '', provider: '', protocol: 'openai',
+  base_url: '', api_key: '',
   max_input_tokens: 1000000, max_output_tokens: 128000,
   reasoning_efforts_text: 'auto,low,medium,high,max,xhigh',
   default_reasoning_effort: 'auto', thinking_default: 'enabled',
@@ -44,6 +45,8 @@ export default function AdminLlmModelsTab({ items, loading, onRefresh, onSave, o
         label: d.label.trim(),
         provider: d.provider?.trim() || '',
         protocol: d.protocol,
+        base_url: d.base_url?.trim() || '',
+        api_key: d.api_key?.trim() || '',
         max_input_tokens: Number(d.max_input_tokens) || 1000000,
         max_output_tokens: Number(d.max_output_tokens) || 128000,
         input_price_per_million: Number(d.input_price_per_million) || null,
@@ -179,6 +182,16 @@ export default function AdminLlmModelsTab({ items, loading, onRefresh, onSave, o
                   <option value="openai">openai</option>
                   <option value="anthropic">anthropic</option>
                 </select>
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>API 地址（留空用全局 LLM_BASE_URL）</label>
+                <input value={editing.draft.base_url || ''} onChange={e => setDraft({ base_url: e.target.value })} placeholder="如 https://api.deepseek.com/v1"
+                  className="w-full px-3 py-2 rounded-2xl text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>API Key（留空用全局 LLM_API_KEY；支持 env:变量名）</label>
+                <input type="password" value={editing.draft.api_key || ''} onChange={e => setDraft({ api_key: e.target.value })} placeholder="sk-xxx 或 env:DEEPSEEK_API_KEY"
+                  className="w-full px-3 py-2 rounded-2xl text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>最大输入（tokens）</label>

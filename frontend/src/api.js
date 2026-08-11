@@ -159,7 +159,7 @@ export const promptOptimizeAPI = {
 }
 
 export const chatAPI = {
-  cost: () => api.get('/chat/cost'),
+  cost: (modelId = '') => api.get(`/chat/cost${modelId ? `?model_id=${encodeURIComponent(modelId)}` : ''}`),
   sessions: () => api.get('/chat/sessions'),
   createSession: () => api.post('/chat/sessions'),
   renameSession: (id, title) => api.patch(`/chat/sessions/${id}`, { title }),
@@ -169,13 +169,13 @@ export const chatAPI = {
   model: () => api.get('/chat/model'),
   models: () => api.get('/chat/models'),
   // SSE 流式发送消息：仿 promptOptimizeAPI.optimizeStream 的 fetch + ReadableStream 解析
-  sendStream: async (sessionId, content, { onChunk, onDone, onError, signal, reasoning_effort = 'auto' } = {}) => {
+  sendStream: async (sessionId, content, { onChunk, onDone, onError, signal, reasoning_effort = 'auto', model_id = '' } = {}) => {
     try {
       const resp = await fetch(`/api/chat/sessions/${sessionId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ content, reasoning_effort }),
+        body: JSON.stringify({ content, reasoning_effort, ...(model_id ? { model_id } : {}) }),
         signal,
       })
       if (!resp.ok) {

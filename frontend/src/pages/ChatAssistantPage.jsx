@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { MessageCircle, Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, ChevronLeft, Brain, AlertCircle, CheckSquare } from 'lucide-react'
+import { MessageCircle, Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, ChevronLeft, Brain, AlertCircle, CheckSquare, Cpu, ChevronDown, Check } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
 import { useAppDialog } from '../components/AppDialogProvider'
 import { chatAPI, pointsAPI } from '../api'
@@ -299,10 +299,12 @@ function EmptyState({ onPick }) {
 // ============ 底部输入区 ============
 const EFFORT_LABELS = { auto: '自动', low: '低', medium: '中', high: '高', max: '最高', xhigh: '超高' }
 
-function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, reasoningEffort, onReasoningEffort, efforts, modelLabel, pendingQueue, onEditPending, onRemovePending }) {
+function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, reasoningEffort, onReasoningEffort, efforts, modelLabel, pendingQueue, onEditPending, onRemovePending, models, chatModelId, onSelectModel }) {
   const [effortOpen, setEffortOpen] = useState(false)
+  const [modelOpen, setModelOpen] = useState(false)
   const EFFORT_OPTIONS = (Array.isArray(efforts) && efforts.length ? efforts : ['auto', 'low', 'medium', 'high', 'max', 'xhigh'])
     .map(v => ({ value: v, label: EFFORT_LABELS[v] || v }))
+  const activeModel = models.find(m => m.model_id === chatModelId) || null
   useEffect(() => {
     if (!value && inputRef.current) inputRef.current.style.height = 'auto'
   }, [value, inputRef])
@@ -317,11 +319,48 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
       style={{ background: 'var(--bg-primary)', borderTop: '1px solid var(--border-color)', bottom: 'env(keyboard-inset-height, 0px)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
       <div className="mx-auto w-full max-w-3xl px-4 pt-3 pb-2">
         <div className="flex items-center gap-1.5 mb-1.5 px-1 flex-wrap">
-          {modelLabel && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium"
-              style={{ background: 'color-mix(in srgb, var(--accent) 10%, transparent)', color: 'var(--accent)' }}>
-              {modelLabel}
-            </span>
+          {/* 模型选择 */}
+          {models.length > 0 ? (
+            <div className="relative">
+              <button onClick={() => setModelOpen(v => !v)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
+                style={{
+                  background: activeModel ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'color-mix(in srgb, var(--accent) 10%, transparent)',
+                  borderColor: activeModel ? 'var(--accent)' : 'color-mix(in srgb, var(--accent) 25%, var(--border-color))',
+                  color: 'var(--accent)',
+                }}>
+                <Cpu size={13} />
+                <span>{activeModel?.label || modelLabel || '模型'}</span>
+                <ChevronDown size={11} className={modelOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+              </button>
+              {modelOpen && (
+                <div className="absolute left-0 top-full mt-1.5 z-50 w-72 max-h-80 overflow-y-auto rounded-xl p-1"
+                  style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-md)' }}>
+                  {models.map(m => (
+                    <button key={m.model_id} onClick={() => { onSelectModel(m.model_id); setModelOpen(false) }}
+                      className="w-full text-left flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-bg-hover transition-colors"
+                      style={{ background: m.model_id === chatModelId ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent' }}>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-xs font-medium truncate" style={{ color: m.model_id === chatModelId ? 'var(--accent)' : 'var(--text-primary)' }}>
+                          {m.label || m.model_id}
+                        </span>
+                        <span className="block text-[10px] truncate" style={{ color: 'var(--text-secondary)' }}>
+                          {m.model_id}{m.points_per_request != null && m.points_per_request > 0 ? ` · ${m.points_per_request} 积分/次` : ''}
+                        </span>
+                      </span>
+                      {m.model_id === chatModelId && <Check size={13} style={{ color: 'var(--accent)' }} />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            modelLabel && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium"
+                style={{ background: 'color-mix(in srgb, var(--accent) 10%, transparent)', color: 'var(--accent)' }}>
+                {modelLabel}
+              </span>
+            )
           )}
           <button onClick={() => setEffortOpen(v => !v)}
             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
@@ -435,7 +474,11 @@ export default function ChatAssistantPage() {
   const [cost, setCost] = useState(0)
   const [points, setPoints] = useState(() => readUser()?.points ?? 0)
   const [reasoningEffort, setReasoningEffort] = useState(() => localStorage.getItem('chat_reasoning_effort') || 'auto')
-  const [modelInfo, setModelInfo] = useState(null) // { label, reasoning_efforts, ... }
+  const [modelInfo, setModelInfo] = useState(null) // { label, reasoning_efforts, ... }（激活模型档案）
+  const [models, setModels] = useState([]) // 全部启用的模型档案
+  const [chatModelId, setChatModelId] = useState(() => {
+    try { return localStorage.getItem('chat_model_id') || '' } catch { return '' }
+  }) // '' = 激活模型
   const [sessionListOpen, setSessionListOpen] = useState(false)
   const [renaming, setRenaming] = useState(null) // { id, title }
   const [batchMode, setBatchMode] = useState(false)
@@ -450,27 +493,34 @@ export default function ChatAssistantPage() {
   const pointsRef = useRef(points)
   const activeIdRef = useRef(activeId)
   const effortRef = useRef(reasoningEffort)
+  const modelIdRef = useRef(chatModelId)
   const [pendingQueue, setPendingQueue] = useState([])
 
   const activeSession = sessions.find(s => s.id === activeId) || null
+  // 当前选中的模型档案（未选或记忆无效 → 激活模型）
+  const chatModel = models.find(m => m.model_id === chatModelId) || modelInfo
 
   // latest-ref：每次渲染后同步，让异步回调能读到最新值
   useEffect(() => {
     pointsRef.current = points
     activeIdRef.current = activeId
     effortRef.current = reasoningEffort
+    modelIdRef.current = chatModelId
   })
 
-  // 初始加载：消耗积分、余额、会话列表、模型档案
+  // 初始加载：模型档案、余额、会话列表
   useEffect(() => {
-    chatAPI.cost().then(res => setCost(Number(res.data?.cost_per_chat) || 0)).catch(() => {})
     chatAPI.model().then(res => {
       setModelInfo(res.data || null)
-      const efforts = res.data?.reasoning_efforts
-      if (Array.isArray(efforts) && efforts.length && !efforts.includes(reasoningEffort)) {
-        const fb = res.data?.default_reasoning_effort || 'auto'
-        setReasoningEffort(fb)
-        try { localStorage.setItem('chat_reasoning_effort', fb) } catch {}
+    }).catch(() => {})
+    chatAPI.models().then(res => {
+      const items = (res.data?.items || []).filter(m => m.enabled)
+      setModels(items)
+      // 本地记忆的模型不存在/未启用时回退激活模型
+      const saved = (() => { try { return localStorage.getItem('chat_model_id') || '' } catch { return '' } })()
+      if (!saved || !items.some(m => m.model_id === saved)) {
+        setChatModelId('')
+        try { localStorage.removeItem('chat_model_id') } catch {}
       }
     }).catch(() => {})
     pointsAPI.balance().then(res => setPoints(Number(res.data?.points) ?? 0)).catch(() => {})
@@ -486,6 +536,22 @@ export default function ChatAssistantPage() {
       abortRef.current?.abort()
     }
   }, [])
+
+  // 单次消耗积分随所选模型变化（未定价模型后端回退全局配置）
+  useEffect(() => {
+    chatAPI.cost(chatModelId).then(res => setCost(Number(res.data?.cost_per_chat) || 0)).catch(() => {})
+  }, [chatModelId])
+
+  // 切换模型时校验思考档位：不在新模型档位内则回退其默认档位
+  useEffect(() => {
+    const efforts = chatModel?.reasoning_efforts
+    if (Array.isArray(efforts) && efforts.length && !efforts.includes(reasoningEffort)) {
+      const fb = chatModel?.default_reasoning_effort || 'auto'
+      setReasoningEffort(fb) // eslint-disable-line react-hooks/set-state-in-effect -- 模型切换时同步档位是受控状态调整
+      try { localStorage.setItem('chat_reasoning_effort', fb) } catch {}
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatModel?.model_id, chatModelId])
 
   // 切换会话时加载消息
   useEffect(() => {
@@ -527,6 +593,7 @@ export default function ChatAssistantPage() {
     chatAPI.sendStream(sessionId, content, {
       signal: controller.signal,
       reasoning_effort: reasoningEffort,
+      model_id: modelIdRef.current,
       onChunk: data => setSending(prev =>
         (prev && prev.sessionId === sessionId) ? { ...prev, text: (prev.text || '') + String(data.text || '') } : prev),
       onDone: data => {
@@ -806,6 +873,11 @@ export default function ChatAssistantPage() {
     try { localStorage.setItem('chat_reasoning_effort', v) } catch {}
   }
 
+  const handleSelectModel = (id) => {
+    setChatModelId(id)
+    try { localStorage.setItem('chat_model_id', id) } catch { /* 忽略 localStorage 异常 */ }
+  }
+
   const handleRetry = () => {
     if (!sending) return
     const { sessionId, content } = sending
@@ -918,8 +990,9 @@ export default function ChatAssistantPage() {
           <ChatInputBar inputRef={inputRef} value={input} onChange={setInput}
             onSend={handleSend} onStop={handleStop} sending={!!sending} cost={cost} points={points}
             reasoningEffort={reasoningEffort} onReasoningEffort={handleReasoningEffort}
-            efforts={modelInfo?.reasoning_efforts} modelLabel={modelInfo?.label || modelInfo?.model_id}
-            pendingQueue={pendingQueue} onEditPending={editPending} onRemovePending={removePending} />
+            efforts={chatModel?.reasoning_efforts} modelLabel={chatModel?.label || modelInfo?.label || modelInfo?.model_id}
+            pendingQueue={pendingQueue} onEditPending={editPending} onRemovePending={removePending}
+            models={models} chatModelId={chatModelId} onSelectModel={handleSelectModel} />
         </div>
       </div>
       <style>{MD_STYLES}</style>
