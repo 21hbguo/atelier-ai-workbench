@@ -421,7 +421,7 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
               Agent 工具
             </button>
           </div>
-          <button type="button" onClick={onUploadClick} title="上传文档（txt/md/csv/pdf/docx/xlsx/pptx，最多 20 个）"
+          <button type="button" onClick={onUploadClick} title="上传文档/代码（txt/md/csv/pdf/docx/xlsx/pptx/py/js/ts/go/yaml 等 50+ 格式，最多 20 个）"
             className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors"
             style={{ color: 'var(--text-secondary)' }}>
             <Paperclip size={15} />
@@ -532,7 +532,16 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
 // ============ 页面 ============
 // 聊天文档上传限制（与后端 backend/routers/chat.py 的 _MAX_FILES_PER_SESSION/MAX_FILE_SIZE 一致）
 const MAX_DOCS = 20
-const DOC_EXTS = new Set(['txt', 'md', 'csv', 'json', 'html', 'pdf', 'docx', 'xlsx', 'pptx'])
+// 与后端 document_parser._CODE_EXTS / chat.py _CHAT_DOC_EXTS 保持一致
+const DOC_EXTS = new Set([
+  'txt', 'md', 'csv', 'json', 'html', 'pdf', 'docx', 'xlsx', 'pptx',
+  'py', 'js', 'mjs', 'cjs', 'jsx', 'ts', 'tsx', 'java', 'go', 'rs',
+  'c', 'h', 'cpp', 'hpp', 'cc', 'cs', 'php', 'rb', 'swift', 'kt',
+  'sh', 'bash', 'zsh', 'fish', 'ps1', 'sql', 'lua', 'r', 'pl',
+  'scala', 'dart', 'vue', 'svelte',
+  'yaml', 'yml', 'toml', 'ini', 'conf', 'cfg', 'xml', 'properties', 'env',
+])
+const DOC_ACCEPT = '.txt,.md,.csv,.json,.html,.pdf,.docx,.xlsx,.pptx,.py,.js,.mjs,.cjs,.jsx,.ts,.tsx,.java,.go,.rs,.c,.h,.cpp,.hpp,.cc,.cs,.php,.rb,.swift,.kt,.sh,.bash,.zsh,.fish,.ps1,.sql,.lua,.r,.pl,.scala,.dart,.vue,.svelte,.yaml,.yml,.toml,.ini,.conf,.cfg,.xml,.properties,.env'
 const MAX_DOC_SIZE = 10 * 1024 * 1024
 
 export default function ChatAssistantPage() {
@@ -1181,7 +1190,7 @@ export default function ChatAssistantPage() {
           </div>
 
           <input ref={fileRef} type="file" className="hidden" multiple
-            accept=".txt,.md,.csv,.json,.html,.pdf,.docx,.xlsx,.pptx"
+            accept={DOC_ACCEPT}
             onChange={handleFilesSelected} />
           <ChatInputBar inputRef={inputRef} value={input} onChange={setInput}
             onSend={handleSend} onStop={handleStop} sending={!!sending} cost={cost} points={points}

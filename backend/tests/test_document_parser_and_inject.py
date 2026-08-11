@@ -68,6 +68,27 @@ def test_parse_pptx():
         os.unlink(p)
 
 
+def test_parse_code_files():
+    """代码/配置文件走纯文本解析：py/sh/yaml/js/go。"""
+    samples = {
+        "py": "def hello():\n    return 'hi'",
+        "sh": "#!/bin/bash\necho 'hello'",
+        "yaml": "name: demo\nversion: 1.0",
+        "js": "const x = 1;\nconsole.log(x);",
+        "go": "package main\nfunc main() {}",
+        "toml": "[server]\nport = 8080",
+    }
+    for ext, content in samples.items():
+        p = f"/tmp/_test_code.{ext}"
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(content)
+        try:
+            text = parse_file(p, ext)
+            assert text.strip() == content.strip(), f"{ext} 解析结果不一致"
+        finally:
+            os.unlink(p)
+
+
 def test_parse_docx():
     from docx import Document
     d = Document()

@@ -103,7 +103,17 @@ def _model_override(model: dict | None) -> dict:
 
 
 # 聊天文档上传：允许的扩展名与对应 MIME（content_type 落库用）
-_CHAT_DOC_EXTS = {"txt", "md", "csv", "json", "html", "pdf", "docx", "xlsx", "pptx"}
+# 代码/配置文件与 document_parser._CODE_EXTS 保持一致
+_CHAT_DOC_EXTS = {
+    "txt", "md", "csv", "json", "html", "pdf", "docx", "xlsx", "pptx",
+    # 代码
+    "py", "js", "mjs", "cjs", "jsx", "ts", "tsx", "java", "go", "rs",
+    "c", "h", "cpp", "hpp", "cc", "cs", "php", "rb", "swift", "kt",
+    "sh", "bash", "zsh", "fish", "ps1", "sql", "lua", "r", "pl",
+    "scala", "dart", "vue", "svelte",
+    # 配置/标记
+    "yaml", "yml", "toml", "ini", "conf", "cfg", "xml", "properties", "env",
+}
 _CHAT_DOC_MIME = {
     "txt": "text/plain",
     "md": "text/markdown",
@@ -115,6 +125,9 @@ _CHAT_DOC_MIME = {
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 }
+# 代码/配置文件兜底 MIME
+for _ext in _CHAT_DOC_EXTS:
+    _CHAT_DOC_MIME.setdefault(_ext, "text/plain")
 # zip 炸弹防护：office 文档解压后总大小上限（压缩包 20MB 可膨胀 GB 级）
 _MAX_UNZIPPED_SIZE = 200 * 1024 * 1024
 # 每会话上传文件数上限（防磁盘/DB 无限增长）

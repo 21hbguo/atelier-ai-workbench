@@ -1,7 +1,7 @@
 """文档解析器：按扩展名分发，提取全文文本。
 
 支持类型：
-- txt/md/csv/json/html：标准库 utf-8 读取（errors='replace'，容错乱码）
+- 文本类（txt/md/csv/json/html + 代码/配置文件）：标准库 utf-8 读取（errors='replace'，容错乱码）
 - pdf：PyMuPDF(fitz) 逐页 get_text，无文本页跳过
 - docx：python-docx 段落 + 表格单元格
 - xlsx：openpyxl 每 sheet 单元格文本
@@ -12,6 +12,17 @@
 import logging
 
 logger = logging.getLogger(__name__)
+
+# 常见代码/配置文件扩展名（映射到 _parse_text 纯文本解析）
+_CODE_EXTS = {
+    # 代码
+    "py", "js", "mjs", "cjs", "jsx", "ts", "tsx", "java", "go", "rs",
+    "c", "h", "cpp", "hpp", "cc", "cs", "php", "rb", "swift", "kt",
+    "sh", "bash", "zsh", "fish", "ps1", "sql", "lua", "r", "pl",
+    "scala", "dart", "vue", "svelte",
+    # 配置/标记
+    "yaml", "yml", "toml", "ini", "conf", "cfg", "xml", "properties", "env",
+}
 
 
 def _parse_text(path: str) -> str:
@@ -131,6 +142,9 @@ _PARSERS = {
     "xlsx": _parse_xlsx,
     "pptx": _parse_pptx,
 }
+# 代码/配置文件：全部走纯文本解析
+for _ext in _CODE_EXTS:
+    _PARSERS.setdefault(_ext, _parse_text)
 
 
 def parse_file(path: str, ext: str) -> str:
