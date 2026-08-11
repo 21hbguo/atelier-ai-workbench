@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { MessageCircle, Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, ChevronLeft, Brain, AlertCircle, CheckSquare, Cpu, ChevronDown, Check } from 'lucide-react'
+import { MessageCircle, Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, ChevronLeft, Brain, AlertCircle, CheckSquare, Cpu, ChevronDown, Check, Paperclip } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
 import { useAppDialog } from '../components/AppDialogProvider'
 import { chatAPI, pointsAPI } from '../api'
@@ -299,7 +299,7 @@ function EmptyState({ onPick }) {
 // ============ 底部输入区 ============
 const EFFORT_LABELS = { auto: '自动', low: '低', medium: '中', high: '高', max: '最高', xhigh: '超高' }
 
-function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, reasoningEffort, onReasoningEffort, efforts, modelLabel, pendingQueue, onEditPending, onRemovePending, models, chatModelId, onSelectModel }) {
+function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, reasoningEffort, onReasoningEffort, efforts, modelLabel, pendingQueue, onEditPending, onRemovePending, models, chatModelId, onSelectModel, mode, onModeChange, onUploadFile, uploading, uploadNote }) {
   const [effortOpen, setEffortOpen] = useState(false)
   const [modelOpen, setModelOpen] = useState(false)
   const EFFORT_OPTIONS = (Array.isArray(efforts) && efforts.length ? efforts : ['auto', 'low', 'medium', 'high', 'max', 'xhigh'])
@@ -407,6 +407,33 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
             ))}
           </div>
         )}
+        {/* 模式切换 + 上传文档（Agent 工具模式 / 会话文档上传） */}
+        <div className="mb-2 flex items-center gap-2 flex-wrap">
+          <div className="flex rounded-lg border overflow-hidden flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
+            <button type="button" onClick={() => onModeChange('chat')}
+              className="px-2.5 py-1 text-[11px] transition-colors"
+              style={mode === 'chat' ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-secondary)', background: 'transparent' }}>
+              普通对话
+            </button>
+            <button type="button" onClick={() => onModeChange('agent')}
+              className="px-2.5 py-1 text-[11px] transition-colors"
+              style={mode === 'agent' ? { background: 'var(--accent)', color: '#fff' } : { color: 'var(--text-secondary)', background: 'transparent' }}>
+              Agent 工具
+            </button>
+          </div>
+          <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] cursor-pointer transition-colors hover:bg-bg-hover"
+            style={{ color: 'var(--text-secondary)', border: '1px solid var(--border-color)' }}
+            title="上传文档（txt/md/csv/pdf/docx/xlsx/pptx），解析后供对话引用">
+            <Paperclip size={12} />
+            {uploading ? '上传中…' : '上传文档'}
+            <input type="file" className="hidden"
+              accept=".txt,.md,.csv,.json,.html,.pdf,.docx,.xlsx,.pptx"
+              onChange={onUploadFile} disabled={uploading} />
+          </label>
+          {uploadNote && (
+            <span className="text-[11px] min-w-0 truncate" style={{ color: 'var(--accent)' }} title={uploadNote}>{uploadNote}</span>
+          )}
+        </div>
         {/* 与 AI 生图输入框一致的卡片式输入区 */}
         <div className="rounded-2xl border" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-md)' }}>
           <div className="px-2 pt-2">
@@ -479,6 +506,11 @@ export default function ChatAssistantPage() {
   const [chatModelId, setChatModelId] = useState(() => {
     try { return localStorage.getItem('chat_model_id') || '' } catch { return '' }
   }) // '' = 激活模型
+  const [chatMode, setChatMode] = useState(() => {
+    try { return localStorage.getItem('chat_mode') || 'chat' } catch { /* localStorage 不可用时回退普通对话 */ return 'chat' }
+  }) // 'chat' | 'agent'（agent = 工具调用模式）
+  const [uploading, setUploading] = useState(false)
+  const [uploadNote, setUploadNote] = useState('')
   const [sessionListOpen, setSessionListOpen] = useState(false)
   const [renaming, setRenaming] = useState(null) // { id, title }
   const [batchMode, setBatchMode] = useState(false)
@@ -494,6 +526,7 @@ export default function ChatAssistantPage() {
   const activeIdRef = useRef(activeId)
   const effortRef = useRef(reasoningEffort)
   const modelIdRef = useRef(chatModelId)
+  const modeRef = useRef(chatMode)
   const [pendingQueue, setPendingQueue] = useState([])
 
   const activeSession = sessions.find(s => s.id === activeId) || null
@@ -513,6 +546,7 @@ export default function ChatAssistantPage() {
     activeIdRef.current = activeId
     effortRef.current = reasoningEffort
     modelIdRef.current = chatModelId
+    modeRef.current = chatMode
   })
 
   // 初始加载：模型档案、余额、会话列表
@@ -593,6 +627,34 @@ export default function ChatAssistantPage() {
   }, [])
   const releaseSendLock = useCallback(() => { sendingRef.current = null }, [])
 
+  const handleModeChange = useCallback(mode => {
+    setChatMode(mode)
+    try { localStorage.setItem('chat_mode', mode) } catch { /* 忽略 localStorage 写入失败 */ }
+  }, [])
+
+  // 上传文档：需要先有会话；上传成功仅提示，文档列表可由 Agent 的 document_summary.list 回答
+  const handleUploadFile = useCallback(async e => {
+    const file = e.target?.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    const sid = activeIdRef.current
+    if (!sid) {
+      setUploadNote('请先创建/选择会话再上传文档')
+      return
+    }
+    setUploading(true)
+    setUploadNote('')
+    try {
+      const res = await chatAPI.uploadDoc(sid, file)
+      const d = res.data || {}
+      setUploadNote(`已上传「${d.original_name || file.name}」（${d.char_count ?? 0} 字符），对话将引用其内容`)
+    } catch (err) {
+      setUploadNote(err?.message || '上传失败')
+    } finally {
+      setUploading(false)
+    }
+  }, [])
+
   const startStream = useCallback((sessionId, content, reasoningEffort = 'auto') => {
     const controller = new AbortController()
     abortRef.current = controller
@@ -603,6 +665,7 @@ export default function ChatAssistantPage() {
       signal: controller.signal,
       reasoning_effort: reasoningEffort,
       model_id: modelIdRef.current,
+      mode: modeRef.current,
       onChunk: data => setSending(prev =>
         (prev && prev.sessionId === sessionId) ? { ...prev, text: (prev.text || '') + String(data.text || '') } : prev),
       onDone: data => {
@@ -1001,7 +1064,9 @@ export default function ChatAssistantPage() {
             reasoningEffort={reasoningEffort} onReasoningEffort={handleReasoningEffort}
             efforts={chatModel?.reasoning_efforts} modelLabel={chatModel?.label || modelInfo?.label || modelInfo?.model_id}
             pendingQueue={pendingQueue} onEditPending={editPending} onRemovePending={removePending}
-            models={selectableModels} chatModelId={chatModelId} onSelectModel={handleSelectModel} />
+            models={selectableModels} chatModelId={chatModelId} onSelectModel={handleSelectModel}
+            mode={chatMode} onModeChange={handleModeChange}
+            onUploadFile={handleUploadFile} uploading={uploading} uploadNote={uploadNote} />
         </div>
       </div>
       <style>{MD_STYLES}</style>

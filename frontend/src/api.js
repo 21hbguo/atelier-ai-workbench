@@ -168,14 +168,21 @@ export const chatAPI = {
   messages: id => api.get(`/chat/sessions/${id}/messages`),
   model: () => api.get('/chat/model'),
   models: () => api.get('/chat/models'),
+  // 上传聊天文档（txt/md/csv/pdf/docx/xlsx/pptx 等，解析后注入对话上下文）
+  uploadDoc: (sessionId, file) => {
+    const fd = new FormData()
+    fd.append('session_id', sessionId)
+    fd.append('file', file)
+    return api.post('/chat/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
   // SSE 流式发送消息：仿 promptOptimizeAPI.optimizeStream 的 fetch + ReadableStream 解析
-  sendStream: async (sessionId, content, { onChunk, onDone, onError, signal, reasoning_effort = 'auto', model_id = '' } = {}) => {
+  sendStream: async (sessionId, content, { onChunk, onDone, onError, signal, reasoning_effort = 'auto', model_id = '', mode = 'chat' } = {}) => {
     try {
       const resp = await fetch(`/api/chat/sessions/${sessionId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ content, reasoning_effort, ...(model_id ? { model_id } : {}) }),
+        body: JSON.stringify({ content, reasoning_effort, mode, ...(model_id ? { model_id } : {}) }),
         signal,
       })
       if (!resp.ok) {
