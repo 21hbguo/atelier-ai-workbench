@@ -1,12 +1,17 @@
-"""web_search 工具：多供应商联网搜索（serper / brave / tavily / searxng）。
+"""web_search 工具：多供应商联网搜索（tavily / exa / serper / brave / searxng）。
 
-环境变量配置：
-- SEARCH_PROVIDER: serper | brave | tavily | searxng
-- SEARCH_API_KEY: serper（X-API-KEY）/ brave（X-Subscription-Token）/ tavily（请求体 api_key）
-- SEARXNG_URL: searxng 实例地址（如 https://searx.example.com）
+环境变量配置（可同时配置多个，自动按优先级故障转移）：
+- TAVILY_API_KEY: Tavily 云搜索（api.tavily.com）
+- EXA_API_KEY: Exa 云搜索（api.exa.ai）
+- SERPER_API_KEY: Serper 云搜索（google.serper.dev）
+- BRAVE_API_KEY: Brave 云搜索（api.search.brave.com）
+- SEARXNG_URL: 自建 searxng 实例地址（如 https://searx.example.com，仅内网/公网可达时可用）
 
-未配置时返回明确中文错误，说明需要设置哪些环境变量。
-统一返回 "标题 — url\n描述" 列表文本。
+兼容旧配置：
+- SEARCH_PROVIDER: serper | brave | tavily | searxng（显式指定单一供应商时仅用该供应商）
+- SEARCH_API_KEY: 指定供应商时的通用 key（新配置优先用各自独立 key）
+
+未配置任何 key 时返回明确中文错误。统一返回 "标题 — url\n描述" 列表文本。
 """
 from __future__ import annotations
 
@@ -24,17 +29,43 @@ logger = logging.getLogger(__name__)
 _SEARCH_TIMEOUT = 15.0
 _MAX_RESULTS = 10  # 单次搜索条数上限，防滥用
 
-_PROVIDERS = ("serper", "brave", "tavily", "searxng")
+# 供应商 → 独立 key 环境变量（缺失的供应商自动跳过）
+_PROVIDER_ENV = {
+    "tavily": "TAVILY_API_KEY",
+    "exa": "EXA_API_KEY",
+    "serper": "SERPER_API_KEY",
+    "brave": "BRAVE_API_KEY",
+    "searxng": "SEARXNG_URL",
+}
+# 默认启用顺序（也可用 SEARCH_PROVIDERS 显式指定顺序）
+_DEFAULT_PROVIDER_ORDER = ("tavily", "exa", "serper", "brave", "searxng")
 
 
-def _unconfigured_message(provider: str) -> str:
-    if provider == "searxng":
-        return "未配置联网搜索：请设置环境变量 SEARCH_PROVIDER=searxng 和 SEARXNG_URL（searxng 实例地址）。"
-    if provider:
-        return f"未配置联网搜索：SEARCH_PROVIDER 已设为 {provider}，但缺少 SEARCH_API_KEY，请补充该环境变量。"
+def _configured_providers() -> list[str]:
+    """返回可用的供应商列表：
+    1) SEARCH_PROVIDER 显式指定时仅用该供应商（兼容旧配置，key 回退 SEARCH_API_KEY）；
+    2) 否则按默认顺序自动检测已配置独立 key 的供应商（SEARCH_PROVIDERS 可自定义顺序）。
+    """
+    explicit = str(os.getenv("SEARCH_PROVIDER") or "").strip().lower()
+    if explicit:
+        if explicit in _PROVIDER_ENV:
+            key_env = _PROVIDER_ENV[explicit]
+            if os.getenv(key_env) or os.getenv("SEARCH_API_KEY"):
+                return [explicit]
+        return []
+    order_env = str(os.getenv("SEARCH_PROVIDERS") or "").strip()
+    if order_env:
+        order = [s.strip().lower() for s in order_env.split(",") if s.strip()]
+    else:
+        order = list(_DEFAULT_PROVIDER_ORDER)
+    return [p for p in order if p in _PROVIDER_ENV and os.getenv(_PROVIDER_ENV[p])]
+
+
+def _unconfigured_message() -> str:
     return (
-        "未配置联网搜索：请设置环境变量 SEARCH_PROVIDER（serper|brave|tavily|searxng）"
-        "以及对应的 SEARCH_API_KEY（serper/brave/tavily）或 SEARXNG_URL（searxng）。"
+        "未配置联网搜索：请设置至少一个供应商的 key/地址，例如 "
+        "TAVILY_API_KEY（Tavily）、EXA_API_KEY（Exa）、SERPER_API_KEY（Serper）、"
+        "BRAVE_API_KEY（Brave），或 SEARXNG_URL（自建 searxng 实例）。"
     )
 
 
@@ -99,6 +130,22 @@ async def _tavily(query: str, api_key: str, n: int) -> list[dict]:
     return out
 
 
+async def _exa(query: str, api_key: str, n: int) -> list[dict]:
+    data = await _http_post(
+        "https://api.exa.ai/search",
+        headers={"x-api-key": api_key, "Content-Type": "application/json"},
+        json_body={"query": query, "numResults": n},
+    )
+    out = []
+    for r in (data.get("results") or [])[:n]:
+        out.append({
+            "title": str(r.get("title") or ""),
+            "url": str(r.get("url") or ""),
+            "description": str(r.get("text") or r.get("highlight") or ""),
+        })
+    return out
+
+
 async def _searxng(query: str, base_url: str, n: int) -> list[dict]:
     base = str(base_url or "").rstrip("/")
     data = await _http_get(f"{base}/search", params={"q": query, "format": "json"})
@@ -136,32 +183,43 @@ async def web_search_search(args: dict, ctx: AgentContext) -> str:
     except (TypeError, ValueError):
         max_results = 5
 
-    provider = str(os.getenv("SEARCH_PROVIDER") or "").strip().lower()
-    if provider not in _PROVIDERS:
-        return _unconfigured_message(provider)
+    providers = _configured_providers()
+    if not providers:
+        return _unconfigured_message()
 
-    api_key = os.getenv("SEARCH_API_KEY") or ""
-    searxng_url = os.getenv("SEARXNG_URL") or ""
-    if provider != "searxng" and not api_key:
-        return _unconfigured_message(provider)
-    if provider == "searxng" and not searxng_url:
-        return _unconfigured_message(provider)
+    # 按配置顺序逐个尝试，失败自动转移下一个供应商
+    errors: list[str] = []
+    for provider in providers:
+        try:
+            if provider == "searxng":
+                items = await _searxng(query, os.getenv("SEARXNG_URL") or "", max_results)
+            else:
+                api_key = os.getenv(_PROVIDER_ENV[provider]) or os.getenv("SEARCH_API_KEY") or ""
+                if not api_key:
+                    errors.append(f"{provider}: 缺少 API key")
+                    continue
+                if provider == "tavily":
+                    items = await _tavily(query, api_key, max_results)
+                elif provider == "exa":
+                    items = await _exa(query, api_key, max_results)
+                elif provider == "serper":
+                    items = await _serper(query, api_key, max_results)
+                else:
+                    items = await _brave(query, api_key, max_results)
+        except Exception as exc:
+            logger.warning("[web_search] %s 搜索失败，尝试下一个供应商: %s", provider, exc)
+            errors.append(f"{provider}: {exc}")
+            continue
+        if items:
+            return _format_results(query, items)
+        errors.append(f"{provider}: 无结果")
 
-    try:
-        if provider == "serper":
-            items = await _serper(query, api_key, max_results)
-        elif provider == "brave":
-            items = await _brave(query, api_key, max_results)
-        elif provider == "tavily":
-            items = await _tavily(query, api_key, max_results)
-        else:
-            items = await _searxng(query, searxng_url, max_results)
-    except Exception as exc:
-        logger.exception("[web_search] %s 搜索请求失败", provider)
-        return f"联网搜索失败（{provider}）：{exc}"
+    if errors:
+        return f"联网搜索失败（{len(errors)} 个供应商均不可用）：\n" + "\n".join(errors)
+    return f"未搜索到与「{query}」相关的结果。"
 
-    if not items:
-        return f"未搜索到与「{query}」相关的结果。"
+
+def _format_results(query: str, items: list[dict]) -> str:
     lines = []
     for it in items:
         title = it["title"] or "(无标题)"
