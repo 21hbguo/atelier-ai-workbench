@@ -173,7 +173,7 @@ def test_parse_none_empty():
     assert safe_parse_arguments("") == {}
 
 
-# ---------- attached_documents 注入 ----------
+# ---------- 三区块结构（区块2 文档块固定前缀 + 区块3 纯追加历史） ----------
 
 def test_build_messages_without_docs_unchanged():
     history = [{"role": "user", "content": "你好"}]
@@ -181,23 +181,30 @@ def test_build_messages_without_docs_unchanged():
     assert out == [{"role": "user", "content": "你好"}]
 
 
-def test_build_messages_with_docs_appends_to_last_user():
+def test_build_messages_docs_as_fixed_prefix_block():
+    """区块2：attached_documents 是独立 user 消息，固定在最前（不再注入最后一条 user）。"""
     history = [{"role": "user", "content": "看看文档"}]
     docs = [{"original_name": "a.txt", "page_content": "文档内容ABC"}]
     out = ChatService.build_llm_messages(history, attached_docs=docs)
-    assert len(out) == 1
-    content = out[0]["content"]
-    assert "<attached_documents>" in content
-    assert "文档1「a.txt」" in content
-    assert "文档内容ABC" in content
+    assert len(out) == 2
+    first = out[0]
+    assert first["role"] == "user"
+    assert "<attached_documents>" in first["content"]
+    assert "文档1「a.txt」" in first["content"]
+    assert "文档内容ABC" in first["content"]
+    # 历史原样追加在文档块之后
+    assert out[1] == {"role": "user", "content": "看看文档"}
 
 
-def test_build_messages_docs_when_last_not_user():
+def test_build_messages_docs_keeps_history_order():
+    """文档块在最前，历史顺序不变（最后一条是 assistant 也保持原样）。"""
     history = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "ok"}]
     docs = [{"original_name": "b.md", "page_content": "正文"}]
     out = ChatService.build_llm_messages(history, attached_docs=docs)
-    assert out[-1]["role"] == "user"
-    assert "<attached_documents>" in out[-1]["content"]
+    assert [m["role"] for m in out] == ["user", "user", "assistant"]
+    assert "<attached_documents>" in out[0]["content"]
+    assert out[1] == {"role": "user", "content": "hi"}
+    assert out[2] == {"role": "assistant", "content": "ok"}
 
 
 def test_build_messages_docs_truncated_by_budget():
@@ -205,10 +212,85 @@ def test_build_messages_docs_truncated_by_budget():
     docs = [{"original_name": "big.txt", "page_content": "x" * 50000}]
     model = {"context_budget_chars": 10000}
     out = ChatService.build_llm_messages(history, model=model, attached_docs=docs)
-    assert "…[文档内容过长，已截断]" in out[-1]["content"]
+    assert "…[文档内容过长，已截断]" in out[0]["content"]
 
 
 def test_build_messages_empty_docs():
+    """空文档不进区块2，消息与不带 docs 时一致。"""
     history = [{"role": "user", "content": "q"}]
     out = ChatService.build_llm_messages(history, attached_docs=[{"original_name": "e.txt", "page_content": "  "}])
-    assert "<attached_documents>" not in out[-1]["content"]
+    assert out == [{"role": "user", "content": "q"}]
+
+
+def test_build_messages_summary_block_position():
+    """区块3a：摘要消息紧随文档块之后，历史最后（纯追加）。"""
+    history = [{"role": "user", "content": "q1"}, {"role": "assistant", "content": "a1"}, {"role": "user", "content": "q2"}]
+    docs = [{"original_name": "a.txt", "page_content": "doc"}]
+    summary = {"until": 10, "text": "用户问了关于预算的问题"}
+    out = ChatService.build_llm_messages(history, attached_docs=docs, summary=summary)
+    assert out[0]["role"] == "user" and "<attached_documents>" in out[0]["content"]
+    assert out[1]["role"] == "user" and "<conversation_summary>" in out[1]["content"]
+    assert "用户问了关于预算的问题" in out[1]["content"]
+    assert [m["role"] for m in out[2:]] == ["user", "assistant", "user"]
+
+
+def test_build_messages_prefix_stable_across_rounds():
+    """前缀稳定性：追加新轮次后，旧消息逐字不变（区块3 纯 Append Only）。"""
+    docs = [{"original_name": "a.txt", "page_content": "固定文档"}]
+    summary = {"until": 5, "text": "早期摘要"}
+    hist1 = [{"role": "user", "content": "q1"}, {"role": "assistant", "content": "a1"}]
+    out1 = ChatService.build_llm_messages(hist1, attached_docs=docs, summary=summary)
+    hist2 = hist1 + [{"role": "user", "content": "q2"}, {"role": "assistant", "content": "a2"}]
+    out2 = ChatService.build_llm_messages(hist2, attached_docs=docs, summary=summary)
+    assert out1 == out2[:-2]  # 旧前缀完全一致，只有尾部追加
+    assert out2[-2:] == [{"role": "user", "content": "q2"}, {"role": "assistant", "content": "a2"}]
+
+
+def test_compact_cut_index_aligns_round_boundary():
+    """压缩边界对齐：保留区第一条必须是 user（不拆散 user→assistant 轮次）。"""
+    cls = ChatService
+    # 30 条交替轮次：keep=16 → cut=14（history[14] 是 assistant，边界后移到 15 → user）
+    history = [{"id": i, "role": "user" if i % 2 == 0 else "assistant", "content": str(i)} for i in range(30)]
+    cut = cls._compact_cut_index(history)
+    assert 0 < cut < len(history)
+    assert history[cut]["role"] == "user"  # 保留区首条 user
+    # 摘要区与保留区边界两侧必须是一轮完整结束（摘要区末尾是 assistant）
+    assert history[cut - 1]["role"] == "assistant"
+
+
+def test_compact_cut_index_too_short_returns_zero():
+    history = [{"id": 1, "role": "user", "content": "q"}, {"id": 2, "role": "assistant", "content": "a"}]
+    assert ChatService._compact_cut_index(history) == 0
+
+
+def test_compact_cut_index_orphan_assistant_tail():
+    """末尾孤立 assistant（失败轮次未回复）不破坏边界对齐。"""
+    cls = ChatService
+    history = [{"id": i, "role": "user" if i % 2 == 0 else "assistant", "content": str(i)} for i in range(30)]
+    history.append({"id": 99, "role": "assistant", "content": "orphan"})
+    cut = cls._compact_cut_index(history)
+    kept = history[cut:]
+    assert kept[0]["role"] == "user"
+
+
+def test_build_summary_block_none_or_empty_returns_empty():
+    assert ChatService._build_summary_block(None) == ""
+    assert ChatService._build_summary_block({"until": 0, "text": ""}) == ""
+    assert ChatService._build_summary_block({"until": 5, "text": "   "}) == ""
+
+
+def test_build_summary_block_format():
+    block = ChatService._build_summary_block({"until": 10, "text": "用户偏好简洁回答"})
+    assert block.startswith("<conversation_summary>")
+    assert block.endswith("</conversation_summary>")
+    assert "用户偏好简洁回答" in block
+
+
+def test_resolve_budget_fallback_to_global():
+    """模型档案未配置 context_budget_chars（0/None）时回退全局配置，不钉死在 1000。"""
+    from backend.config import get_limit_config
+    global_budget = max(1000, int(get_limit_config()["chat_context_max_chars"]))
+    assert ChatService._resolve_budget({}) == global_budget
+    assert ChatService._resolve_budget({"context_budget_chars": 0}) == global_budget
+    assert ChatService._resolve_budget({"context_budget_chars": None}) == global_budget
+    assert ChatService._resolve_budget({"context_budget_chars": 50000}) == 50000
