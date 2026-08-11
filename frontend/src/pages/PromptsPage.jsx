@@ -34,7 +34,7 @@ export default function PromptsPage() {
   const handleUsePrompt = (input) => {
     const prompt = typeof input === 'object' ? input?.prompt : input
     localStorage.setItem('pending_prompt', prompt)
-    navigate('/')
+    navigate('/draw')
   }
 
   const handleCreate = async () => {

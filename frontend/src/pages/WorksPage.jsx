@@ -604,7 +604,7 @@ export default function WorksPage() {
     const promptText = typeof input === 'object' ? input?.prompt : input
     localStorage.setItem('pending_prompt', String(promptText || ''))
     window.dispatchEvent(new Event('pending-prompt-updated'))
-    navigate('/')
+    navigate('/draw')
   }, [navigate])
   const handleAddImageToInput = useCallback((input) => {
     const url = typeof input === 'string' ? input : input?.fullUrl || input?.thumbUrl2x || input?.thumbUrl || ''
@@ -616,7 +616,7 @@ export default function WorksPage() {
       localStorage.setItem('ref_images', JSON.stringify(stored))
     }
     window.dispatchEvent(new Event('pending-image-updated'))
-    navigate('/')
+    navigate('/draw')
   }, [navigate])
   const handleAddToPromptLibrary = useCallback(async (task) => {
     if (!isAdmin) return

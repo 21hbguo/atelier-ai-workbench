@@ -28,8 +28,8 @@ function useImageActions() {
     await ensureLiked(card)
     localStorage.setItem('pending_prompt', text)
     window.dispatchEvent(new Event('pending-prompt-updated'))
-    navigate('/')
-    setTimeout(() => { if (window.location.pathname === '/square') window.location.href = '/' }, 120)
+    navigate('/draw')
+    setTimeout(() => { if (window.location.pathname === '/square') window.location.href = '/draw' }, 120)
   }, [navigate, ensureLiked])
 
   const handleUseImage = useCallback(async (card) => {
@@ -39,7 +39,7 @@ function useImageActions() {
     const stored = JSON.parse(localStorage.getItem('ref_images') || '[]')
     if (!stored.some(i => i.url === url)) { stored.push({ url, name: card.filename || card.title || 'image' }); localStorage.setItem('ref_images', JSON.stringify(stored)) }
     window.dispatchEvent(new Event('pending-image-updated'))
-    navigate('/')
+    navigate('/draw')
   }, [navigate, ensureLiked])
 
   return { handleUsePrompt, handleUseImage }
@@ -59,8 +59,8 @@ function usePromptActions() {
     await ensureLiked(card)
     localStorage.setItem('pending_prompt', text)
     window.dispatchEvent(new Event('pending-prompt-updated'))
-    navigate('/')
-    setTimeout(() => { if (window.location.pathname === '/square') window.location.href = '/' }, 120)
+    navigate('/draw')
+    setTimeout(() => { if (window.location.pathname === '/square') window.location.href = '/draw' }, 120)
   }, [navigate, ensureLiked])
 
   const handleUseImage = useCallback(async (card) => {
@@ -70,7 +70,7 @@ function usePromptActions() {
     const stored = JSON.parse(localStorage.getItem('ref_images') || '[]')
     if (!stored.some(i => i.url === url)) { stored.push({ url, name: card.filename || card.name || 'prompt' }); localStorage.setItem('ref_images', JSON.stringify(stored)) }
     window.dispatchEvent(new Event('pending-image-updated'))
-    navigate('/')
+    navigate('/draw')
   }, [navigate, ensureLiked])
 
   return { handleUsePrompt, handleUseImage }

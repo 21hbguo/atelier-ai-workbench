@@ -134,7 +134,9 @@ function AppContent() {
           <Route path="/chat" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><ChatAssistantPage /></ProtectedRoute>} />
           <Route path="/notifications" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><NotificationsPage /></ProtectedRoute>} />
           <Route path="/announcements" element={<Navigate to="/notifications" replace />} />
-          <Route path="/" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><ChatPage /></ProtectedRoute>} />
+          {/* 默认落地页 = AI 助手 */}
+          <Route path="/" element={<Navigate to="/chat" replace />} />
+          <Route path="/draw" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><ChatPage /></ProtectedRoute>} />
           <Route path="/works" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><WorksPage /></ProtectedRoute>} />
           <Route path="/square" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><SquarePage /></ProtectedRoute>} />
           <Route path="/prompts" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><PromptsPage /></ProtectedRoute>} />
