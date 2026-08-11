@@ -217,11 +217,9 @@ export const chatAPI = {
       const reader = resp.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
-      resetIdle()
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        resetIdle()
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
         buffer = lines.pop()
@@ -232,6 +230,8 @@ export const chatAPI = {
             let data = null
             try { data = JSON.parse(line.slice(6)) } catch {}
             if (!data) continue
+            // 仅有效事件重置空闲计时（SSE keep-alive/空行不重置，防挂起但心跳不断）
+            resetIdle()
             if (eventType === 'chunk') { partialText += String(data.text || ''); onChunk?.(data) }
             else if (eventType === 'thinking') { partialThinking += String(data.text || ''); onThinking?.(data) }
             else if (eventType === 'tool_status') onToolStatus?.(data)

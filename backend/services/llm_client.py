@@ -13,9 +13,11 @@
     async for event in LLMClient.stream(system=..., messages=..., reasoning_effort="high"):
         # event: {"type":"chunk","text":...} ... {"type":"done","text":完整} 或 {"type":"error","detail":...}
 """
+import asyncio
 import httpx
 import json
 import logging
+import time
 
 from backend.config import get_llm_config
 
@@ -38,6 +40,10 @@ class LLMError(Exception):
 
 class LLMClient:
     _client: httpx.AsyncClient | None = None
+
+    # 流式「有效事件」空闲超时（秒）：只对 chunk/thinking/tool_calls 等有效增量重置，
+    # SSE keep-alive（空行/注释行）不重置——防止服务端挂起但持续发心跳导致无限等待
+    _STREAM_IDLE_TIMEOUT = 120.0
 
     # ---------- 生命周期 ----------
 
@@ -436,9 +442,26 @@ class LLMClient:
                 tool_calls_buf: dict[int, dict] = {}
                 async with client.stream("POST", url, headers=headers, json=body, timeout=timeout) as resp:
                     resp.raise_for_status()
-                    async for line in resp.aiter_lines():
+                    lines = resp.aiter_lines()
+                    last_activity = time.monotonic()
+                    while True:
+                        # 有效事件空闲超时：只对「有效 delta」重置计时，SSE keep-alive
+                        # （空行/注释行）不重置——根治服务端挂起但持续发心跳导致的无限等待
+                        remaining = cls._STREAM_IDLE_TIMEOUT - (time.monotonic() - last_activity)
+                        if remaining <= 0:
+                            logger.warning("[llm_client] 流式响应无有效增量超过 %.0fs，主动断开", cls._STREAM_IDLE_TIMEOUT)
+                            yield {"type": "error", "detail": "模型长时间无响应，已中断，请重试或降低思考强度"}
+                            break
+                        try:
+                            line = await asyncio.wait_for(lines.__anext__(), timeout=remaining)
+                        except StopAsyncIteration:
+                            break  # 服务端正常结束流
+                        except asyncio.TimeoutError:
+                            logger.warning("[llm_client] 流式响应空闲超时（%.0fs 无有效增量）", cls._STREAM_IDLE_TIMEOUT)
+                            yield {"type": "error", "detail": "模型长时间无响应，已中断，请重试或降低思考强度"}
+                            break
                         if not line.startswith("data: "):
-                            continue
+                            continue  # keep-alive/注释行：不重置计时
                         data_str = line[6:]
                         if data_str.strip() == "[DONE]":
                             break
@@ -449,10 +472,12 @@ class LLMClient:
                         text = cls._extract_delta(event)
                         if text:
                             full_text += text
+                            last_activity = time.monotonic()
                             yield {"type": "chunk", "text": text}
                         thinking = cls._extract_thinking_delta(event)
                         if thinking:
                             full_thinking += thinking
+                            last_activity = time.monotonic()
                             yield {"type": "thinking", "text": thinking}
                         for d in cls._extract_tool_call_deltas(event):
                             idx = d.get("index")
@@ -465,6 +490,7 @@ class LLMClient:
                                 buf["name"] = d["name"]
                             if d.get("arguments"):
                                 buf["arguments"] += d["arguments"]
+                            last_activity = time.monotonic()
                 # 统一格式 [{id,name,arguments(dict|None),arguments_raw}]，复用 _extract_tool_calls 的 JSON 解析容错思路
                 full_tool_calls = []
                 for idx in sorted(tool_calls_buf):
