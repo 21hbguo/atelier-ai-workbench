@@ -173,3 +173,45 @@ def test_empty_messages_raises():
             pass
         else:
             raise AssertionError("expected LLMError")
+
+
+def test_openai_extracts_thinking():
+    resp = {
+        "choices": [{
+            "message": {
+                "role": "assistant",
+                "content": "最终回答",
+                "reasoning_content": "思考过程一",
+            }
+        }]
+    }
+    fake = FakeClient(resp)
+    with patch("backend.services.llm_client.get_llm_config", return_value=CFG), \
+         patch.object(LLMClient, "_get_client", return_value=fake):
+        result = _run(LLMClient.complete_tools(messages=[{"role": "user", "content": "hi"}], tools=TOOLS))
+    assert result["text"] == "最终回答"
+    assert result["thinking"] == "思考过程一"
+
+
+def test_anthropic_extracts_thinking_blocks():
+    resp = {
+        "content": [
+            {"type": "thinking", "thinking": "第一步思考"},
+            {"type": "thinking", "thinking": "第二步思考"},
+            {"type": "text", "text": "回答"},
+        ]
+    }
+    fake = FakeClient(resp)
+    cfg = _cfg(protocol="anthropic", base_url="https://api.anthropic.example")
+    with patch("backend.services.llm_client.get_llm_config", return_value=cfg), \
+         patch.object(LLMClient, "_get_client", return_value=fake):
+        result = _run(LLMClient.complete_tools(messages=[{"role": "user", "content": "hi"}], tools=TOOLS))
+    assert result["thinking"] == "第一步思考第二步思考"
+
+
+def test_no_thinking_returns_empty():
+    fake = FakeClient({"choices": [{"message": {"role": "assistant", "content": "普通回答"}}]})
+    with patch("backend.services.llm_client.get_llm_config", return_value=CFG), \
+         patch.object(LLMClient, "_get_client", return_value=fake):
+        result = _run(LLMClient.complete_tools(messages=[{"role": "user", "content": "hi"}], tools=TOOLS))
+    assert result["thinking"] == ""

@@ -188,6 +188,25 @@ class LLMClient:
         return ""
 
     @staticmethod
+    def _extract_thinking(data: dict, proto: str) -> str:
+        """非流式响应提取 thinking（思考过程）全文：
+        - openai 兼容（DeepSeek）: choices[0].message.reasoning_content
+        - anthropic: content[] 中 type=="thinking" 的块拼接
+        """
+        parts = []
+        if proto == "anthropic":
+            for block in data.get("content", []) or []:
+                if block.get("type") == "thinking":
+                    parts.append(block.get("thinking") or "")
+            return "".join(parts)
+        for choice in data.get("choices") or []:
+            msg = choice.get("message") or {}
+            rc = msg.get("reasoning_content")
+            if isinstance(rc, str) and rc:
+                parts.append(rc)
+        return "".join(parts)
+
+    @staticmethod
     def _extract_tool_calls(data: dict, proto: str) -> list:
         """非流式响应提取 tool calls，统一格式 [{"id","name","arguments"(dict|None),"arguments_raw"(str)}]。
         - openai: choices[0].message.tool_calls[].function（arguments 为 JSON 字符串，解析失败时 arguments=None）
@@ -266,9 +285,10 @@ class LLMClient:
             data = resp.json()
             text = cls._extract_text(data)
             tool_calls = cls._extract_tool_calls(data, proto)
+            thinking = cls._extract_thinking(data, proto)
             if not text.strip() and not tool_calls:
                 raise LLMError("LLM 暂无返回内容，请重试")
-            return {"text": text, "tool_calls": tool_calls}
+            return {"text": text, "tool_calls": tool_calls, "thinking": thinking}
         except httpx.TimeoutException:
             logger.warning("[llm_client] LLM API timeout (complete_tools)")
             raise LLMError("请求超时，请重试")

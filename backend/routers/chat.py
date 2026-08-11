@@ -485,7 +485,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                 try:
                     ctx = AgentContext(session_id=session_id, user_id=user_id)
                     messages = ChatService.build_llm_messages(history, target_model, attached_docs)
-                    text = await run_agent(
+                    result = await run_agent(
                         system=build_system_prompt(target_model),
                         messages=messages,
                         tools_names=_AGENT_TOOLS,
@@ -493,18 +493,23 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                         override=override,
                         ctx=ctx,
                     )
+                    text = str(result.get("text") or "")
+                    thinking = str(result.get("thinking") or "").strip()
                 except LLMError as e:
                     refunded = True
                     _refund_once()
                     yield f"event: error\ndata: {json.dumps({'detail': str(e)}, ensure_ascii=False)}\n\n"
                     return
+                if thinking:
+                    # 一次性全量推送（多轮思考合并），前端 StreamBubble 实时展示
+                    yield f"event: thinking\ndata: {json.dumps({'text': thinking}, ensure_ascii=False)}\n\n"
                 with get_db() as conn:
                     conn.execute(
-                        "INSERT INTO chat_messages (session_id, role, content) VALUES (%s, 'assistant', %s)",
-                        (session_id, text),
+                        "INSERT INTO chat_messages (session_id, role, content, thinking) VALUES (%s, 'assistant', %s, %s)",
+                        (session_id, text, thinking or None),
                     )
                 finished = True
-                yield f"event: done\ndata: {json.dumps({'text': text, 'points_balance': balance_after}, ensure_ascii=False)}\n\n"
+                yield f"event: done\ndata: {json.dumps({'text': text, 'thinking': thinking, 'points_balance': balance_after}, ensure_ascii=False)}\n\n"
                 return
             async for event in ChatService.chat_stream(history, body.reasoning_effort, model=target_model, attached_docs=attached_docs):
                 if event["type"] == "chunk":

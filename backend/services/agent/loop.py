@@ -50,7 +50,7 @@ async def run_agent(
         ctx: 工具执行上下文（session_id/user_id 等）。
 
     Returns:
-        最终文本回复。
+        {"text": 最终文本回复, "thinking": 各轮思考过程拼接（无则空串）}。
 
     Raises:
         LLMError: LLM 调用失败（未配置/超时/无返回），由上层（chat.py）处理退款与报错。
@@ -61,6 +61,8 @@ async def run_agent(
     ctx = ctx or AgentContext()
     # 复制消息，避免污染调用方列表（后续要追加 assistant/tool 消息）
     work = [dict(m) for m in messages]
+
+    thinking_parts: list[str] = []  # 每轮 LLM 的思考过程（agent 模式合并展示）
 
     executed_calls = 0  # 已执行的工具调用累计数
     # 最多 max_tool_calls + 1 轮 LLM 调用：最后一轮不带 tools
@@ -81,6 +83,9 @@ async def run_agent(
 
         text = str(resp.get("text") or "")
         calls = resp.get("tool_calls") or []
+        thinking = str(resp.get("thinking") or "").strip()
+        if thinking:
+            thinking_parts.append(thinking)
         logger.info(
             "[agent/loop] round=%d tool_calls=%d text_len=%d tools_enabled=%s",
             _round + 1, len(calls), len(text), bool(send_tools),
@@ -89,14 +94,17 @@ async def run_agent(
         if not calls:
             # 无 tool_calls → 直接返回文本
             if text.strip():
-                return text
+                return {"text": text, "thinking": "\n\n".join(thinking_parts)}
             if not send_tools:
                 # 已不再传 tools 仍无内容（理论上 complete_tools 已兜底），防御退出
-                return _EMPTY_FINAL_MSG
+                return {"text": _EMPTY_FINAL_MSG, "thinking": "\n\n".join(thinking_parts)}
             continue  # 防御：空响应再走一轮
 
         # 有 tool_calls：先回填 assistant 消息（openai 协议要求 id/function 与 tool 消息对应）
         assistant_msg: dict = {"role": "assistant", "content": text or None}
+        if thinking:
+            # DeepSeek 带 tools 时要求回传 reasoning_content，否则 API 400
+            assistant_msg["reasoning_content"] = thinking
         assistant_msg["tool_calls"] = [
             {
                 "id": c.get("id") or "",
