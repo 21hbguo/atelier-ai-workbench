@@ -409,7 +409,7 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
         )}
         {/* 上传文档（有文件自动走工具链路，无需手动切换模式） */}
         <div className="mb-2 flex items-center gap-2 flex-wrap">
-          <button type="button" onClick={onUploadClick} title="上传文档/代码（txt/md/csv/pdf/docx/xlsx/pptx/py/js/ts/go/yaml 等 50+ 格式，最多 20 个）"
+          <button type="button" onClick={onUploadClick} title="上传文档/代码（txt/md/csv/pdf/docx/xlsx/pptx/py/js/ts/go/yaml 等 50+ 格式；一次最多 5 个，会话累计最多 20 个）"
             className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors"
             style={{ color: 'var(--text-secondary)' }}>
             <Paperclip size={15} />
@@ -520,6 +520,7 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
 // ============ 页面 ============
 // 聊天文档上传限制（与后端 backend/routers/chat.py 的 _MAX_FILES_PER_SESSION/MAX_FILE_SIZE 一致）
 const MAX_DOCS = 20
+const MAX_BATCH = 5 // 单次选择最多 5 个文件
 // 与后端 document_parser._CODE_EXTS / chat.py _CHAT_DOC_EXTS 保持一致
 const DOC_EXTS = new Set([
   'txt', 'md', 'csv', 'json', 'html', 'pdf', 'docx', 'xlsx', 'pptx',
@@ -685,16 +686,21 @@ export default function ChatAssistantPage() {
       ? { ...d, ...(typeof patch === 'function' ? patch(d) : patch) } : d))
   }, [])
 
-  // 选择文件：扩展名/大小校验 + 数量上限截取（对齐绘画页 MAX_IMAGES 交互）
+  // 选择文件：扩展名/大小校验 + 单次 5 个 + 会话 20 个上限截取
   const handleFilesSelected = useCallback(e => {
     const files = Array.from(e.target.files || [])
     e.target.value = ''
     if (!files.length) return
     const sid = activeIdRef.current
     if (!sid) { setUploadNote('请先创建/选择会话再上传文档'); return }
+    let picked = files
+    if (picked.length > MAX_BATCH) {
+      setUploadNote(`一次最多上传 ${MAX_BATCH} 个文件，已自动截取前 ${MAX_BATCH} 个`)
+      picked = picked.slice(0, MAX_BATCH)
+    }
     const valid = []
     const errors = []
-    for (const f of files) {
+    for (const f of picked) {
       const ext = (f.name.split('.').pop() || '').toLowerCase()
       if (!DOC_EXTS.has(ext)) { errors.push(`「${f.name}」格式不支持`); continue }
       if (f.size > MAX_DOC_SIZE) { errors.push(`「${f.name}」超过 10MB`); continue }
