@@ -60,6 +60,17 @@ def _resolve_secret(value: str) -> str:
     return v
 
 
+def _build_system_prompt(model: dict | None = None) -> str:
+    """基础系统提示词 + 自动注入当前运行模型名（便于回答「你是什么模型」类问题）。"""
+    system_prompt = _load_system_prompt()
+    from backend.services.llm_model_service import get_active
+    m = model or get_active()
+    model_name = str(m.get("label") or m.get("model_id") or "").strip()
+    if model_name:
+        system_prompt = f"{system_prompt}\n\n当前你运行在「{model_name}」模型上，当用户询问你是什么模型时，直接如实告知当前运行模型即可。"
+    return system_prompt
+
+
 class ChatService:
     """AI 助手聊天服务：多轮对话 + 统一 LLMClient 流式输出"""
 
@@ -131,7 +142,7 @@ class ChatService:
         max_tokens = max(get_llm_config()["max_tokens"], 4000)
         try:
             async for event in LLMClient.stream(
-                system=_load_system_prompt(),
+                system=_build_system_prompt(model),
                 messages=messages,
                 max_tokens=max_tokens,
                 reasoning_effort=reasoning_effort,
