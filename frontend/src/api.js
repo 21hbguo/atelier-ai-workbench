@@ -182,6 +182,21 @@ export const chatAPI = {
   // SSE 流式发送消息：仿 promptOptimizeAPI.optimizeStream 的 fetch + ReadableStream 解析
   // 模式自动判定：会话有上传文件 → agent 工具链路；无 → 普通聊天（后端决定，前端不传 mode）
   sendStream: async (sessionId, content, { onChunk, onDone, onError, onThinking, onToolStatus, signal, reasoning_effort = 'auto', model_id = '' } = {}) => {
+    // 空闲超时：超过该时长无任何事件则中断（防「无新答复但一直卡着」）。
+    // DeepSeek 思考可能较长，取 180 秒。
+    const IDLE_TIMEOUT_MS = 180000
+    let receivedDone = false
+    let partialText = ''
+    let partialThinking = ''
+    let timedOut = false
+    let idleTimer = null
+    const resetIdle = () => {
+      if (idleTimer) clearTimeout(idleTimer)
+      idleTimer = setTimeout(() => {
+        timedOut = true
+        signal?.abort() // 中断 read，走 catch 分支
+      }, IDLE_TIMEOUT_MS)
+    }
     try {
       const resp = await fetch(`/api/chat/sessions/${sessionId}/messages`, {
         method: 'POST',
@@ -202,9 +217,11 @@ export const chatAPI = {
       const reader = resp.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
+      resetIdle()
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
+        resetIdle()
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
         buffer = lines.pop()
@@ -215,17 +232,28 @@ export const chatAPI = {
             let data = null
             try { data = JSON.parse(line.slice(6)) } catch {}
             if (!data) continue
-            if (eventType === 'chunk') onChunk?.(data)
-            else if (eventType === 'thinking') onThinking?.(data)
+            if (eventType === 'chunk') { partialText += String(data.text || ''); onChunk?.(data) }
+            else if (eventType === 'thinking') { partialThinking += String(data.text || ''); onThinking?.(data) }
             else if (eventType === 'tool_status') onToolStatus?.(data)
-            else if (eventType === 'done') onDone?.(data)
+            else if (eventType === 'done') { receivedDone = true; onDone?.(data) }
             else if (eventType === 'error') onError?.(data.detail)
           }
         }
       }
+      // 连接已关闭但未收到 done：保底收尾，避免 sending 状态永久卡住（无法再发新消息）
+      if (!receivedDone) {
+        if (partialText || partialThinking) {
+          onDone?.({ text: partialText, thinking: partialThinking })
+        } else {
+          onError?.('连接中断，未收到回复')
+        }
+      }
     } catch (e) {
+      if (timedOut) { onError?.('长时间未收到回复，已中断，请重试'); return }
       if (e?.name === 'AbortError') { onError?.('已停止生成'); return }
       onError?.(e?.message || '网络错误')
+    } finally {
+      if (idleTimer) clearTimeout(idleTimer)
     }
   },
 }

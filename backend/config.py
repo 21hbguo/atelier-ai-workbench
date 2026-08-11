@@ -145,7 +145,7 @@ _runtime_config = {
     "llm_api_key": os.getenv("LLM_API_KEY", "REDACTED_API_KEY"),
     "llm_model": os.getenv("LLM_MODEL", "mimo-v2.5"),
     "llm_max_tokens": int(os.getenv("LLM_MAX_TOKENS", "2000")),
-    "llm_timeout_seconds": int(os.getenv("LLM_TIMEOUT_SECONDS", "30")),
+    "llm_timeout_seconds": int(os.getenv("LLM_TIMEOUT_SECONDS", "300")),
     "prompt_optimize_enabled": os.getenv("PROMPT_OPTIMIZE_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
     "prompt_refine_enabled": os.getenv("PROMPT_REFINE_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
     "prompt_embedding_model": os.getenv("PROMPT_EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"),

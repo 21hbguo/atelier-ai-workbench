@@ -196,7 +196,7 @@ function SessionList({ sessions, activeId, loading, sending, renaming, renamingV
 }
 
 // ============ 思考过程折叠块（默认折叠） ============
-function ThinkingBlock({ text }) {
+function ThinkingBlock({ text, isStreaming = false }) {
   const [open, setOpen] = useState(false)
   if (!text || !text.trim()) return null
   const lines = text.trim().split('\n')
@@ -209,6 +209,7 @@ function ThinkingBlock({ text }) {
         style={{ color: 'var(--text-secondary)' }}>
         <Brain size={13} style={{ color: 'var(--accent)' }} />
         <span className="font-medium flex-shrink-0">思考过程</span>
+        {isStreaming && <span className="flex-shrink-0 text-[10px]" style={{ color: 'var(--accent)' }}>思考中 {text.length} 字…</span>}
         {!open && (
           <span className="flex-1 min-w-0 text-left truncate opacity-70">{firstLine.slice(0, 40)}{firstLine.length > 40 ? '…' : ''}</span>
         )}
@@ -331,7 +332,7 @@ function StreamBubble({ sending, onStop, onRetry }) {
   return (
     <div className="flex justify-start mb-4 animate-fade-in-up">
       <div className="max-w-[85%] sm:max-w-[78%] rounded-2xl px-4 py-3" style={{ background: 'var(--bg-ai-bubble)', boxShadow: 'var(--shadow-md)' }}>
-        <ThinkingBlock text={sending.thinking} />
+        <ThinkingBlock text={sending.thinking} isStreaming={!sending.stopped} />
         {/* 工具调用状态（agent 模式：tool_status 事件，executing 显示加载中，done 时已清除） */}
         {sending.toolStatus && (
           <div className="mb-2 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs"
