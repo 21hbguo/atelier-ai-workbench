@@ -284,10 +284,26 @@ function PendingQueueBubbles({ items }) {
     <>
       {items.map(item => (
         <div key={item.id}>
-          {/* 用户消息（已成功排队，立即回显） */}
+          {/* 用户消息（已成功排队，立即回显；携带已上传文件引用） */}
           <div className="flex justify-end mb-4 animate-fade-in-up">
             <div className="relative max-w-[85%] sm:max-w-[78%] rounded-2xl px-4 py-3"
               style={{ background: 'var(--bg-user-bubble)' }}>
+              {item.files?.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {item.files.map(f => (
+                    <span key={f.id || f.original_name} title={f.original_name || '文件'}
+                      className="inline-flex items-center gap-1 max-w-full px-2 py-0.5 rounded-full text-[11px] font-medium border"
+                      style={{
+                        background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+                        borderColor: 'color-mix(in srgb, var(--accent) 25%, var(--border-color))',
+                        color: 'var(--accent)',
+                      }}>
+                      <Paperclip size={11} className="flex-shrink-0" />
+                      <span className="min-w-0 truncate">{f.original_name || '文件'}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
               <div className="text-sm whitespace-pre-wrap break-words" style={{ color: 'var(--text-primary)' }}>{item.text}</div>
             </div>
           </div>
@@ -652,6 +668,13 @@ export default function ChatAssistantPage() {
     try { return localStorage.getItem('chat_model_id') || '' } catch { return '' }
   }) // '' = 激活模型
   const [uploadNote, setUploadNote] = useState('')
+  // 上传提示自动消失（timer 重置式：新提示重置计时，6 秒后清除）
+  const uploadNoteTimerRef = useRef(null)
+  const showUploadNote = useCallback((text) => {
+    setUploadNote(text)
+    if (uploadNoteTimerRef.current) clearTimeout(uploadNoteTimerRef.current)
+    uploadNoteTimerRef.current = setTimeout(() => setUploadNote(''), 6000)
+  }, [])
   // 会话文档列表（对齐 AI 绘画参考图交互）：{id,name,ext,size,status,progress,error,file_id,char_count,file}
   const [docs, setDocs] = useState([])
   const fileRef = useRef(null)
@@ -802,10 +825,10 @@ export default function ChatAssistantPage() {
     e.target.value = ''
     if (!files.length) return
     const sid = activeIdRef.current
-    if (!sid) { setUploadNote('请先创建/选择会话再上传文档'); return }
+    if (!sid) { showUploadNote('请先创建/选择会话再上传文档'); return }
     let picked = files
     if (picked.length > MAX_BATCH) {
-      setUploadNote(`一次最多上传 ${MAX_BATCH} 个文件，已自动截取前 ${MAX_BATCH} 个`)
+      showUploadNote(`一次最多上传 ${MAX_BATCH} 个文件，已自动截取前 ${MAX_BATCH} 个`)
       picked = picked.slice(0, MAX_BATCH)
     }
     const valid = []
@@ -816,11 +839,11 @@ export default function ChatAssistantPage() {
       if (f.size > MAX_DOC_SIZE) { errors.push(`「${f.name}」超过 10MB`); continue }
       valid.push(f)
     }
-    if (errors.length) setUploadNote(errors.slice(0, 3).join('；'))
+    if (errors.length) showUploadNote(errors.slice(0, 3).join('；'))
     setDocs(prev => {
       const remaining = MAX_DOCS - prev.length
-      if (remaining <= 0) { setUploadNote(`最多只能上传 ${MAX_DOCS} 个文档`); return prev }
-      if (valid.length > remaining) setUploadNote(`最多只能上传 ${MAX_DOCS} 个文档，已自动截取前 ${remaining} 个`)
+      if (remaining <= 0) { showUploadNote(`最多只能上传 ${MAX_DOCS} 个文档`); return prev }
+      if (valid.length > remaining) showUploadNote(`最多只能上传 ${MAX_DOCS} 个文档，已自动截取前 ${remaining} 个`)
       const items = valid.slice(0, Math.max(0, remaining)).map(f => ({
         id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         name: f.name,
@@ -955,8 +978,8 @@ export default function ChatAssistantPage() {
 
   // ============ 排队队列操作 ============
   const MAX_PENDING = 10
-  const enqueuePending = (text) => {
-    const item = { id: `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, text }
+  const enqueuePending = (text, files = []) => {
+    const item = { id: `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, text, files }
     pendingQueueRef.current = [...pendingQueueRef.current, item]
     setPendingQueue(pendingQueueRef.current)
     return item
@@ -995,6 +1018,11 @@ export default function ChatAssistantPage() {
   const handleSend = async (raw) => {
     const text = String(raw ?? input).trim()
     if (!text) return
+    // 已成功上传的文件作为「引用」随消息发送（展示在对话区消息上，输入框标签立即移除）
+    const successFiles = docs
+      .filter(d => d.status === 'success' && d.file_id != null)
+      .map(d => ({ id: d.file_id, original_name: d.name }))
+    const clearSentDocs = () => setDocs(prev => prev.filter(d => d.status !== 'success'))
     // 正在生成中：进入排队队列，当前回复结束后自动发送
     if (sendingRef.current && !sendingRef.current.stopped) {
       if (pendingQueueRef.current.length >= MAX_PENDING) {
@@ -1002,7 +1030,8 @@ export default function ChatAssistantPage() {
         focusInput()
         return
       }
-      enqueuePending(text)
+      enqueuePending(text, successFiles)
+      clearSentDocs()
       setInput('')
       if (inputRef.current) inputRef.current.style.height = 'auto'
       focusInput()
@@ -1032,7 +1061,8 @@ export default function ChatAssistantPage() {
         return
       }
     }
-    setMessages(prev => [...prev, { id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, role: 'user', content: text, created_at: new Date().toISOString() }])
+    setMessages(prev => [...prev, { id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, role: 'user', content: text, files: successFiles, created_at: new Date().toISOString() }])
+    clearSentDocs()
     startStream(sid, text, effortRef.current)
     focusInput()
   }
@@ -1069,7 +1099,7 @@ export default function ChatAssistantPage() {
         return
       }
     }
-    setMessages(prev => [...prev, { id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, role: 'user', content: item.text, created_at: new Date().toISOString() }])
+    setMessages(prev => [...prev, { id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, role: 'user', content: item.text, files: item.files || [], created_at: new Date().toISOString() }])
     startStream(sid, item.text, effortRef.current)
   }, [dialog, cost, startStream, acquireSendLock, releaseSendLock, clearPending])
 
