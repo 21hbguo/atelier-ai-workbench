@@ -40,7 +40,7 @@ def _fmt_datetime(value) -> str:
 
 
 @agent_tool(
-    name="document_summary.list",
+    name="document_summary_list",
     description="列出当前会话已上传的文档（文档名、字符数、上传时间），用于回答「当前会话有哪些文档」类问题。",
     parameters={"type": "object", "properties": {}},
 )
@@ -64,7 +64,7 @@ async def document_summary_list(args: dict, ctx: AgentContext) -> str:
 
 
 @agent_tool(
-    name="document_summary.summarize",
+    name="document_summary_summarize",
     description=(
         "返回当前会话中指定文档的全文内容（用于总结/问答）。"
         "file_name 传文档名（original_name），内容超过 8000 字符时截断并提示。"

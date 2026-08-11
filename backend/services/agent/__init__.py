@@ -8,7 +8,7 @@
     text = await run_agent(
         system="你是 AI 助手",
         messages=[{"role": "user", "content": "帮我查一下会话文档里关于 XX 的内容"}],
-        tools_names=["rag_memory.search", "document_summary.list", "web_search.search"],
+        tools_names=["rag_memory_search", "document_summary_list", "web_search"],
         ctx=ctx,
     )
 

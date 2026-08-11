@@ -75,11 +75,11 @@ def _owns_session(conn, session_id: int, user_id: int):
 
 # agent 模式默认启用的工具（rag_memory.store 为占位实现，不注册给模型）
 _AGENT_TOOLS = [
-    "rag_memory.search",
-    "document_summary.list",
-    "document_summary.summarize",
-    "web_search.search",
-    "file_ops.write_text",
+    "rag_memory_search",
+    "document_summary_list",
+    "document_summary_summarize",
+    "web_search",
+    "file_ops_write_text",
 ]
 
 

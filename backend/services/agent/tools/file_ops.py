@@ -17,7 +17,7 @@ MAX_CONTENT_CHARS = 200_000
 
 
 @agent_tool(
-    name="file_ops.write_text",
+    name="file_ops_write_text",
     description=(
         "把一段文本内容保存为服务器上的文本文件（存放在 data/uploads/ 目录，自动随机命名防止冲突），"
         "返回文件的相对路径。适合导出聊天记录、生成下载文件等场景。"

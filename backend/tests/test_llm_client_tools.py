@@ -6,7 +6,7 @@ from backend.services.llm_client import LLMClient, LLMError
 
 TOOLS = [
     {
-        "name": "rag_memory.search",
+        "name": "rag_memory_search",
         "description": "检索已上传文档",
         "parameters": {
             "type": "object",
@@ -67,7 +67,7 @@ def test_openai_body_contains_tools():
     _, _, body = fake.posted
     assert body["tools"] == [
         {"type": "function", "function": {
-            "name": "rag_memory.search",
+            "name": "rag_memory_search",
             "description": "检索已上传文档",
             "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "检索词"}}, "required": ["query"]},
         }}
@@ -83,7 +83,7 @@ def test_openai_parses_tool_calls():
                 "content": "我来查一下",
                 "tool_calls": [
                     {"id": "call_1", "type": "function", "function": {
-                        "name": "rag_memory.search",
+                        "name": "rag_memory_search",
                         "arguments": '{"query": "AnythingLLM 解析"}',
                     }},
                 ],
@@ -97,7 +97,7 @@ def test_openai_parses_tool_calls():
     assert result["text"] == "我来查一下"
     assert len(result["tool_calls"]) == 1
     tc = result["tool_calls"][0]
-    assert tc["id"] == "call_1" and tc["name"] == "rag_memory.search"
+    assert tc["id"] == "call_1" and tc["name"] == "rag_memory_search"
     assert tc["arguments"] == {"query": "AnythingLLM 解析"}
 
 
@@ -133,7 +133,7 @@ def test_anthropic_body_and_parsing():
     resp = {
         "content": [
             {"type": "text", "text": "我先检索"},
-            {"type": "tool_use", "id": "toolu_1", "name": "rag_memory.search",
+            {"type": "tool_use", "id": "toolu_1", "name": "rag_memory_search",
              "input": {"query": "AnythingLLM"}},
         ]
     }
@@ -146,7 +146,7 @@ def test_anthropic_body_and_parsing():
     assert url.endswith("/v1/messages")
     assert headers.get("x-api-key") == "sk-test"
     assert body["tools"] == [
-        {"name": "rag_memory.search", "description": "检索已上传文档",
+        {"name": "rag_memory_search", "description": "检索已上传文档",
          "input_schema": {"type": "object", "properties": {"query": {"type": "string", "description": "检索词"}}, "required": ["query"]}}
     ]
     assert result["text"] == "我先检索"

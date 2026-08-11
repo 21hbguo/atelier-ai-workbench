@@ -113,7 +113,7 @@ async def _searxng(query: str, base_url: str, n: int) -> list[dict]:
 
 
 @agent_tool(
-    name="web_search.search",
+    name="web_search",
     description=(
         "联网搜索互联网获取实时信息。当用户问题涉及实时新闻、最新数据、"
         "模型知识范围外或需要核实的信息时使用，返回网页标题、链接与摘要。"

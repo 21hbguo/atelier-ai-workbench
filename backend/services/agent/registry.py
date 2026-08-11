@@ -30,7 +30,7 @@ def agent_tool(*, name: str, description: str = "", parameters: Optional[dict] =
     """装饰器：把异步函数注册为 agent 工具。
 
     Args:
-        name: 工具唯一名（如 "web_search.search"），模型通过该名字调用。
+        name: 工具唯一名（如 "web_search"），模型通过该名字调用。
         description: 工具用途说明（模型据此决定是否调用）。
         parameters: JSON Schema（{"type":"object","properties":...,"required":[...]}）。
     """

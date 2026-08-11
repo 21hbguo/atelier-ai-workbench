@@ -163,7 +163,7 @@ def _keyword_search(query: str, files: list[dict], top_k: int) -> list[dict]:
 # ---------- 工具 ----------
 
 @agent_tool(
-    name="rag_memory.search",
+    name="rag_memory_search",
     description=(
         "检索当前会话已上传文档中的相关内容。"
         "当用户问题涉及会话中上传的文件/文档内容时使用，返回匹配片段与来源文档名。"
@@ -210,7 +210,7 @@ async def rag_memory_search(args: dict, ctx: AgentContext) -> str:
 
 
 @agent_tool(
-    name="rag_memory.store",
+    name="rag_memory_store",
     description="把一段文本保存到会话的文档记忆中（当前暂未启用）。",
     parameters={
         "type": "object",

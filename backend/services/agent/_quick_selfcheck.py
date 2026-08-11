@@ -35,8 +35,8 @@ def _check_import_and_registry():
         assert t["name"] in tools
         assert isinstance(t["parameters"], dict) and t["parameters"].get("type") == "object"
     # 指定 names 过滤 + 未注册名跳过
-    subset = registry.get_tools_schema(["rag_memory.search", "no.such.tool"])
-    assert [t["name"] for t in subset] == ["rag_memory.search"]
+    subset = registry.get_tools_schema(["rag_memory_search", "no.such.tool"])
+    assert [t["name"] for t in subset] == ["rag_memory_search"]
     print(f"[OK] get_tools_schema 格式与过滤逻辑正确")
 
 
