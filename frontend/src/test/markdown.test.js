@@ -1,0 +1,44 @@
+import { describe, it, expect } from 'vitest'
+import { mdToHtml } from '../utils/markdown'
+
+describe('mdToHtml 公式渲染', () => {
+  it('行内公式 $...$ 渲染为 KaTeX', () => {
+    const html = mdToHtml('质能方程 $E=mc^2$ 很著名')
+    expect(html).toContain('class="katex"')
+  })
+
+  it('块级公式 $$...$$ 渲染为 KaTeX display', () => {
+    const html = mdToHtml('$$\n\\frac{a}{b}\n$$')
+    expect(html).toContain('katex-display')
+  })
+
+  it('公式内特殊字符不被 markdown 规则破坏', () => {
+    const html = mdToHtml('$x_i^*$')
+    expect(html).toContain('class="katex"')
+    expect(html).not.toContain('<em>')
+    expect(html).not.toContain('<strong>')
+  })
+
+  it('货币 $5 不误判为公式', () => {
+    const html = mdToHtml('花费 $5 and $6')
+    expect(html).not.toContain('class="katex"')
+    expect(html).toContain('$5 and $6')
+  })
+
+  it('非法公式回退显示原文（不抛异常）', () => {
+    const html = mdToHtml('$\\frac{}$')
+    expect(html).toContain('\\frac{}')
+  })
+
+  it('未闭合的 $ 保持原样', () => {
+    const html = mdToHtml('半截公式 $E=mc^2')
+    expect(html).not.toContain('class="katex"')
+    expect(html).toContain('$E=mc^2')
+  })
+
+  it('公式与 markdown 混排（加粗 + 行内公式）', () => {
+    const html = mdToHtml('**重点**：$a^2 + b^2 = c^2$')
+    expect(html).toContain('<strong>重点</strong>')
+    expect(html).toContain('class="katex"')
+  })
+})

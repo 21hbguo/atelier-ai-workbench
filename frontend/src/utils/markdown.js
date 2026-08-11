@@ -5,6 +5,46 @@
 //       - 无序列表（含缩进嵌套、- [x] 任务项）、1. 有序列表、> 引用、
 //       [链接](url)（仅 http/https）、![图片](url)（仅 http/https）、
 //       | 表格 |、--- 水平线、<url> 自动链接。
+// 公式：$$...$$ 块级公式、$...$ 行内公式（KaTeX 渲染，解析失败回退原文）。
+
+import katex from 'katex'
+import 'katex/dist/katex.min.css'
+
+// 公式占位符（私用区字符 \uE000 几乎不可能出现在用户文本中，且不被转义/其他正则干扰）
+const KATEX_RE = /\uE000K(\d+)\uE000/g
+
+// 提取公式并替换为占位符，返回 { text, formulas }
+function extractFormulas(text) {
+  const formulas = []
+  let out = text
+  // 块级 $$...$$（优先处理，避免内部 $ 被行内规则误配）
+  out = out.replace(/\$\$([\s\S]+?)\$\$/g, (_, latex) => {
+    const idx = formulas.length
+    formulas.push({ latex: latex.trim(), display: true })
+    return `\uE000K${idx}\uE000`
+  })
+  // 行内 $...$（不含 $、换行；前导字符不能是字母数字/$，避免货币 "$5" 误判）
+  out = out.replace(/(^|[^\w$])\$([^$\n]+?)\$(?!\w)/g, (m, pre, latex) => {
+    const idx = formulas.length
+    formulas.push({ latex: latex.trim(), display: false })
+    return `${pre}\uE000K${idx}\uE000`
+  })
+  return { text: out, formulas }
+}
+
+// 把占位符还原为 KaTeX 渲染结果；解析失败回退 LaTeX 原文
+function restoreFormulas(html, formulas) {
+  if (!formulas.length) return html
+  return html.replace(KATEX_RE, (_, n) => {
+    const f = formulas[Number(n)]
+    if (!f) return ''
+    try {
+      return katex.renderToString(f.latex, { throwOnError: false, displayMode: f.display })
+    } catch {
+      return f.latex
+    }
+  })
+}
 
 function escapeHtml(text) {
   return String(text)
@@ -148,7 +188,8 @@ function collectList(lines, i) {
 
 export function mdToHtml(text) {
   if (typeof text !== 'string' || !text.trim()) return ''
-  const lines = text.split('\n')
+  const { text: safeText, formulas } = extractFormulas(text)
+  const lines = safeText.split('\n')
   const out = []
   let i = 0
   while (i < lines.length) {
@@ -245,7 +286,7 @@ export function mdToHtml(text) {
     }
     out.push(`<p>${buf.map(l => renderInline(l)).join('<br/>')}</p>`)
   }
-  return out.join('\n')
+  return restoreFormulas(out.join('\n'), formulas)
 }
 
 export default mdToHtml
