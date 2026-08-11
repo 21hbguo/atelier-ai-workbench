@@ -4,6 +4,7 @@ import smtplib
 import asyncio
 import logging
 import socket
+import time
 import httpx
 from email.mime.text import MIMEText
 from email.header import Header
@@ -102,6 +103,42 @@ def _build_email_subject():
     return "Atelier·AI造梦工坊 邮箱验证码"
 
 
+# ---- SendGrid 熔断（circuit breaker）----
+# SendGrid 失败（额度耗尽/网络故障等）后短期内直接走 SMTP，避免每次发信都白等超时。
+# 冷却期结束后自动重试 SendGrid；API key 变更时自动重置熔断。
+_SENDGRID_COOLDOWN_SECONDS = 300
+_sendgrid_open_until = 0.0        # time.monotonic() 截止时间；0 = 未熔断
+_sendgrid_key_fp = ""            # 触发熔断时的 key 指纹（前 16 字符）
+
+
+def _key_fingerprint(key: str) -> str:
+    return (key or "")[:16]
+
+
+def _sendgrid_circuit_open(cfg) -> bool:
+    global _sendgrid_open_until, _sendgrid_key_fp
+    key = (cfg.get("sendgrid_api_key") or "").strip()
+    if not key:
+        return False
+    fp = _key_fingerprint(key)
+    if fp != _sendgrid_key_fp:
+        # key 变了（管理后台更换配置），重置熔断并允许重试新 key
+        _sendgrid_key_fp = fp
+        _sendgrid_open_until = 0.0
+        return False
+    return time.monotonic() < _sendgrid_open_until
+
+
+def _trip_sendgrid_circuit(cfg):
+    global _sendgrid_open_until, _sendgrid_key_fp
+    _sendgrid_key_fp = _key_fingerprint((cfg.get("sendgrid_api_key") or "").strip())
+    _sendgrid_open_until = time.monotonic() + _SENDGRID_COOLDOWN_SECONDS
+    logger.warning(
+        "sendgrid circuit opened: skip sendgrid for next %ss",
+        _SENDGRID_COOLDOWN_SECONDS,
+    )
+
+
 async def _send_via_sendgrid(to_email, code, cfg):
     api_key=(cfg.get("sendgrid_api_key") or "").strip()
     sender=(cfg.get("sendgrid_sender") or cfg.get("smtp_sender") or "").strip()
@@ -111,7 +148,7 @@ async def _send_via_sendgrid(to_email, code, cfg):
     payload={"personalizations":[{"to":[{"email":to_email}]}],"from":{"email":sender,"name":sender_name},"subject":_build_email_subject(),"content":[{"type":"text/html","value":_build_email_html(to_email,code)}]}
     headers={"Authorization":f"Bearer {api_key}","Content-Type":"application/json"}
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
+        async with httpx.AsyncClient(timeout=5.0) as client:
             resp=await client.post("https://api.sendgrid.com/v3/mail/send",headers=headers,json=payload)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"SendGrid 发送失败：{e}")
@@ -123,12 +160,13 @@ async def _send_via_sendgrid(to_email, code, cfg):
 async def send_verification_email(to_email, code):
     cfg=get_email_delivery_config()
     sendgrid_error=None
-    if (cfg.get("sendgrid_api_key") or "").strip():
+    if (cfg.get("sendgrid_api_key") or "").strip() and not _sendgrid_circuit_open(cfg):
         try:
             await _send_via_sendgrid(to_email, code, cfg)
             return
         except HTTPException as e:
             sendgrid_error=e.detail
+            _trip_sendgrid_circuit(cfg)
             logger.warning("sendgrid send failed for %s: %s", to_email, sendgrid_error)
     try:
         await asyncio.to_thread(_send_email_sync, to_email, code)
