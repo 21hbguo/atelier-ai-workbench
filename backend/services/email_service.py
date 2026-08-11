@@ -185,8 +185,16 @@ async def _send_via_resend(to_email, code, cfg):
 
 async def send_verification_email(to_email, code):
     cfg=get_email_delivery_config()
-    sendgrid_error=None
     resend_error=None
+    sendgrid_error=None
+    # Resend 最优先（已验证可用；沙箱发件人上线前需绑定域名）
+    if (cfg.get("resend_api_key") or "").strip():
+        try:
+            await _send_via_resend(to_email, code, cfg)
+            return
+        except HTTPException as e:
+            resend_error=e.detail
+            logger.warning("resend send failed for %s: %s", to_email, resend_error)
     if (cfg.get("sendgrid_api_key") or "").strip() and not _sendgrid_circuit_open(cfg):
         try:
             await _send_via_sendgrid(to_email, code, cfg)
@@ -195,23 +203,15 @@ async def send_verification_email(to_email, code):
             sendgrid_error=e.detail
             _trip_sendgrid_circuit(cfg)
             logger.warning("sendgrid send failed for %s: %s", to_email, sendgrid_error)
-    # Resend 备选路径：SendGrid 失败/未配置时尝试
-    if (cfg.get("resend_api_key") or "").strip():
-        try:
-            await _send_via_resend(to_email, code, cfg)
-            return
-        except HTTPException as e:
-            resend_error=e.detail
-            logger.warning("resend send failed for %s: %s", to_email, resend_error)
     try:
         await asyncio.to_thread(_send_email_sync, to_email, code)
     except HTTPException as e:
-        if sendgrid_error or resend_error:
+        if resend_error or sendgrid_error:
             parts=[]
-            if sendgrid_error:
-                parts.append(sendgrid_error)
             if resend_error:
                 parts.append(resend_error)
+            if sendgrid_error:
+                parts.append(sendgrid_error)
             parts.append(f"SMTP 发送失败：{e.detail.replace('邮件发送失败：','')}")
             raise HTTPException(status_code=500, detail="；".join(parts))
         raise

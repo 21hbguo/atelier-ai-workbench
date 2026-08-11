@@ -101,11 +101,11 @@ def _cfg_resend(sg_key="SG.testkey123456", re_key="re_testkey1234"):
     return cfg
 
 
-def test_resend_used_when_sendgrid_fails():
-    """SendGrid 失败（熔断）后走 Resend，成功则不再降级 SMTP。"""
+def test_resend_is_priority_path():
+    """Resend 配置时最优先发送，SendGrid/SMTP 不调用。"""
     es._sendgrid_open_until = 0.0
     es._sendgrid_key_fp = ""
-    sg = AsyncMock(side_effect=HTTPException(500, "SendGrid 发送失败：x"))
+    sg = AsyncMock()
     rs = AsyncMock(return_value={"id": "em_123"})
     smtp = Mock(return_value=None)
     with patch.object(es, "get_email_delivery_config", return_value=_cfg_resend()), \
@@ -113,10 +113,10 @@ def test_resend_used_when_sendgrid_fails():
          patch.object(es, "_send_via_resend", new=rs), \
          patch.object(es, "_send_email_sync", new=smtp):
         asyncio.run(es.send_verification_email("a@b.com", "123456"))
-    sg.assert_awaited_once()
     rs.assert_awaited_once()
+    sg.assert_not_awaited()
     smtp.assert_not_called()
-    assert es._sendgrid_open_until > time.monotonic()  # sendgrid 已熔断
+    assert es._sendgrid_open_until == 0.0  # 未触发 SendGrid 熔断
 
 
 def test_resend_success_without_sendgrid():
@@ -133,8 +133,8 @@ def test_resend_success_without_sendgrid():
     smtp.assert_not_called()
 
 
-def test_resend_failure_falls_back_to_smtp():
-    """SendGrid 与 Resend 都失败时降级 SMTP，错误信息合并。"""
+def test_resend_failure_then_sendgrid_then_smtp():
+    """Resend 失败 → SendGrid 接力 → 再失败降级 SMTP，错误信息合并。"""
     es._sendgrid_open_until = 0.0
     es._sendgrid_key_fp = ""
     sg = AsyncMock(side_effect=HTTPException(500, "SendGrid 发送失败：credits"))
@@ -147,7 +147,8 @@ def test_resend_failure_falls_back_to_smtp():
         try:
             asyncio.run(es.send_verification_email("a@b.com", "123456"))
         except HTTPException as e:
-            assert "SendGrid" in e.detail and "Resend" in e.detail and "SMTP" in e.detail
+            assert "Resend" in e.detail and "SendGrid" in e.detail and "SMTP" in e.detail
+            assert e.detail.index("Resend") < e.detail.index("SendGrid")  # Resend 错误在前
         else:
             raise AssertionError("expected HTTPException")
 
