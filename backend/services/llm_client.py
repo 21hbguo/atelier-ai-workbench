@@ -165,6 +165,29 @@ class LLMClient:
         return ""
 
     @staticmethod
+    def _extract_thinking_delta(event: dict) -> str:
+        """流式事件取 thinking（思考过程）增量：
+        - openai 兼容（DeepSeek 等）: choices[0].delta.reasoning_content
+        - anthropic: content_block_delta 中 type=thinking_delta 的 thinking
+        """
+        choices = event.get("choices") or []
+        if choices:
+            delta = (choices[0] or {}).get("delta") or {}
+            rc = delta.get("reasoning_content")
+            if isinstance(rc, str):
+                return rc
+            # 部分实现用 reasoning 字段
+            reasoning = delta.get("reasoning")
+            if isinstance(reasoning, str):
+                return reasoning
+            return ""
+        if event.get("type") == "content_block_delta":
+            delta = event.get("delta") or {}
+            if delta.get("type") == "thinking_delta":
+                return delta.get("thinking") or ""
+        return ""
+
+    @staticmethod
     def _extract_tool_calls(data: dict, proto: str) -> list:
         """非流式响应提取 tool calls，统一格式 [{"id","name","arguments"(dict|None),"arguments_raw"(str)}]。
         - openai: choices[0].message.tool_calls[].function（arguments 为 JSON 字符串，解析失败时 arguments=None）
@@ -314,6 +337,7 @@ class LLMClient:
             timeout = httpx.Timeout(float(llm_cfg["timeout_seconds"]), connect=5.0)
             if stream:
                 full_text = ""
+                full_thinking = ""
                 async with client.stream("POST", url, headers=headers, json=body, timeout=timeout) as resp:
                     resp.raise_for_status()
                     async for line in resp.aiter_lines():
@@ -330,10 +354,17 @@ class LLMClient:
                         if text:
                             full_text += text
                             yield {"type": "chunk", "text": text}
-                if not full_text.strip():
+                        thinking = cls._extract_thinking_delta(event)
+                        if thinking:
+                            full_thinking += thinking
+                            yield {"type": "thinking", "text": thinking}
+                if not full_text.strip() and not full_thinking.strip():
                     yield {"type": "error", "detail": "LLM 暂无返回内容，请重试"}
                     return
-                yield {"type": "done", "text": full_text}
+                done_event = {"type": "done", "text": full_text}
+                if full_thinking:
+                    done_event["thinking"] = full_thinking
+                yield done_event
             else:
                 resp = await client.post(url, headers=headers, json=body, timeout=timeout)
                 resp.raise_for_status()

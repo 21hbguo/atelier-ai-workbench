@@ -479,6 +479,8 @@ def init_db():
                 created_at TIMESTAMP DEFAULT NOW()
             )""",
             "CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, id)",
+            # 迁移：聊天消息增加 thinking（思考过程）列，用于前端折叠展示
+            "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS thinking TEXT",
             """CREATE TABLE IF NOT EXISTS llm_models (
                 id SERIAL PRIMARY KEY,
                 model_id VARCHAR(128) NOT NULL UNIQUE,

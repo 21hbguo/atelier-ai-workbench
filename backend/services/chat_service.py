@@ -217,8 +217,10 @@ class ChatService:
             ):
                 if event["type"] == "chunk":
                     yield {"type": "chunk", "text": event["text"]}
+                elif event["type"] == "thinking":
+                    yield {"type": "thinking", "text": event["text"]}
                 elif event["type"] == "done":
-                    yield {"type": "done", "text": event["text"]}
+                    yield {"type": "done", "text": event["text"], "thinking": event.get("thinking", "")}
                 elif event["type"] == "error":
                     yield {"type": "error", "detail": event["detail"]}
         except Exception:

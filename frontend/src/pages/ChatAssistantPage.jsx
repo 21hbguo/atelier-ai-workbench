@@ -195,6 +195,33 @@ function SessionList({ sessions, activeId, loading, sending, renaming, renamingV
   )
 }
 
+// ============ 思考过程折叠块（默认折叠） ============
+function ThinkingBlock({ text }) {
+  const [open, setOpen] = useState(false)
+  if (!text || !text.trim()) return null
+  const lines = text.trim().split('\n')
+  const firstLine = lines[0] || ''
+  return (
+    <div className="mb-2 rounded-xl border overflow-hidden"
+      style={{ borderColor: 'var(--border-color)', background: 'color-mix(in srgb, var(--text-secondary) 4%, transparent)' }}>
+      <button type="button" onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-1.5 px-3 py-2 text-xs transition-colors hover:bg-bg-hover"
+        style={{ color: 'var(--text-secondary)' }}>
+        <Brain size={13} style={{ color: 'var(--accent)' }} />
+        <span className="font-medium flex-shrink-0">思考过程</span>
+        {!open && (
+          <span className="flex-1 min-w-0 text-left truncate opacity-70">{firstLine.slice(0, 40)}{firstLine.length > 40 ? '…' : ''}</span>
+        )}
+        <ChevronDown size={13} className={`flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="px-3 pb-3 text-xs whitespace-pre-wrap break-words max-h-72 overflow-y-auto"
+          style={{ color: 'var(--text-secondary)' }}>{text}</div>
+      )}
+    </div>
+  )
+}
+
 // ============ 消息气泡 ============
 function MessageItem({ msg, onCopy }) {
   const isUser = msg.role === 'user'
@@ -210,8 +237,11 @@ function MessageItem({ msg, onCopy }) {
             <span className="break-words">{msg.error}</span>
           </div>
         ) : (
-          <div className="md-body text-sm" style={{ color: 'var(--text-primary)' }}
-            dangerouslySetInnerHTML={{ __html: mdToHtml(msg.content) }} />
+          <>
+            <ThinkingBlock text={msg.thinking} />
+            <div className="md-body text-sm" style={{ color: 'var(--text-primary)' }}
+              dangerouslySetInnerHTML={{ __html: mdToHtml(msg.content) }} />
+          </>
         )}
         <div className="text-xs mt-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>{formatTime(msg.created_at)}</div>
         {!isUser && !msg.error && (
@@ -233,6 +263,7 @@ function StreamBubble({ sending, onStop, onRetry }) {
   return (
     <div className="flex justify-start mb-4 animate-fade-in-up">
       <div className="max-w-[85%] sm:max-w-[78%] rounded-2xl px-4 py-3" style={{ background: 'var(--bg-ai-bubble)', boxShadow: 'var(--shadow-md)' }}>
+        <ThinkingBlock text={sending.thinking} />
         {hasText ? (
           <div className="md-body text-sm" style={{ color: 'var(--text-primary)' }}
             dangerouslySetInnerHTML={{ __html: mdToHtml(sending.text) }} />
@@ -772,7 +803,7 @@ export default function ChatAssistantPage() {
   const startStream = useCallback((sessionId, content, reasoningEffort = 'auto') => {
     const controller = new AbortController()
     abortRef.current = controller
-    const st = { sessionId, content, text: '', stopped: false, error: '', manual: false }
+    const st = { sessionId, content, text: '', thinking: '', stopped: false, error: '', manual: false }
     sendingRef.current = st
     setSending(st)
     chatAPI.sendStream(sessionId, content, {
@@ -781,10 +812,13 @@ export default function ChatAssistantPage() {
       model_id: modelIdRef.current,
       onChunk: data => setSending(prev =>
         (prev && prev.sessionId === sessionId) ? { ...prev, text: (prev.text || '') + String(data.text || '') } : prev),
+      onThinking: data => setSending(prev =>
+        (prev && prev.sessionId === sessionId) ? { ...prev, thinking: (prev.thinking || '') + String(data.text || '') } : prev),
       onDone: data => {
         const full = String(data.text || '')
+        const thinking = String(data.thinking || '')
         manualStopRef.current = false
-        setMessages(prev => [...prev, { id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, role: 'assistant', content: full, created_at: new Date().toISOString() }])
+        setMessages(prev => [...prev, { id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, role: 'assistant', content: full, thinking, created_at: new Date().toISOString() }])
         // 仅当仍是本次会话的流时才清理状态，避免并发时旧流清掉新流
         if (sendingRef.current?.sessionId === sessionId) {
           sendingRef.current = null

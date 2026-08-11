@@ -361,7 +361,7 @@ async def list_messages(session_id: int, user=Depends(get_current_user)):
     with get_db() as conn:
         _owns_session(conn, session_id, user_id)
         rows = conn.execute(
-            "SELECT id, role, content, created_at FROM chat_messages WHERE session_id = %s ORDER BY id ASC",
+            "SELECT id, role, content, thinking, created_at FROM chat_messages WHERE session_id = %s ORDER BY id ASC",
             (session_id,),
         ).fetchall()
     return {
@@ -370,6 +370,7 @@ async def list_messages(session_id: int, user=Depends(get_current_user)):
                 "id": r["id"],
                 "role": r["role"],
                 "content": r["content"],
+                "thinking": r["thinking"] or "",
                 "created_at": r["created_at"].isoformat() if r["created_at"] else None,
             }
             for r in rows
@@ -508,14 +509,16 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
             async for event in ChatService.chat_stream(history, body.reasoning_effort, model=target_model, attached_docs=attached_docs):
                 if event["type"] == "chunk":
                     yield f"event: chunk\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
+                elif event["type"] == "thinking":
+                    yield f"event: thinking\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
                 elif event["type"] == "done":
                     with get_db() as conn:
                         conn.execute(
-                            "INSERT INTO chat_messages (session_id, role, content) VALUES (%s, 'assistant', %s)",
-                            (session_id, event["text"]),
+                            "INSERT INTO chat_messages (session_id, role, content, thinking) VALUES (%s, 'assistant', %s, %s)",
+                            (session_id, event["text"], event.get("thinking", "") or None),
                         )
                     finished = True
-                    yield f"event: done\ndata: {json.dumps({'text': event['text'], 'points_balance': balance_after}, ensure_ascii=False)}\n\n"
+                    yield f"event: done\ndata: {json.dumps({'text': event['text'], 'thinking': event.get('thinking', ''), 'points_balance': balance_after}, ensure_ascii=False)}\n\n"
                 elif event["type"] == "error":
                     refunded = True
                     _refund_once()
