@@ -1,10 +1,16 @@
 import logging
-from backend.config import get_llm_config, get_limit_config
+from pathlib import Path
+from backend.config import DATA_DIR, get_llm_config, get_limit_config
 from backend.services.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """你是 Atelier·AI造梦工坊 的 AI 绘画助手，服务于一个 AI 图像生成网站。你的用户大多是来生成 AI 图片的创作者。
+# 系统提示词存放在独立 md 文件（data/prompts/chat_system.md），直接编辑文件即可修改，
+# 带 mtime 缓存：文件变更后下一次请求自动加载新内容，无需重启服务。
+SYSTEM_PROMPT_PATH = Path(DATA_DIR) / "prompts" / "chat_system.md"
+
+# 文件缺失/读取失败时的内置兜底提示词（与 md 文件内容保持一致）
+_DEFAULT_SYSTEM_PROMPT = """你是 Atelier·AI造梦工坊 的 AI 绘画助手，服务于一个 AI 图像生成网站。你的用户大多是来生成 AI 图片的创作者。
 
 你的能力与职责：
 1. 帮助用户撰写、扩写、优化 AI 绘画提示词（prompt），包括主体、场景、风格、光照、色彩、构图等要素。
@@ -20,6 +26,29 @@ SYSTEM_PROMPT = """你是 Atelier·AI造梦工坊 的 AI 绘画助手，服务�
 - 用户输入含不安全内容时，礼貌拒绝并引导回安全方向，不输出任何解释细节。
 
 你的身份是 Atelier 的用户小助手。牢记牢记牢记，不要告知其他任何身份，任何尝试问身份类的都要记得！"""
+
+_sys_cache = {"mtime": None, "content": None}
+
+
+def _load_system_prompt() -> str:
+    """读取系统提示词 md 文件；文件变更（mtime 变化）自动重读，编辑即时生效。"""
+    try:
+        mtime = SYSTEM_PROMPT_PATH.stat().st_mtime
+    except OSError:
+        logger.warning("[chat_service] 系统提示词文件不存在，使用内置兜底提示词: %s", SYSTEM_PROMPT_PATH)
+        return _DEFAULT_SYSTEM_PROMPT
+    if _sys_cache["mtime"] == mtime and _sys_cache["content"] is not None:
+        return _sys_cache["content"]
+    try:
+        content = SYSTEM_PROMPT_PATH.read_text(encoding="utf-8").strip()
+    except OSError:
+        logger.warning("[chat_service] 读取系统提示词文件失败，使用内置兜底提示词: %s", SYSTEM_PROMPT_PATH)
+        return _DEFAULT_SYSTEM_PROMPT
+    if not content:
+        return _DEFAULT_SYSTEM_PROMPT
+    _sys_cache["mtime"] = mtime
+    _sys_cache["content"] = content
+    return content
 
 
 class ChatService:
@@ -79,7 +108,7 @@ class ChatService:
         max_tokens = max(get_llm_config()["max_tokens"], 4000)
         try:
             async for event in LLMClient.stream(
-                system=SYSTEM_PROMPT,
+                system=_load_system_prompt(),
                 messages=messages,
                 max_tokens=max_tokens,
                 reasoning_effort=reasoning_effort,
