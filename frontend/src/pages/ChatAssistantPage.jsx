@@ -1210,7 +1210,16 @@ export default function ChatAssistantPage() {
     }
   }
 
-  const handleStop = () => { manualStopRef.current = true; abortRef.current?.abort() }
+  const handleStop = () => {
+    manualStopRef.current = true
+    abortRef.current?.abort()
+    // 兜底：无论底层中断是否立即生效（abort 已释放/网络延迟），先把 UI 与发送锁
+    // 切到「已停止」状态——杜绝「卡在思考中且停止无效」的假死（stopped 后即可发新消息）
+    if (sendingRef.current && !sendingRef.current.stopped) {
+      sendingRef.current = { ...sendingRef.current, stopped: true, error: '已停止生成', manual: true }
+    }
+    setSending(prev => (prev && !prev.stopped) ? { ...prev, stopped: true, error: '已停止生成' } : prev)
+  }
 
   const handleReasoningEffort = (v) => {
     setReasoningEffort(v)
