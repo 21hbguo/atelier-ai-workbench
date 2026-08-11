@@ -71,6 +71,10 @@ def _build_system_prompt(model: dict | None = None) -> str:
     return system_prompt
 
 
+# 公开别名：agent 模式（router 层）组装 system 时使用
+build_system_prompt = _build_system_prompt
+
+
 class ChatService:
     """AI 助手聊天服务：多轮对话 + 统一 LLMClient 流式输出"""
 
@@ -80,10 +84,13 @@ class ChatService:
     MAX_MESSAGE_CHARS = 8000
 
     @classmethod
-    def build_llm_messages(cls, history: list[dict], model: dict | None = None) -> list[dict]:
+    def build_llm_messages(cls, history: list[dict], model: dict | None = None, attached_docs: list[dict] | None = None) -> list[dict]:
         """把会话历史转换为标准 messages 格式（role: user/assistant）。
         按「字符预算」从最新消息向前累积：优先用所调用模型档案的 context_budget_chars，
-        否则用全局配置（默认 256K 字符 ≈ 8-13 万 token）。"""
+        否则用全局配置（默认 256K 字符 ≈ 8-13 万 token）。
+        attached_docs: list[dict]（含 original_name/page_content），非空时按
+        <attached_documents> 块注入最后一条 user 消息末尾（最后一条不是 user 则新增一条）。
+        不传 attached_docs 时行为与原来完全一致。"""
         from backend.services.llm_model_service import get_active
         model = model or get_active()
         try:
@@ -112,16 +119,76 @@ class ChatService:
         # 首条必须是 user，否则 API 会报错
         while out and out[0]["role"] != "user":
             out.pop(0)
+        # attached_documents 注入（文档预算独立于历史预算，占 context_budget_chars 的 40%）
+        if attached_docs:
+            block = cls._build_attached_docs_block(attached_docs, budget)
+            if block:
+                if out and out[-1]["role"] == "user":
+                    out[-1] = {"role": "user", "content": out[-1]["content"] + "\n\n" + block}
+                else:
+                    out.append({"role": "user", "content": block})
         return out
 
     @classmethod
-    async def chat_stream(cls, history: list[dict], reasoning_effort: str = "auto", model: dict | None = None):
+    def _build_attached_docs_block(cls, attached_docs: list[dict], total_budget: int) -> str:
+        """把 attached_docs 拼成 <attached_documents> 块（anything-llm 风格）：
+        <attached_documents>
+        文档1「name.pdf」：
+        <doc id="1">
+        ...截断文本...
+        </doc>
+        </attached_documents>
+
+        文档总字符预算 = total_budget 的 40%；超出预算时每文档按比例截断，
+        超出部分丢弃；至少保留最新一个文档全文的前 10000 字符。
+        """
+        entries = []
+        total_len = 0
+        for d in attached_docs or []:
+            content = str(d.get("page_content") or "").strip()
+            if not content:
+                continue
+            entries.append({
+                "name": str(d.get("original_name") or "document"),
+                "content": content,
+            })
+            total_len += len(content)
+        if not entries:
+            return ""
+        doc_budget = max(1000, int(total_budget * 0.4))
+        keeps = [len(e["content"]) for e in entries]
+        if total_len > doc_budget:
+            # 预算不足：最新文档至少保留前 10000 字符，其余按比例分配
+            latest_keep = min(len(entries[-1]["content"]), 10000)
+            rest_budget = max(0, doc_budget - latest_keep)
+            rest_total = total_len - len(entries[-1]["content"])
+            keeps = [0] * len(entries)
+            keeps[-1] = latest_keep
+            if rest_budget > 0 and rest_total > 0:
+                for i in range(len(entries) - 1):
+                    share = int(rest_budget * len(entries[i]["content"]) / rest_total)
+                    keeps[i] = min(len(entries[i]["content"]), max(share, 0))
+        parts = []
+        for i, e in enumerate(entries):
+            keep = keeps[i]
+            if keep <= 0:
+                continue
+            text = e["content"][:keep]
+            if keep < len(e["content"]):
+                text += "\n…[文档内容过长，已截断]"
+            parts.append(f"文档{i + 1}「{e['name']}」：\n<doc id=\"{i + 1}\">\n{text}\n</doc>")
+        if not parts:
+            return ""
+        return "<attached_documents>\n" + "\n".join(parts) + "\n</attached_documents>"
+
+    @classmethod
+    async def chat_stream(cls, history: list[dict], reasoning_effort: str = "auto", model: dict | None = None, attached_docs: list[dict] | None = None):
         """流式对话。history 最后一条必须是当前用户消息。
         reasoning_effort: auto/low/medium/high/max/xhigh（auto 不传，用 API 默认）
         model: 模型档案 dict（可含 base_url/api_key/protocol/model_id），None 时用激活模型 + 全局配置。
         产出事件：{"type":"chunk","text":...} → {"type":"done","text":完整文本} / {"type":"error","detail":...}
         """
-        messages = cls.build_llm_messages(history, model)
+        messages = cls.build_llm_messages(history, model, attached_docs)
         if not messages:
             yield {"type": "error", "detail": "消息内容为空"}
             return

@@ -1,18 +1,25 @@
 import asyncio
+import io
 import json
 import logging
+import os
+import secrets
 import time
 import uuid
+import zipfile
 from collections import deque
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from backend.auth import get_current_user
 from backend.database import get_db
-from backend.config import get_limit_config
+from backend.config import get_limit_config, get_llm_config, UPLOAD_DIR, MAX_FILE_SIZE
 from backend.services.points_service import PointsService
 from backend.services.banned_words import BannedWordsService
-from backend.services.chat_service import ChatService
+from backend.services.chat_service import ChatService, build_system_prompt
+from backend.services.document_parser import parse_file
+from backend.services.llm_client import LLMClient, LLMError
+from backend.services.agent import AgentContext, run_agent
 from backend.services.llm_model_service import get_active as get_active_model, get_all as get_all_models, get_by_model_id
 
 logger = logging.getLogger(__name__)
@@ -28,6 +35,7 @@ class ChatSendRequest(BaseModel):
     content: str = Field(..., min_length=1, max_length=2000)
     reasoning_effort: str = Field("auto", pattern="^(auto|low|medium|high|max|xhigh)$")
     model_id: str = Field("", max_length=128)
+    mode: str = Field("chat", pattern="^(chat|agent)$")
 
 
 class ChatRenameRequest(BaseModel):
@@ -64,6 +72,158 @@ def _owns_session(conn, session_id: int, user_id: int):
     if not row:
         raise HTTPException(status_code=404, detail="会话不存在")
     return row
+
+
+# agent 模式默认启用的工具（rag_memory.store 为占位实现，不注册给模型）
+_AGENT_TOOLS = [
+    "rag_memory.search",
+    "document_summary.list",
+    "document_summary.summarize",
+    "web_search.search",
+    "file_ops.write_text",
+]
+
+
+def _model_override(model: dict | None) -> dict:
+    """模型档案 per-model 覆盖（与 ChatService.chat_stream 内部逻辑一致）。"""
+    override = {}
+    if model:
+        if model.get("base_url"):
+            override["base_url"] = model["base_url"]
+        if model.get("api_key"):
+            key = str(model["api_key"]).strip()
+            if key.startswith("env:"):
+                key = os.environ.get(key[4:], "")
+            override["api_key"] = key
+        if model.get("protocol"):
+            override["protocol"] = model["protocol"]
+        if model.get("model_id"):
+            override["model"] = model["model_id"]
+    return override
+
+
+# 聊天文档上传：允许的扩展名与对应 MIME（content_type 落库用）
+_CHAT_DOC_EXTS = {"txt", "md", "csv", "json", "html", "pdf", "docx", "xlsx", "pptx"}
+_CHAT_DOC_MIME = {
+    "txt": "text/plain",
+    "md": "text/markdown",
+    "csv": "text/csv",
+    "json": "application/json",
+    "html": "text/html",
+    "pdf": "application/pdf",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+}
+# zip 炸弹防护：office 文档解压后总大小上限（压缩包 20MB 可膨胀 GB 级）
+_MAX_UNZIPPED_SIZE = 200 * 1024 * 1024
+# 每会话上传文件数上限（防磁盘/DB 无限增长）
+_MAX_FILES_PER_SESSION = 20
+
+
+def _write_file(path, content: bytes):
+    with open(path, "wb") as f:
+        f.write(content)
+
+
+def _zip_info(content: bytes) -> tuple:
+    """读取 zip 包内文件清单与解压后总大小；不是合法 zip 时返回 ([], 0)。"""
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as zf:
+            names = zf.namelist()
+            total = sum(i.file_size for i in zf.infolist())
+            return names, total
+    except Exception:
+        return [], 0
+
+
+def _validate_chat_doc(file: UploadFile, content: bytes) -> str:
+    """校验聊天文档：扩展名白名单 + 大小上限 + 魔数/编码与扩展名一致 + zip 膨胀上限。返回规范化扩展名。"""
+    if not content:
+        raise HTTPException(status_code=400, detail="文件内容为空")
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail=f"文件大小超过{MAX_FILE_SIZE // 1024 // 1024}MB限制")
+    filename = file.filename or ""
+    ext = os.path.splitext(filename)[1].lower().lstrip(".")
+    if ext not in _CHAT_DOC_EXTS:
+        raise HTTPException(status_code=400, detail=f"不支持的文件格式: {ext or 'unknown'}")
+    if ext == "pdf":
+        if not content.startswith(b"%PDF-"):
+            raise HTTPException(status_code=400, detail="文件扩展名与内容不匹配（PDF 文件头缺失）")
+    elif ext in ("docx", "xlsx", "pptx"):
+        names, total = _zip_info(content)
+        if not (content[:2] == b"PK" and "[Content_Types].xml" in names):
+            raise HTTPException(status_code=400, detail="文件扩展名与内容不匹配（Office 文档内容无效）")
+        if total > _MAX_UNZIPPED_SIZE:
+            raise HTTPException(status_code=400, detail="压缩包解压后体积过大，已拒绝")
+    else:
+        try:
+            content.decode("utf-8")
+        except UnicodeDecodeError:
+            raise HTTPException(status_code=400, detail="文本文件必须为 UTF-8 编码")
+    return ext
+
+
+@router.post("/upload")
+async def upload_chat_file(
+    session_id: int = Form(...),
+    file: UploadFile = File(...),
+    user=Depends(get_current_user),
+):
+    """上传聊天文档：校验后存 data/uploads/，解析全文写入 chat_files，供后续对话注入上下文。"""
+    user_id = user["user_id"]
+    with get_db() as conn:
+        _owns_session(conn, session_id, user_id)
+        # 会话文件数配额（防磁盘/DB 无限增长）
+        cnt = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM chat_files WHERE session_id = %s", (session_id,)
+        ).fetchone()["cnt"]
+        if cnt >= _MAX_FILES_PER_SESSION:
+            raise HTTPException(status_code=400, detail=f"每个会话最多上传 {_MAX_FILES_PER_SESSION} 个文件，请清理或新建会话")
+
+    # 分块读取：内存占用上限 = MAX_FILE_SIZE + 1MB，超大文件在读完前即被拒绝
+    content = b""
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        content += chunk
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=400, detail=f"文件大小超过{MAX_FILE_SIZE // 1024 // 1024}MB限制")
+    ext = _validate_chat_doc(file, content)
+    storage_name = f"{secrets.token_hex(16)}.{ext}"
+    save_path = UPLOAD_DIR / storage_name
+    await asyncio.to_thread(_write_file, save_path, content)
+
+    # 解析失败：删除已写文件并返回 4xx
+    try:
+        page_content = await asyncio.to_thread(parse_file, str(save_path), ext)
+    except ValueError as e:
+        save_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("[chat/upload] parse failed: %s", storage_name)
+        save_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="文件解析失败，请检查文件内容")
+
+    original_name = os.path.basename(file.filename or "")[:255] or "upload"
+    content_type = (file.content_type or "").split(";")[0].strip().lower() or _CHAT_DOC_MIME[ext]
+    char_count = len(page_content)
+    with get_db() as conn:
+        row = conn.execute(
+            """INSERT INTO chat_files
+               (session_id, user_id, storage_name, original_name, content_type, page_content, char_count, status)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, 'parsed')
+               RETURNING id""",
+            (session_id, user_id, storage_name, original_name, content_type, page_content, char_count),
+        ).fetchone()
+    logger.info("[chat/upload] session=%s file_id=%s name=%s chars=%s", session_id, row["id"], original_name, char_count)
+    return {
+        "file_id": row["id"],
+        "original_name": original_name,
+        "char_count": char_count,
+        "storage_name": storage_name,
+    }
 
 
 def _default_title(content: str) -> str:
@@ -234,6 +394,16 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
     cost_per = _chat_cost_per_request(target_model)
     req_id = str(uuid.uuid4())
 
+    # agent 模式：仅 OpenAI 兼容协议（tool_result 回填格式一期不支持 anthropic）
+    override = _model_override(target_model)
+    if body.mode == "agent":
+        cfg = dict(get_llm_config())
+        for k, v in override.items():
+            if v:
+                cfg[k] = v
+        if LLMClient.protocol(cfg) != "openai":
+            raise HTTPException(status_code=400, detail="Agent 模式暂仅支持 OpenAI 兼容协议模型（如 DeepSeek），请切换模型或使用普通聊天")
+
     # 思考档位按模型档案校验：不在档案档位列表内则回退该模型默认档位
     efforts = target_model.get("reasoning_efforts") or ["auto"]
     if body.reasoning_effort not in efforts:
@@ -273,8 +443,14 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
             "SELECT role, content FROM chat_messages WHERE session_id = %s ORDER BY id ASC",
             (session_id,),
         ).fetchall()
+        # 会话已解析文档：注入上下文（anything-llm attached_documents 思路）
+        file_rows = conn.execute(
+            "SELECT original_name, page_content FROM chat_files WHERE session_id = %s AND status = 'parsed' ORDER BY id ASC",
+            (session_id,),
+        ).fetchall()
 
     history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
+    attached_docs = [{"original_name": r["original_name"], "page_content": r["page_content"]} for r in file_rows]
 
     def _refund_once() -> None:
         # refund 幂等（request_key 唯一），重复调用安全
@@ -287,7 +463,33 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
         finished = False
         refunded = False
         try:
-            async for event in ChatService.chat_stream(history, body.reasoning_effort, model=target_model):
+            if body.mode == "agent":
+                # agent 模式：一次非流式工具调用循环（LLM 多轮调用在 run_agent 内部串行完成）
+                try:
+                    ctx = AgentContext(session_id=session_id, user_id=user_id)
+                    messages = ChatService.build_llm_messages(history, target_model, attached_docs)
+                    text = await run_agent(
+                        system=build_system_prompt(target_model),
+                        messages=messages,
+                        tools_names=_AGENT_TOOLS,
+                        max_tool_calls=5,  # 收紧轮数：agent 多轮 LLM 调用会放大 API 成本
+                        override=override,
+                        ctx=ctx,
+                    )
+                except LLMError as e:
+                    refunded = True
+                    _refund_once()
+                    yield f"event: error\ndata: {json.dumps({'detail': str(e)}, ensure_ascii=False)}\n\n"
+                    return
+                with get_db() as conn:
+                    conn.execute(
+                        "INSERT INTO chat_messages (session_id, role, content) VALUES (%s, 'assistant', %s)",
+                        (session_id, text),
+                    )
+                finished = True
+                yield f"event: done\ndata: {json.dumps({'text': text, 'points_balance': balance_after}, ensure_ascii=False)}\n\n"
+                return
+            async for event in ChatService.chat_stream(history, body.reasoning_effort, model=target_model, attached_docs=attached_docs):
                 if event["type"] == "chunk":
                     yield f"event: chunk\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
                 elif event["type"] == "done":
