@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { MessageCircle, Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, ChevronLeft, Brain } from 'lucide-react'
+import { MessageCircle, Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, ChevronLeft, Brain, AlertCircle } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
 import { useAppDialog } from '../components/AppDialogProvider'
 import { chatAPI, pointsAPI } from '../api'
@@ -155,12 +155,17 @@ function MessageItem({ msg, onCopy }) {
         style={{ background: isUser ? 'var(--bg-user-bubble)' : 'var(--bg-ai-bubble)', boxShadow: isUser ? 'none' : 'var(--shadow-md)' }}>
         {isUser ? (
           <div className="text-sm whitespace-pre-wrap break-words" style={{ color: 'var(--text-primary)' }}>{msg.content}</div>
+        ) : msg.error ? (
+          <div className="flex items-start gap-1.5 text-sm" style={{ color: 'var(--color-error)' }}>
+            <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
+            <span className="break-words">{msg.error}</span>
+          </div>
         ) : (
           <div className="md-body text-sm" style={{ color: 'var(--text-primary)' }}
             dangerouslySetInnerHTML={{ __html: mdToHtml(msg.content) }} />
         )}
         <div className="text-xs mt-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>{formatTime(msg.created_at)}</div>
-        {!isUser && (
+        {!isUser && !msg.error && (
           <button onClick={() => onCopy(msg.content)}
             className="absolute -top-2.5 -right-2.5 hidden group-hover:flex p-1.5 rounded-lg"
             style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}
@@ -245,7 +250,7 @@ function EmptyState({ onPick }) {
 // ============ 底部输入区 ============
 const EFFORT_LABELS = { auto: '自动', low: '低', medium: '中', high: '高', max: '最高', xhigh: '超高' }
 
-function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, reasoningEffort, onReasoningEffort, efforts, modelLabel }) {
+function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, reasoningEffort, onReasoningEffort, efforts, modelLabel, pendingQueue, onEditPending, onRemovePending }) {
   const [effortOpen, setEffortOpen] = useState(false)
   const EFFORT_OPTIONS = (Array.isArray(efforts) && efforts.length ? efforts : ['auto', 'low', 'medium', 'high', 'max', 'xhigh'])
     .map(v => ({ value: v, label: EFFORT_LABELS[v] || v }))
@@ -255,7 +260,7 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
-      if (!sending) onSend()
+      onSend() // 生成中会自动进入排队
     }
   }
   return (
@@ -292,34 +297,74 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
           ))}
           <span className="ml-auto hidden sm:inline text-[11px]" style={{ color: 'var(--text-secondary)' }}>思考强度越高，回复越深入，耗时越长</span>
         </div>
-        <div className="flex items-end gap-2">
-          <textarea ref={inputRef} value={value} rows={1}
-            placeholder={sending ? 'AI 正在回复…' : '输入消息，Enter 发送，Shift+Enter 换行'}
-            disabled={sending}
-            onChange={e => {
-              onChange(e.target.value)
-              const t = e.target
-              t.style.height = 'auto'
-              t.style.height = Math.min(t.scrollHeight, 140) + 'px'
-            }}
-            onKeyDown={handleKeyDown}
-            className="flex-1 resize-none rounded-2xl px-3.5 py-2.5 text-sm outline-none disabled:opacity-60"
-            style={{ background: 'var(--bg-input)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', maxHeight: '140px' }} />
-          {sending ? (
-            <button onClick={onStop} title="停止生成"
-              className="flex-shrink-0 inline-flex items-center justify-center w-10 h-10 rounded-2xl transition-colors hover:bg-bg-active"
-              style={{ background: 'var(--bg-hover)', color: 'var(--text-secondary)' }}>
-              <Square size={17} />
-            </button>
-          ) : (
-            <button onClick={onSend} disabled={!value.trim()} title="发送"
-              className="flex-shrink-0 inline-flex items-center justify-center w-10 h-10 rounded-2xl text-white transition-colors disabled:opacity-40"
-              style={{ background: 'var(--accent)' }}>
-              <Send size={17} />
-            </button>
-          )}
+        {/* 排队中的待发送消息 */}
+        {pendingQueue.length > 0 && (
+          <div className="mb-2 flex flex-col gap-1.5">
+            {pendingQueue.map((item, i) => (
+              <div key={item.id} className="flex items-center gap-2 rounded-xl px-3 py-2"
+                style={{ background: 'var(--bg-ai-bubble)', border: '1px solid var(--border-color)' }}>
+                <span className="text-[10px] font-medium flex-shrink-0" style={{ color: 'var(--accent)' }}>排队 {i + 1}</span>
+                <span className="flex-1 min-w-0 truncate text-sm" style={{ color: 'var(--text-primary)' }}>{item.text}</span>
+                <button onClick={() => onEditPending(item.id)} title="编辑"
+                  className="p-1.5 rounded-md hover:bg-bg-hover transition-colors flex-shrink-0"
+                  style={{ color: 'var(--text-secondary)' }}>
+                  <Pencil size={13} />
+                </button>
+                <button onClick={() => onRemovePending(item.id)} title="删除"
+                  className="p-1.5 rounded-md hover:bg-bg-hover transition-colors flex-shrink-0"
+                  style={{ color: 'var(--text-secondary)' }}>
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {/* 与 AI 生图输入框一致的卡片式输入区 */}
+        <div className="rounded-2xl border" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-md)' }}>
+          <div className="px-2 pt-2">
+            <textarea ref={inputRef} value={value} rows={1}
+              placeholder={sending ? 'AI 正在回复…可继续输入，Enter 排队发送' : '输入消息，Enter 发送，Shift+Enter 换行'}
+              onChange={e => {
+                onChange(e.target.value)
+                const t = e.target
+                t.style.height = 'auto'
+                t.style.height = Math.min(t.scrollHeight, 80) + 'px'
+              }}
+              onKeyDown={handleKeyDown}
+              className="block w-full resize-none bg-transparent outline-none"
+              style={{ color: 'var(--text-primary)', minHeight: '40px', maxHeight: '80px', fontSize: '15px', paddingLeft: '10px' }} />
+          </div>
+          <div className="px-2 pb-2 flex items-center justify-between gap-3">
+            <div className="flex items-center flex-shrink-0 whitespace-nowrap gap-0.5">
+              {sending && (
+                <button onClick={onStop} title="停止生成"
+                  className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors"
+                  style={{ color: 'var(--text-secondary)' }}>
+                  <Square size={13} />
+                  <span className="text-[11px] leading-none">停止</span>
+                </button>
+              )}
+            </div>
+            <div className="min-w-0 flex items-center justify-end gap-1 flex-1">
+              {value.length > 0 && (
+                <span className="text-[10px] tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{value.length}</span>
+              )}
+              <button
+                onClick={() => { if (sending && !value.trim()) onStop(); else onSend() }}
+                onMouseDown={e => e.preventDefault()}
+                disabled={!sending && !value.trim()}
+                title={sending ? (value.trim() ? '排队发送' : '停止生成') : '发送'}
+                className="inline-flex items-center gap-1 px-2 py-1.5 rounded-2xl transition-colors disabled:opacity-40 flex-shrink-0"
+                style={{
+                  background: (sending && !value.trim()) ? 'var(--bg-hover)' : (value.trim() ? 'var(--accent)' : 'var(--border-color)'),
+                  color: (sending && !value.trim()) ? 'var(--text-secondary)' : '#fff',
+                }}>
+                {(sending && !value.trim()) ? <Square size={14} /> : <Send size={14} />}
+              </button>
+            </div>
+          </div>
         </div>
-        <div className="mt-1.5 flex items-center justify-between text-xs" style={{ color: 'var(--text-secondary)' }}>
+        <div className="px-1 pt-1.5 flex items-center justify-between text-[11px]" style={{ color: 'var(--text-secondary)' }}>
           <span>本次消耗 {cost} 积分</span>
           <span>当前积分：{points}</span>
         </div>
@@ -348,8 +393,22 @@ export default function ChatAssistantPage() {
   const abortRef = useRef(null)
   const scrollRef = useRef(null)
   const inputRef = useRef(null)
+  const sendingRef = useRef(null) // 与 sending 同步，供事件/回调读取最新状态（也兼作发送锁）
+  const pendingQueueRef = useRef([]) // 与 pendingQueue 同步
+  const manualStopRef = useRef(false)
+  const pointsRef = useRef(points)
+  const activeIdRef = useRef(activeId)
+  const effortRef = useRef(reasoningEffort)
+  const [pendingQueue, setPendingQueue] = useState([])
 
   const activeSession = sessions.find(s => s.id === activeId) || null
+
+  // latest-ref：每次渲染后同步，让异步回调能读到最新值
+  useEffect(() => {
+    pointsRef.current = points
+    activeIdRef.current = activeId
+    effortRef.current = reasoningEffort
+  })
 
   // 初始加载：消耗积分、余额、会话列表、模型档案
   useEffect(() => {
@@ -400,10 +459,20 @@ export default function ChatAssistantPage() {
     chatAPI.sessions().then(res => setSessions(res.data?.items || [])).catch(() => {})
   }, [])
 
+  // 发送锁：防止 createSession 等异步间隙出现并发发送（占位 sessionId=null，startStream 会覆盖）
+  const acquireSendLock = useCallback((content) => {
+    if (sendingRef.current && !sendingRef.current.stopped) return false
+    sendingRef.current = { sessionId: null, content, text: '', stopped: false, error: '', manual: false }
+    return true
+  }, [])
+  const releaseSendLock = useCallback(() => { sendingRef.current = null }, [])
+
   const startStream = useCallback((sessionId, content, reasoningEffort = 'auto') => {
     const controller = new AbortController()
     abortRef.current = controller
-    setSending({ sessionId, content, text: '', stopped: false, error: '' })
+    const st = { sessionId, content, text: '', stopped: false, error: '', manual: false }
+    sendingRef.current = st
+    setSending(st)
     chatAPI.sendStream(sessionId, content, {
       signal: controller.signal,
       reasoning_effort: reasoningEffort,
@@ -411,8 +480,13 @@ export default function ChatAssistantPage() {
         (prev && prev.sessionId === sessionId) ? { ...prev, text: (prev.text || '') + String(data.text || '') } : prev),
       onDone: data => {
         const full = String(data.text || '')
-        setMessages(prev => [...prev, { id: `local-${Date.now()}`, role: 'assistant', content: full, created_at: new Date().toISOString() }])
-        setSending(null)
+        manualStopRef.current = false
+        setMessages(prev => [...prev, { id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, role: 'assistant', content: full, created_at: new Date().toISOString() }])
+        // 仅当仍是本次会话的流时才清理状态，避免并发时旧流清掉新流
+        if (sendingRef.current?.sessionId === sessionId) {
+          sendingRef.current = null
+          setSending(null)
+        }
         const bal = data.points_balance
         if (bal != null) {
           const num = Number(bal)
@@ -424,54 +498,174 @@ export default function ChatAssistantPage() {
         refreshSessions()
       },
       onError: msg => {
-        setSending(prev =>
-          (prev && prev.sessionId === sessionId) ? { ...prev, stopped: true, error: msg || '生成失败' } : prev)
-        if (/积分不足|余额不足/.test(String(msg || ''))) {
-          dialog.alert(String(msg))
+        const errMsg = msg || '生成失败'
+        const isManual = manualStopRef.current
+        manualStopRef.current = false
+        if (isManual) {
+          // 手动停止：保留错误气泡 + 重试按钮，不自动继续队列
+          if (sendingRef.current?.sessionId === sessionId) {
+            sendingRef.current = { ...sendingRef.current, stopped: true, error: errMsg, manual: true }
+          }
+          setSending(prev =>
+            (prev && prev.sessionId === sessionId) ? { ...prev, stopped: true, error: errMsg, manual: true } : prev)
+        } else {
+          // 自动失败：错误追加为消息，清空状态让队列继续自动发送
+          if (sendingRef.current?.sessionId === sessionId) sendingRef.current = null
+          setSending(prev => (prev && prev.sessionId === sessionId) ? null : prev)
+          setMessages(prev => [...prev, { id: `err-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, role: 'assistant', content: '', error: errMsg, created_at: new Date().toISOString() }])
+        }
+        if (/积分不足|余额不足/.test(errMsg)) {
+          dialog.alert(errMsg)
           pointsAPI.balance().then(res => setPoints(Number(res.data?.points) ?? 0)).catch(() => {})
         }
       },
     }).finally(() => { if (abortRef.current === controller) abortRef.current = null })
   }, [dialog, refreshSessions])
 
+  // ============ 排队队列操作 ============
+  const MAX_PENDING = 10
+  const enqueuePending = (text) => {
+    const item = { id: `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, text }
+    pendingQueueRef.current = [...pendingQueueRef.current, item]
+    setPendingQueue(pendingQueueRef.current)
+    return item
+  }
+  const removePending = (id) => {
+    pendingQueueRef.current = pendingQueueRef.current.filter(item => item.id !== id)
+    setPendingQueue(pendingQueueRef.current)
+  }
+  const editPending = (id) => {
+    const item = pendingQueueRef.current.find(x => x.id === id)
+    if (!item) return
+    removePending(id)
+    setInput(item.text)
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto'
+      inputRef.current.focus()
+      requestAnimationFrame(() => {
+        if (inputRef.current) {
+          const len = inputRef.current.value.length
+          inputRef.current.setSelectionRange(len, len)
+        }
+      })
+    }
+  }
+  const clearPending = useCallback(() => {
+    pendingQueueRef.current = []
+    setPendingQueue([])
+  }, [])
+  const focusInput = () => {
+    if (inputRef.current) {
+      inputRef.current.focus()
+      inputRef.current.setSelectionRange(inputRef.current.value.length, inputRef.current.value.length)
+    }
+  }
+
   const handleSend = async (raw) => {
     const text = String(raw ?? input).trim()
-    if (!text || sending) return
-    if (cost > 0 && points < cost) {
-      dialog.alert(`积分不足，当前仅剩 ${points} 积分，本次对话需要 ${cost} 积分。`)
+    if (!text) return
+    // 正在生成中：进入排队队列，当前回复结束后自动发送
+    if (sendingRef.current && !sendingRef.current.stopped) {
+      if (pendingQueueRef.current.length >= MAX_PENDING) {
+        dialog.alert(`排队消息最多 ${MAX_PENDING} 条，请等待发送或删除部分排队消息。`)
+        focusInput()
+        return
+      }
+      enqueuePending(text)
+      setInput('')
+      if (inputRef.current) inputRef.current.style.height = 'auto'
+      focusInput()
+      return
+    }
+    // 空闲（或上一条已停止/失败）：获取发送锁后直接发送
+    if (!acquireSendLock(text)) return
+    if (cost > 0 && pointsRef.current < cost) {
+      releaseSendLock()
+      dialog.alert(`积分不足，当前仅剩 ${pointsRef.current} 积分，本次对话需要 ${cost} 积分。`)
       return
     }
     setInput('')
     if (inputRef.current) inputRef.current.style.height = 'auto'
-    let sid = activeId
+    let sid = activeIdRef.current
     if (!sid) {
       try {
         const res = await chatAPI.createSession()
         const s = res.data
         setSessions(prev => [s, ...prev])
         sid = s.id
+        activeIdRef.current = s.id
         setActiveId(s.id)
       } catch (err) {
+        releaseSendLock()
         dialog.alert(err.message || '创建会话失败')
         return
       }
     }
-    setMessages(prev => [...prev, { id: `local-${Date.now()}`, role: 'user', content: text, created_at: new Date().toISOString() }])
-    startStream(sid, text, reasoningEffort)
+    setMessages(prev => [...prev, { id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, role: 'user', content: text, created_at: new Date().toISOString() }])
+    startStream(sid, text, effortRef.current)
+    focusInput()
   }
+
+  // 生成完成后，自动发送排队中的下一条
+  const sendQueuedNext = useCallback(async () => {
+    if (!acquireSendLock('')) return
+    const item = pendingQueueRef.current[0]
+    if (!item) {
+      releaseSendLock()
+      return
+    }
+    pendingQueueRef.current = pendingQueueRef.current.slice(1)
+    setPendingQueue(pendingQueueRef.current)
+    if (cost > 0 && pointsRef.current < cost) {
+      releaseSendLock()
+      dialog.alert(`积分不足，当前仅剩 ${pointsRef.current} 积分，本次对话需要 ${cost} 积分。排队消息已取消，请补充积分后重新发送。`)
+      clearPending()
+      return
+    }
+    let sid = activeIdRef.current
+    if (!sid) {
+      try {
+        const res = await chatAPI.createSession()
+        const s = res.data
+        setSessions(prev => [s, ...prev])
+        sid = s.id
+        activeIdRef.current = s.id
+        setActiveId(s.id)
+      } catch (err) {
+        releaseSendLock()
+        dialog.alert(err.message || '创建会话失败')
+        clearPending()
+        return
+      }
+    }
+    setMessages(prev => [...prev, { id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, role: 'user', content: item.text, created_at: new Date().toISOString() }])
+    startStream(sid, item.text, effortRef.current)
+  }, [dialog, cost, startStream, acquireSendLock, releaseSendLock, clearPending])
+
+  // sending 变为空闲时自动发送排队中的下一条
+  useEffect(() => {
+    if (sending !== null) return
+    sendQueuedNext()
+  }, [sending, sendQueuedNext])
 
   const handleSelectSession = (id) => {
     if (id === activeId || sending) return
+    manualStopRef.current = true
     abortRef.current?.abort()
+    sendingRef.current = null
     setSending(null)
+    clearPending()
     setActiveId(id)
     setSessionListOpen(false)
   }
 
   const handleCreateSession = async () => {
     if (sending) { dialog.alert('请先停止当前生成，再新建对话'); return }
+    manualStopRef.current = true
     abortRef.current?.abort()
+    sendingRef.current = null
     setSending(null)
+    clearPending()
     try {
       const res = await chatAPI.createSession()
       const s = res.data
@@ -492,8 +686,11 @@ export default function ChatAssistantPage() {
       const next = sessions.filter(s => s.id !== id)
       setSessions(next)
       if (activeId === id) {
+        manualStopRef.current = true
         abortRef.current?.abort()
+        sendingRef.current = null
         setSending(null)
+        clearPending()
         if (next.length) setActiveId(next[0].id)
         else { setActiveId(null); setMessages([]) }
       }
@@ -502,7 +699,7 @@ export default function ChatAssistantPage() {
     }
   }
 
-  const handleStop = () => { abortRef.current?.abort() }
+  const handleStop = () => { manualStopRef.current = true; abortRef.current?.abort() }
 
   const handleReasoningEffort = (v) => {
     setReasoningEffort(v)
@@ -513,7 +710,7 @@ export default function ChatAssistantPage() {
     if (!sending) return
     const { sessionId, content } = sending
     setSending(null)
-    startStream(sessionId, content, reasoningEffort)
+    startStream(sessionId, content, effortRef.current)
   }
 
   const handleCopy = async (text) => {    const ok = await copyText(String(text || ''))
@@ -613,7 +810,8 @@ export default function ChatAssistantPage() {
           <ChatInputBar inputRef={inputRef} value={input} onChange={setInput}
             onSend={handleSend} onStop={handleStop} sending={!!sending} cost={cost} points={points}
             reasoningEffort={reasoningEffort} onReasoningEffort={handleReasoningEffort}
-            efforts={modelInfo?.reasoning_efforts} modelLabel={modelInfo?.label || modelInfo?.model_id} />
+            efforts={modelInfo?.reasoning_efforts} modelLabel={modelInfo?.label || modelInfo?.model_id}
+            pendingQueue={pendingQueue} onEditPending={editPending} onRemovePending={removePending} />
         </div>
       </div>
       <style>{MD_STYLES}</style>
