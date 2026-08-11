@@ -380,7 +380,7 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
   return (
     <div className="lg:static fixed inset-x-0 z-20 flex-shrink-0"
       style={{ background: 'var(--bg-primary)', borderTop: '1px solid var(--border-color)', bottom: 'env(keyboard-inset-height, 0px)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
-      <div className="mx-auto w-full max-w-3xl px-4 pt-3 pb-2">
+      <div className="mx-auto w-full max-w-3xl px-4 pt-2 pb-2">
         <div className="flex items-center gap-1.5 mb-1.5 px-1 flex-wrap">
           {/* 模型选择 */}
           {models.length > 0 ? (
@@ -470,21 +470,9 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
             ))}
           </div>
         )}
-        {/* 上传文档（有文件自动走工具链路，无需手动切换模式） */}
-        <div className="mb-2 flex items-center gap-2 flex-wrap">
-          <button type="button" onClick={onUploadClick} title="上传文档/代码（txt/md/csv/pdf/docx/xlsx/pptx/py/js/ts/go/yaml 等 50+ 格式；一次最多 5 个，会话累计最多 20 个）"
-            className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors"
-            style={{ color: 'var(--text-secondary)' }}>
-            <Paperclip size={15} />
-            <span className="text-[11px] leading-none">{uploadingCount > 0 ? `上传中 ${uploadingCount}` : '上传'}</span>
-          </button>
-          <span className="text-[11px] flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>最多 20 个</span>
-          {uploadNote && (
-            <span className="text-[11px] min-w-0 truncate" style={{ color: 'var(--color-error)' }} title={uploadNote}>{uploadNote}</span>
-          )}
-        </div>
-        {/* 与 AI 生图输入框一致的卡片式输入区 */}
-        <div className="rounded-2xl border" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-md)' }}>
+        {/* 卡片式输入区：布局对齐绘画页 ChatInput（设置|上传在左，发送在右） */}
+        <div className="rounded-2xl border transition-all duration-300"
+          style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-md)', position: 'relative' }}>
           {docs.length > 0 && (
             <div className="flex gap-2 p-3 pb-0 overflow-x-auto">
               {docs.map(doc => (
@@ -528,7 +516,7 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
               ))}
             </div>
           )}
-          <div className="px-2 pt-2">
+          <div className="px-2 pt-2 pb-2">
             <textarea ref={inputRef} value={value} rows={1}
               placeholder={sending ? 'AI 正在回复…可继续输入，Enter 排队发送' : '输入消息，Enter 发送，Shift+Enter 换行'}
               onChange={e => {
@@ -538,40 +526,50 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
                 t.style.height = Math.min(t.scrollHeight, 80) + 'px'
               }}
               onKeyDown={handleKeyDown}
-              className="block w-full resize-none bg-transparent outline-none"
+              className="block w-full resize-none bg-transparent outline-none py-2"
               style={{ color: 'var(--text-primary)', minHeight: '40px', maxHeight: '80px', fontSize: '15px', paddingLeft: '10px' }} />
-          </div>
-          <div className="px-2 pb-2 flex items-center justify-between gap-3">
-            <div className="flex items-center flex-shrink-0 whitespace-nowrap gap-0.5">
-              {sending && (
-                <button onClick={onStop} title="停止生成"
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <div className="flex items-center flex-shrink-0 whitespace-nowrap gap-0.5">
+                <button type="button" onClick={onUploadClick}
+                  title="上传文档/代码（txt/md/csv/pdf/docx/xlsx/pptx/py/js/ts/go/yaml 等 50+ 格式；一次最多 5 个，会话累计最多 20 个）"
                   className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors"
                   style={{ color: 'var(--text-secondary)' }}>
-                  <Square size={13} />
-                  <span className="text-[11px] leading-none">停止</span>
+                  <Paperclip size={15} />
+                  <span className="text-[11px] leading-none">{uploadingCount > 0 ? `上传中 ${uploadingCount}` : '上传'}</span>
                 </button>
-              )}
-            </div>
-            <div className="min-w-0 flex items-center justify-end gap-1 flex-1">
-              {value.length > 0 && (
-                <span className="text-[10px] tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{value.length}</span>
-              )}
-              <button
-                onClick={() => { if (sending && !value.trim()) onStop(); else onSend() }}
-                onMouseDown={e => e.preventDefault()}
-                disabled={!sending && !value.trim()}
-                title={sending ? (value.trim() ? '排队发送' : '停止生成') : '发送'}
-                className="inline-flex items-center gap-1 px-2 py-1.5 rounded-2xl transition-colors disabled:opacity-40 flex-shrink-0"
-                style={{
-                  background: (sending && !value.trim()) ? 'var(--bg-hover)' : (value.trim() ? 'var(--accent)' : 'var(--border-color)'),
-                  color: (sending && !value.trim()) ? 'var(--text-secondary)' : '#fff',
-                }}>
-                {(sending && !value.trim()) ? <Square size={14} /> : <Send size={14} />}
-              </button>
+                {sending && (
+                  <button onClick={onStop} title="停止生成"
+                    className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors"
+                    style={{ color: 'var(--text-secondary)' }}>
+                    <Square size={13} />
+                    <span className="text-[11px] leading-none">停止</span>
+                  </button>
+                )}
+              </div>
+              <div className="min-w-0 flex items-center justify-end gap-1 flex-1">
+                {value.length > 0 && (
+                  <span className="text-[10px] tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{value.length}</span>
+                )}
+                <button
+                  onClick={() => { if (sending && !value.trim()) onStop(); else onSend() }}
+                  onMouseDown={e => e.preventDefault()}
+                  disabled={!sending && !value.trim()}
+                  title={sending ? (value.trim() ? '排队发送' : '停止生成') : '发送'}
+                  className="inline-flex items-center gap-1 px-2 py-1.5 rounded-2xl transition-colors disabled:opacity-40 flex-shrink-0"
+                  style={{
+                    background: (sending && !value.trim()) ? 'var(--bg-hover)' : (value.trim() ? 'var(--accent)' : 'var(--border-color)'),
+                    color: (sending && !value.trim()) ? 'var(--text-secondary)' : '#fff',
+                  }}>
+                  {(sending && !value.trim()) ? <Square size={14} /> : <Send size={14} />}
+                </button>
+              </div>
             </div>
           </div>
         </div>
-        <div className="px-1 pt-1.5 flex items-center justify-between text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+        {uploadNote && (
+          <div className="px-1 pt-1 text-[11px] truncate" style={{ color: 'var(--color-error)' }} title={uploadNote}>{uploadNote}</div>
+        )}
+        <div className="px-1 pt-1 flex items-center justify-between text-[11px]" style={{ color: 'var(--text-secondary)' }}>
           <span>本次消耗 {cost} 积分</span>
           <span>当前积分：{points}</span>
         </div>
