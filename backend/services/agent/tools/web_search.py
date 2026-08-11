@@ -61,6 +61,15 @@ def _configured_providers() -> list[str]:
     return [p for p in order if p in _PROVIDER_ENV and os.getenv(_PROVIDER_ENV[p])]
 
 
+def _max_search_per_run() -> int:
+    """单次 agent 运行（run_agent_stream）的搜索次数上限，默认 2，SEARCH_MAX_PER_RUN 可调。"""
+    try:
+        v = int(os.getenv("SEARCH_MAX_PER_RUN") or "2")
+    except (TypeError, ValueError):
+        v = 2
+    return max(1, min(v, 10))
+
+
 def _unconfigured_message() -> str:
     return (
         "未配置联网搜索：请设置至少一个供应商的 key/地址，例如 "
@@ -162,8 +171,10 @@ async def _searxng(query: str, base_url: str, n: int) -> list[dict]:
 @agent_tool(
     name="web_search",
     description=(
-        "联网搜索互联网获取实时信息。当用户问题涉及实时新闻、最新数据、"
-        "模型知识范围外或需要核实的信息时使用，返回网页标题、链接与摘要。"
+        "联网搜索互联网获取实时信息（有成本：每次搜索消耗搜索 API 额度，"
+        "同一次对话最多搜索 2 次）。当用户问题涉及实时新闻、最新数据、"
+        "模型知识范围外或需要核实的信息时使用；一次搜索尽量覆盖所有子问题"
+        "（合并关键词），不要为同一问题反复搜索；返回网页标题、链接与摘要。"
     ),
     parameters={
         "type": "object",
@@ -182,6 +193,17 @@ async def web_search_search(args: dict, ctx: AgentContext) -> str:
         max_results = max(1, min(int(args.get("max_results") or 5), _MAX_RESULTS))
     except (TypeError, ValueError):
         max_results = 5
+
+    # 搜索次数限制：同一次 agent 运行（run_agent_stream 共享同一 ctx）最多搜索
+    # SEARCH_MAX_PER_RUN 次（默认 2），防无限制搜索浪费 API 额度
+    limit = _max_search_per_run()
+    used = int(ctx.extra.get("web_search_count", 0) or 0)
+    if used >= limit:
+        return (
+            f"已到达本次对话的联网搜索次数上限（{limit} 次）。"
+            "请基于当前已有信息直接回答；如仍确需搜索，请明确告知用户需要额外搜索。"
+        )
+    ctx.extra["web_search_count"] = used + 1
 
     providers = _configured_providers()
     if not providers:
