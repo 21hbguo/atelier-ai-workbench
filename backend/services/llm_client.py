@@ -69,8 +69,12 @@ class LLMClient:
 
     @classmethod
     def _build_request(cls, llm_cfg: dict, system: str, messages: list, max_tokens: int,
-                       reasoning_effort: str, temperature: float | None, extra_body: dict | None):
-        """返回 (url, headers, body)。messages 不含 system。"""
+                       reasoning_effort: str, temperature: float | None, extra_body: dict | None,
+                       tools: list | None = None):
+        """返回 (url, headers, body)。messages 不含 system。
+        tools: 统一格式 [{"name","description","parameters"(JSON Schema)}]，内部按协议转换：
+        - OpenAI: {"type":"function","function":{name,description,parameters}}
+        - Anthropic: {name, description, input_schema}"""
         base = str(llm_cfg.get("base_url") or "").rstrip("/")
         api_key = str(llm_cfg.get("api_key") or "")
         proto = cls.protocol(llm_cfg)
@@ -90,6 +94,15 @@ class LLMClient:
             }
             if system:
                 body["system"] = system
+            if tools:
+                body["tools"] = [
+                    {
+                        "name": t["name"],
+                        "description": t.get("description") or "",
+                        "input_schema": t.get("parameters") or {"type": "object", "properties": {}},
+                    }
+                    for t in tools
+                ]
             if reasoning_effort and reasoning_effort != "auto":
                 body["thinking"] = {
                     "type": "enabled",
@@ -106,6 +119,18 @@ class LLMClient:
                 "max_tokens": max(int(max_tokens or 0), 1),
                 "messages": ([{"role": "system", "content": system}] if system else []) + list(messages),
             }
+            if tools:
+                body["tools"] = [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": t["name"],
+                            "description": t.get("description") or "",
+                            "parameters": t.get("parameters") or {"type": "object", "properties": {}},
+                        },
+                    }
+                    for t in tools
+                ]
             if reasoning_effort and reasoning_effort != "auto":
                 body["thinking"] = {"type": "enabled", "reasoning_effort": reasoning_effort}
         if temperature is not None:
@@ -139,7 +164,96 @@ class LLMClient:
                 return delta.get("text") or ""
         return ""
 
+    @staticmethod
+    def _extract_tool_calls(data: dict, proto: str) -> list:
+        """非流式响应提取 tool calls，统一格式 [{"id","name","arguments"(dict|None),"arguments_raw"(str)}]。
+        - openai: choices[0].message.tool_calls[].function（arguments 为 JSON 字符串，解析失败时 arguments=None）
+        - anthropic: content[] 中 type=="tool_use" 的 block（input 已为 dict）"""
+        calls = []
+        if proto == "anthropic":
+            for block in data.get("content", []) or []:
+                if block.get("type") != "tool_use":
+                    continue
+                args = block.get("input")
+                if not isinstance(args, dict):
+                    args = {}
+                calls.append({
+                    "id": block.get("id") or "",
+                    "name": block.get("name") or "",
+                    "arguments": args,
+                    "arguments_raw": json.dumps(args, ensure_ascii=False),
+                })
+            return calls
+        for choice in data.get("choices") or []:
+            msg = choice.get("message") or {}
+            for tc in msg.get("tool_calls") or []:
+                fn = tc.get("function") or {}
+                raw = fn.get("arguments") or "{}"
+                try:
+                    parsed = json.loads(raw)
+                    if not isinstance(parsed, dict):
+                        parsed = None
+                except json.JSONDecodeError:
+                    parsed = None
+                calls.append({
+                    "id": tc.get("id") or "",
+                    "name": fn.get("name") or "",
+                    "arguments": parsed,
+                    "arguments_raw": raw,
+                })
+        return calls
+
     # ---------- 统一入口 ----------
+
+    @classmethod
+    async def complete_tools(cls, *, system: str = "", messages: list | None = None,
+                             tools: list | None = None, max_tokens: int = 2000,
+                             reasoning_effort: str = "auto", temperature: float | None = None,
+                             extra_body: dict | None = None, override: dict | None = None) -> dict:
+        """带 tools（function calling）的非流式调用，供 agent 工具系统使用。
+
+        tools: [{"name","description","parameters"(JSON Schema)}]（统一格式，内部按协议转换）
+        返回 {"text": str, "tool_calls": [...]}；tool_calls 元素 {"id","name","arguments","arguments_raw"}。
+        - arguments: 解析好的 dict；JSON 解析失败时为 None（arguments_raw 保留原始串，由上层容错重试）
+        - text: 纯文本回复（无 tool_calls 时），可能与 tool_calls 并存（部分模型会同时输出）
+        失败抛 LLMError。
+        """
+        llm_cfg = dict(get_llm_config())
+        if override:
+            for k in ("base_url", "api_key", "protocol", "model", "timeout_seconds"):
+                if override.get(k):
+                    llm_cfg[k] = override[k]
+            if override.get("enabled") is not None:
+                llm_cfg["enabled"] = override["enabled"]
+        if not llm_cfg["enabled"] or not llm_cfg.get("api_key"):
+            raise LLMError("LLM 服务未配置或未启用，请联系管理员")
+        if not messages:
+            raise LLMError("消息内容为空")
+
+        proto = cls.protocol(llm_cfg)
+        url, headers, body = cls._build_request(
+            llm_cfg, system, messages, max_tokens, reasoning_effort, temperature, extra_body,
+            tools=tools,
+        )
+        try:
+            client = cls._get_client()
+            timeout = httpx.Timeout(float(llm_cfg["timeout_seconds"]), connect=5.0)
+            resp = await client.post(url, headers=headers, json=body, timeout=timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            text = cls._extract_text(data)
+            tool_calls = cls._extract_tool_calls(data, proto)
+            if not text.strip() and not tool_calls:
+                raise LLMError("LLM 暂无返回内容，请重试")
+            return {"text": text, "tool_calls": tool_calls}
+        except httpx.TimeoutException:
+            logger.warning("[llm_client] LLM API timeout (complete_tools)")
+            raise LLMError("请求超时，请重试")
+        except LLMError:
+            raise
+        except Exception:
+            logger.exception("[llm_client] LLM API call failed (complete_tools)")
+            raise LLMError("LLM 调用失败，请重试")
 
     @classmethod
     async def complete(cls, *, system: str = "", messages: list | None = None,
