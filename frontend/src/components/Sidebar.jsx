@@ -8,8 +8,8 @@ import { clearUser, readUser } from '../auth'
 import { useAppDialog } from './AppDialogProvider'
 
 const navItems = [
-  { path: '/', icon: Sparkles, label: 'AI绘画' },
   { path: '/chat', icon: MessageCircle, label: 'AI 助手' },
+  { path: '/', icon: Sparkles, label: 'AI 绘画' },
   { path: '/works', icon: Image, label: '我的作品' },
   { path: '/square', icon: Globe, label: '广场' },
   { path: '/prompts', icon: BookOpen, label: '我的提示词' },

@@ -104,7 +104,8 @@ beforeEach(() => {
 describe('Sidebar', () => {
   it('renders all navigation links', () => {
     renderSidebar()
-    expect(screen.getByText('AI绘画')).toBeInTheDocument()
+    expect(screen.getByText('AI 助手')).toBeInTheDocument()
+    expect(screen.getByText('AI 绘画')).toBeInTheDocument()
     expect(screen.getByText('广场')).toBeInTheDocument()
     expect(screen.getByText('我的提示词')).toBeInTheDocument()
     expect(screen.getAllByText('积分详情').length).toBeGreaterThanOrEqual(1)
