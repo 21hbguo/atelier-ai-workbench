@@ -169,11 +169,15 @@ export const chatAPI = {
   model: () => api.get('/chat/model'),
   models: () => api.get('/chat/models'),
   // 上传聊天文档（txt/md/csv/pdf/docx/xlsx/pptx 等，解析后注入对话上下文）
-  uploadDoc: (sessionId, file) => {
+  uploadDoc: (sessionId, file, { onProgress, signal } = {}) => {
     const fd = new FormData()
     fd.append('session_id', sessionId)
     fd.append('file', file)
-    return api.post('/chat/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+    return api.post('/chat/upload', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      signal,
+      onUploadProgress: e => { if (onProgress) onProgress(resolveUploadPercent(e, file?.size), e) },
+    })
   },
   // SSE 流式发送消息：仿 promptOptimizeAPI.optimizeStream 的 fetch + ReadableStream 解析
   sendStream: async (sessionId, content, { onChunk, onDone, onError, signal, reasoning_effort = 'auto', model_id = '', mode = 'chat' } = {}) => {

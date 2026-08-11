@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { MessageCircle, Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, ChevronLeft, Brain, AlertCircle, CheckSquare, Cpu, ChevronDown, Check, Paperclip } from 'lucide-react'
+import { MessageCircle, Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, ChevronLeft, Brain, AlertCircle, CheckSquare, Cpu, ChevronDown, Check, Paperclip, FileText } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
 import { useAppDialog } from '../components/AppDialogProvider'
 import { chatAPI, pointsAPI } from '../api'
@@ -299,7 +299,7 @@ function EmptyState({ onPick }) {
 // ============ 底部输入区 ============
 const EFFORT_LABELS = { auto: '自动', low: '低', medium: '中', high: '高', max: '最高', xhigh: '超高' }
 
-function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, reasoningEffort, onReasoningEffort, efforts, modelLabel, pendingQueue, onEditPending, onRemovePending, models, chatModelId, onSelectModel, mode, onModeChange, onUploadFile, uploading, uploadNote }) {
+function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, reasoningEffort, onReasoningEffort, efforts, modelLabel, pendingQueue, onEditPending, onRemovePending, models, chatModelId, onSelectModel, mode, onModeChange, onUploadClick, docs, onRemoveDoc, uploadingCount, uploadNote }) {
   const [effortOpen, setEffortOpen] = useState(false)
   const [modelOpen, setModelOpen] = useState(false)
   const EFFORT_OPTIONS = (Array.isArray(efforts) && efforts.length ? efforts : ['auto', 'low', 'medium', 'high', 'max', 'xhigh'])
@@ -407,7 +407,7 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
             ))}
           </div>
         )}
-        {/* 模式切换 + 上传文档（Agent 工具模式 / 会话文档上传） */}
+        {/* 模式切换 + 上传文档（Agent 工具模式 / 会话文档上传，交互对齐 AI 绘画参考图） */}
         <div className="mb-2 flex items-center gap-2 flex-wrap">
           <div className="flex rounded-lg border overflow-hidden flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
             <button type="button" onClick={() => onModeChange('chat')}
@@ -421,21 +421,62 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
               Agent 工具
             </button>
           </div>
-          <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] cursor-pointer transition-colors hover:bg-bg-hover"
-            style={{ color: 'var(--text-secondary)', border: '1px solid var(--border-color)' }}
-            title="上传文档（txt/md/csv/pdf/docx/xlsx/pptx），解析后供对话引用">
-            <Paperclip size={12} />
-            {uploading ? '上传中…' : '上传文档'}
-            <input type="file" className="hidden"
-              accept=".txt,.md,.csv,.json,.html,.pdf,.docx,.xlsx,.pptx"
-              onChange={onUploadFile} disabled={uploading} />
-          </label>
+          <button type="button" onClick={onUploadClick} title="上传文档（txt/md/csv/pdf/docx/xlsx/pptx，最多 20 个）"
+            className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors"
+            style={{ color: 'var(--text-secondary)' }}>
+            <Paperclip size={15} />
+            <span className="text-[11px] leading-none">{uploadingCount > 0 ? `上传中 ${uploadingCount}` : '上传'}</span>
+          </button>
+          <span className="text-[11px] flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>最多 20 个</span>
           {uploadNote && (
-            <span className="text-[11px] min-w-0 truncate" style={{ color: 'var(--accent)' }} title={uploadNote}>{uploadNote}</span>
+            <span className="text-[11px] min-w-0 truncate" style={{ color: 'var(--color-error)' }} title={uploadNote}>{uploadNote}</span>
           )}
         </div>
         {/* 与 AI 生图输入框一致的卡片式输入区 */}
         <div className="rounded-2xl border" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-md)' }}>
+          {docs.length > 0 && (
+            <div className="flex gap-2 p-3 pb-0 overflow-x-auto">
+              {docs.map(doc => (
+                <div key={doc.id}
+                  className="relative w-16 h-14 flex-shrink-0 rounded-lg overflow-hidden group border flex flex-col items-center justify-center gap-0.5 px-1"
+                  style={{
+                    background: 'var(--bg-card)',
+                    borderColor: doc.status === 'error'
+                      ? 'var(--color-error)'
+                      : doc.status === 'success'
+                        ? 'color-mix(in srgb,var(--color-success) 45%,var(--border-color))'
+                        : 'color-mix(in srgb,var(--accent) 28%,var(--border-color))',
+                  }}
+                  title={`${doc.name}${doc.char_count != null ? `（${doc.char_count} 字符）` : ''}${doc.error ? `：${doc.error}` : ''}`}>
+                  {doc.status === 'uploading' || doc.status === 'pending' ? (
+                    <>
+                      <svg className="-rotate-90" width="28" height="28" viewBox="0 0 36 36">
+                        <circle cx="18" cy="18" r="15" fill="none" stroke="color-mix(in srgb,var(--accent) 20%,transparent)" strokeWidth="3" />
+                        <circle cx="18" cy="18" r="15" fill="none" stroke="var(--accent)" strokeWidth="3" strokeLinecap="round"
+                          strokeDasharray={`${Math.max(0, Math.min(100, Number(doc.progress) || 0)) * 0.94} 100`} />
+                      </svg>
+                      <span className="text-[8px] font-semibold" style={{ color: 'var(--text-secondary)' }}>{Math.round(Number(doc.progress) || 0)}%</span>
+                    </>
+                  ) : doc.status === 'error' ? (
+                    <>
+                      <AlertCircle size={14} style={{ color: 'var(--color-error)' }} />
+                      <span className="text-[8px] leading-none" style={{ color: 'var(--color-error)' }}>上传失败</span>
+                    </>
+                  ) : (
+                    <>
+                      <FileText size={14} style={{ color: 'var(--accent)' }} />
+                      <span className="text-[8px] leading-none uppercase" style={{ color: 'var(--text-secondary)' }}>{doc.ext}</span>
+                    </>
+                  )}
+                  <span className="absolute left-1 bottom-0.5 right-1 text-[7px] truncate text-center" style={{ color: 'var(--text-secondary)' }}>{doc.name}</span>
+                  <button onClick={(e) => { e.stopPropagation(); onRemoveDoc(doc.id) }}
+                    className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <X size={10} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="px-2 pt-2">
             <textarea ref={inputRef} value={value} rows={1}
               placeholder={sending ? 'AI 正在回复…可继续输入，Enter 排队发送' : '输入消息，Enter 发送，Shift+Enter 换行'}
@@ -489,6 +530,11 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
 }
 
 // ============ 页面 ============
+// 聊天文档上传限制（与后端 backend/routers/chat.py 的 _MAX_FILES_PER_SESSION/MAX_FILE_SIZE 一致）
+const MAX_DOCS = 20
+const DOC_EXTS = new Set(['txt', 'md', 'csv', 'json', 'html', 'pdf', 'docx', 'xlsx', 'pptx'])
+const MAX_DOC_SIZE = 10 * 1024 * 1024
+
 export default function ChatAssistantPage() {
   const dialog = useAppDialog()
   const [sessions, setSessions] = useState([])
@@ -509,8 +555,12 @@ export default function ChatAssistantPage() {
   const [chatMode, setChatMode] = useState(() => {
     try { return localStorage.getItem('chat_mode') || 'chat' } catch { /* localStorage 不可用时回退普通对话 */ return 'chat' }
   }) // 'chat' | 'agent'（agent = 工具调用模式）
-  const [uploading, setUploading] = useState(false)
   const [uploadNote, setUploadNote] = useState('')
+  // 会话文档列表（对齐 AI 绘画参考图交互）：{id,name,ext,size,status,progress,error,file_id,char_count,file}
+  const [docs, setDocs] = useState([])
+  const fileRef = useRef(null)
+  const docStartedRef = useRef(new Set())
+  const docAbortRef = useRef(new Map())
   const [sessionListOpen, setSessionListOpen] = useState(false)
   const [renaming, setRenaming] = useState(null) // { id, title }
   const [batchMode, setBatchMode] = useState(false)
@@ -632,27 +682,98 @@ export default function ChatAssistantPage() {
     try { localStorage.setItem('chat_mode', mode) } catch { /* 忽略 localStorage 写入失败 */ }
   }, [])
 
-  // 上传文档：需要先有会话；上传成功仅提示，文档列表可由 Agent 的 document_summary.list 回答
-  const handleUploadFile = useCallback(async e => {
-    const file = e.target?.files?.[0]
+  // 打开文件选择器（对齐 AI 绘画 openFilePicker：优先原生 showPicker）
+  const openFilePicker = useCallback(() => {
+    const input = fileRef.current
+    if (!input) return
+    input.value = ''
+    if (typeof input.showPicker === 'function') {
+      try { input.showPicker(); return } catch { input.click(); return }
+    }
+    input.click()
+  }, [])
+
+  const updateDoc = useCallback((id, patch) => {
+    setDocs(prev => prev.map(d => d.id === id
+      ? { ...d, ...(typeof patch === 'function' ? patch(d) : patch) } : d))
+  }, [])
+
+  // 选择文件：扩展名/大小校验 + 数量上限截取（对齐绘画页 MAX_IMAGES 交互）
+  const handleFilesSelected = useCallback(e => {
+    const files = Array.from(e.target.files || [])
     e.target.value = ''
-    if (!file) return
+    if (!files.length) return
     const sid = activeIdRef.current
-    if (!sid) {
-      setUploadNote('请先创建/选择会话再上传文档')
-      return
+    if (!sid) { setUploadNote('请先创建/选择会话再上传文档'); return }
+    const valid = []
+    const errors = []
+    for (const f of files) {
+      const ext = (f.name.split('.').pop() || '').toLowerCase()
+      if (!DOC_EXTS.has(ext)) { errors.push(`「${f.name}」格式不支持`); continue }
+      if (f.size > MAX_DOC_SIZE) { errors.push(`「${f.name}」超过 10MB`); continue }
+      valid.push(f)
     }
-    setUploading(true)
-    setUploadNote('')
+    if (errors.length) setUploadNote(errors.slice(0, 3).join('；'))
+    setDocs(prev => {
+      const remaining = MAX_DOCS - prev.length
+      if (remaining <= 0) { setUploadNote(`最多只能上传 ${MAX_DOCS} 个文档`); return prev }
+      if (valid.length > remaining) setUploadNote(`最多只能上传 ${MAX_DOCS} 个文档，已自动截取前 ${remaining} 个`)
+      const items = valid.slice(0, Math.max(0, remaining)).map(f => ({
+        id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name: f.name,
+        ext: (f.name.split('.').pop() || '').toLowerCase(),
+        size: f.size,
+        status: 'pending',
+        progress: 0,
+        error: '',
+        file_id: null,
+        char_count: null,
+        file: f,
+      }))
+      return [...prev, ...items]
+    })
+  }, [])
+
+  // 上传单个文档（进度/成功/失败状态，对齐绘画页 uploadItem）
+  const startDocUpload = useCallback(async item => {
+    const sid = activeIdRef.current
+    if (!sid) { updateDoc(item.id, { status: 'error', error: '无会话' }); return }
+    docStartedRef.current.add(item.id)
+    const controller = new AbortController()
+    docAbortRef.current.set(item.id, controller)
+    updateDoc(item.id, { status: 'uploading', progress: 0, error: '' })
     try {
-      const res = await chatAPI.uploadDoc(sid, file)
-      const d = res.data || {}
-      setUploadNote(`已上传「${d.original_name || file.name}」（${d.char_count ?? 0} 字符），对话将引用其内容`)
+      const { data } = await chatAPI.uploadDoc(sid, item.file, {
+        signal: controller.signal,
+        onProgress: p => updateDoc(item.id, d => d && d.status !== 'success' ? { ...d, progress: p } : d),
+      })
+      if (controller.signal.aborted) return
+      updateDoc(item.id, {
+        status: 'success',
+        progress: 100,
+        file_id: data?.file_id,
+        char_count: data?.char_count,
+        file: null,
+      })
     } catch (err) {
-      setUploadNote(err?.message || '上传失败')
+      if (controller.signal.aborted) return
+      updateDoc(item.id, { status: 'error', error: err?.message || '上传失败', progress: 0 })
     } finally {
-      setUploading(false)
+      docAbortRef.current.delete(item.id)
+      docStartedRef.current.delete(item.id)
     }
+  }, [updateDoc])
+
+  useEffect(() => {
+    for (const doc of docs) {
+      if (doc.status === 'pending' && !docStartedRef.current.has(doc.id)) void startDocUpload(doc)
+    }
+  }, [docs, startDocUpload])
+
+  // 移除文档标签（本地移除；服务器文件随会话删除级联清理，后端暂无单删接口）
+  const removeDoc = useCallback(id => {
+    docAbortRef.current.get(id)?.abort()
+    setDocs(prev => prev.filter(d => d.id !== id))
   }, [])
 
   const startStream = useCallback((sessionId, content, reasoningEffort = 'auto') => {
@@ -1059,6 +1180,9 @@ export default function ChatAssistantPage() {
             </div>
           </div>
 
+          <input ref={fileRef} type="file" className="hidden" multiple
+            accept=".txt,.md,.csv,.json,.html,.pdf,.docx,.xlsx,.pptx"
+            onChange={handleFilesSelected} />
           <ChatInputBar inputRef={inputRef} value={input} onChange={setInput}
             onSend={handleSend} onStop={handleStop} sending={!!sending} cost={cost} points={points}
             reasoningEffort={reasoningEffort} onReasoningEffort={handleReasoningEffort}
@@ -1066,7 +1190,9 @@ export default function ChatAssistantPage() {
             pendingQueue={pendingQueue} onEditPending={editPending} onRemovePending={removePending}
             models={selectableModels} chatModelId={chatModelId} onSelectModel={handleSelectModel}
             mode={chatMode} onModeChange={handleModeChange}
-            onUploadFile={handleUploadFile} uploading={uploading} uploadNote={uploadNote} />
+            onUploadClick={openFilePicker} docs={docs} onRemoveDoc={removeDoc}
+            uploadingCount={docs.filter(d => d.status === 'uploading' || d.status === 'pending').length}
+            uploadNote={uploadNote} />
         </div>
       </div>
       <style>{MD_STYLES}</style>
