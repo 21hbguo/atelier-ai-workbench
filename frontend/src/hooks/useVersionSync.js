@@ -23,6 +23,14 @@ export function useVersionSync(){
   const checkingRef=useRef(false)
   const currentBuildIdRef=useRef(APP_BUILD_ID)
   useEffect(()=>{
+    // 清理版本刷新残留的 ?_v= 参数：刷新完成后地址栏恢复干净，无需手动删除
+    try {
+      const url = new URL(window.location.href)
+      if (url.searchParams.has('_v')) {
+        url.searchParams.delete('_v')
+        window.history.replaceState(window.history.state, '', url.toString())
+      }
+    } catch { /* URL 解析失败时跳过清理 */ }
     let active=true
     let controller=null
     const check=async()=>{
