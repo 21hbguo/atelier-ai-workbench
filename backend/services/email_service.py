@@ -157,9 +157,36 @@ async def _send_via_sendgrid(to_email, code, cfg):
         raise HTTPException(status_code=500, detail=f"SendGrid 发送失败：{detail}")
 
 
+async def _send_via_resend(to_email, code, cfg):
+    """Resend 发送路径（resend SDK，同步调用放线程池）。"""
+    api_key=(cfg.get("resend_api_key") or "").strip()
+    sender=(cfg.get("resend_sender") or "onboarding@resend.dev").strip()
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Resend 未配置，请联系管理员")
+    try:
+        import resend
+    except ImportError:
+        raise HTTPException(status_code=500, detail="Resend SDK 未安装（pip install resend）")
+
+    def _do():
+        resend.api_key = api_key
+        return resend.Emails.send({
+            "from": sender,
+            "to": [to_email],
+            "subject": _build_email_subject(),
+            "html": _build_email_html(to_email, code),
+        })
+
+    try:
+        await asyncio.to_thread(_do)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Resend 发送失败：{e}")
+
+
 async def send_verification_email(to_email, code):
     cfg=get_email_delivery_config()
     sendgrid_error=None
+    resend_error=None
     if (cfg.get("sendgrid_api_key") or "").strip() and not _sendgrid_circuit_open(cfg):
         try:
             await _send_via_sendgrid(to_email, code, cfg)
@@ -168,11 +195,25 @@ async def send_verification_email(to_email, code):
             sendgrid_error=e.detail
             _trip_sendgrid_circuit(cfg)
             logger.warning("sendgrid send failed for %s: %s", to_email, sendgrid_error)
+    # Resend 备选路径：SendGrid 失败/未配置时尝试
+    if (cfg.get("resend_api_key") or "").strip():
+        try:
+            await _send_via_resend(to_email, code, cfg)
+            return
+        except HTTPException as e:
+            resend_error=e.detail
+            logger.warning("resend send failed for %s: %s", to_email, resend_error)
     try:
         await asyncio.to_thread(_send_email_sync, to_email, code)
     except HTTPException as e:
-        if sendgrid_error:
-            raise HTTPException(status_code=500, detail=f"{sendgrid_error}；SMTP 发送失败：{e.detail.replace('邮件发送失败：','')}")
+        if sendgrid_error or resend_error:
+            parts=[]
+            if sendgrid_error:
+                parts.append(sendgrid_error)
+            if resend_error:
+                parts.append(resend_error)
+            parts.append(f"SMTP 发送失败：{e.detail.replace('邮件发送失败：','')}")
+            raise HTTPException(status_code=500, detail="；".join(parts))
         raise
 
 

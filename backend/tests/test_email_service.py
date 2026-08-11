@@ -92,3 +92,77 @@ def test_no_sendgrid_key_goes_straight_to_smtp():
         asyncio.run(es.send_verification_email("a@b.com", "123456"))
     sg.assert_not_awaited()
     smtp.assert_called_once()
+
+
+def _cfg_resend(sg_key="SG.testkey123456", re_key="re_testkey1234"):
+    cfg = _cfg(sg_key=sg_key)
+    cfg["resend_api_key"] = re_key
+    cfg["resend_sender"] = "onboarding@resend.dev"
+    return cfg
+
+
+def test_resend_used_when_sendgrid_fails():
+    """SendGrid 失败（熔断）后走 Resend，成功则不再降级 SMTP。"""
+    es._sendgrid_open_until = 0.0
+    es._sendgrid_key_fp = ""
+    sg = AsyncMock(side_effect=HTTPException(500, "SendGrid 发送失败：x"))
+    rs = AsyncMock(return_value={"id": "em_123"})
+    smtp = Mock(return_value=None)
+    with patch.object(es, "get_email_delivery_config", return_value=_cfg_resend()), \
+         patch.object(es, "_send_via_sendgrid", new=sg), \
+         patch.object(es, "_send_via_resend", new=rs), \
+         patch.object(es, "_send_email_sync", new=smtp):
+        asyncio.run(es.send_verification_email("a@b.com", "123456"))
+    sg.assert_awaited_once()
+    rs.assert_awaited_once()
+    smtp.assert_not_called()
+    assert es._sendgrid_open_until > time.monotonic()  # sendgrid 已熔断
+
+
+def test_resend_success_without_sendgrid():
+    """未配置 SendGrid 时直接走 Resend，成功则不降级 SMTP。"""
+    es._sendgrid_open_until = 0.0
+    es._sendgrid_key_fp = ""
+    rs = AsyncMock(return_value={"id": "em_456"})
+    smtp = Mock(return_value=None)
+    with patch.object(es, "get_email_delivery_config", return_value=_cfg_resend(sg_key="")), \
+         patch.object(es, "_send_via_resend", new=rs), \
+         patch.object(es, "_send_email_sync", new=smtp):
+        asyncio.run(es.send_verification_email("a@b.com", "123456"))
+    rs.assert_awaited_once()
+    smtp.assert_not_called()
+
+
+def test_resend_failure_falls_back_to_smtp():
+    """SendGrid 与 Resend 都失败时降级 SMTP，错误信息合并。"""
+    es._sendgrid_open_until = 0.0
+    es._sendgrid_key_fp = ""
+    sg = AsyncMock(side_effect=HTTPException(500, "SendGrid 发送失败：credits"))
+    rs = AsyncMock(side_effect=HTTPException(500, "Resend 发送失败：rate limit"))
+    smtp = Mock(side_effect=HTTPException(500, "邮件发送失败：smtp down"))
+    with patch.object(es, "get_email_delivery_config", return_value=_cfg_resend()), \
+         patch.object(es, "_send_via_sendgrid", new=sg), \
+         patch.object(es, "_send_via_resend", new=rs), \
+         patch.object(es, "_send_email_sync", new=smtp):
+        try:
+            asyncio.run(es.send_verification_email("a@b.com", "123456"))
+        except HTTPException as e:
+            assert "SendGrid" in e.detail and "Resend" in e.detail and "SMTP" in e.detail
+        else:
+            raise AssertionError("expected HTTPException")
+
+
+def test_resend_unconfigured_skipped():
+    """未配置 resend_api_key 时跳过 Resend 路径，直接 SMTP。"""
+    es._sendgrid_open_until = 0.0
+    es._sendgrid_key_fp = ""
+    sg = AsyncMock(side_effect=HTTPException(500, "SendGrid 发送失败：x"))
+    rs = AsyncMock()
+    smtp = Mock(return_value=None)
+    with patch.object(es, "get_email_delivery_config", return_value=_cfg()), \
+         patch.object(es, "_send_via_sendgrid", new=sg), \
+         patch.object(es, "_send_via_resend", new=rs), \
+         patch.object(es, "_send_email_sync", new=smtp):
+        asyncio.run(es.send_verification_email("a@b.com", "123456"))
+    rs.assert_not_awaited()
+    smtp.assert_called_once()
