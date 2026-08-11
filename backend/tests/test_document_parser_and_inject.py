@@ -249,9 +249,9 @@ def test_build_messages_prefix_stable_across_rounds():
 def test_compact_cut_index_aligns_round_boundary():
     """压缩边界对齐：保留区第一条必须是 user（不拆散 user→assistant 轮次）。"""
     cls = ChatService
-    # 30 条交替轮次：keep=16 → cut=14（history[14] 是 assistant，边界后移到 15 → user）
-    history = [{"id": i, "role": "user" if i % 2 == 0 else "assistant", "content": str(i)} for i in range(30)]
-    cut = cls._compact_cut_index(history)
+    # 30 条交替轮次（每条 30 字符）：预算驱动下 cut>0，边界必须落在 user 上
+    history = [{"id": i, "role": "user" if i % 2 == 0 else "assistant", "content": str(i) * 30} for i in range(30)]
+    cut = cls._compact_cut_index(history, budget=1500)
     assert 0 < cut < len(history)
     assert history[cut]["role"] == "user"  # 保留区首条 user
     # 摘要区与保留区边界两侧必须是一轮完整结束（摘要区末尾是 assistant）
@@ -259,16 +259,52 @@ def test_compact_cut_index_aligns_round_boundary():
 
 
 def test_compact_cut_index_too_short_returns_zero():
-    history = [{"id": 1, "role": "user", "content": "q"}, {"id": 2, "role": "assistant", "content": "a"}]
-    assert ChatService._compact_cut_index(history) == 0
+    """历史很小（远低于压缩目标）时不压缩。"""
+    history = [{"id": 1, "role": "user", "content": "q" * 30}, {"id": 2, "role": "assistant", "content": "a" * 30}]
+    assert ChatService._compact_cut_index(history, budget=1500) == 0
+
+
+def test_compact_cut_index_budget_driven():
+    """预算驱动：预算越大保留越多；压缩后估算占用接近压缩目标
+    （极端小预算下允许保留最新一轮+对齐补一条）。"""
+    cls = ChatService
+    history = [{"id": i, "role": "user" if i % 2 == 0 else "assistant", "content": str(i) * 30} for i in range(30)]
+    cut_small = cls._compact_cut_index(history, budget=1000, system_chars=200)
+    cut_large = cls._compact_cut_index(history, budget=100000)
+    assert len(history[cut_small:]) <= len(history[cut_large:])  # 预算大 → 保留多
+    kept_small = history[cut_small:]
+    used = sum(min(len(m["content"]), cls.MAX_MESSAGE_CHARS) for m in kept_small)
+    est_summary = min(max(0 + 100, 100) + 200, cls.SUMMARY_TEXT_MAX)
+    # 目标 + 至少保留最新一轮的余量（该用例单条消息 60 字符，1 轮 = 120）
+    assert 200 + used + est_summary <= 1000 * cls.COMPACT_TARGET_RATIO + 120
+
+
+def test_compact_cut_index_extreme_small_target():
+    """target≤0（system+摘要已占满压缩目标）：至少保留最新一条，且对齐后首条是 user。"""
+    cls = ChatService
+    history = [{"id": i, "role": "user" if i % 2 == 0 else "assistant", "content": "x" * 30} for i in range(10)]
+    cut = cls._compact_cut_index(history, budget=1000, system_chars=900)
+    kept = history[cut:]
+    assert 0 < cut < len(history)  # 极端 target 下仍压缩（保留最新轮次）
+    assert len(kept) >= 1  # 至少保留最新一条
+    assert kept[0]["role"] == "user"  # 对齐
+
+
+def test_compact_cut_index_docs_chars_reserved():
+    """区块2 文档块占用计入压缩目标：docs 越大，保留历史越少。"""
+    cls = ChatService
+    history = [{"id": i, "role": "user" if i % 2 == 0 else "assistant", "content": "x" * 30} for i in range(30)]
+    cut_nodocs = cls._compact_cut_index(history, budget=2000, docs_chars=0)
+    cut_docs = cls._compact_cut_index(history, budget=2000, docs_chars=800)
+    assert len(history[cut_docs:]) <= len(history[cut_nodocs:])
 
 
 def test_compact_cut_index_orphan_assistant_tail():
     """末尾孤立 assistant（失败轮次未回复）不破坏边界对齐。"""
     cls = ChatService
-    history = [{"id": i, "role": "user" if i % 2 == 0 else "assistant", "content": str(i)} for i in range(30)]
-    history.append({"id": 99, "role": "assistant", "content": "orphan"})
-    cut = cls._compact_cut_index(history)
+    history = [{"id": i, "role": "user" if i % 2 == 0 else "assistant", "content": str(i) * 30} for i in range(30)]
+    history.append({"id": 99, "role": "assistant", "content": "orphan" * 5})
+    cut = cls._compact_cut_index(history, budget=1500)
     kept = history[cut:]
     assert kept[0]["role"] == "user"
 
