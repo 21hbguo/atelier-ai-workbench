@@ -439,28 +439,35 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
       style={{ background: 'var(--bg-primary)', borderTop: '1px solid var(--border-color)', bottom: 'env(keyboard-inset-height, 0px)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
       <div className="mx-auto w-full max-w-3xl px-4 pt-2 pb-2">
         <div className="flex items-center gap-1.5 mb-1.5 px-1 flex-wrap">
-          {/* 思考强度（模型选择已移至输入区，与上传/联网搜索并排） */}
-          <button onClick={() => setEffortOpen(v => !v)}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
-            style={{
-              background: reasoningEffort !== 'auto' ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'var(--bg-card)',
-              borderColor: reasoningEffort !== 'auto' ? 'var(--accent)' : 'var(--border-color)',
-              color: reasoningEffort !== 'auto' ? 'var(--accent)' : 'var(--text-secondary)',
-            }}>
-            <Brain size={13} />
-            <span>思考：{EFFORT_OPTIONS.find(o => o.value === reasoningEffort)?.label || '自动'}</span>
-          </button>
-          {effortOpen && EFFORT_OPTIONS.map(opt => (
-            <button key={opt.value} onClick={() => { onReasoningEffort(opt.value); setEffortOpen(false) }}
+          {/* 思考强度：点击弹出下拉面板（与模型选择同款交互，选项按 auto→max 上下排列） */}
+          <div className="relative">
+            <button onClick={() => setEffortOpen(v => !v)}
               className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
               style={{
-                background: reasoningEffort === opt.value ? 'var(--accent)' : 'var(--bg-card)',
-                borderColor: reasoningEffort === opt.value ? 'var(--accent)' : 'var(--border-color)',
-                color: reasoningEffort === opt.value ? '#fff' : 'var(--text-secondary)',
+                background: reasoningEffort !== 'auto' ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'var(--bg-card)',
+                borderColor: reasoningEffort !== 'auto' ? 'var(--accent)' : 'var(--border-color)',
+                color: reasoningEffort !== 'auto' ? 'var(--accent)' : 'var(--text-secondary)',
               }}>
-              {opt.label}
+              <Brain size={13} />
+              <span>思考：{EFFORT_OPTIONS.find(o => o.value === reasoningEffort)?.label || '自动'}</span>
+              <ChevronDown size={11} className={effortOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
             </button>
-          ))}
+            {effortOpen && (
+              <div className="absolute left-0 bottom-full mb-1.5 z-50 w-60 max-h-[45dvh] overflow-y-auto rounded-xl p-1 model-dropdown-scroll"
+                style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-md)' }}>
+                {EFFORT_OPTIONS.map(opt => (
+                  <button key={opt.value} onClick={() => { onReasoningEffort(opt.value); setEffortOpen(false) }}
+                    className="w-full text-left flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-bg-hover transition-colors"
+                    style={{ background: reasoningEffort === opt.value ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent' }}>
+                    <span className="flex-1 min-w-0 text-xs font-medium" style={{ color: reasoningEffort === opt.value ? 'var(--accent)' : 'var(--text-primary)' }}>
+                      {opt.label}
+                    </span>
+                    {reasoningEffort === opt.value && <Check size={13} style={{ color: 'var(--accent)' }} />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <span className="ml-auto hidden sm:inline text-[11px]" style={{ color: 'var(--text-secondary)' }}>思考强度越高，回复越深入，耗时越长</span>
         </div>
         {/* 排队中的待发送消息 */}
