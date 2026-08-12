@@ -602,14 +602,6 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
                   <Paperclip size={15} />
                   <span className="text-[11px] leading-none">{uploadingCount > 0 ? `上传中 ${uploadingCount}` : '上传'}</span>
                 </button>
-                {sending && (
-                  <button onClick={onStop} title="停止生成"
-                    className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors"
-                    style={{ color: 'var(--text-secondary)' }}>
-                    <Square size={13} />
-                    <span className="text-[11px] leading-none">停止</span>
-                  </button>
-                )}
               </div>
               <div className="min-w-0 flex items-center justify-end gap-1 flex-1">
                 {value.length > 0 && (
