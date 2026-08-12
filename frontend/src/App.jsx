@@ -25,6 +25,7 @@ const WalletPage = lazy(() => import('./pages/WalletPage'))
 const ChatAssistantPage = lazy(() => import('./pages/ChatAssistantPage'))
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
 const SharesPage = lazy(() => import('./pages/SharesPage'))
+const LandingPage = lazy(() => import('./pages/LandingPage'))
 
 function ProtectedRoute({ children, authReady, user, fallback }) {
   if (!authReady) return fallback || null
@@ -125,7 +126,10 @@ function AppContent() {
         <AnnouncementManager user={user} />
         <WelcomeModal points={welcomePoints} onClose={() => setWelcomePoints(null)} />
         <Suspense fallback={routeFallback}><Routes>
-          <Route path="/login" element={<LoginPage />} />
+          {/* 已登录用户访问 /login 直接跳到 /chat */}
+          <Route path="/login" element={
+            authReady && user ? <Navigate to="/chat" replace /> : <LoginPage />
+          } />
           <Route path="/agreement" element={<AgreementPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/refund" element={<RefundPage />} />
@@ -134,8 +138,10 @@ function AppContent() {
           <Route path="/chat" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><ChatAssistantPage /></ProtectedRoute>} />
           <Route path="/notifications" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><NotificationsPage /></ProtectedRoute>} />
           <Route path="/announcements" element={<Navigate to="/notifications" replace />} />
-          {/* 默认落地页 = AI 助手 */}
-          <Route path="/" element={<Navigate to="/chat" replace />} />
+          {/* 根路径：已登录跳 /chat，未登录展示产品介绍落地页 */}
+          <Route path="/" element={
+            authReady && user ? <Navigate to="/chat" replace /> : <LandingPage />
+          } />
           <Route path="/draw" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><ChatPage /></ProtectedRoute>} />
           <Route path="/works" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><WorksPage /></ProtectedRoute>} />
           <Route path="/square" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><SquarePage /></ProtectedRoute>} />

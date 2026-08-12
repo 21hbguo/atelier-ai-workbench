@@ -26,6 +26,15 @@ const isDevTurnstileHost = host => {
   return false
 }
 
+const FEATURES = [
+  { icon: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5', label: '多模型聚合', desc: 'GPT / Claude / Gemini / Kimi / GLM' },
+  { icon: 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z', label: '多模态创作', desc: '对话、生图、图像理解' },
+  { icon: 'M12 3l1.9 5.8a2 2 0 001.3 1.3L21 12l-5.8 1.9a2 2 0 00-1.3 1.3L12 21l-1.9-5.8a2 2 0 00-1.3-1.3L3 12l5.8-1.9a2 2 0 001.3-1.3L12 3z', label: '提示词优化', desc: '一键润色，出图更稳定' },
+  { icon: 'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z', label: '作品广场', desc: '灵感分享，一键同款' },
+  { icon: 'M13 10V3L4 14h7v7l9-11h-7z', label: '每日签到', desc: '免费积分，持续使用' },
+  { icon: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z', label: '安全私密', desc: '私人服务器，数据可控' },
+]
+
 export default function LoginPage() {
   const accountRe = /^[A-Za-z0-9_]{4,16}$/
   const allowedEmailDomains = [
@@ -291,7 +300,7 @@ export default function LoginPage() {
         localStorage.setItem('just_registered', JSON.stringify({ points: data.user.points }))
       if (isRegister) try { localStorage.removeItem(REGISTER_DRAFT_KEY) } catch {}
       if (isReset) try { localStorage.removeItem(RESET_DRAFT_KEY) } catch {}
-      navigate('/')
+      navigate('/chat', { replace: true })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -299,61 +308,65 @@ export default function LoginPage() {
     }
   }
 
+  const modeTitle = isRegister
+    ? '创建账号'
+    : isReset
+      ? '重置密码'
+      : '欢迎回来'
+  const modeSubtitle = isRegister
+    ? '开始你的 AI 创作之旅'
+    : isReset
+      ? '通过邮箱验证码重置密码'
+      : registerEnabled
+        ? '继续你的创作'
+        : '当前仅开放登录'
+
   return (
-    <div
-      className="login-page min-h-[100dvh] flex items-start sm:items-center justify-center px-4 pt-[14vh] pb-6 sm:p-4"
-      style={{ background: 'var(--bg-primary)' }}
-    >
-      <div className="login-glow" />
-      <div className="login-glow login-glow-2" />
-      <div className="w-full max-w-sm relative z-10">
-        <div className="text-center mb-5 sm:mb-8">
-          <h1
-            className="login-title leading-none"
-            style={{ fontFamily: "'Alex Brush', cursive", fontSize: 'clamp(2.8rem,12vw,3.5rem)' }}
-          >
-            Atelier
-          </h1>
-          <p className="text-sm mt-1 tracking-widest" style={{ color: 'var(--text-secondary)', opacity: 0.7 }}>
-            AI 造梦工坊
-          </p>
-          <p className="text-sm mt-2.5 sm:mt-3.5" style={{ color: 'var(--text-secondary)' }}>
-            {isRegister
-              ? '创建账号，开始你的 AI 创作之旅'
-              : isReset
-                ? '通过邮箱验证码重置密码'
-                : registerEnabled
-                  ? '欢迎回来，继续你的创作'
-                  : '当前仅开放登录，注册已关闭'}
-          </p>
-          <p className="text-xs mt-2 sm:mt-2.5" style={{ color: 'var(--text-secondary)', opacity: 0.72 }}>
+    <div className="login-page-centered">
+      <div className="login-centered-inner">
+        {/* 品牌区 */}
+        <div className="login-brand-area">
+          <h1 className="login-brand-title">Atelier</h1>
+          <p className="login-brand-subtitle">AI 工作台</p>
+          <p className="login-brand-desc">
             无需复杂配置，一句话或一张图，即刻开启灵感之旅
           </p>
-          <p className="text-xs mt-1.5" style={{ color: 'var(--text-secondary)', opacity: 0.82 }}>
-            现已支持 GPT-Image-2！
+          <p className="login-brand-models">
+            支持 GPT 5.6 · KIMI k3 · GLM 5.2 等顶尖模型
           </p>
+          <div className="login-features">
+            {FEATURES.map((f, i) => (
+              <div key={i} className="login-feature-item">
+                <svg className="login-feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d={f.icon} />
+                </svg>
+                <div>
+                  <div className="login-feature-label">{f.label}</div>
+                  <div className="login-feature-desc">{f.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-        <div
-          className="login-card rounded-2xl p-4 sm:p-6"
-          style={{ background: 'var(--bg-ai-bubble)', boxShadow: 'var(--shadow-lg)' }}
-        >
-          <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:gap-4">
+
+        {/* 表单区 */}
+        <div className="login-form-area">
+          <div className="login-form-header">
+            <h2 className="login-form-title">{modeTitle}</h2>
+            <p className="login-form-subtitle">{modeSubtitle}</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="login-form">
             {!isReset && (
-              <div>
-                <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>
+              <div className="login-field">
+                <label className="login-field-label">
                   {isRegister ? '账号' : '账号或邮箱'}
                 </label>
                 <input
                   type="text"
                   value={account}
                   onChange={e => setAccount(e.target.value)}
-                  className="w-full px-3 py-2.5 sm:py-2.5 rounded-2xl border text-sm outline-none transition-colors focus:ring-2"
-                  style={{
-                    background: 'var(--bg-primary)',
-                    borderColor: 'var(--border-color)',
-                    color: 'var(--text-primary)',
-                    '--tw-ring-color': 'var(--accent)',
-                  }}
+                  className="login-input"
                   placeholder={isRegister ? '4-16 位字母、数字或下划线' : '输入账号或注册邮箱'}
                   required
                   minLength={isRegister ? 5 : 3}
@@ -362,25 +375,20 @@ export default function LoginPage() {
               </div>
             )}
             {isRegister && (
-              <div>
-                <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>昵称</label>
+              <div className="login-field">
+                <label className="login-field-label">昵称</label>
                 <input
                   type="text"
                   value={nickname}
                   onChange={e => setNickname(e.target.value)}
-                  className="w-full px-3 py-2.5 sm:py-2.5 rounded-2xl border text-sm outline-none transition-colors focus:ring-2"
-                  style={{
-                    background: 'var(--bg-primary)',
-                    borderColor: 'var(--border-color)',
-                    color: 'var(--text-primary)',
-                  }}
+                  className="login-input"
                   placeholder="可选"
                 />
               </div>
             )}
             {(isRegister || isReset) && (
-              <div>
-                <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>邮箱</label>
+              <div className="login-field">
+                <label className="login-field-label">邮箱</label>
                 <input
                   type="email"
                   value={email}
@@ -388,30 +396,20 @@ export default function LoginPage() {
                     setEmail(e.target.value)
                     if (error) setError('')
                   }}
-                  className="w-full px-3 py-2.5 sm:py-2.5 rounded-2xl border text-sm outline-none transition-colors focus:ring-2"
-                  style={{
-                    background: 'var(--bg-primary)',
-                    borderColor: 'var(--border-color)',
-                    color: 'var(--text-primary)',
-                  }}
+                  className="login-input"
                   placeholder="仅支持常用邮箱"
                   required
                 />
               </div>
             )}
             {!isReset && (
-              <div>
-                <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>密码</label>
+              <div className="login-field">
+                <label className="login-field-label">密码</label>
                 <input
                   type="password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  className="w-full px-3 py-2.5 sm:py-2.5 rounded-2xl border text-sm outline-none transition-colors focus:ring-2"
-                  style={{
-                    background: 'var(--bg-primary)',
-                    borderColor: 'var(--border-color)',
-                    color: 'var(--text-primary)',
-                  }}
+                  className="login-input"
                   placeholder="至少 6 个字符"
                   required
                   minLength={6}
@@ -419,18 +417,13 @@ export default function LoginPage() {
               </div>
             )}
             {isReset && (
-              <div>
-                <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>新密码</label>
+              <div className="login-field">
+                <label className="login-field-label">新密码</label>
                 <input
                   type="password"
                   value={resetPassword}
                   onChange={e => setResetPassword(e.target.value)}
-                  className="w-full px-3 py-2.5 sm:py-2.5 rounded-2xl border text-sm outline-none transition-colors focus:ring-2"
-                  style={{
-                    background: 'var(--bg-primary)',
-                    borderColor: 'var(--border-color)',
-                    color: 'var(--text-primary)',
-                  }}
+                  className="login-input"
                   placeholder="至少 6 个字符"
                   required
                   minLength={6}
@@ -438,53 +431,34 @@ export default function LoginPage() {
               </div>
             )}
             {isRegister && (
-              <label
-                className="flex items-start gap-2 text-xs leading-5 sm:leading-6"
-                style={{ color: 'var(--text-secondary)' }}
-              >
+              <label className="login-agree">
                 <input
                   type="checkbox"
                   checked={agreed}
                   onChange={e => setAgreed(e.target.checked)}
-                  className="mt-1 h-4 w-4 rounded border"
-                  style={{ accentColor: 'var(--accent)' }}
+                  className="login-agree-check"
                 />
                 <span>
                   我已阅读并同意{' '}
-                  <button
-                    type="button"
-                    onClick={() => navigate('/agreement')}
-                    className="underline underline-offset-2"
-                    style={{ color: 'var(--text-primary)' }}
-                  >
+                  <button type="button" onClick={() => navigate('/agreement')} className="login-link">
                     《用户协议》
                   </button>
                   、
-                  <button
-                    type="button"
-                    onClick={() => navigate('/privacy')}
-                    className="underline underline-offset-2"
-                    style={{ color: 'var(--text-primary)' }}
-                  >
+                  <button type="button" onClick={() => navigate('/privacy')} className="login-link">
                     《隐私政策》
                   </button>
                 </span>
               </label>
             )}
             {(isRegister || isReset) && (
-              <div>
-                <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>验证码</label>
-                <div className="grid grid-cols-[minmax(0,1fr)_6.5rem] gap-2">
+              <div className="login-field">
+                <label className="login-field-label">验证码</label>
+                <div className="login-code-row">
                   <input
                     type="text"
                     value={code}
                     onChange={e => setCode(e.target.value)}
-                    className="w-full min-w-0 px-3 py-2.5 sm:py-2.5 rounded-2xl border text-sm outline-none transition-colors focus:ring-2"
-                    style={{
-                      background: 'var(--bg-primary)',
-                      borderColor: 'var(--border-color)',
-                      color: 'var(--text-primary)',
-                    }}
+                    className="login-input"
                     placeholder="6 位验证码"
                     required
                     maxLength={6}
@@ -493,12 +467,7 @@ export default function LoginPage() {
                     type="button"
                     onClick={handleSendCode}
                     disabled={sendingCode || cooldown > 0 || !email || (isRegister && !agreed)}
-                    className="w-full px-2 py-2.5 sm:py-2.5 rounded-2xl text-[11px] font-medium border whitespace-nowrap disabled:opacity-50"
-                    style={{
-                      borderColor: 'var(--border-color)',
-                      color: cooldown > 0 ? 'var(--text-secondary)' : 'var(--accent)',
-                      background: 'var(--bg-primary)',
-                    }}
+                    className="login-code-btn"
                   >
                     {cooldown > 0 ? `${cooldown}s` : sendingCode ? '发送中...' : '发送验证码'}
                   </button>
@@ -506,86 +475,54 @@ export default function LoginPage() {
               </div>
             )}
             {turnstileSiteKey && !canBypassTurnstile && (
-              <div>
-                <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>人机验证</label>
-                <div id="turnstile-box" className="min-h-[65px]" />
+              <div className="login-field">
+                <label className="login-field-label">人机验证</label>
+                <div id="turnstile-box" className="login-turnstile" />
               </div>
             )}
-            {error && <p className="text-sm text-[var(--color-error)] text-center">{error}</p>}
+            {error && <p className="login-error">{error}</p>}
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 rounded-2xl text-sm font-medium text-white transition-all hover:opacity-90 active:scale-[0.98]"
-              style={{ background: 'var(--accent)', opacity: loading ? 0.7 : 1 }}
+              className="login-submit-btn"
             >
               {loading ? '处理中...' : isRegister ? '注册' : isReset ? '重置密码' : '登录'}
             </button>
           </form>
-          <div className="text-center mt-3 sm:mt-4 text-sm" style={{ color: 'var(--text-secondary)' }}>
+
+          <div className="login-switch-row">
             {isReset ? (
               <>
-                <button
-                  onClick={() => switchMode('login')}
-                  className="font-medium"
-                  style={{ color: 'var(--accent)' }}
-                >
-                  返回登录
-                </button>
+                <button onClick={() => switchMode('login')} className="login-link">返回登录</button>
                 {registerEnabled && (
                   <>
-                    <span className="mx-2" style={{ opacity: 0.5 }}>|</span>
-                    <button
-                      onClick={() => switchMode('register')}
-                      className="font-medium"
-                      style={{ color: 'var(--accent)' }}
-                    >
-                      去注册
-                    </button>
+                    <span className="login-switch-sep">|</span>
+                    <button onClick={() => switchMode('register')} className="login-link">去注册</button>
                   </>
                 )}
               </>
             ) : registerEnabled ? (
               <>
                 {isRegister ? '已有账号？' : '没有账号？'}
-                <button
-                  onClick={() => switchMode(isRegister ? 'login' : 'register')}
-                  className="ml-1 font-medium"
-                  style={{ color: 'var(--accent)' }}
-                >
+                <button onClick={() => switchMode(isRegister ? 'login' : 'register')} className="login-link">
                   {isRegister ? '去登录' : '去注册'}
                 </button>
                 {!isRegister && (
                   <>
-                    <span className="mx-2" style={{ opacity: 0.5 }}>|</span>
-                    <button
-                      onClick={() => switchMode('reset')}
-                      className="font-medium"
-                      style={{ color: 'var(--accent)' }}
-                    >
-                      忘记密码
-                    </button>
+                    <span className="login-switch-sep">|</span>
+                    <button onClick={() => switchMode('reset')} className="login-link">忘记密码</button>
                   </>
                 )}
               </>
             ) : !isRegister ? (
-              <button
-                onClick={() => switchMode('reset')}
-                className="font-medium"
-                style={{ color: 'var(--accent)' }}
-              >
-                忘记密码
-              </button>
+              <button onClick={() => switchMode('reset')} className="login-link">忘记密码</button>
             ) : (
-              <span>注册入口已关闭</span>
+              <span className="login-disabled-text">注册入口已关闭</span>
             )}
           </div>
+
+          <p className="login-footer-text">Atelier · AI 工作台</p>
         </div>
-        <p
-          className="text-center mt-4 sm:mt-6 text-[11px]"
-          style={{ color: 'var(--text-secondary)', opacity: 0.5 }}
-        >
-          Atelier · AI 造梦工坊
-        </p>
       </div>
     </div>
   )
