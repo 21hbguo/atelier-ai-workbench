@@ -108,10 +108,10 @@ function getVipResolutionCost(params={},fallback=10){
   const key=params?.resolution||'auto';
   const value=costs[key]??costs.auto??params?._points_cost;
   const num=Number(value);
-  return num>0?Math.round(num):fallback
+  return num>0?num:fallback
 }
 function getModelRequestCost(params={},fallback=10){
-  return isVipModel(params?.model_id)?getVipResolutionCost(params,fallback):(Number(params?._points_cost)>0?Math.round(Number(params._points_cost)):fallback)
+  return isVipModel(params?.model_id)?getVipResolutionCost(params,fallback):(Number(params?._points_cost)>0?Number(params._points_cost):fallback)
 }
 function normalizeGenerationParams(params={}){
   const next={...(params||{})};

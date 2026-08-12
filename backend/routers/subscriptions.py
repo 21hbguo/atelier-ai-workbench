@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
@@ -140,11 +141,11 @@ async def admin_create_plan(body: dict, admin=Depends(require_admin)):
                 """INSERT INTO subscription_plans
                    (code, name, description, price_rmb, cycle_days, grant_points, features, allowed_models, max_concurrent_requests, enabled, is_free, sort_order)
                    VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s, %s) RETURNING *""",
-                (str(body["code"]).strip(), str(body["name"]).strip(), str(body.get("description") or ""), float(body.get("price_rmb") or 0), int(body.get("cycle_days") or 30), int(body.get("grant_points") or 0), json.dumps(body.get("features") or {}), json.dumps(body.get("allowed_models") or []), int(body.get("max_concurrent_requests") or 1), bool(body.get("enabled", True)), bool(body.get("is_free", False)), int(body.get("sort_order") or 0)),
+                (str(body["code"]).strip(), str(body["name"]).strip(), str(body.get("description") or ""), float(body.get("price_rmb") or 0), int(body.get("cycle_days") or 30), Decimal(str(body.get("grant_points") or 0)), json.dumps(body.get("features") or {}), json.dumps(body.get("allowed_models") or []), int(body.get("max_concurrent_requests") or 1), bool(body.get("enabled", True)), bool(body.get("is_free", False)), int(body.get("sort_order") or 0)),
             ).fetchone()
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"套餐保存失败: {exc}")
-        conn.execute("INSERT INTO billing_audit_logs (admin_id, action, target_type, target_id, reason, new_state) VALUES (%s, 'plan_create', 'subscription_plan', %s, %s, %s::jsonb)", (admin["user_id"], str(row["id"]), str(body.get("reason") or "创建套餐"), json.dumps(dict(row))))
+        conn.execute("INSERT INTO billing_audit_logs (admin_id, action, target_type, target_id, reason, new_state) VALUES (%s, 'plan_create', 'subscription_plan', %s, %s, %s::jsonb)", (admin["user_id"], str(row["id"]), str(body.get("reason") or "创建套餐"), json.dumps(dict(row), default=str)))
     return _clean_row(row)
 
 
@@ -169,7 +170,7 @@ async def admin_update_plan(plan_id: int, body: dict, admin=Depends(require_admi
         if not old:
             raise HTTPException(status_code=404, detail="套餐不存在")
         row = conn.execute(f"UPDATE subscription_plans SET {', '.join(set_parts)}, updated_at = NOW() WHERE id = %s RETURNING *", params).fetchone()
-        conn.execute("INSERT INTO billing_audit_logs (admin_id, action, target_type, target_id, reason, old_state, new_state) VALUES (%s, 'plan_update', 'subscription_plan', %s, %s, %s::jsonb, %s::jsonb)", (admin["user_id"], str(plan_id), str(body.get("reason") or "更新套餐"), json.dumps(dict(old)), json.dumps(dict(row))))
+        conn.execute("INSERT INTO billing_audit_logs (admin_id, action, target_type, target_id, reason, old_state, new_state) VALUES (%s, 'plan_update', 'subscription_plan', %s, %s, %s::jsonb, %s::jsonb)", (admin["user_id"], str(plan_id), str(body.get("reason") or "更新套餐"), json.dumps(dict(old), default=str), json.dumps(dict(row), default=str)))
     return _clean_row(row)
 
 
@@ -232,7 +233,7 @@ async def admin_subscriptions(page: int = Query(1, ge=1), size: int = Query(20, 
 @admin_router.post("/subscriptions/{user_id}/grant")
 async def admin_grant_subscription(user_id: int, body: dict, admin=Depends(require_admin)):
     try:
-        return grant_subscription(user_id, admin["user_id"], int(body.get("points") or 0), str(body.get("reason") or ""))
+        return grant_subscription(user_id, admin["user_id"], Decimal(str(body.get("points") or 0)), str(body.get("reason") or ""))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

@@ -148,7 +148,7 @@ class TaskManager:
             conn.execute("DELETE FROM tasks WHERE task_id = %s", (task_id,))
 
     @classmethod
-    def create_task(cls, task_id: str, task_type: str, params: Dict[str, Any], user_id: int = None, points_cost: int = 0, points_balance_after: Optional[int] = None, conn=None) -> Dict[str, Any]:
+    def create_task(cls, task_id: str, task_type: str, params: Dict[str, Any], user_id: int = None, points_cost: float = 0, points_balance_after: Optional[float] = None, conn=None) -> Dict[str, Any]:
         task = {
             "task_id": task_id,
             "type": task_type,

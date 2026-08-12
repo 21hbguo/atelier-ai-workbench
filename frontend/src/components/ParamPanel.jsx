@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { configAPI } from '../api'
 
 function isVipModel(modelId=''){return modelId==='grsai-vip'}
-function getVipResolutionCost(params={},resolution='auto',fallback=10){const costs=params?.resolution_costs||{};const key=resolution||'auto';const value=costs[key]??costs.auto??params?.points_cost;const num=Number(value);return num>0?Math.round(num):fallback}
+function getVipResolutionCost(params={},resolution='auto',fallback=10){const costs=params?.resolution_costs||{};const key=resolution||'auto';const value=costs[key]??costs.auto??params?.points_cost;const num=Number(value);return num>0?num:fallback}
 
 export default function ParamPanel({ params, onChange }) {
   const [models, setModels] = useState([])

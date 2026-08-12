@@ -95,8 +95,8 @@ function isVipModel(modelId=''){return modelId==='grsai-vip'}
 function getGenerationModeLabel(params={}){return params?.image_urls?.length?'图生图':'文生图'}
 function getVipResolutionLabel(value=''){return value==='low'?'1K':value==='medium'?'2K':value==='high'?'4K':'1K'}
 function getImageRatioLabel(value=''){return value||'自动'}
-function getVipResolutionCost(params={},fallback=10){const costs=params?._resolution_costs||params?.resolution_costs||{};const key=params?.resolution||'auto';const value=costs[key]??costs.auto??params?._points_cost;const num=Number(value);return num>0?Math.round(num):fallback}
-function getModelCost(params={},fallback=10){return isVipModel(params?.model_id)?getVipResolutionCost(params,fallback):(Number(params?._points_cost)>0?Math.round(Number(params._points_cost)):fallback)}
+function getVipResolutionCost(params={},fallback=10){const costs=params?._resolution_costs||params?.resolution_costs||{};const key=params?.resolution||'auto';const value=costs[key]??costs.auto??params?._points_cost;const num=Number(value);return num>0?num:fallback}
+function getModelCost(params={},fallback=10){return isVipModel(params?.model_id)?getVipResolutionCost(params,fallback):(Number(params?._points_cost)>0?Number(params._points_cost):fallback)}
 function getGenerationSizeLabel(params={}){if(isVipModel(params?.model_id)){const resolution=params?.resolution||'low';const ratio=params?.size||params?.aspect_ratio||params?.aspectRatio||'auto';const quality=params?.quality||'';const parts=[`比例:${getImageRatioLabel(ratio)}`,`分辨率:${getVipResolutionLabel(resolution)}`];if(quality)parts.push(`画质:${quality}`);return parts.join(' / ')}const size=params?.size||'';return size?`比例:${getImageRatioLabel(size)}`:''}
 function normalizeSubmissionParams(params={}){const next={...(params||{})};if(isVipModel(next.model_id)){next.size=next.size||'auto';next.resolution=next.resolution||'low';next.aspect_ratio=next.size&&next.size!=='auto'?next.size:''}return next}
 function formatSubmitSettings(params, shareToSquare, imageCount) {

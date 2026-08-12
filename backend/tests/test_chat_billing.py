@@ -14,6 +14,7 @@ from unittest.mock import patch, MagicMock
 
 from backend.routers import chat as chat_module
 from backend.routers.chat import _compute_token_cost, _record_chat_usage
+from backend.services.billing_service import BillingService
 
 # 模型档案：配了 4 档 token 单价 + 按次预扣
 _MODEL_WITH_UNIT_PRICE = {
@@ -35,6 +36,10 @@ _USAGE_FULL = {
     "reasoning_tokens": 100,
     "total_tokens": 8500,
 }
+
+
+def test_charge_points_keeps_four_decimal_places():
+    assert BillingService.charge_points(Decimal("0.26")) == Decimal("0.2600")
 
 
 @contextmanager
@@ -81,11 +86,11 @@ def test_record_chat_usage_token_cost_exceeds_precharge():
             pre_charged=10.0, pre_balance=100.0,
         )
 
-    # 实际费用 23.75 向上取整为 24，diff = 24 - 10 = 14 → consume 一次
+    # 实际费用 23.75，diff = 23.75 - 10 = 13.75 → consume 一次
     mock_consume.assert_called_once()
     args, kwargs = mock_consume.call_args
     assert args[0] == 1                       # user_id
-    assert args[1] == 14.0                    # amount = float(diff)
+    assert args[1] == Decimal("13.7500")      # amount = diff
     assert args[2] == "AI对话按量补差"          # description
     assert kwargs["tx_type"] == "chat_token_adjust"
     assert kwargs["request_key"] == f"chat_token_adjust:{req_id}"
@@ -120,11 +125,11 @@ def test_record_chat_usage_token_cost_below_precharge():
             pre_charged=50.0, pre_balance=50.0,
         )
 
-    # 实际费用 1.6 向上取整为 2，diff = 2 - 50 = -48 → refund 一次
+    # 实际费用 1.6，diff = 1.6 - 50 = -48.4 → refund 一次
     mock_refund.assert_called_once()
     args, kwargs = mock_refund.call_args
     assert args[0] == 1                       # user_id
-    assert args[1] == 48.0                    # amount = float(-diff)
+    assert args[1] == Decimal("48.4000")      # amount = -diff
     assert args[2] == "AI对话按量退还差额"
     assert kwargs["request_key"] == f"chat_token_adjust:{req_id}"
     mock_consume.assert_not_called()
@@ -271,6 +276,7 @@ def test_refund_marks_usage_refunded():
             chat_module.PointsService.refund(
                 user_id, cost_per, "AI助手回复失败退还",
                 request_key=f"chat_refund:{req_id}",
+                tx_type="chat_refund", model_id="test-model",
             )
         except Exception:
             pass
@@ -284,6 +290,7 @@ def test_refund_marks_usage_refunded():
     mock_refund.assert_called_once_with(
         user_id, cost_per, "AI助手回复失败退还",
         request_key=f"chat_refund:{req_id}",
+        tx_type="chat_refund", model_id="test-model",
     )
     # UPDATE 被执行，参数为 (req_id,)
     conn.execute.assert_called_once_with(update_sql, (req_id,))

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import math
 import json
 from datetime import datetime
-from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP
 
 from backend.config import get_billing_config
 from backend.database import get_db
@@ -112,15 +111,8 @@ class BillingService:
         return _round4(total), "token"
 
     @staticmethod
-    def charge_points(cost_points: Decimal, config: dict | None = None) -> int:
-        billing = config or get_billing_config()
-        minimum = max(1, int(_decimal(billing.get("min_charge_points", 1))))
-        rounding_mode = str(billing.get("rounding_mode") or "ceil").lower()
-        if rounding_mode == "ceil":
-            charged = int(cost_points.to_integral_value(rounding=ROUND_CEILING))
-        else:
-            charged = int(cost_points.to_integral_value(rounding=ROUND_HALF_UP))
-        return max(minimum, charged)
+    def charge_points(cost_points: Decimal, config: dict | None = None) -> Decimal:
+        return _round4(max(Decimal(0), _decimal(cost_points)))
 
     @staticmethod
     def create_price_version(model_cfg: dict, admin_id: int, overrides: dict | None = None) -> dict:

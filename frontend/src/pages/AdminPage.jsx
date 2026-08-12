@@ -130,6 +130,7 @@ export default function AdminPage() {
     points_cost_per_generation: 10,
     points_cost_per_optimize: 10,
     points_cost_per_optimize_refine: 20,
+    points_cost_per_chat: 10,
     points_cost_per_image_extend: 2,
     points_checkin_reward: 10,
     points_register_bonus: 50,
@@ -353,6 +354,7 @@ export default function AdminPage() {
         points_cost_per_generation: Number(data.points_cost_per_generation || 10),
         points_cost_per_optimize: Number(data.points_cost_per_optimize || 10),
         points_cost_per_optimize_refine: Number(data.points_cost_per_optimize_refine || 20),
+        points_cost_per_chat: Number(data.points_cost_per_chat || 10),
         points_cost_per_image_extend: Number(data.points_cost_per_image_extend || 2),
         points_checkin_reward: Number(data.points_checkin_reward || 10),
         points_register_bonus: Number(data.points_register_bonus || 50),
@@ -520,12 +522,12 @@ export default function AdminPage() {
       payload.generate_concurrent_limit_per_user < 1 ||
       payload.home_page_size < 1 ||
       payload.square_page_size < 1 ||
-      payload.points_cost_per_generation < 1 ||
-      payload.points_cost_per_optimize < 1 ||
-      payload.points_cost_per_optimize_refine < 1 ||
-      payload.points_cost_per_chat < 1 ||
+      payload.points_cost_per_generation <= 0 ||
+      payload.points_cost_per_optimize <= 0 ||
+      payload.points_cost_per_optimize_refine <= 0 ||
+      payload.points_cost_per_chat <= 0 ||
       payload.chat_context_max_chars < 1000 ||
-      payload.points_cost_per_image_extend < 1 ||
+      payload.points_cost_per_image_extend <= 0 ||
       payload.login_rate_limit_per_minute_per_ip < 1 ||
       payload.register_rate_limit_per_minute_per_ip < 1 ||
       payload.points_checkin_reward < 0 ||
@@ -640,18 +642,18 @@ export default function AdminPage() {
       const lowCost = Number(editingModelDraft.resolution_cost_low || 0)
       const mediumCost = Number(editingModelDraft.resolution_cost_medium || 0)
       const highCost = Number(editingModelDraft.resolution_cost_high || 0)
-      if (lowCost > 0) params.points_cost = Math.round(lowCost)
+      if (lowCost > 0) params.points_cost = Math.round(lowCost * 10000) / 10000
       else delete params.points_cost
       const nextResolutionCosts = {}
-      if (lowCost > 0) nextResolutionCosts.low = Math.round(lowCost)
-      if (mediumCost > 0) nextResolutionCosts.medium = Math.round(mediumCost)
-      if (highCost > 0) nextResolutionCosts.high = Math.round(highCost)
-      if (lowCost > 0) nextResolutionCosts.auto = Math.round(lowCost)
+      if (lowCost > 0) nextResolutionCosts.low = Math.round(lowCost * 10000) / 10000
+      if (mediumCost > 0) nextResolutionCosts.medium = Math.round(mediumCost * 10000) / 10000
+      if (highCost > 0) nextResolutionCosts.high = Math.round(highCost * 10000) / 10000
+      if (lowCost > 0) nextResolutionCosts.auto = Math.round(lowCost * 10000) / 10000
       if (Object.keys(nextResolutionCosts).length) params.resolution_costs = nextResolutionCosts
       else delete params.resolution_costs
     } else {
       const pointsCost = Number(editingModelDraft.points_cost || 0)
-      if (pointsCost > 0) params.points_cost = Math.round(pointsCost)
+      if (pointsCost > 0) params.points_cost = Math.round(pointsCost * 10000) / 10000
       else delete params.points_cost
       delete params.resolution_costs
     }
@@ -813,7 +815,7 @@ export default function AdminPage() {
   }
 
   const handleAdjustPoints = async (userId) => {
-    const amount = parseInt(adjustAmount)
+    const amount = Number(adjustAmount)
     if (!amount) return
     try {
       await adminAPI.adjustPoints(userId, { amount, description: adjustDesc || '管理员调整' })
@@ -1546,12 +1548,12 @@ export default function AdminPage() {
                   { k: 'generate_concurrent_limit_per_user', l: '生成并发上限/用户', min: 1 },
                   { k: 'home_page_size', l: '首页每页卡片数', min: 1 },
                   { k: 'square_page_size', l: '广场每页卡片数', min: 1 },
-                  { k: 'points_cost_per_generation', l: '默认生成扣分', min: 1 },
-                  { k: 'points_cost_per_optimize', l: '简单优化扣分', min: 1 },
-                  { k: 'points_cost_per_optimize_refine', l: '精细优化扣分', min: 1 },
-                  { k: 'points_cost_per_chat', l: 'AI助手对话扣分', min: 1 },
+                  { k: 'points_cost_per_generation', l: '默认生成扣分', min: 0.0001, step: 0.0001 },
+                  { k: 'points_cost_per_optimize', l: '简单优化扣分', min: 0.0001, step: 0.0001 },
+                  { k: 'points_cost_per_optimize_refine', l: '精细优化扣分', min: 0.0001, step: 0.0001 },
+                  { k: 'points_cost_per_chat', l: 'AI助手对话扣分', min: 0.0001, step: 0.0001 },
                   { k: 'chat_context_max_chars', l: '聊天上下文预算(字符)', min: 1000 },
-                  { k: 'points_cost_per_image_extend', l: '图片续期扣分/张', min: 1 },
+                  { k: 'points_cost_per_image_extend', l: '图片续期扣分/张', min: 0.0001, step: 0.0001 },
                   { k: 'points_checkin_reward', l: '每日签到奖励', min: 0 },
                   { k: 'points_register_bonus', l: '注册送分', min: 0 },
                   { k: 'points_migration_amount', l: '补发积分值', min: 0 },
@@ -1566,6 +1568,7 @@ export default function AdminPage() {
                     <input
                       type="number"
                       min={item.min}
+                      step={item.step}
                       value={runtimeConfig[item.k]}
                       onChange={e => onConfigInput(item.k, e.target.value)}
                       className="w-full px-3 py-2 rounded-2xl text-sm border outline-none"
@@ -1939,19 +1942,19 @@ export default function AdminPage() {
               {isVipModelId(editingModelId)?<>
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>1K 扣分</label>
-                <input type="number" min="1" value={editingModelDraft.resolution_cost_low ?? ''} onChange={e => setEditingModelDraft(prev => ({ ...prev, resolution_cost_low: e.target.value, points_cost: e.target.value }))} placeholder="15" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                <input type="number" step="0.0001" min="0" value={editingModelDraft.resolution_cost_low ?? ''} onChange={e => setEditingModelDraft(prev => ({ ...prev, resolution_cost_low: e.target.value, points_cost: e.target.value }))} placeholder="15" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>2K 扣分</label>
-                <input type="number" min="1" value={editingModelDraft.resolution_cost_medium ?? ''} onChange={e => setEditingModelDraft(prev => ({ ...prev, resolution_cost_medium: e.target.value }))} placeholder="25" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                <input type="number" step="0.0001" min="0" value={editingModelDraft.resolution_cost_medium ?? ''} onChange={e => setEditingModelDraft(prev => ({ ...prev, resolution_cost_medium: e.target.value }))} placeholder="25" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>4K 扣分</label>
-                <input type="number" min="1" value={editingModelDraft.resolution_cost_high ?? ''} onChange={e => setEditingModelDraft(prev => ({ ...prev, resolution_cost_high: e.target.value }))} placeholder="40" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                <input type="number" step="0.0001" min="0" value={editingModelDraft.resolution_cost_high ?? ''} onChange={e => setEditingModelDraft(prev => ({ ...prev, resolution_cost_high: e.target.value }))} placeholder="40" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
               </>:<div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>模型扣分（留空走默认）</label>
-                <input type="number" min="1" value={editingModelDraft.points_cost ?? ''} onChange={e => setEditingModelDraft(prev => ({ ...prev, points_cost: e.target.value }))} placeholder={`默认 ${runtimeConfig.points_cost_per_generation}`} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                <input type="number" step="0.0001" min="0" value={editingModelDraft.points_cost ?? ''} onChange={e => setEditingModelDraft(prev => ({ ...prev, points_cost: e.target.value }))} placeholder={`默认 ${runtimeConfig.points_cost_per_generation}`} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>}
               <div className="flex items-end">
                 <label className="inline-flex items-center gap-2 text-sm" style={{ color: 'var(--text-primary)' }}><input type="checkbox" checked={editingModelDraft.enabled !== false} onChange={e => setEditingModelDraft(prev => ({ ...prev, enabled: e.target.checked }))} />启用该模型</label>

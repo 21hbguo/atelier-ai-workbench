@@ -24,7 +24,7 @@ def _detect_hosting_type(url: str) -> str:
 def _now():
     return datetime.now()
 def get_extend_cost_per_image():
-    try:return max(1,int(get_limit_config().get("points_cost_per_image_extend",EXTEND_COST_PER_IMAGE)))
+    try:return max(0.0001,float(get_limit_config().get("points_cost_per_image_extend",EXTEND_COST_PER_IMAGE)))
     except Exception:return EXTEND_COST_PER_IMAGE
 def _parse_dt(v):
     if not v: return None

@@ -103,16 +103,16 @@ _runtime_config = {
     "generate_concurrent_limit_per_user": int(os.getenv("GENERATE_CONCURRENT_LIMIT_PER_USER", "10")),
     "home_page_size": int(os.getenv("HOME_PAGE_SIZE", "24")),
     "square_page_size": int(os.getenv("SQUARE_PAGE_SIZE", "20")),
-    "points_cost_per_generation": int(os.getenv("POINTS_COST_PER_GENERATION", "10")),
-    "points_cost_per_optimize": int(os.getenv("POINTS_COST_PER_OPTIMIZE", "10")),
-    "points_cost_per_optimize_refine": int(os.getenv("POINTS_COST_PER_OPTIMIZE_REFINE", "20")),
-    "points_cost_per_chat": int(os.getenv("POINTS_COST_PER_CHAT", "10")),
+    "points_cost_per_generation": float(os.getenv("POINTS_COST_PER_GENERATION", "10")),
+    "points_cost_per_optimize": float(os.getenv("POINTS_COST_PER_OPTIMIZE", "10")),
+    "points_cost_per_optimize_refine": float(os.getenv("POINTS_COST_PER_OPTIMIZE_REFINE", "20")),
+    "points_cost_per_chat": float(os.getenv("POINTS_COST_PER_CHAT", "10")),
     "chat_max_sessions": int(os.getenv("CHAT_MAX_SESSIONS", "50")),
     "chat_max_messages": int(os.getenv("CHAT_MAX_MESSAGES", "100")),
     "chat_rate_limit_per_minute": int(os.getenv("CHAT_RATE_LIMIT_PER_MINUTE", "10")),
     "chat_context_max_chars": int(os.getenv("CHAT_CONTEXT_MAX_CHARS", "256000")),
     "points_checkin_reward": int(os.getenv("POINTS_CHECKIN_REWARD", "10")),
-    "points_cost_per_image_extend": int(os.getenv("POINTS_COST_PER_IMAGE_EXTEND", "2")),
+    "points_cost_per_image_extend": float(os.getenv("POINTS_COST_PER_IMAGE_EXTEND", "2")),
     "points_register_bonus": int(os.getenv("POINTS_REGISTER_BONUS", "50")),
     "points_migration_amount": int(os.getenv("POINTS_MIGRATION_AMOUNT", "50")),
     "points_unit_version": int(os.getenv("POINTS_UNIT_VERSION", "100")),
@@ -177,13 +177,13 @@ def _vip_quality_options():
 def _vip_resolution_costs(params: dict):
     if not isinstance(params,dict): return {"auto":15,"low":15,"medium":25,"high":40}
     raw=params.get("resolution_costs") or {}
-    def _to_int(value, fallback: int):
-        try:return max(1,int(value))
-        except Exception:return max(1,int(fallback))
-    low=_to_int(raw.get("low",params.get("points_cost",15)),15)
-    medium=_to_int(raw.get("medium",25),25)
-    high=_to_int(raw.get("high",40),40)
-    auto=_to_int(raw.get("auto",low),low)
+    def _to_points(value, fallback: float):
+        try:return round(max(0,float(value)),4)
+        except Exception:return round(max(0,float(fallback)),4)
+    low=_to_points(raw.get("low",params.get("points_cost",15)),15)
+    medium=_to_points(raw.get("medium",25),25)
+    high=_to_points(raw.get("high",40),40)
+    auto=_to_points(raw.get("auto",low),low)
     return {"auto":auto,"low":low,"medium":medium,"high":high}
 
 def normalize_generation_model_params(model_id: str, model: dict):
@@ -252,24 +252,25 @@ def update_config(new_values: dict):
 def get_limit_config():
     cfg = get_config()
     out = {}
+    point_cost_keys = {"points_cost_per_generation", "points_cost_per_optimize", "points_cost_per_optimize_refine", "points_cost_per_chat", "points_cost_per_image_extend"}
     for k in ["generate_concurrent_limit_per_user", "home_page_size", "square_page_size", "points_cost_per_generation", "points_cost_per_optimize", "points_cost_per_optimize_refine", "points_cost_per_chat", "chat_max_sessions", "chat_max_messages", "chat_rate_limit_per_minute", "chat_context_max_chars", "points_cost_per_image_extend", "points_checkin_reward", "points_register_bonus", "points_migration_amount", "invite_register_reward_points", "login_rate_limit_per_minute_per_ip", "register_rate_limit_per_minute_per_ip"]:
         try:
-            v = int(cfg.get(k, _runtime_config_defaults[k]))
+            v = float(cfg.get(k, _runtime_config_defaults[k])) if k in point_cost_keys else int(cfg.get(k, _runtime_config_defaults[k]))
         except Exception:
-            v = int(_runtime_config_defaults[k])
-        out[k] = v if v >= 0 else int(_runtime_config_defaults[k])
+            v = float(_runtime_config_defaults[k]) if k in point_cost_keys else int(_runtime_config_defaults[k])
+        out[k] = v if v >= 0 else (float(_runtime_config_defaults[k]) if k in point_cost_keys else int(_runtime_config_defaults[k]))
     if out["generate_concurrent_limit_per_user"] < 1: out["generate_concurrent_limit_per_user"] = 1
     if out["home_page_size"] < 1: out["home_page_size"] = 1
     if out["square_page_size"] < 1: out["square_page_size"] = 1
-    if out["points_cost_per_generation"] < 1: out["points_cost_per_generation"] = 1
-    if out["points_cost_per_optimize"] < 1: out["points_cost_per_optimize"] = 1
-    if out["points_cost_per_optimize_refine"] < 1: out["points_cost_per_optimize_refine"] = 1
-    if out["points_cost_per_chat"] < 1: out["points_cost_per_chat"] = 1
+    if out["points_cost_per_generation"] <= 0: out["points_cost_per_generation"] = 0.0001
+    if out["points_cost_per_optimize"] <= 0: out["points_cost_per_optimize"] = 0.0001
+    if out["points_cost_per_optimize_refine"] <= 0: out["points_cost_per_optimize_refine"] = 0.0001
+    if out["points_cost_per_chat"] <= 0: out["points_cost_per_chat"] = 0.0001
     if out["chat_max_sessions"] < 1: out["chat_max_sessions"] = 1
     if out["chat_max_messages"] < 1: out["chat_max_messages"] = 1
     if out["chat_rate_limit_per_minute"] < 1: out["chat_rate_limit_per_minute"] = 1
     if out["chat_context_max_chars"] < 1000: out["chat_context_max_chars"] = 1000
-    if out["points_cost_per_image_extend"] < 1: out["points_cost_per_image_extend"] = 1
+    if out["points_cost_per_image_extend"] <= 0: out["points_cost_per_image_extend"] = 0.0001
     if out["points_checkin_reward"] < 0: out["points_checkin_reward"] = 0
     if out["points_register_bonus"] < 0: out["points_register_bonus"] = 0
     if out["points_migration_amount"] < 0: out["points_migration_amount"] = 0

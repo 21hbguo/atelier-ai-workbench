@@ -23,7 +23,7 @@ class PromptOptimizeRequest(BaseModel):
 class PromptOptimizeResponse(BaseModel):
     versions: list[str]
     original: str
-    points_balance: int | None = None
+    points_balance: float | None = None
 
 
 @router.post("/optimize")
@@ -47,15 +47,15 @@ async def optimize_prompt(body: PromptOptimizeRequest, user=Depends(get_current_
                     if event["type"] == "chunk":
                         yield f"event: chunk\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
                     elif event["type"] == "done":
-                        yield f"event: done\ndata: {json.dumps({'versions': event['versions'], 'points_balance': balance_after}, ensure_ascii=False)}\n\n"
+                        yield f"event: done\ndata: {json.dumps({'versions': event['versions'], 'points_balance': float(balance_after)}, ensure_ascii=False)}\n\n"
                     elif event["type"] == "error":
-                        PointsService.refund(user_id, total_cost, "优化失败退还", request_key=f"optimize_refund:{req_id}")
+                        PointsService.refund(user_id, total_cost, "优化失败退还", request_key=f"optimize_refund:{req_id}", tx_type="optimize_refund")
                         refunded = True
                         yield f"event: error\ndata: {json.dumps({'detail': event['detail']}, ensure_ascii=False)}\n\n"
             except Exception:
                 logger.exception("[optimize/stream] unexpected error")
                 if not refunded:
-                    PointsService.refund(user_id, total_cost, "优化失败退还", request_key=f"optimize_refund:{req_id}")
+                    PointsService.refund(user_id, total_cost, "优化失败退还", request_key=f"optimize_refund:{req_id}", tx_type="optimize_refund")
                 yield f"event: error\ndata: {json.dumps({'detail': '优化失败，请重试'}, ensure_ascii=False)}\n\n"
 
         return StreamingResponse(event_generator(), media_type="text/event-stream",
@@ -65,9 +65,9 @@ async def optimize_prompt(body: PromptOptimizeRequest, user=Depends(get_current_
         versions = await (PromptOptimizer.optimize_refine(body.prompt, body.count, body.format) if body.mode == "refine" else PromptOptimizer.optimize(body.prompt, body.count, body.format))
         return PromptOptimizeResponse(versions=versions, original=body.prompt, points_balance=balance_after).model_dump()
     except ValueError as e:
-        PointsService.refund(user_id, total_cost, "优化失败退还", request_key=f"optimize_refund:{req_id}")
+        PointsService.refund(user_id, total_cost, "优化失败退还", request_key=f"optimize_refund:{req_id}", tx_type="optimize_refund")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception:
         logger.exception("[optimize] prompt optimization failed")
-        PointsService.refund(user_id, total_cost, "优化失败退还", request_key=f"optimize_refund:{req_id}")
+        PointsService.refund(user_id, total_cost, "优化失败退还", request_key=f"optimize_refund:{req_id}", tx_type="optimize_refund")
         return PromptOptimizeResponse(versions=[body.prompt], original=body.prompt, points_balance=PointsService.get_balance(user_id)).model_dump()

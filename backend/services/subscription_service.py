@@ -3,7 +3,17 @@ from __future__ import annotations
 import json
 import secrets
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
+
+
+_POINT_QUANTUM = Decimal("0.0001")
+
+
+def _points(value) -> Decimal:
+    try:
+        return Decimal(str(value or 0)).quantize(_POINT_QUANTUM, rounding=ROUND_HALF_UP)
+    except Exception:
+        return Decimal(0)
 
 
 FEATURE_DEFAULTS = {
@@ -40,7 +50,7 @@ def _snapshot(plan: dict) -> dict:
         "description": plan.get("description") or "",
         "price_rmb": str(plan.get("price_rmb") or 0),
         "cycle_days": int(plan.get("cycle_days") or 30),
-        "grant_points": int(Decimal(str(plan.get("grant_points") or 0))),
+        "grant_points": float(_points(plan.get("grant_points"))),
         "features": dict(plan.get("features") or {}),
         "allowed_models": list(plan.get("allowed_models") or []),
         "max_concurrent_requests": int(plan.get("max_concurrent_requests") or 1),
@@ -75,13 +85,13 @@ def _get_plan(conn, plan_id=None, code=None, for_update=False):
     return _plan_dict(row) if row else None
 
 
-def _record_transaction(conn, user_id: int, amount: int, tx_type: str, description: str, request_key: str = "", bucket_id=None):
+def _record_transaction(conn, user_id: int, amount: Decimal, tx_type: str, description: str, request_key: str = "", bucket_id=None):
     if request_key:
         existing = conn.execute(
             "SELECT balance_after FROM point_transactions WHERE request_key = %s", (request_key,)
         ).fetchone()
         if existing:
-            return float(existing["balance_after"])
+            return _points(existing["balance_after"])
     balance = conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()["points"]
     if request_key:
         row = conn.execute(
@@ -103,7 +113,7 @@ def _record_transaction(conn, user_id: int, amount: int, tx_type: str, descripti
             "INSERT INTO point_transaction_allocations (transaction_id, bucket_id, amount) VALUES (%s, %s, %s)",
             (row["id"], bucket_id, amount),
         )
-    return float(balance)
+    return _points(balance)
 
 
 def _expire_cycle_in_conn(conn, cycle: dict, user_id: int, now: datetime):
@@ -114,7 +124,7 @@ def _expire_cycle_in_conn(conn, cycle: dict, user_id: int, now: datetime):
         "SELECT id, remaining_points, status FROM point_buckets WHERE cycle_id = %s FOR UPDATE", (cycle_id,)
     ).fetchone()
     if bucket:
-        remaining = int(bucket["remaining_points"] or 0)
+        remaining = _points(bucket["remaining_points"])
         if bucket["status"] == "active" and remaining > 0:
             PointsService.expire_subscription_bucket_in_conn(
                 conn, user_id, bucket["id"], remaining, cycle_id,
@@ -131,7 +141,7 @@ def _expire_cycle_in_conn(conn, cycle: dict, user_id: int, now: datetime):
 def _create_cycle_in_conn(conn, user_id: int, subscription_id: int, plan: dict, start: datetime, order_id=None):
     days = max(1, int(plan.get("cycle_days") or 30))
     end = start + timedelta(days=days)
-    points = max(0, int(Decimal(str(plan.get("grant_points") or 0))))
+    points = max(Decimal(0), _points(plan.get("grant_points")))
     cycle = conn.execute(
         """INSERT INTO subscription_cycles
            (subscription_id, plan_id, period_start, period_end, granted_points, remaining_points, entitlements_snapshot)
@@ -167,7 +177,7 @@ def ensure_current_cycle_in_conn(conn, user_id: int, now: datetime | None = None
     conn.execute(
         """INSERT INTO point_buckets (user_id, bucket_type, granted_points, remaining_points)
            VALUES (%s, 'permanent', %s, %s) ON CONFLICT (user_id) WHERE bucket_type = 'permanent' DO NOTHING""",
-        (user_id, int(Decimal(str(user["points"] or 0))), int(Decimal(str(user["points"] or 0)))),
+        (user_id, _points(user["points"]), _points(user["points"])),
     )
     sub_row = conn.execute("SELECT * FROM user_subscriptions WHERE user_id = %s FOR UPDATE", (user_id,)).fetchone()
     if not sub_row:
@@ -229,12 +239,12 @@ def get_current_state(user_id: int) -> dict:
                 "id": cycle["id"],
                 "period_start": cycle["period_start"].isoformat(),
                 "period_end": cycle["period_end"].isoformat(),
-                "granted_points": int(cycle["granted_points"] or 0),
-                "remaining_points": int(cycle["remaining_points"] or 0),
+                "granted_points": float(_points(cycle["granted_points"])),
+                "remaining_points": float(_points(cycle["remaining_points"])),
                 "status": cycle["status"],
             },
-            "permanent_points": int(permanent["points"] or 0) if permanent else 0,
-            "total_points": int(conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()["points"] or 0),
+            "permanent_points": float(_points(permanent["points"])) if permanent else 0,
+            "total_points": float(_points(conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()["points"])),
             "next_plan": _snapshot(next_plan) if next_plan else None,
         }
 
@@ -393,10 +403,12 @@ def list_subscriptions(page: int = 1, size: int = 20, query: str = "") -> dict:
     return {"items": [dict(row) for row in rows], "total": total, "page": page, "size": size}
 
 
-def grant_subscription(user_id: int, admin_id: int, points: int, reason: str) -> dict:
+def grant_subscription(user_id: int, admin_id: int, points: float, reason: str) -> dict:
     from backend.database import get_db
     from backend.services.points_service import PointsService
-    points = max(1, int(points or 0))
+    points = _points(points)
+    if points <= 0:
+        raise ValueError("补发积分必须大于0")
     if not reason.strip():
         raise ValueError("补发原因不能为空")
     with get_db() as conn:
@@ -408,7 +420,7 @@ def grant_subscription(user_id: int, admin_id: int, points: int, reason: str) ->
         )
         conn.execute(
             "INSERT INTO billing_audit_logs (admin_id, action, target_type, target_id, reason, new_state) VALUES (%s, 'subscription_grant', 'subscription', %s, %s, %s::jsonb)",
-            (admin_id, str(state["subscription"]["id"]), reason[:1000], json.dumps({"points": points})),
+            (admin_id, str(state["subscription"]["id"]), reason[:1000], json.dumps({"points": float(points)})),
         )
     return get_current_state(user_id)
 

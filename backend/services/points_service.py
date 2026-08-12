@@ -1,25 +1,28 @@
 from datetime import datetime
-from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP
 
 from backend.database import get_db
 from backend.config import get_limit_config
 from backend.services.subscription_service import ensure_current_cycle_in_conn
 
 
-def _integer_amount(value, rounding=ROUND_HALF_UP) -> int:
+_POINT_QUANTUM = Decimal("0.0001")
+
+
+def _point_amount(value) -> Decimal:
     try:
-        return int(Decimal(str(value)).to_integral_value(rounding=rounding))
+        return Decimal(str(value)).quantize(_POINT_QUANTUM, rounding=ROUND_HALF_UP)
     except Exception:
-        return 0
+        return Decimal(0)
 
 
 class PointsService:
     @classmethod
-    def cost_per_generation(cls) -> int:
+    def cost_per_generation(cls) -> float:
         return get_limit_config()["points_cost_per_generation"]
 
     @classmethod
-    def cost_per_optimize(cls, mode: str = "simple") -> int:
+    def cost_per_optimize(cls, mode: str = "simple") -> float:
         cfg = get_limit_config()
         return cfg["points_cost_per_optimize_refine"] if mode == "refine" else cfg["points_cost_per_optimize"]
 
@@ -36,41 +39,41 @@ class PointsService:
         return get_limit_config()["points_migration_amount"]
 
     @classmethod
-    def get_balance(cls, user_id: int) -> int:
+    def get_balance(cls, user_id: int) -> Decimal:
         with get_db() as conn:
             row = conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()
-            return int(row["points"] or 0) if row else 0
+            return _point_amount(row["points"] or 0) if row else Decimal(0)
 
     @classmethod
     def has_enough(cls, user_id: int, amount: float) -> bool:
-        required = _integer_amount(amount, ROUND_CEILING)
+        required = _point_amount(amount)
         with get_db() as conn:
             user = conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()
-            return bool(user and int(user["points"] or 0) >= required)
+            return bool(user and _point_amount(user["points"] or 0) >= required)
 
     @classmethod
-    def consume(cls, user_id: int, amount: float, description: str = "", tx_type: str = "generate_consume", request_key: str = "", conn=None, bucket_type: str | None = None) -> int:
-        amount = _integer_amount(amount, ROUND_CEILING)
+    def consume(cls, user_id: int, amount: float, description: str = "", tx_type: str = "generate_consume", request_key: str = "", conn=None, bucket_type: str | None = None, model_id: str = "") -> Decimal:
+        amount = _point_amount(amount)
         if amount <= 0:
             return cls.get_balance(user_id)
         if conn is not None:
-            return cls._consume_in_conn(conn, user_id, amount, description, tx_type, request_key, bucket_type)
+            return cls._consume_in_conn(conn, user_id, amount, description, tx_type, request_key, bucket_type, model_id)
         with get_db() as c:
-            return cls._consume_in_conn(c, user_id, amount, description, tx_type, request_key, bucket_type)
+            return cls._consume_in_conn(c, user_id, amount, description, tx_type, request_key, bucket_type, model_id)
 
     @classmethod
-    def consume_with_breakdown(cls, user_id: int, amount: float, description: str = "", tx_type: str = "generate_consume", request_key: str = "") -> dict:
-        amount = _integer_amount(amount, ROUND_CEILING)
+    def consume_with_breakdown(cls, user_id: int, amount: float, description: str = "", tx_type: str = "generate_consume", request_key: str = "", model_id: str = "") -> dict:
+        amount = _point_amount(amount)
         if amount <= 0:
             return {"balance": cls.get_balance(user_id), "subscription_points_used": 0, "wallet_points_used": 0}
         with get_db() as conn:
-            balance = cls._consume_in_conn(conn, user_id, amount, description, tx_type, request_key)
+            balance = cls._consume_in_conn(conn, user_id, amount, description, tx_type, request_key, model_id=model_id)
             breakdown = cls._allocation_breakdown_in_conn(conn, user_id, [request_key])
         return {"balance": balance, **breakdown}
 
     @classmethod
-    def add_points(cls, user_id: int, amount: float, tx_type: str, description: str = "", conn=None, request_key: str = "", recharge_request_id=None) -> int:
-        amount = _integer_amount(amount)
+    def add_points(cls, user_id: int, amount: float, tx_type: str, description: str = "", conn=None, request_key: str = "", recharge_request_id=None) -> Decimal:
+        amount = _point_amount(amount)
         if amount <= 0:
             return cls.get_balance(user_id) if conn is None else cls._balance_in_conn(conn, user_id)
         if conn is not None:
@@ -79,8 +82,8 @@ class PointsService:
             return cls._add_points_in_conn(c, user_id, amount, tx_type, description, request_key, recharge_request_id)
 
     @classmethod
-    def refund(cls, user_id: int, amount: float, description: str = "", request_key: str = "") -> int:
-        amount = _integer_amount(amount, ROUND_CEILING)
+    def refund(cls, user_id: int, amount: float, description: str = "", request_key: str = "", tx_type: str = "generate_refund", model_id: str = "") -> Decimal:
+        amount = _point_amount(amount)
         if amount <= 0:
             return cls.get_balance(user_id)
         with get_db() as conn:
@@ -90,7 +93,7 @@ class PointsService:
             if request_key:
                 existing = conn.execute("SELECT balance_after FROM point_transactions WHERE request_key = %s", (request_key,)).fetchone()
                 if existing:
-                    return int(existing["balance_after"] or 0)
+                    return _point_amount(existing["balance_after"] or 0)
             ensure_current_cycle_in_conn(conn, user_id)
             original_key = cls._original_request_key(request_key)
             original = conn.execute(
@@ -112,7 +115,7 @@ class PointsService:
                 is_expired = item["bucket_type"] == "subscription" and (item["status"] != "active" or (item["expires_at"] and item["expires_at"] <= now))
                 if is_expired:
                     continue
-                part = min(remaining, int(item["amount"] or 0))
+                part = min(remaining, _point_amount(item["amount"] or 0))
                 if part:
                     bucket_id = item["bucket_id"]
                     conn.execute("UPDATE point_buckets SET remaining_points = remaining_points + %s WHERE id = %s", (part, bucket_id))
@@ -128,7 +131,7 @@ class PointsService:
                 refund_allocations.append((permanent["id"], remaining))
             conn.execute("UPDATE users SET points = points + %s WHERE id = %s", (amount, user_id))
             balance = cls._balance_in_conn(conn, user_id)
-            tx = cls._insert_transaction(conn, user_id, amount, balance, "generate_refund", description, request_key)
+            tx = cls._insert_transaction(conn, user_id, amount, balance, tx_type, description, request_key, model_id=model_id)
             if tx:
                 for bucket_id, part in refund_allocations:
                     conn.execute("INSERT INTO point_transaction_allocations (transaction_id, bucket_id, amount) VALUES (%s, %s, %s)", (tx, bucket_id, part))
@@ -161,7 +164,7 @@ class PointsService:
                 raise ValueError("兑换码不存在")
             if row["is_used"]:
                 raise ValueError("兑换码已被使用")
-            points_to_add = int(row["points"] or 0)
+            points_to_add = _point_amount(row["points"] or 0)
             conn.execute("UPDATE redemption_codes SET is_used = true, used_by = %s, used_by_ip = %s, used_at = %s WHERE id = %s", (user_id, ip, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), row["id"]))
             new_balance = cls._add_points_in_conn(conn, user_id, points_to_add, "redeem_code", f"兑换码兑换 ({code.strip().upper()})", "", None)
             return {"success": True, "points_awarded": points_to_add, "balance": new_balance}
@@ -178,21 +181,21 @@ class PointsService:
             return {"migrated": count}
 
     @classmethod
-    def _balance_in_conn(cls, conn, user_id: int) -> int:
+    def _balance_in_conn(cls, conn, user_id: int) -> Decimal:
         row = conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()
         if not row:
             raise ValueError("用户不存在")
-        return int(row["points"] or 0)
+        return _point_amount(row["points"] or 0)
 
     @classmethod
-    def _insert_transaction(cls, conn, user_id, amount, balance, tx_type, description, request_key="", recharge_request_id=None):
+    def _insert_transaction(cls, conn, user_id, amount, balance, tx_type, description, request_key="", recharge_request_id=None, model_id=""):
         if request_key:
             row = conn.execute(
                 """INSERT INTO point_transactions
-                   (user_id, amount, balance_after, type, description, request_key, recharge_request_id)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s)
+                   (user_id, amount, balance_after, type, description, request_key, recharge_request_id, model_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT DO NOTHING RETURNING id""",
-                (user_id, amount, balance, tx_type, description, request_key, recharge_request_id),
+                (user_id, amount, balance, tx_type, description, request_key, recharge_request_id, model_id or None),
             ).fetchone()
             return row["id"] if row else None
         row = conn.execute(
@@ -219,8 +222,8 @@ class PointsService:
             (user_id, keys),
         ).fetchone()
         return {
-            "subscription_points_used": max(0, int(row["subscription_points_used"] or 0)) if row else 0,
-            "wallet_points_used": max(0, int(row["wallet_points_used"] or 0)) if row else 0,
+            "subscription_points_used": max(Decimal(0), _point_amount(row["subscription_points_used"] or 0)) if row else Decimal(0),
+            "wallet_points_used": max(Decimal(0), _point_amount(row["wallet_points_used"] or 0)) if row else Decimal(0),
         }
 
     @classmethod
@@ -236,7 +239,7 @@ class PointsService:
         if request_key:
             existing = conn.execute("SELECT balance_after FROM point_transactions WHERE request_key = %s", (request_key,)).fetchone()
             if existing:
-                return int(existing["balance_after"] or 0)
+                return _point_amount(existing["balance_after"] or 0)
         ensure_current_cycle_in_conn(conn, user_id)
         bucket = conn.execute("SELECT id FROM point_buckets WHERE user_id = %s AND bucket_type = 'permanent' FOR UPDATE", (user_id,)).fetchone()
         conn.execute("UPDATE point_buckets SET granted_points = granted_points + %s, remaining_points = remaining_points + %s WHERE id = %s", (amount, amount, bucket["id"]))
@@ -248,17 +251,17 @@ class PointsService:
         return balance
 
     @classmethod
-    def _consume_in_conn(cls, conn, user_id, amount, description="", tx_type="generate_consume", request_key="", bucket_type=None):
+    def _consume_in_conn(cls, conn, user_id, amount, description="", tx_type="generate_consume", request_key="", bucket_type=None, model_id=""):
         user = conn.execute("SELECT id, points FROM users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
         if not user:
             raise ValueError("用户不存在")
         if request_key:
             existing = conn.execute("SELECT balance_after FROM point_transactions WHERE request_key = %s", (request_key,)).fetchone()
             if existing:
-                return int(existing["balance_after"] or 0)
+                return _point_amount(existing["balance_after"] or 0)
         ensure_current_cycle_in_conn(conn, user_id)
         user = conn.execute("SELECT id, points FROM users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
-        if int(user["points"] or 0) < amount:
+        if _point_amount(user["points"] or 0) < amount:
             raise ValueError("积分不足")
         now = datetime.now()
         buckets = conn.execute(
@@ -276,18 +279,18 @@ class PointsService:
         for bucket in buckets:
             if remaining <= 0:
                 break
-            part = min(remaining, int(bucket["remaining_points"] or 0))
+            part = min(remaining, _point_amount(bucket["remaining_points"] or 0))
             if part:
                 conn.execute("UPDATE point_buckets SET remaining_points = remaining_points - %s WHERE id = %s", (part, bucket["id"]))
                 if bucket["bucket_type"] == "subscription":
-                    conn.execute("UPDATE subscription_cycles SET remaining_points = %s WHERE id = %s", (int(bucket["remaining_points"] or 0) - part, bucket["cycle_id"]))
+                    conn.execute("UPDATE subscription_cycles SET remaining_points = %s WHERE id = %s", (_point_amount(bucket["remaining_points"] or 0) - part, bucket["cycle_id"]))
                 allocations.append((bucket["id"], part))
                 remaining -= part
         if remaining:
             raise ValueError("积分不足")
         conn.execute("UPDATE users SET points = points - %s WHERE id = %s", (amount, user_id))
         balance = cls._balance_in_conn(conn, user_id)
-        tx = cls._insert_transaction(conn, user_id, -amount, balance, tx_type, description, request_key)
+        tx = cls._insert_transaction(conn, user_id, -amount, balance, tx_type, description, request_key, model_id=model_id)
         if tx:
             for bucket_id, part in allocations:
                 conn.execute("INSERT INTO point_transaction_allocations (transaction_id, bucket_id, amount) VALUES (%s, %s, %s)", (tx, bucket_id, part))
@@ -295,16 +298,16 @@ class PointsService:
 
     @classmethod
     def grant_subscription_points_in_conn(cls, conn, user_id: int, bucket_id: int, cycle_id: int,
-                                          amount: int, description: str, request_key: str) -> int:
+                                          amount: float, description: str, request_key: str) -> Decimal:
         """把订阅周期积分写入订阅桶、用户余额和积分流水。"""
-        amount = max(0, int(amount or 0))
+        amount = max(Decimal(0), _point_amount(amount))
         user = conn.execute("SELECT id FROM users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
         if not user:
             raise ValueError("用户不存在")
         if request_key:
             existing = conn.execute("SELECT balance_after FROM point_transactions WHERE request_key = %s", (request_key,)).fetchone()
             if existing:
-                return int(existing["balance_after"] or 0)
+                return _point_amount(existing["balance_after"] or 0)
         bucket = conn.execute(
             "SELECT id FROM point_buckets WHERE id = %s AND user_id = %s AND bucket_type = 'subscription' FOR UPDATE",
             (bucket_id, user_id),
@@ -331,9 +334,9 @@ class PointsService:
         return balance
 
     @classmethod
-    def expire_subscription_bucket_in_conn(cls, conn, user_id: int, bucket_id: int, amount: int, cycle_id: int, request_key: str, description: str) -> int:
+    def expire_subscription_bucket_in_conn(cls, conn, user_id: int, bucket_id: int, amount: float, cycle_id: int, request_key: str, description: str) -> Decimal:
         """清零订阅桶并写入负向流水，供订阅周期过期处理调用。"""
-        amount = max(0, int(amount or 0))
+        amount = max(Decimal(0), _point_amount(amount))
         if amount <= 0:
             return cls._balance_in_conn(conn, user_id)
         user = conn.execute("SELECT id FROM users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
@@ -345,7 +348,7 @@ class PointsService:
         ).fetchone()
         if not bucket or bucket["status"] != "active":
             return cls._balance_in_conn(conn, user_id)
-        amount = min(amount, int(bucket["remaining_points"] or 0))
+        amount = min(amount, _point_amount(bucket["remaining_points"] or 0))
         if amount <= 0:
             conn.execute("UPDATE point_buckets SET status = 'expired' WHERE id = %s", (bucket_id,))
             return cls._balance_in_conn(conn, user_id)
