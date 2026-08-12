@@ -484,7 +484,7 @@ class TaskManager:
     @classmethod
     async def recover_orphaned_tasks(cls):
         """启动时恢复服务中断前正在轮询的任务"""
-        from backend.routers.generate import _poll_and_download
+        from backend.services.generation_service import poll_and_download as _poll_and_download
         recovered = 0
         for task_id, task in list(cls._tasks.items()):
             if task.pop("_recover", None):
@@ -504,7 +504,7 @@ class TaskManager:
 
     @classmethod
     async def _recover_task(cls, task_id, provider_id, external_task_id, meta, user_id):
-        from backend.routers.generate import _poll_and_download
+        from backend.services.generation_service import poll_and_download as _poll_and_download
         from backend.services.finance_service import FinanceService
         from backend.services.points_service import PointsService
         task = cls.get_task(task_id)

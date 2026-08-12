@@ -84,9 +84,9 @@ function renderInline(text) {
   while ((m = INLINE_RE.exec(escaped))) {
     out += escaped.slice(last, m.index)
     if (m[1] != null) {
-      // 图片 ![alt](url)
+      // 图片 ![alt](url)：允许 http/https 绝对地址与同源 / 相对路径（如图片接口 /api/images/file/xxx）
       const img = m[1].match(/^!\[([^\]]*)\]\(([^)\s]+)\)$/)
-      if (img && SAFE_URL_RE.test(img[2])) {
+      if (img && (SAFE_URL_RE.test(img[2]) || (img[2].startsWith('/') && !img[2].startsWith('//')))) {
         out += `<img src="${img[2]}" alt="${img[1]}" loading="lazy" />`
       } else {
         out += m[1]

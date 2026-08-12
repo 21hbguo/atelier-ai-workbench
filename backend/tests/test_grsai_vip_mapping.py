@@ -1,7 +1,7 @@
 import asyncio
 from unittest.mock import patch
 from backend.services.providers.grsai_provider import GrsAIProvider
-from backend.routers.generate import _get_model_cost
+from backend.services.generation_service import get_model_cost as _get_model_cost
 
 def test_vip_pixels_low_square():
     assert GrsAIProvider._resolve_vip_aspect_pixels("low","1:1")=="1024x1024"
@@ -21,7 +21,7 @@ def test_image_ratio_pixels():
     assert GrsAIProvider._resolve_image_ratio_pixels("auto")==""
 
 def test_vip_resolution_cost_mapping():
-    with patch("backend.routers.generate.get_generation_models",return_value={"grsai-vip":{"params":{"points_cost":15,"resolution_costs":{"auto":15,"low":15,"medium":25,"high":40}}}}):
+    with patch("backend.services.generation_service.get_generation_models",return_value={"grsai-vip":{"params":{"points_cost":15,"resolution_costs":{"auto":15,"low":15,"medium":25,"high":40}}}}):
         assert _get_model_cost("grsai-vip","auto")==15
         assert _get_model_cost("grsai-vip","low")==15
         assert _get_model_cost("grsai-vip","medium")==25

@@ -219,3 +219,54 @@ def test_run_agent_stream_yields_citations_increments():
     ]
     assert events[-1]["type"] == "done"
     assert events[-1]["text"] == "最终回答"
+
+
+# ---------------------------------------------------------------- 生图图片自动追加
+
+def test_append_tool_images_unit():
+    """_append_tool_images：按图片 URL 去重，缺失的追加到文本末尾。"""
+    from backend.services.agent.loop import _append_tool_images
+
+    img = "![图片](/api/images/file/t_0.png)"
+    assert _append_tool_images("", [img]) == img
+    assert _append_tool_images(None, [img]) == img
+    assert _append_tool_images("说明文字", [img]) == "说明文字\n\n" + img
+    # 已含（完整标记）不追加
+    assert _append_tool_images("说明 " + img, [img]) == "说明 " + img
+    # LLM 改写 alt 文本：URL 已出现则不追加，避免重复图
+    assert _append_tool_images("![生成的猫咪](/api/images/file/t_0.png)", [img]) == "![生成的猫咪](/api/images/file/t_0.png)"
+    # 多张图，只补缺失
+    assert _append_tool_images("a", [img, "![b](/x.png)"]) == "a\n\n" + img + "\n![b](/x.png)"
+    assert _append_tool_images("文字", []) == "文字"
+
+
+def test_run_agent_stream_appends_tool_image_when_llm_omits():
+    """LLM 最终回复未包含工具返回的图片 markdown 时，loop 自动追加（保证图片展示）。"""
+    from backend.services.agent.tools import image_gen as ig_module
+
+    ctx = AgentContext(session_id=10, user_id=1,
+                       extra={"entitlements": {"allowed_models": []}})
+    rounds = [
+        [_done_event("好的", [{"id": "call_1", "name": "image_gen",
+                               "arguments": {"prompt": "一只猫"},
+                               "arguments_raw": '{"prompt": "一只猫"}'}])],
+        [_done_event("画好啦，猫在窗台上晒太阳", [])],
+    ]
+
+    async def collect():
+        return [e async for e in run_agent_stream(
+            messages=[{"role": "user", "content": "画猫"}],
+            tools_names=["image_gen"],
+            ctx=ctx,
+        )]
+
+    with patch.object(LLMClient, "stream_tools", new=_FakeStreamTools(rounds)), \
+         patch.object(ig_module, "create_generation_task", return_value={"task_id": "t-1", "status": "processing"}), \
+         patch.object(ig_module, "wait_generation_task", AsyncMock(return_value={
+             "status": "completed", "result_urls": ["/x/t-1_0.png"], "error": None, "timed_out": False})):
+        events = _run(collect())
+
+    done = events[-1]
+    assert done["type"] == "done"
+    assert done["text"].startswith("画好啦，猫在窗台上晒太阳")
+    assert done["text"].endswith("![图片](/api/images/file/t-1_0.png)")

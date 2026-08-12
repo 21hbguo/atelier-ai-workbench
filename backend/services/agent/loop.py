@@ -10,7 +10,9 @@ anthropic 协议下的 tool_result 转换由上层（调用方）负责。
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+import re
 import time
 from typing import Optional
 
@@ -32,6 +34,40 @@ _EMPTY_FINAL_MSG = "抱歉，我暂时无法完成这个任务，请换个说法
 # usage 统一 schema 的各分项键（与 llm_client._extract_usage 对齐）
 _USAGE_KEYS = ("input_tokens", "output_tokens", "cache_read_tokens",
                "cache_creation_tokens", "reasoning_tokens", "total_tokens")
+
+# markdown 图片语法：![alt](url)（url 不含空白字符），用于收集生图工具返回的图片
+_IMG_MARK_RE = re.compile(r"!\[[^\]]*\]\([^)\s]+\)")
+
+
+def _mark_url(mark):
+    """提取 markdown 图片标记中的 URL（最后一个圆括号内）。"""
+    end = mark.rfind(")")
+    if end < 0:
+        return None
+    start = mark.rfind("(", 0, end)
+    if start < 0:
+        return None
+    return mark[start + 1:end].strip() or None
+
+
+def _append_tool_images(text, marks):
+    """把工具返回的 markdown 图片追加到最终回复文本（LLM 未主动贴图时兜底）。
+
+    按图片 URL 去重：LLM 可能改写 alt 文本或给 URL 加 title，
+    只要 URL 已出现在最终文本中就不再追加，避免重复展示。
+    """
+    if not marks:
+        return text
+    text = text or ""
+    missing = []
+    for m in marks:
+        url = _mark_url(m)
+        if url and url not in text:
+            missing.append(m)
+    if not missing:
+        return text
+    sep = "\n\n" if text.strip() else ""
+    return text.rstrip() + sep + "\n".join(missing)
 
 
 def _merge_usage(acc, new):
@@ -70,6 +106,7 @@ async def run_agent_stream(
         {"type": "chunk", "text": 增量文本} / {"type": "thinking", "text": 思考增量}：LLM 流式透传
         {"type": "tool_status", "name": 工具名, "status": "executing"}：执行工具前
         {"type": "tool_status", "name": 工具名, "status": "done", "result_len": N}：执行完
+        {"type": "heartbeat"}：工具执行超过 10s 未完成时的保活事件（上层可转 SSE 注释行）
         {"type": "citations", "citations": [{"url", "title"}, ...]}：工具执行后新增的来源引用（仅增量）
         {"type": "done", "text": 最终文本回复, "thinking": 各轮思考过程合并}：最终回复
 
@@ -85,6 +122,7 @@ async def run_agent_stream(
 
     thinking_parts: list[str] = []  # 每轮 LLM 的思考过程（agent 模式合并展示）
     total_usage = None  # 多轮 LLM 调用的 usage 累积（按 token 量扣费用）
+    tool_image_marks: list[str] = []  # 生图类工具返回的 markdown 图片（最终回复缺失时自动追加）
 
     executed_calls = 0  # 已执行的工具调用累计数
     sent_citations = 0  # 已推送的来源引用条数（citations 事件只发增量）
@@ -141,11 +179,13 @@ async def run_agent_stream(
         if not calls:
             # 无 tool_calls → 直接返回文本
             if text.strip():
+                text = _append_tool_images(text, tool_image_marks)
                 yield {"type": "done", "text": text, "thinking": "\n\n".join(thinking_parts), "usage": total_usage}
                 return
             if not send_tools:
                 # 已不再传 tools 仍无内容（理论上 stream_tools 已兜底），防御退出
-                yield {"type": "done", "text": _EMPTY_FINAL_MSG, "thinking": "\n\n".join(thinking_parts), "usage": total_usage}
+                text = _append_tool_images(_EMPTY_FINAL_MSG, tool_image_marks)
+                yield {"type": "done", "text": text, "thinking": "\n\n".join(thinking_parts), "usage": total_usage}
                 return
             continue  # 防御：空响应再走一轮
 
@@ -187,7 +227,21 @@ async def run_agent_stream(
             else:
                 started = time.monotonic()
                 try:
-                    raw_result = await tool["handler"](args, ctx)
+                    # 工具执行期间（如生图最长约 100s）以 10s 为粒度轮询完成状态，
+                    # 未完成时 yield heartbeat 事件供上层 SSE 保活（前端流不超时）。
+                    handler_task = asyncio.ensure_future(tool["handler"](args, ctx))
+                    try:
+                        while True:
+                            done, _pending = await asyncio.wait({handler_task}, timeout=10.0)
+                            if done:
+                                raw_result = handler_task.result()
+                                break
+                            yield {"type": "heartbeat"}
+                    finally:
+                        # 生成器被提前关闭（客户端断连等）时取消未完成的工具任务，
+                        # 避免 wait_generation_task 等长任务继续空耗事件循环
+                        if not handler_task.done():
+                            handler_task.cancel()
                     result = "" if raw_result is None else str(raw_result)
                 except Exception:
                     logger.exception("[agent/loop] 工具 %r 执行异常", name)
@@ -198,6 +252,13 @@ async def run_agent_stream(
                 )
 
             yield {"type": "tool_status", "name": name, "status": "done", "result_len": len(result)}
+            # 生图类工具（image_gen）返回的 markdown 图片收集：部分 LLM 在「最后一轮不带 tools」
+            # 时不会原样粘贴工具返回的图片链接，而是在最终回复前自动追加，保证图片一定展示
+            if name == "image_gen" and result:
+                for m in _IMG_MARK_RE.finditer(result):
+                    mark = m.group(0)
+                    if mark not in tool_image_marks:
+                        tool_image_marks.append(mark)
             # 引用上报：工具执行后若 ctx 新增了来源引用，推送 citations 增量事件（每次只发新增部分）
             if len(ctx.citations) > sent_citations:
                 yield {"type": "citations", "citations": ctx.citations[sent_citations:]}
@@ -207,7 +268,8 @@ async def run_agent_stream(
 
     # 理论上已由「最后一轮不带 tools」保证返回；此处防御兜底
     logger.warning("[agent/loop] 达到最大轮数仍未得到文本回复，返回兜底文案")
-    yield {"type": "done", "text": _EMPTY_FINAL_MSG, "thinking": "\n\n".join(thinking_parts), "usage": total_usage}
+    final_text = _append_tool_images(_EMPTY_FINAL_MSG, tool_image_marks)
+    yield {"type": "done", "text": final_text, "thinking": "\n\n".join(thinking_parts), "usage": total_usage}
 
 
 async def run_agent(

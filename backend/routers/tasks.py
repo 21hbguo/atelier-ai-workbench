@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
 
 from backend.services.task_manager import TaskManager
-from backend.routers.generate import retry_generation_task
+from backend.services.generation_service import GenerationError, retry_generation_task
 from backend.models.schemas import TaskStatusResponse
 from backend.auth import get_current_user
 from backend.database import get_db
@@ -106,7 +106,11 @@ async def retry_task(task_id: str, user=Depends(get_current_user)):
     if not user.get("is_admin") and task.get("user_id") != user["user_id"]:
         raise HTTPException(status_code=403, detail="无权操作此任务")
 
-    task = retry_generation_task(task_id)
+    try:
+        task = retry_generation_task(task_id)
+    except GenerationError as e:
+        # 积分不足(402) / 套餐不符(403) / 并发超限(429) / 参数错误(400) 等
+        raise HTTPException(status_code=e.status_code, detail=str(e))
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在或状态不允许重试")
     return task

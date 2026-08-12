@@ -87,6 +87,7 @@ _AGENT_TOOLS = [
     "web_search",
     "fetch_url",
     "file_ops_write_text",
+    "image_gen",
 ]
 
 
@@ -684,10 +685,10 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
     # 统一组装，保证三区块结构（区块2 文档块固定前缀 + 区块3 纯追加历史）逐轮稳定。
     attached_docs = [{"original_name": r["original_name"], "page_content": r["page_content"]} for r in file_rows]
 
-    # 自动模式：会话有已解析文件 → 走 agent 工具链路（工具可检索/总结文档）；
-    # 或用户显式开启联网搜索（web_search=true，无文档时仅注册 web_search 工具）。
+    # 自动模式：纯对话也启用 agent 工具链路（始终注册 image_gen，由 LLM 判断何时生图）；
+    # 会话有已解析文件 → 追加文档检索/总结等工具；用户显式开启联网搜索（web_search=true）→ 追加搜索工具。
     # 仅 OpenAI 兼容协议支持工具回填（anthropic 一期降级普通聊天，文档注入仍生效）
-    use_agent = bool(attached_docs) or body.web_search
+    use_agent = True
     if use_agent:
         cfg = dict(get_llm_config())
         for k, v in override.items():
@@ -695,9 +696,8 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                 cfg[k] = v
         if LLMClient.protocol(cfg) != "openai":
             use_agent = False
-    # 工具列表裁剪：有文档 → 全量工具（文档检索/总结/搜索/抓取）；
-    # 仅联网搜索 → 同时注册 web_search + fetch_url：纯搜索模式也需要 fetch_url
-    # 抓正文做链接扩散（搜→选→抓→扩散），否则模型拿到搜索结果后无法抓取正文
+    # 工具列表裁剪：有文档 → 文档检索/总结工具；仅联网搜索 → web_search + fetch_url
+    # （纯搜索模式也需要 fetch_url 抓正文做链接扩散）；始终追加 image_gen（生图）
     tools_names = None
     if use_agent:
         tools_names = ["rag_memory_search", "document_summary_list", "document_summary_summarize"] if attached_docs else []
@@ -705,6 +705,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
             tools_names.extend(["web_search", "fetch_url"])
         if entitlements["features"].get("file_write"):
             tools_names.append("file_ops_write_text")
+        tools_names.append("image_gen")
 
     def _refund_once() -> None:
         # refund 幂等（request_key 唯一），重复调用安全
@@ -735,6 +736,12 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                     ctx = AgentContext(session_id=session_id, user_id=user_id, extra={"entitlements": entitlements})
                     # 纯联网搜索模式（无文档）时，system 注入搜索工具使用指南 + 当天日期
                     agent_system = build_system_prompt(target_model)
+                    # 兼容旧版系统提示词文件（data/prompts/chat_system.md）中的「引导去 AI 绘画页」
+                    # 文案：agent 链路已可直接调用 image_gen 生图，无需引导用户跳转
+                    agent_system = agent_system.replace(
+                        "（本聊天为对话模式，需要生成图片时引导用户到网站的「AI 绘画」页面使用）",
+                        "（需要生成图片时，你可以直接调用 image_gen 工具在对话中生成并展示，无需引导用户去其他页面）",
+                    )
                     # 链接访问指引（通道一）：仅当 fetch_url 工具实际注册给模型时才指引，
                     # 避免引导模型调用未注册工具（纯搜索模式 tools_names 只有 web_search）
                     if "fetch_url" in tools_names:
@@ -767,6 +774,22 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                             "5. 基于搜索结果回答，逐条注明来源与日期；搜索不到就如实说明，"
                             "绝不编造内容。"
                         )
+                    if "image_gen" in tools_names:
+                        # 生图工具使用指南：仅在 image_gen 实际注册给模型时注入（通道一）
+                        agent_system += (
+                            "\n\n【图片生成】\n"
+                            "用户要求生成图片（画画、设计海报/头像/壁纸/插画/LOGO 等视觉内容）时，"
+                            "应直接调用 image_gen 工具生成，无需引导用户去其他页面。\n"
+                            "使用规范：\n"
+                            "1. prompt 参数必须详细描述画面：主体、风格、构图、光线、色彩、氛围等，"
+                            "描述越具体效果越好，必要时可用中文描述并补充英文风格词；\n"
+                            "2. 可选参数：size（如 1024x1024）、aspect_ratio（如 16:9、1:1、2:3）、"
+                            "resolution/quality（画质档位）、model_id（生图模型，默认即可）；\n"
+                            "3. 生成通常需要 30-120 秒，工具会等待结果；若返回任务ID说明图片仍在"
+                            "后台生成，应如实告知用户预计 1-3 分钟完成、可稍后在「AI 绘画」页面查看；\n"
+                            "4. 图片会以 markdown 形式返回，在回复中直接展示图片并附一句说明即可；"
+                            "生成失败时如实转述错误原因（如积分不足），不编造结果。"
+                        )
                     messages = await ChatService.prepare_session_messages(
                         session_id, target_model, attached_docs,
                         system_prompt=agent_system, override=override,
@@ -792,8 +815,13 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                             if event.get("result_len") is not None:
                                 data["result_len"] = event["result_len"]
                             yield f"event: tool_status\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+                        elif etype == "heartbeat":
+                            # 工具执行期间（生图最长约 100s）的保活：必须推送带 JSON data 的
+                            # 有效 SSE 事件（前端 api.js 仅对有效事件重置 180s 空闲超时，
+                            # 未知 eventType 会被忽略），避免长等待期间连接被前端中断
+                            yield f"event: heartbeat\ndata: {json.dumps({'type': 'heartbeat'}, ensure_ascii=False)}\n\n"
                         elif etype == "citations":
-                            # 工具执行的来源引用（仅当轮 SSE 展示，不落库）
+                            # 工具执行的来源引用（SSE 实时展示；done 分支随消息落库）
                             yield f"event: citations\ndata: {json.dumps({'citations': event['citations']}, ensure_ascii=False)}\n\n"
                         elif etype == "done":
                             text = str(event.get("text") or "")
