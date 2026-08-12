@@ -767,7 +767,8 @@ export default function ChatAssistantPage() {
     chatAPI.sessions().then(res => {
       const items = res.data?.items || []
       setSessions(items)
-      if (items.length) setActiveId(items[0].id)
+      // 不自动选中最近会话：每次进入页面显示引导页（快速新建会话），
+      // 历史会话保留在侧边栏，点击后才进入；引导页直接对话时 handleSend 自动建新会话（无感）
     }).catch(() => {}).finally(() => setSessionsLoading(false))
     const handlePoints = () => { const u = readUser(); if (u) setPoints(u.points ?? 0) }
     window.addEventListener('points-updated', handlePoints)
