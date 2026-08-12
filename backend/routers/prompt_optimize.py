@@ -58,7 +58,8 @@ async def optimize_prompt(body: PromptOptimizeRequest, user=Depends(get_current_
                     PointsService.refund(user_id, total_cost, "优化失败退还", request_key=f"optimize_refund:{req_id}")
                 yield f"event: error\ndata: {json.dumps({'detail': '优化失败，请重试'}, ensure_ascii=False)}\n\n"
 
-        return StreamingResponse(event_generator(), media_type="text/event-stream")
+        return StreamingResponse(event_generator(), media_type="text/event-stream",
+                                 headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
 
     try:
         versions = await (PromptOptimizer.optimize_refine(body.prompt, body.count, body.format) if body.mode == "refine" else PromptOptimizer.optimize(body.prompt, body.count, body.format))

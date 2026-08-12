@@ -1538,7 +1538,8 @@ async def test_classification_stream(body: dict, admin=Depends(require_admin)):
         async def event_stream():
             async for chunk in ClassificationService.stream_classify_batch(system_prompt, items, use_stream=True):
                 yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
-        return StreamingResponse(event_stream(), media_type="text/event-stream")
+        return StreamingResponse(event_stream(), media_type="text/event-stream",
+                                 headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
     else:
         result = []
         async for chunk in ClassificationService.stream_classify_batch(system_prompt, items, use_stream=False):
@@ -1559,7 +1560,8 @@ async def stream_classification_logs(task_id: int, admin=Depends(require_admin))
         async for log in ClassificationService.get_task_logs(task_id):
             yield f"data: {json.dumps(log, ensure_ascii=False)}\n\n"
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return StreamingResponse(event_stream(), media_type="text/event-stream",
+                             headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
 
 
 @router.post("/audit/tasks")
@@ -1616,7 +1618,8 @@ async def stream_content_audit_logs(task_id: int, admin=Depends(require_admin)):
     async def event_stream():
         async for log in ContentAuditService.get_task_logs(task_id):
             yield f"data: {json.dumps(log, ensure_ascii=False)}\n\n"
-    return StreamingResponse(event_stream(),media_type="text/event-stream")
+    return StreamingResponse(event_stream(),media_type="text/event-stream",
+                             headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
 
 
 # ============ 聊天记录管理 ============

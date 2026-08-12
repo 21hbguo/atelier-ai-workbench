@@ -622,4 +622,5 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
             if not finished and not refunded:
                 _refund_once()
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(event_generator(), media_type="text/event-stream",
+                             headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
