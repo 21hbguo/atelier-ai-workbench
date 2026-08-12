@@ -19,4 +19,41 @@ from backend.services.agent.context import AgentContext
 from backend.services.agent.loop import run_agent
 from backend.services.agent import tools  # noqa: F401  （触发内置工具注册）
 
-__all__ = ["AgentContext", "registry", "run_agent", "tools"]
+# v2: manifest 驱动的工具系统（与上述 v1 体系并存，不互相影响）
+from backend.services.agent.manifest import (  # noqa: F401
+    ToolManifest,
+    ToolContext,
+    ToolResult,
+    ToolCall,
+    ToolCallStatus,
+    ToolExecutionEvent,
+)
+from backend.services.agent.registry_v2 import (  # noqa: F401
+    register_tool,
+    get_tool,
+    list_tools,
+    get_tools_schema,
+    clear_registry,
+)
+from backend.services.agent.loop_v2 import run_agent_stream_v2  # noqa: F401
+
+__all__ = [
+    # v1
+    "AgentContext",
+    "registry",
+    "run_agent",
+    "tools",
+    # v2
+    "ToolManifest",
+    "ToolContext",
+    "ToolResult",
+    "ToolCall",
+    "ToolCallStatus",
+    "ToolExecutionEvent",
+    "register_tool",
+    "get_tool",
+    "list_tools",
+    "get_tools_schema",
+    "clear_registry",
+    "run_agent_stream_v2",
+]
