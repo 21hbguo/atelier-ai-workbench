@@ -843,9 +843,14 @@ def init_db():
                 """INSERT INTO subscription_plans
                    (code, name, description, price_rmb, cycle_days, grant_points, features, allowed_models, is_free, sort_order)
                    VALUES ('free', '免费套餐', '基础对话能力，按需使用永久积分。', 0, 30, 0,
-                           '{"web_search": false, "file_upload": false, "file_write": false, "max_tool_calls": 0, "max_chat_sessions": 3, "max_chat_files": 0}'::jsonb,
+                           '{"web_search": false, "file_upload": false, "file_write": false, "max_tool_calls": 0, "max_chat_sessions": 100, "max_chat_files": 0}'::jsonb,
                            '[]'::jsonb, TRUE, 0)
                    ON CONFLICT (code) DO NOTHING"""
+            )
+            conn.execute(
+                """UPDATE subscription_plans
+                   SET features = jsonb_set(features, '{max_chat_sessions}', '100'::jsonb), updated_at = NOW()
+                   WHERE is_free = TRUE AND features ->> 'max_chat_sessions' IS DISTINCT FROM '100'"""
             )
 
         # 初始化默认分类

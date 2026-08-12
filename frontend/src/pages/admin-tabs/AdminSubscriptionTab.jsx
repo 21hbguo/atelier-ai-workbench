@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { adminAPI } from '../../api'
 
-const emptyPlan = { code: '', name: '', description: '', price_rmb: 0, cycle_days: 30, grant_points: 0, features: { web_search: false, file_upload: false, file_write: false, max_tool_calls: 0, max_chat_sessions: 3, max_chat_files: 0 }, allowed_models: [], max_concurrent_requests: 1, enabled: true, is_free: false, sort_order: 0 }
+const emptyPlan = { code: '', name: '', description: '', price_rmb: 0, cycle_days: 30, grant_points: 0, features: { web_search: false, file_upload: false, file_write: false, max_tool_calls: 0, max_chat_sessions: 100, max_chat_files: 0 }, allowed_models: [], max_concurrent_requests: 1, enabled: true, is_free: false, sort_order: 0 }
 
 export default function AdminSubscriptionTab() {
   const [plans, setPlans] = useState([])

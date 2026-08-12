@@ -11,7 +11,7 @@ FEATURE_DEFAULTS = {
     "file_upload": False,
     "file_write": False,
     "max_tool_calls": 0,
-    "max_chat_sessions": 3,
+    "max_chat_sessions": 100,
     "max_chat_files": 0,
 }
 
