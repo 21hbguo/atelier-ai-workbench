@@ -7,12 +7,12 @@ from decimal import Decimal
 
 
 FEATURE_DEFAULTS = {
-    "web_search": False,
-    "file_upload": False,
-    "file_write": False,
-    "max_tool_calls": 0,
+    "web_search": True,
+    "file_upload": True,
+    "file_write": True,
+    "max_tool_calls": 10,
     "max_chat_sessions": 100,
-    "max_chat_files": 0,
+    "max_chat_files": 20,
 }
 
 

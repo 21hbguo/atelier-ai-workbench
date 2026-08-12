@@ -843,14 +843,29 @@ def init_db():
                 """INSERT INTO subscription_plans
                    (code, name, description, price_rmb, cycle_days, grant_points, features, allowed_models, is_free, sort_order)
                    VALUES ('free', '免费套餐', '基础对话能力，按需使用永久积分。', 0, 30, 0,
-                           '{"web_search": false, "file_upload": false, "file_write": false, "max_tool_calls": 0, "max_chat_sessions": 100, "max_chat_files": 0}'::jsonb,
+                           '{"web_search": true, "file_upload": true, "file_write": true, "max_tool_calls": 10, "max_chat_sessions": 100, "max_chat_files": 20}'::jsonb,
                            '[]'::jsonb, TRUE, 0)
                    ON CONFLICT (code) DO NOTHING"""
             )
+            # free 权益与付费对齐（功能全开：联网搜索/文件上传/文件写入/工具调用），
+            # 仅保留未来做模型限制与积分限制的余地；幂等刷新已有库
             conn.execute(
                 """UPDATE subscription_plans
-                   SET features = jsonb_set(features, '{max_chat_sessions}', '100'::jsonb), updated_at = NOW()
-                   WHERE is_free = TRUE AND features ->> 'max_chat_sessions' IS DISTINCT FROM '100'"""
+                   SET features = '{"web_search": true, "file_upload": true, "file_write": true, "max_tool_calls": 10, "max_chat_sessions": 100, "max_chat_files": 20}'::jsonb,
+                       updated_at = NOW()
+                   WHERE is_free = TRUE AND features <> '{"web_search": true, "file_upload": true, "file_write": true, "max_tool_calls": 10, "max_chat_sessions": 100, "max_chat_files": 20}'::jsonb"""
+            )
+            # 存量免费用户周期快照同步刷新（权益读取走 entitlements_snapshot，需一并迁移才立即生效）
+            conn.execute(
+                """UPDATE subscription_cycles c
+                   SET entitlements_snapshot = jsonb_build_object(
+                         'id', p.id, 'code', p.code, 'name', p.name, 'description', p.description,
+                         'price_rmb', p.price_rmb::text, 'cycle_days', p.cycle_days, 'grant_points', p.grant_points,
+                         'features', p.features, 'allowed_models', p.allowed_models,
+                         'max_concurrent_requests', COALESCE(p.max_concurrent_requests, 1), 'is_free', p.is_free)
+                   FROM subscription_plans p
+                   WHERE c.plan_id = p.id AND p.is_free = TRUE AND c.status = 'active'
+                     AND c.entitlements_snapshot->'features' IS DISTINCT FROM p.features"""
             )
 
         # 初始化默认分类

@@ -439,12 +439,7 @@ async def list_sessions(user=Depends(get_current_user)):
 async def create_session(user=Depends(get_current_user)):
     user_id = user["user_id"]
     with get_db() as conn:
-        entitlements = get_entitlements_in_conn(conn, user_id)
-        if entitlements["plan"].get("is_free"):
-            max_sessions = 100
-            cnt = conn.execute("SELECT COUNT(*) AS cnt FROM chat_sessions WHERE user_id = %s", (user_id,)).fetchone()["cnt"]
-            if cnt >= max_sessions:
-                raise HTTPException(status_code=400, detail=f"会话数量已达上限（{max_sessions} 个），请先删除旧会话")
+        # 会话数量不限制（免费与付费权益一致，未来如需限制改读套餐 features.max_chat_sessions）
         row = conn.execute(
             "INSERT INTO chat_sessions (user_id, title) VALUES (%s, '新对话') RETURNING id, title",
             (user_id,),
