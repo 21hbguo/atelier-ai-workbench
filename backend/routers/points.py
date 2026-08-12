@@ -134,30 +134,27 @@ async def create_recharge_request(body: RechargeCreateRequest, request: Request,
     ip = get_client_ip(request)
     with get_db() as conn:
         _expire_stale_requests(conn, user["user_id"])
-        existing = conn.execute(
-            "SELECT id, amount, discount, created_at FROM recharge_requests WHERE user_id = %s AND channel = %s AND status = 'pending' ORDER BY created_at DESC LIMIT 1",
+        # 查找该用户该渠道所有未过期的 pending 订单，优先复用金额匹配的
+        pending_rows = conn.execute(
+            "SELECT id, amount, discount, tx_no, created_at FROM recharge_requests WHERE user_id = %s AND channel = %s AND status = 'pending' ORDER BY created_at DESC",
             (user["user_id"], channel),
-        ).fetchone()
-        if existing:
-            existing_base = float(existing["amount"]) + float(existing["discount"])
-            if abs(existing_base - float(body.amount)) < 1e-6:
-                created = existing["created_at"]
+        ).fetchall()
+        for req in pending_rows:
+            req_base = float(req["amount"]) + float(req["discount"])
+            if abs(req_base - float(body.amount)) < 1e-6:
+                created = req["created_at"]
                 if isinstance(created, str):
                     created = datetime.strptime(created, "%Y-%m-%d %H:%M:%S")
                 expires_at = created + timedelta(minutes=10)
                 remaining = max(0, int((expires_at - datetime.now()).total_seconds()))
                 return {
-                    "id": existing["id"],
-                    "amount": float(existing["amount"]),
-                    "discount": float(existing["discount"]),
+                    "id": req["id"],
+                    "tx_no": req["tx_no"],
+                    "amount": float(req["amount"]),
+                    "discount": float(req["discount"]),
                     "remaining_seconds": remaining,
                     "message": "已有待捐赠请求",
                 }
-            # 金额变更，把旧订单标记为过期，继续创建新订单
-            conn.execute(
-                "UPDATE recharge_requests SET status = 'expired' WHERE id = %s AND user_id = %s AND status = 'pending'",
-                (existing["id"], user["user_id"]),
-            )
         discount = _generate_unique_discount(conn, user["user_id"])
         actual_amount = round(body.amount - discount, 2)
         tx_no = f"RCH{datetime.now().strftime('%Y%m%d%H%M%S')}{user['user_id']}{secrets.token_hex(4).upper()}"
