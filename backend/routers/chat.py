@@ -526,12 +526,21 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                 # 会话有上传文档：agent 工具循环（流式多轮；自动模式无需前端指定）
                 try:
                     ctx = AgentContext(session_id=session_id, user_id=user_id)
+                    # 纯联网搜索模式（无文档）时，system 追加搜索使用规则，引导模型构造高质量关键词
+                    agent_system = build_system_prompt(target_model)
+                    if body.web_search and not attached_docs:
+                        agent_system += (
+                            "\n\n【联网搜索模式】用户已开启联网搜索，回答实时/新闻/数据类问题前应使用 "
+                            "web_search 工具获取信息。关键词必须具体（含时间/领域/对象限定），"
+                            "避免「今日新闻」「最新消息」这类宽泛词；首次结果不满意时换更具体的关键词"
+                            "再搜一次；基于搜索结果回答并注明来源，搜不到就如实说明，不要编造。"
+                        )
                     messages = await ChatService.prepare_session_messages(
                         session_id, target_model, attached_docs,
-                        system_prompt=build_system_prompt(target_model), override=override,
+                        system_prompt=agent_system, override=override,
                     )
                     async for event in run_agent_stream(
-                        system=build_system_prompt(target_model),
+                        system=agent_system,
                         messages=messages,
                         tools_names=tools_names,
                         max_tool_calls=5,  # 收紧轮数：agent 多轮 LLM 调用会放大 API 成本
