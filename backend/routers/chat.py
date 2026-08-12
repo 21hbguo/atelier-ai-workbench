@@ -526,15 +526,25 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                 # 会话有上传文档：agent 工具循环（流式多轮；自动模式无需前端指定）
                 try:
                     ctx = AgentContext(session_id=session_id, user_id=user_id)
-                    # 纯联网搜索模式（无文档）时，system 追加搜索使用规则，引导模型构造高质量关键词
+                    # 纯联网搜索模式（无文档）时，system 注入搜索工具使用指南 + 当天日期
                     agent_system = build_system_prompt(target_model)
                     if body.web_search and not attached_docs:
+                        from datetime import datetime as _dt
+                        _now = _dt.now()
                         agent_system += (
-                            "\n\n【联网搜索模式】用户已开启联网搜索，回答实时/新闻/数据类问题前应使用 "
-                            "web_search 工具获取信息。关键词必须具体（含时间/领域/对象限定），"
-                            "避免「今日新闻」「最新消息」这类宽泛词；若首次结果多为栏目页/首页等"
-                            "聚合页（标题含首页/栏目/中心/大全），应换一组不同的、更具体的关键词"
-                            "再搜一次；基于搜索结果回答并注明来源，搜不到就如实说明，不要编造。"
+                            f"\n\n【联网搜索模式】今天是 {_now.year}年{_now.month}月{_now.day}日"
+                            f"（{['一','二','三','四','五','六','日'][_now.weekday()]}）。\n"
+                            "使用 web_search 工具的规范：\n"
+                            "1. 触发：用户问题涉及实时新闻、最新数据、事件进展、事实核实时，"
+                            "必须先调用 web_search 获取信息，不要凭记忆回答；\n"
+                            "2. 关键词构造三步法：核心对象 + 时间限定（优先用今天的日期）+ "
+                            "领域/地点限定。示例：「今天新闻」→ 搜索「2026年8月12日 今日要闻」；"
+                            "「A股怎么样」→ 搜索「A股 今日行情 涨跌 2026年8月12日」；"
+                            "「美国最近发生什么」→ 搜索「美国 国际新闻 2026年8月」；\n"
+                            "3. 一次搜索尽量覆盖所有子问题；若结果多为栏目页/首页（标题含"
+                            "首页/栏目/中心/大全），换一组不同的更具体关键词重搜（最多 2 次）；\n"
+                            "4. 基于搜索结果回答，逐条注明来源与日期；搜索不到就如实说明，"
+                            "绝不编造内容。"
                         )
                     messages = await ChatService.prepare_session_messages(
                         session_id, target_model, attached_docs,
