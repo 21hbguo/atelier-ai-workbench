@@ -971,7 +971,7 @@ export default function ChatAssistantPage() {
     setDocs(prev => prev.filter(d => d.id !== id))
   }, [])
 
-  const startStream = useCallback((sessionId, content, reasoningEffort = 'auto', useWeb = null) => {
+  const startStream = useCallback((sessionId, content, reasoningEffort = 'auto', useWeb = null, localUserMsgId = null) => {
     const controller = new AbortController()
     abortRef.current = controller
     // 流的唯一身份：停止后立刻发新消息时，旧流的迟到回调不会误操作新流
@@ -989,19 +989,10 @@ export default function ChatAssistantPage() {
       web_search: useWeb === null ? webSearchRef.current : useWeb,
       onUserMessageId: data => {
         const realId = data?.message_id
-        if (!realId) return
-        // 用后端返回的真实 id 替换本地临时 id（重新回答需定位数据库 id）
-        setMessages(prev => {
-          let replaced = false
-          const next = prev.map(m => {
-            if (!replaced && m.role === 'user' && /^local-/.test(String(m.id))) {
-              replaced = true
-              return { ...m, id: String(realId) }
-            }
-            return m
-          })
-          return next
-        })
+        if (!realId || !localUserMsgId) return
+        // 精确替换本次发送的 user 消息临时 id（重新回答需定位数据库 id）；
+        // 只替换本次消息，避免误伤历史残留的 local- 消息
+        setMessages(prev => prev.map(m => (m.id === localUserMsgId ? { ...m, id: String(realId) } : m)))
       },
       onChunk: data => {
         const buf = streamBufRef.current
@@ -1154,9 +1145,10 @@ export default function ChatAssistantPage() {
         return
       }
     }
-    setMessages(prev => [...prev, { id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, role: 'user', content: text, files: successFiles, created_at: new Date().toISOString() }])
+    const userLocalId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    setMessages(prev => [...prev, { id: userLocalId, role: 'user', content: text, files: successFiles, created_at: new Date().toISOString() }])
     clearSentDocs()
-    startStream(sid, text, effortRef.current)
+    startStream(sid, text, effortRef.current, null, userLocalId)
     focusInput()
   }
 
@@ -1193,8 +1185,9 @@ export default function ChatAssistantPage() {
         return
       }
     }
-    setMessages(prev => [...prev, { id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, role: 'user', content: item.text, files: item.files || [], created_at: new Date().toISOString() }])
-    startStream(sid, item.text, effortRef.current)
+    const userLocalId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    setMessages(prev => [...prev, { id: userLocalId, role: 'user', content: item.text, files: item.files || [], created_at: new Date().toISOString() }])
+    startStream(sid, item.text, effortRef.current, null, userLocalId)
   }, [dialog, cost, startStream, acquireSendLock, releaseSendLock, clearPending])
 
   // sending 变为空闲时自动发送排队中的下一条
@@ -1364,12 +1357,15 @@ export default function ChatAssistantPage() {
       dialog.alert(err.message || '操作失败，请重试')
       return
     }
-    // 本地同步截断到问题消息之前，然后重新发送
+    // 本地同步截断到问题消息之前，再重新插入该问题（新临时 id，流开始后由
+    // user_message_id 事件替换为真实 id），然后重新发送
+    const userLocalId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     setMessages(prev => {
       const ui = prev.findIndex(m => m.id === userMsg.id)
-      return ui < 0 ? prev : prev.slice(0, ui)
+      if (ui < 0) return prev
+      return [...prev.slice(0, ui), { ...userMsg, id: userLocalId, created_at: new Date().toISOString() }]
     })
-    startStream(sid, userMsg.content, effortRef.current)
+    startStream(sid, userMsg.content, effortRef.current, null, userLocalId)
   }
 
   const handleCopy = async (text) => {
