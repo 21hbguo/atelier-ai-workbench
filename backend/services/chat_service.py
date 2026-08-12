@@ -119,6 +119,8 @@ class ChatService:
     SUMMARY_INPUT_MAX_CHARS = 120000
     # 摘要输入中单条消息截断长度（字符）
     SUMMARY_MSG_CHARS = 1500
+    # 聊天回答输出上限：优先模型档案 max_output_tokens，成本护栏封顶（单次回答最多 32K tokens）
+    MAX_OUTPUT_TOKENS_CAP = 32768
 
     _SUMMARY_SYSTEM_PROMPT = (
         "你是多轮对话压缩器。把给定的对话历史压缩成简洁的中文摘要，供后续对话作为背景上下文使用。\n"
@@ -474,6 +476,24 @@ class ChatService:
         return "<attached_documents>\n" + "\n".join(parts) + "\n</attached_documents>"
 
     @classmethod
+    def _resolve_max_output_tokens(cls, model: dict | None) -> int:
+        """聊天回答输出上限：优先模型档案 max_output_tokens，成本护栏封顶。
+
+        历史行为：硬编码 max(全局 LLM_MAX_TOKENS, 4000)，长回答易被截断。
+        现在：读档案 max_output_tokens（如 DeepSeek 384K），但受 MAX_OUTPUT_TOKENS_CAP
+        护栏限制（防单次回答成本失控）；档案缺失/异常时回退全局配置并保底 2000。
+        """
+        cap = 0
+        if model:
+            try:
+                cap = int(model.get("max_output_tokens") or 0)
+            except (TypeError, ValueError):
+                cap = 0
+        if cap <= 0:
+            cap = int(get_llm_config()["max_tokens"] or 2000)
+        return max(min(cap, cls.MAX_OUTPUT_TOKENS_CAP), 2000)
+
+    @classmethod
     async def chat_stream(cls, history: list[dict], reasoning_effort: str = "auto",
                           model: dict | None = None, attached_docs: list[dict] | None = None,
                           prebuilt_messages: list[dict] | None = None):
@@ -501,8 +521,8 @@ class ChatService:
             if model.get("model_id"):
                 override["model"] = model["model_id"]
 
-        # 思考模式会占用 max_tokens（reasoning_tokens），适当放宽
-        max_tokens = max(get_llm_config()["max_tokens"], 4000)
+        # 输出上限：模型档案 max_output_tokens（成本护栏 32K 封顶），不再受全局 2000 限制
+        max_tokens = cls._resolve_max_output_tokens(model)
         try:
             async for event in LLMClient.stream(
                 system=_build_system_prompt(model),

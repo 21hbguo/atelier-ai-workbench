@@ -36,6 +36,7 @@ async def run_agent_stream(
     messages: list,
     tools_names: Optional[list[str]] = None,
     max_tool_calls: int = DEFAULT_MAX_TOOL_CALLS,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
     override: Optional[dict] = None,
     ctx: Optional[AgentContext] = None,
 ):
@@ -46,6 +47,7 @@ async def run_agent_stream(
         messages: 对话消息（role: user/assistant），内部会追加 assistant/tool 消息（不改调用方列表）。
         tools_names: 启用的工具名列表；None 表示全部已注册工具。
         max_tool_calls: 工具调用累计上限，达到后下一轮不再传 tools 强制直接回答。
+        max_tokens: 每轮 LLM 调用输出上限（默认 2000，聊天链路传入档案解析值）。
         override: per-model 覆盖（base_url/api_key/protocol/model），透传 LLMClient。
         ctx: 工具执行上下文（session_id/user_id 等）。
 
@@ -80,7 +82,7 @@ async def run_agent_stream(
                 system=system,
                 messages=work,
                 tools=send_tools or None,
-                max_tokens=DEFAULT_MAX_TOKENS,
+                max_tokens=max_tokens,
                 reasoning_effort="auto",
                 temperature=None,
                 override=override,
@@ -190,13 +192,14 @@ async def run_agent(
     messages: list,
     tools_names: Optional[list[str]] = None,
     max_tool_calls: int = DEFAULT_MAX_TOOL_CALLS,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
     override: Optional[dict] = None,
     ctx: Optional[AgentContext] = None,
 ) -> dict:
     """agent 主循环（非流式薄包装）：收集 run_agent_stream 的全部事件，返回最终回复。
 
     Args:
-        同 run_agent_stream。
+        同 run_agent_stream（含 max_tokens）。
 
     Returns:
         {"text": 最终文本回复, "thinking": 各轮思考过程拼接（无则空串）}。
@@ -212,6 +215,7 @@ async def run_agent(
         messages=messages,
         tools_names=tools_names,
         max_tool_calls=max_tool_calls,
+        max_tokens=max_tokens,
         override=override,
         ctx=ctx,
     ):

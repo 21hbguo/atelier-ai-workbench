@@ -582,6 +582,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                         messages=messages,
                         tools_names=tools_names,
                         max_tool_calls=5,  # 收紧轮数：agent 多轮 LLM 调用会放大 API 成本
+                        max_tokens=ChatService._resolve_max_output_tokens(target_model),
                         override=override,
                         ctx=ctx,
                     ):
