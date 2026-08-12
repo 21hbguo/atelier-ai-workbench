@@ -584,16 +584,16 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
                     </span>
                   )
                 )}
-                {/* 联网搜索开关（默认关闭；开启后回答会实时检索互联网） */}
+                {/* 搜索开关（默认关闭；开启后回答会实时检索互联网） */}
                 <button type="button" onClick={onWebSearch}
-                  title={webSearch ? '联网搜索已开启：回答将实时检索互联网' : '联网搜索已关闭（默认），点击开启'}
+                  title={webSearch ? '搜索已开启：回答将实时检索互联网' : '搜索已关闭（默认），点击开启'}
                   className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg transition-colors"
                   style={{
                     color: webSearch ? 'var(--accent)' : 'var(--text-secondary)',
                     background: webSearch ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
                   }}>
                   <Globe size={15} />
-                  <span className="text-[11px] leading-none">{webSearch ? '联网' : '联网搜索'}</span>
+                  <span className="text-[11px] leading-none">搜索</span>
                 </button>
                 <button type="button" onClick={onUploadClick}
                   title="上传文档/代码（txt/md/csv/pdf/docx/xlsx/pptx/py/js/ts/go/yaml 等 50+ 格式；一次最多 5 个，会话累计最多 20 个）"
