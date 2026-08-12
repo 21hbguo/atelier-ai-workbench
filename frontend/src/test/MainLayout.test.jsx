@@ -111,7 +111,7 @@ describe('MainLayout', () => {
     renderLayout()
     const topbarLinks = document.querySelectorAll('.mobile-topbar-link-text')
     const labels = [...topbarLinks].map(el => el.textContent)
-    expect(labels).toEqual(['绘画', '作品', '广场', '积分', '通知'])
+    expect(labels).toEqual(['助手', '绘画', '作品', '广场', '积分', '通知'])
   })
 
   it('opens sidebar when menu button is clicked', () => {

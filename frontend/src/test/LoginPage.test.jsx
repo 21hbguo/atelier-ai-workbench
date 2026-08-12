@@ -62,7 +62,8 @@ describe('LoginPage', () => {
     await waitFor(() => {
       expect(screen.getByText('Atelier')).toBeInTheDocument()
     })
-    expect(screen.getByText('欢迎回来，继续你的创作')).toBeInTheDocument()
+    expect(screen.getByText('欢迎回来')).toBeInTheDocument()
+    expect(screen.getByText('继续你的创作')).toBeInTheDocument()
   })
 
   it('successful login navigates to home', async () => {
@@ -82,7 +83,7 @@ describe('LoginPage', () => {
       })
     })
     expect(writeUser).toHaveBeenCalledWith(user)
-    expect(mockNavigate).toHaveBeenCalledWith('/')
+    expect(mockNavigate).toHaveBeenCalledWith('/chat', { replace: true })
   })
 
   it('failed login shows error message', async () => {
@@ -127,7 +128,8 @@ describe('LoginPage', () => {
 
     expect(mockNavigate).toHaveBeenCalledWith('/login?mode=register', { replace: true })
     await waitFor(() => {
-      expect(screen.getByText('创建账号，开始你的 AI 创作之旅')).toBeInTheDocument()
+      expect(screen.getByText('创建账号')).toBeInTheDocument()
+      expect(screen.getByText('开始你的 AI 创作之旅')).toBeInTheDocument()
     })
     expect(screen.getByPlaceholderText('4-16 位字母、数字或下划线')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('仅支持常用邮箱')).toBeInTheDocument()
@@ -154,7 +156,8 @@ describe('LoginPage', () => {
   it('initiates in register mode via URL param', async () => {
     renderLogin('?mode=register')
     await waitFor(() => {
-      expect(screen.getByText('创建账号，开始你的 AI 创作之旅')).toBeInTheDocument()
+      expect(screen.getByText('创建账号')).toBeInTheDocument()
+      expect(screen.getByText('开始你的 AI 创作之旅')).toBeInTheDocument()
     })
     expect(screen.getByRole('button', { name: '注册' })).toBeInTheDocument()
   })
@@ -262,7 +265,7 @@ describe('LoginPage', () => {
       }))
     })
     expect(writeUser).toHaveBeenCalledWith(user)
-    expect(mockNavigate).toHaveBeenCalledWith('/')
+    expect(mockNavigate).toHaveBeenCalledWith('/chat', { replace: true })
   })
 
   it('successful reset password navigates to home', async () => {
@@ -286,14 +289,14 @@ describe('LoginPage', () => {
       }))
     })
     expect(writeUser).toHaveBeenCalledWith(user)
-    expect(mockNavigate).toHaveBeenCalledWith('/')
+    expect(mockNavigate).toHaveBeenCalledWith('/chat', { replace: true })
   })
 
   it('shows register disabled message when register is off', async () => {
     configAPI.get.mockResolvedValue({ data: { register_enabled: false } })
     renderLogin()
     await waitFor(() => {
-      expect(screen.getByText('当前仅开放登录，注册已关闭')).toBeInTheDocument()
+      expect(screen.getByText('当前仅开放登录')).toBeInTheDocument()
     })
     expect(screen.queryByText('去注册')).not.toBeInTheDocument()
   })

@@ -388,7 +388,7 @@ describe('PromptsPage - Use prompt action', () => {
     renderPage()
     fireEvent.click(screen.getByTestId('use-1'))
     expect(localStorage.getItem('pending_prompt')).toBe('a cat sitting')
-    expect(navigateMock).toHaveBeenCalledWith('/')
+    expect(navigateMock).toHaveBeenCalledWith('/draw')
   })
 })
 
