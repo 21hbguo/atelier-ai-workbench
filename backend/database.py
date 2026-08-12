@@ -37,7 +37,7 @@ def init_db():
                 is_frozen BOOLEAN DEFAULT FALSE,
                 last_ip VARCHAR(45),
                 last_active TIMESTAMP,
-                points NUMERIC(18,0) DEFAULT 0,
+                points NUMERIC(18,4) DEFAULT 0,
                 created_at TIMESTAMP DEFAULT NOW()
             )""",
             """CREATE TABLE IF NOT EXISTS user_requests (
@@ -227,11 +227,12 @@ def init_db():
             """CREATE TABLE IF NOT EXISTS point_transactions (
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL REFERENCES users(id),
-                amount NUMERIC(18,0) NOT NULL,
-                balance_after NUMERIC(18,0) NOT NULL,
+                amount NUMERIC(18,4) NOT NULL,
+                balance_after NUMERIC(18,4) NOT NULL,
                 type VARCHAR(32) NOT NULL,
                 description TEXT,
                 request_key VARCHAR(128),
+                model_id VARCHAR(128),
                 recharge_request_id INTEGER,
                 created_at TIMESTAMP DEFAULT NOW()
             )""",
@@ -556,9 +557,9 @@ def init_db():
             "CREATE INDEX IF NOT EXISTS idx_chat_usage_request ON chat_usage_records(request_id)",
             "ALTER TABLE chat_usage_records ADD COLUMN IF NOT EXISTS pricing_version_id INTEGER",
             "ALTER TABLE chat_usage_records ADD COLUMN IF NOT EXISTS calculated_cost_points NUMERIC(18,4) DEFAULT 0",
-            "ALTER TABLE chat_usage_records ADD COLUMN IF NOT EXISTS charged_points NUMERIC(18,0) DEFAULT 0",
-            "ALTER TABLE chat_usage_records ADD COLUMN IF NOT EXISTS subscription_points_used NUMERIC(18,0) DEFAULT 0",
-            "ALTER TABLE chat_usage_records ADD COLUMN IF NOT EXISTS wallet_points_used NUMERIC(18,0) DEFAULT 0",
+            "ALTER TABLE chat_usage_records ADD COLUMN IF NOT EXISTS charged_points NUMERIC(18,4) DEFAULT 0",
+            "ALTER TABLE chat_usage_records ADD COLUMN IF NOT EXISTS subscription_points_used NUMERIC(18,4) DEFAULT 0",
+            "ALTER TABLE chat_usage_records ADD COLUMN IF NOT EXISTS wallet_points_used NUMERIC(18,4) DEFAULT 0",
             "ALTER TABLE chat_usage_records ADD COLUMN IF NOT EXISTS price_snapshot JSONB DEFAULT '{}'::jsonb",
             "ALTER TABLE chat_usage_records ADD COLUMN IF NOT EXISTS usage_missing BOOLEAN DEFAULT FALSE",
             "ALTER TABLE llm_models ADD COLUMN IF NOT EXISTS cache_creation_price_per_million NUMERIC(12,4)",
@@ -594,7 +595,7 @@ def init_db():
                 description TEXT DEFAULT '',
                 price_rmb NUMERIC(12,2) NOT NULL DEFAULT 0,
                 cycle_days INTEGER NOT NULL DEFAULT 30,
-                grant_points NUMERIC(18,0) NOT NULL DEFAULT 0,
+                grant_points NUMERIC(18,4) NOT NULL DEFAULT 0,
                 features JSONB NOT NULL DEFAULT '{}'::jsonb,
                 allowed_models JSONB NOT NULL DEFAULT '[]'::jsonb,
                 max_concurrent_requests INTEGER NOT NULL DEFAULT 1,
@@ -645,8 +646,8 @@ def init_db():
                 plan_id INTEGER NOT NULL REFERENCES subscription_plans(id),
                 period_start TIMESTAMP NOT NULL,
                 period_end TIMESTAMP NOT NULL,
-                granted_points NUMERIC(18,0) NOT NULL DEFAULT 0,
-                remaining_points NUMERIC(18,0) NOT NULL DEFAULT 0,
+                granted_points NUMERIC(18,4) NOT NULL DEFAULT 0,
+                remaining_points NUMERIC(18,4) NOT NULL DEFAULT 0,
                 entitlements_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
                 status VARCHAR(16) NOT NULL DEFAULT 'active',
                 created_at TIMESTAMP DEFAULT NOW()
@@ -657,8 +658,8 @@ def init_db():
                 user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 bucket_type VARCHAR(16) NOT NULL,
                 cycle_id INTEGER REFERENCES subscription_cycles(id) ON DELETE SET NULL,
-                granted_points NUMERIC(18,0) NOT NULL DEFAULT 0,
-                remaining_points NUMERIC(18,0) NOT NULL DEFAULT 0,
+                granted_points NUMERIC(18,4) NOT NULL DEFAULT 0,
+                remaining_points NUMERIC(18,4) NOT NULL DEFAULT 0,
                 expires_at TIMESTAMP,
                 status VARCHAR(16) NOT NULL DEFAULT 'active',
                 created_at TIMESTAMP DEFAULT NOW()
@@ -670,7 +671,7 @@ def init_db():
                 id SERIAL PRIMARY KEY,
                 transaction_id INTEGER NOT NULL REFERENCES point_transactions(id) ON DELETE CASCADE,
                 bucket_id INTEGER NOT NULL REFERENCES point_buckets(id) ON DELETE RESTRICT,
-                amount NUMERIC(18,0) NOT NULL
+                amount NUMERIC(18,4) NOT NULL
             )""",
             "CREATE INDEX IF NOT EXISTS idx_point_allocations_transaction ON point_transaction_allocations(transaction_id)",
             "CREATE INDEX IF NOT EXISTS idx_point_allocations_bucket ON point_transaction_allocations(bucket_id)",
@@ -768,9 +769,9 @@ def init_db():
             if not _column_exists(conn, "image_metadata", "is_permanent"):
                 conn.execute("ALTER TABLE image_metadata ADD COLUMN is_permanent BOOLEAN DEFAULT FALSE")
             if not _column_exists(conn, "tasks", "points_cost"):
-                conn.execute("ALTER TABLE tasks ADD COLUMN points_cost NUMERIC(18,0) DEFAULT 0")
+                conn.execute("ALTER TABLE tasks ADD COLUMN points_cost NUMERIC(18,4) DEFAULT 0")
             if not _column_exists(conn, "tasks", "points_balance_after"):
-                conn.execute("ALTER TABLE tasks ADD COLUMN points_balance_after INTEGER")
+                conn.execute("ALTER TABLE tasks ADD COLUMN points_balance_after NUMERIC(18,4)")
             if not _column_exists(conn, "tasks", "is_deleted"):
                 conn.execute("ALTER TABLE tasks ADD COLUMN is_deleted BOOLEAN DEFAULT FALSE")
             if not _column_exists(conn, "tasks", "deleted_at"):
@@ -779,6 +780,8 @@ def init_db():
                 conn.execute("ALTER TABLE tasks ADD COLUMN deleted_by_role VARCHAR(16)")
             if not _column_exists(conn, "point_transactions", "request_key"):
                 conn.execute("ALTER TABLE point_transactions ADD COLUMN request_key VARCHAR(128)")
+            if not _column_exists(conn, "point_transactions", "model_id"):
+                conn.execute("ALTER TABLE point_transactions ADD COLUMN model_id VARCHAR(128)")
             if not _column_exists(conn, "recharge_requests", "risk_level"):
                 conn.execute("ALTER TABLE recharge_requests ADD COLUMN risk_level VARCHAR(16) DEFAULT 'low'")
             if not _column_exists(conn, "recharge_requests", "risk_flags"):
@@ -833,16 +836,17 @@ def init_db():
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite_code_unique ON users(invite_code) WHERE invite_code IS NOT NULL AND invite_code<>''")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_users_inviter_user_id ON users(inviter_user_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_recharge_inviter_user_id ON recharge_requests(inviter_user_id)")
-            # 钱包字段只有在积分单位迁移完成后才收紧为整数，避免旧库在迁移前被截断。
-            unit_migration = conn.execute(
-                "SELECT 1 FROM points_unit_migrations WHERE version = 100 AND dry_run = FALSE LIMIT 1"
-            ).fetchone()
-            if unit_migration:
-                conn.execute("ALTER TABLE users ALTER COLUMN points TYPE NUMERIC(18,0) USING ROUND(points)")
-                conn.execute("ALTER TABLE point_transactions ALTER COLUMN amount TYPE NUMERIC(18,0) USING ROUND(amount)")
-                conn.execute("ALTER TABLE point_transactions ALTER COLUMN balance_after TYPE NUMERIC(18,0) USING ROUND(balance_after)")
-                conn.execute("ALTER TABLE tasks ALTER COLUMN points_cost TYPE NUMERIC(18,0) USING ROUND(points_cost)")
-                conn.execute("ALTER TABLE tasks ALTER COLUMN points_balance_after TYPE NUMERIC(18,0) USING ROUND(points_balance_after)")
+            # 账本统一保留 4 位小数；历史整数值保持原值，不做单位换算。
+            for table, column in (
+                ("users", "points"), ("point_transactions", "amount"),
+                ("point_transactions", "balance_after"), ("tasks", "points_cost"),
+                ("tasks", "points_balance_after"), ("chat_usage_records", "charged_points"),
+                ("chat_usage_records", "subscription_points_used"), ("chat_usage_records", "wallet_points_used"),
+                ("subscription_plans", "grant_points"), ("subscription_cycles", "granted_points"),
+                ("subscription_cycles", "remaining_points"), ("point_buckets", "granted_points"),
+                ("point_buckets", "remaining_points"), ("point_transaction_allocations", "amount"),
+            ):
+                conn.execute(f"ALTER TABLE {table} ALTER COLUMN {column} TYPE NUMERIC(18,4) USING ROUND({column}::numeric, 4)")
 
             conn.execute(
                 """INSERT INTO subscription_plans

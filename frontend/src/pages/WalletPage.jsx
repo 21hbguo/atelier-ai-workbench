@@ -6,7 +6,7 @@ import {
 import MainLayout from '../components/MainLayout'
 import Pagination from '../components/Pagination'
 import { useAppDialog } from '../components/AppDialogProvider'
-import api, { pointsAPI, accountAPI, configAPI, subscriptionAPI } from '../api'
+import api, { pointsAPI, accountAPI, chatAPI, configAPI, subscriptionAPI } from '../api'
 import { readUser } from '../auth'
 
 const typeMap = {
@@ -17,6 +17,9 @@ const typeMap = {
   prompt_optimize_refine: { label: '精细优化', color: 'var(--color-error)' },
   image_expire_extend: { label: '延长有效期', color: 'var(--color-error)' },
   generate_refund: { label: '生成退还', color: 'var(--color-success)' },
+  chat_token_adjust: { label: '对话补差', color: 'var(--color-error)' },
+  chat_refund: { label: '对话退还', color: 'var(--color-success)' },
+  optimize_refund: { label: '优化退还', color: 'var(--color-success)' },
   redeem_code: { label: '积分发放', color: 'var(--accent)' },
   admin_grant: { label: '管理员调整', color: '#8B7BA8' },
   migration: { label: '历史补偿', color: 'var(--accent)' },
@@ -70,6 +73,11 @@ const formatTime = value => {
     ? (s.includes('+') || s.includes('Z') ? s : s + '+08:00')
     : s ? s.replace(' ', 'T') + '+08:00' : ''
   return withTz ? new Date(withTz).toLocaleString('zh-CN') : '-'
+}
+
+const formatPoints = value => {
+  const amount = Number(value)
+  return Number.isFinite(amount) ? amount.toFixed(4).replace(/\.?(0+)$/, '') : '0'
 }
 
 export default function WalletPage() {
@@ -247,6 +255,15 @@ export default function WalletPage() {
       const m = {}
       for (const r of rows) m[r.model_id] = r.label || r.model_id
       setModelLabelMap(m)
+    }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    chatAPI.models().then(({ data }) => {
+      const rows = data?.items || []
+      const m = {}
+      for (const r of rows) m[r.model_id] = r.label || r.model_id
+      setModelLabelMap(prev => ({ ...prev, ...m }))
     }).catch(() => {})
   }, [])
 
@@ -566,7 +583,7 @@ export default function WalletPage() {
                 <Coins size={20} style={{ color: 'var(--accent)' }} />
                 <div className="flex-1">
                   <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>当前积分</p>
-                  <p className="text-2xl font-bold" style={{ color: 'var(--accent)' }}>{points}</p>
+                  <p className="text-2xl font-bold" style={{ color: 'var(--accent)' }}>{formatPoints(points)}</p>
                 </div>
                 {checkedInToday !== null && (
                   <button
@@ -636,9 +653,9 @@ export default function WalletPage() {
                 <button onClick={() => setTab('subscription')} className="px-3 py-1.5 rounded-2xl text-xs text-white" style={{ background: 'var(--accent)' }}>管理套餐</button>
               </div>
               <div className="grid grid-cols-3 gap-3 text-center">
-                <div><div className="text-lg font-semibold" style={{ color: 'var(--accent)' }}>{subscription.cycle?.remaining_points ?? 0}</div><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>周期积分</div></div>
-                <div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{subscription.permanent_points ?? 0}</div><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>永久积分</div></div>
-                <div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{subscription.total_points ?? points}</div><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>总积分</div></div>
+                <div><div className="text-lg font-semibold" style={{ color: 'var(--accent)' }}>{formatPoints(subscription.cycle?.remaining_points ?? 0)}</div><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>周期积分</div></div>
+                <div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{formatPoints(subscription.permanent_points ?? 0)}</div><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>永久积分</div></div>
+                <div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{formatPoints(subscription.total_points ?? points)}</div><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>总积分</div></div>
               </div>
             </div>
           )}
@@ -705,7 +722,7 @@ export default function WalletPage() {
                         </thead>
                         <tbody>
                           {transactions.map(tx => {
-                            const info = typeMap[tx.type] || { label: tx.type, color: 'var(--text-secondary)' }
+                            const info = typeMap[tx.display_type || tx.type] || { label: tx.display_type || tx.type, color: 'var(--text-secondary)' }
                             const isPositive = tx.amount > 0
                             const rechargeStatusMeta = tx.recharge_status
                               ? (statusMap[tx.recharge_status] || null)
@@ -729,17 +746,17 @@ export default function WalletPage() {
                                 </td>
                                 <td className="px-4 py-2.5 truncate max-w-[220px]" style={{ color: 'var(--text-primary)' }}>
                                   {tx.type === 'redeem_code' && tx.recharge_request_id
-                                    ? `捐赠审核通过，发放 ${tx.amount} 积分`
+                                    ? `捐赠审核通过，发放 ${formatPoints(tx.amount)} 积分`
                                     : tx.description || '-'}
                                 </td>
                                 <td
                                   className="px-4 py-2.5 text-right font-medium tabular-nums"
                                   style={{ color: isPositive ? 'var(--color-success)' : 'var(--color-error)' }}
                                 >
-                                  {isPositive ? '+' : ''}{tx.amount}
+                                  {isPositive ? '+' : ''}{formatPoints(tx.amount)}
                                 </td>
                                 <td className="px-4 py-2.5 text-right tabular-nums" style={{ color: 'var(--text-secondary)' }}>
-                                  {tx.balance_after}
+                                  {formatPoints(tx.balance_after)}
                                 </td>
                                 <td className="px-4 py-2.5 text-center text-xs" style={{ color: 'var(--text-secondary)' }}>
                                   {tx.channel ? channelLabel[tx.channel] || tx.channel : '-'}
@@ -800,7 +817,7 @@ export default function WalletPage() {
                 {subscriptionPlans.map(plan => <div key={plan.id} className="p-4 rounded-2xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
                   <div className="flex items-start justify-between gap-2"><div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{plan.name}</div><div className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>¥{plan.price_rmb}</div></div>
                   <div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{plan.description || '按周期发放积分和功能权益'}</div>
-                  <div className="mt-3 text-sm" style={{ color: 'var(--text-primary)' }}>{plan.grant_points} 积分 / {plan.cycle_days} 天</div>
+                  <div className="mt-3 text-sm" style={{ color: 'var(--text-primary)' }}>{formatPoints(plan.grant_points)} 积分 / {plan.cycle_days} 天</div>
                   <div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{plan.features?.web_search ? '联网搜索 ' : ''}{plan.features?.file_upload ? '文件上传 ' : ''}{plan.features?.file_write ? '文件写入' : ''}</div>
                   {!plan.is_free && <button disabled={subscriptionSubmitting} onClick={() => handleSubscriptionOrder(plan)} className="mt-4 w-full px-3 py-2 rounded-2xl text-sm text-white disabled:opacity-50" style={{ background: 'var(--accent)' }}>{subscriptionSubmitting ? '提交中...' : '购买 / 续费'}</button>}
                 </div>)}
@@ -812,7 +829,7 @@ export default function WalletPage() {
               </div>
               <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
                 <div className="px-4 py-3 text-sm font-semibold" style={{ color: 'var(--text-primary)', background: 'var(--bg-card)' }}>模型价格</div>
-                {subscriptionPrices.map(model => <div key={model.model_id} className="flex items-center justify-between gap-3 px-4 py-3 border-t text-xs" style={{ borderColor: 'var(--border-color)' }}><span style={{ color: 'var(--text-primary)' }}>{model.label}</span><span style={{ color: 'var(--text-secondary)' }}>输入 {model.points_per_1k?.input ?? '-'} / 输出 {model.points_per_1k?.output ?? '-'} 积分 / 千 Token</span></div>)}
+                {subscriptionPrices.map(model => <div key={model.model_id} className="flex items-center justify-between gap-3 px-4 py-3 border-t text-xs" style={{ borderColor: 'var(--border-color)' }}><span style={{ color: 'var(--text-primary)' }}>{model.label}</span><span style={{ color: 'var(--text-secondary)' }}>输入 {model.points_per_1k?.input == null ? '-' : formatPoints(model.points_per_1k.input)} / 输出 {model.points_per_1k?.output == null ? '-' : formatPoints(model.points_per_1k.output)} 积分 / 千 Token</span></div>)}
                 {!subscriptionPrices.length && <div className="px-4 py-6 text-center text-xs" style={{ color: 'var(--text-secondary)' }}>暂无已配置的模型价格</div>}
               </div>
             </div>

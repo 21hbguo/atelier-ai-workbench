@@ -16,6 +16,7 @@ const {
   confirmRechargeRequestMock,
   changePasswordMock,
   configModelsMock,
+  chatModelsMock,
   apiGetMock,
   dialogAlertMock,
   dialogConfirmMock,
@@ -34,6 +35,7 @@ const {
   confirmRechargeRequestMock: vi.fn(),
   changePasswordMock: vi.fn(),
   configModelsMock: vi.fn(),
+  chatModelsMock: vi.fn(),
   apiGetMock: vi.fn(),
   dialogAlertMock: vi.fn(),
   dialogConfirmMock: vi.fn(),
@@ -61,6 +63,7 @@ vi.mock('../api', () => ({
     confirmRechargeRequest: confirmRechargeRequestMock,
   },
   accountAPI: { changePassword: changePasswordMock },
+  chatAPI: { models: chatModelsMock },
   configAPI: { models: configModelsMock },
 }))
 
@@ -146,6 +149,7 @@ function setupDefaultMocks() {
   })
   inviteHistoryMock.mockResolvedValue({ data: { items: [], total: 0 } })
   configModelsMock.mockResolvedValue({ data: { models: [] } })
+  chatModelsMock.mockResolvedValue({ data: { items: [] } })
   apiGetMock.mockResolvedValue({
     data: {
       recharge_packages: [
