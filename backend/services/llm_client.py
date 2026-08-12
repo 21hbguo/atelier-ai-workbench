@@ -289,16 +289,26 @@ class LLMClient:
             completion_tokens = int(usage_dict.get("completion_tokens") or 0)
             prompt_details = usage_dict.get("prompt_tokens_details") or {}
             completion_details = usage_dict.get("completion_tokens_details") or {}
-            cache_read = int(prompt_details.get("cached_tokens") or 0)
+            # 缓存读取字段不统一，需多来源兜底：
+            # - OpenAI 官方 / Azure：usage.prompt_tokens_details.cached_tokens
+            # - DeepSeek / Kimi 等 OpenAI 兼容实现：usage.prompt_cache_hit_tokens（顶层字段）
+            cache_read = int(
+                prompt_details.get("cached_tokens")
+                or usage_dict.get("prompt_cache_hit_tokens")
+                or 0
+            )
+            # 缓存写入：GPT-5.6+ / Azure 新增 prompt_tokens_details.cache_write_tokens
+            cache_write = int(prompt_details.get("cache_write_tokens") or 0)
             reasoning = int(completion_details.get("reasoning_tokens") or 0)
             # OpenAI 的 prompt_tokens 包含 cached_tokens，扣除得到纯输入
+            # （DeepSeek 的 prompt_tokens = prompt_cache_hit_tokens + prompt_cache_miss_tokens，扣后即未命中部分）
             input_tokens = max(prompt_tokens - cache_read, 0)
-            total = int(usage_dict.get("total_tokens") or 0) or (input_tokens + completion_tokens + cache_read)
+            total = int(usage_dict.get("total_tokens") or 0) or (input_tokens + completion_tokens + cache_read + cache_write)
             return {
                 "input_tokens": input_tokens,
                 "output_tokens": completion_tokens,
                 "cache_read_tokens": cache_read,
-                "cache_creation_tokens": 0,  # OpenAI 无缓存写概念
+                "cache_creation_tokens": cache_write,
                 "reasoning_tokens": reasoning,
                 "total_tokens": total,
             }
