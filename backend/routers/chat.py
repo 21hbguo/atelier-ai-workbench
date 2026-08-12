@@ -36,6 +36,7 @@ class ChatSendRequest(BaseModel):
     content: str = Field(..., min_length=1, max_length=2000)
     reasoning_effort: str = Field("auto", pattern="^(auto|low|medium|high|max|xhigh)$")
     model_id: str = Field("", max_length=128)
+    web_search: bool = Field(False, description="开启联网搜索（无文档会话也走 agent 工具链路，仅注册 web_search 工具）")
 
 
 class ChatRenameRequest(BaseModel):
@@ -497,8 +498,9 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
     attached_docs = [{"original_name": r["original_name"], "page_content": r["page_content"]} for r in file_rows]
 
     # 自动模式：会话有已解析文件 → 走 agent 工具链路（工具可检索/总结文档）；
-    # 无文件 → 普通聊天。仅 OpenAI 兼容协议支持工具回填（anthropic 一期降级普通聊天，文档注入仍生效）
-    use_agent = bool(attached_docs)
+    # 或用户显式开启联网搜索（web_search=true，无文档时仅注册 web_search 工具）。
+    # 仅 OpenAI 兼容协议支持工具回填（anthropic 一期降级普通聊天，文档注入仍生效）
+    use_agent = bool(attached_docs) or body.web_search
     if use_agent:
         cfg = dict(get_llm_config())
         for k, v in override.items():
@@ -506,6 +508,8 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                 cfg[k] = v
         if LLMClient.protocol(cfg) != "openai":
             use_agent = False
+    # 工具列表裁剪：有文档 → 全量工具（文档检索/总结/搜索）；仅联网搜索 → 只注册 web_search
+    tools_names = _AGENT_TOOLS if attached_docs else (["web_search"] if body.web_search else None)
 
     def _refund_once() -> None:
         # refund 幂等（request_key 唯一），重复调用安全
@@ -529,7 +533,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                     async for event in run_agent_stream(
                         system=build_system_prompt(target_model),
                         messages=messages,
-                        tools_names=_AGENT_TOOLS,
+                        tools_names=tools_names,
                         max_tool_calls=5,  # 收紧轮数：agent 多轮 LLM 调用会放大 API 成本
                         override=override,
                         ctx=ctx,
