@@ -83,6 +83,17 @@ try:  # 可被环境变量 MINERU_MAX_FILE_BYTES 覆盖（单位：字节）
 except (TypeError, ValueError):  # noqa: S112 - 非法环境变量值回退默认
     pass
 
+# PDF 每页平均字符密度阈值：低于此值判定为图片型/扫描型页面（本地提取质量差，
+# 如整页图片/手写/拍照文档），升级 MinerU 云端解析（is_ocr=True）。
+# 正常文本页通常 500+ 字符/页，扫描页仅剩页眉页脚等零星文本（<50）。
+MINERU_MIN_CHARS_PER_PAGE = 150
+try:  # 可被环境变量 MINERU_MIN_CHARS_PER_PAGE 覆盖
+    MINERU_MIN_CHARS_PER_PAGE = int(
+        os.environ.get("MINERU_MIN_CHARS_PER_PAGE", str(MINERU_MIN_CHARS_PER_PAGE))
+    )
+except (TypeError, ValueError):  # noqa: S112 - 非法环境变量值回退默认
+    pass
+
 # 文件分支识别的扩展名集合（URL 路径扩展名命中即走文件下载分支）
 _FILE_EXTS = {
     "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx",
@@ -458,6 +469,29 @@ def _mineru_configured(mineru) -> bool:
         return False
 
 
+def _page_density_too_low(path: str, text: str) -> bool:
+    """PDF 平均每页字符密度过低 → 判定为图片型/扫描型页面，值得升级 MinerU。
+
+    正常文本页通常 500+ 字符/页；扫描/图片页可能只剩页眉页脚等零星文本。
+    阈值保守取 MINERU_MIN_CHARS_PER_PAGE（默认 150）。fitz 不可用或
+    读取异常时保守返回 False（不误升级，保持现状行为）。
+    """
+    try:
+        import fitz  # PyMuPDF（document_parser 既有依赖）
+
+        doc = fitz.open(path)
+        try:
+            page_count = doc.page_count
+        finally:
+            doc.close()
+        if page_count <= 0:
+            return False
+        avg_chars = len(text or "") / page_count
+        return avg_chars < MINERU_MIN_CHARS_PER_PAGE
+    except Exception:  # noqa: BLE001 - 密度检测失败不阻断，保持现状
+        return False
+
+
 async def _parse_file_content(
     body: bytes, ext: str, final_url: str, max_chars: int, truncated: bool
 ) -> dict:
@@ -493,8 +527,13 @@ async def _parse_file_content(
             except Exception:  # noqa: BLE001 - 本地失败走 MinerU 降级
                 text = ""
         if text:
-            return {"ok": True, "url": final_url, "title": filename,
-                    "text": _truncate_text(text, max_chars), "links": []}
+            # 密度启发式：PDF 能提取文本但每页字符密度过低（图片型/扫描型页面，
+            # 如整页图片/手写/拍照文档）→ 本地文本不可用，升级 MinerU 云端解析
+            if ext == "pdf" and _page_density_too_low(path, text):
+                text = ""
+            else:
+                return {"ok": True, "url": final_url, "title": filename,
+                        "text": _truncate_text(text, max_chars), "links": []}
 
         # MinerU 云端兜底
         mineru = _get_mineru_client()

@@ -12,12 +12,19 @@ import asyncio
 import http.server
 import os
 import socketserver
+import tempfile
 import threading
 from unittest.mock import patch
 
 from backend.services.url_fetcher import fetch_url
 
 PDF_TEXT = "Hello PDF world 你好世界"
+# 正常文本 PDF 内容：多段文字，保证每页字符密度 > MINERU_MIN_CHARS_PER_PAGE（150）
+PDF_TEXT_DENSE = (
+    "这是一份正常的文本文档内容。" * 20
+    + "\n"
+    + "This is a normal text document with sufficient content density. " * 5
+)
 
 
 def _run(coro):
@@ -25,13 +32,29 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def _make_pdf_bytes(text=PDF_TEXT) -> bytes:
-    """用 PyMuPDF 现场生成一个带文本的小 PDF（fontname=china-s 支持中文）。"""
+def _make_pdf_bytes(text=PDF_TEXT_DENSE) -> bytes:
+    """用 PyMuPDF 现场生成一个带文本的小 PDF（fontname=china-s 支持中文）。
+
+    默认内容为正常文本密度（>150 字符/页），模拟普通文本文档；
+    传入低密度文本（如一行字）可模拟扫描件/图片型页面。
+    注意：insert_text 不自动换行，超宽文字会溢出页面外被裁剪（get_text 丢失），
+    因此按固定宽度切行插入，保证字符都在页面内。
+    """
     import fitz
+
+    # 每行最多约 40 字符（A4 宽 595pt，11pt 字体，中文约 11pt/字）
+    lines: list[str] = []
+    for para in (text or "").split("\n"):
+        while len(para) > 40:
+            lines.append(para[:40])
+            para = para[40:]
+        if para:
+            lines.append(para)
 
     doc = fitz.open()
     page = doc.new_page()
-    page.insert_text((72, 72), text, fontname="china-s")
+    for i, line in enumerate(lines[:25]):  # 最多 25 行（防溢出页面高度）
+        page.insert_text((72, 72 + i * 28), line, fontsize=11, fontname="china-s")
     data = doc.tobytes()
     doc.close()
     return data
@@ -151,7 +174,7 @@ def test_file_fast_path_pdf():
     with _LocalServer() as s, _patch_ssrf(s.port):
         result = _run(fetch_url(s.base + "/sample.pdf"))
     assert result["ok"] is True
-    assert PDF_TEXT in result["text"]
+    assert "正常" in result["text"] and "normal text" in result["text"]
     assert result["title"] == "sample.pdf"  # title 为文件名
     assert result["url"] == s.base + "/sample.pdf"
 
@@ -161,7 +184,7 @@ def test_file_detected_by_content_type():
     with _LocalServer() as s, _patch_ssrf(s.port):
         result = _run(fetch_url(s.base + "/download"))
     assert result["ok"] is True
-    assert PDF_TEXT in result["text"]
+    assert "正常" in result["text"]
     assert result["title"] == "document.pdf"  # URL 无文件名 → 默认名
 
 
@@ -211,6 +234,41 @@ def test_file_mineru_fallback_when_local_fails():
     assert kwargs.get("is_ocr") is True
     assert path.endswith(".pdf")
     assert not os.path.exists(path)  # 临时文件用后已清理
+
+
+def test_file_low_density_pdf_upgrades_to_mineru():
+    """本地能提取文本但每页字符密度过低（图片型/扫描型 PDF）→ 自动升级 MinerU。
+
+    /scan.pdf 内容为一行 "scanned page"（约 14 字符/页 < 阈值 150），
+    本地 PyMuPDF 提取"成功"但质量不可用——密度启发式应把它升级到云端。
+    """
+    mineru = _FakeMineru(configured=True, result={"ok": True, "text": "MinerU 高质量 OCR 文本"})
+    with _LocalServer() as s, _patch_ssrf(s.port), \
+            patch("backend.services.url_fetcher._get_mineru_client", return_value=mineru):
+        result = _run(fetch_url(s.base + "/scan.pdf"))
+    assert result["ok"] is True
+    assert "MinerU 高质量 OCR 文本" in result["text"]
+    assert len(mineru.calls) == 1  # 升级到云端
+    assert mineru.calls[0][1] == "scan.pdf"
+    assert mineru.calls[0][2].get("is_ocr") is True
+
+
+def test_page_density_too_low_signal():
+    """密度信号本身：低密度（一行字）判 True，正常密度判 False。"""
+    from backend.services.url_fetcher import _page_density_too_low
+
+    fd, low_path = tempfile.mkstemp(suffix=".pdf")
+    with os.fdopen(fd, "wb") as f:
+        f.write(_make_pdf_bytes("scanned page"))
+    fd, dense_path = tempfile.mkstemp(suffix=".pdf")
+    with os.fdopen(fd, "wb") as f:
+        f.write(_make_pdf_bytes())
+    try:
+        assert _page_density_too_low(low_path, "scanned page") is True
+        assert _page_density_too_low(dense_path, PDF_TEXT_DENSE) is False
+    finally:
+        os.unlink(low_path)
+        os.unlink(dense_path)
 
 
 def test_file_mineru_fallback_fails():
