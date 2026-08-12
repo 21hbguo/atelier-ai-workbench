@@ -24,7 +24,20 @@ class AgentContext:
     user_id: Optional[int] = None
     chat_file_ids: Optional[list[int]] = None
     extra: dict[str, Any] = field(default_factory=dict)
+    # 工具执行过程中收集的来源引用（{"url": str, "title": str}），由 loop 增量推给前端
+    citations: list[dict] = field(default_factory=list)
 
     @property
     def has_session(self) -> bool:
         return self.session_id is not None
+
+    def add_citation(self, url: str, title: str = "") -> None:
+        """记录一条来源引用。
+
+        url 已存在则跳过（去重）；url 为空时忽略；title 可为空串。
+        """
+        if not url:
+            return
+        if any(c.get("url") == url for c in self.citations):
+            return
+        self.citations.append({"url": url, "title": title or ""})

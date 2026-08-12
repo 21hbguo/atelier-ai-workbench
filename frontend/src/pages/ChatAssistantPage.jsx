@@ -244,6 +244,26 @@ function ThinkingBlock({ text, isStreaming = false }) {
   )
 }
 
+// ============ 引用来源列表（SSE citations 事件，最多显示 8 条） ============
+function CitationList({ citations = [] }) {
+  if (!Array.isArray(citations) || citations.length === 0) return null
+  const shown = citations.slice(0, 8)
+  return (
+    <div className="mt-2.5 pt-2 border-t" style={{ borderColor: 'var(--border-color)' }}>
+      <div className="mb-1 text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>来源</div>
+      <ul className="space-y-0.5">
+        {shown.map((c, i) => (
+          <li key={c.url || i} className="min-w-0">
+            <a className="chat-user-link text-[11px]" href={c.url} target="_blank" rel="noopener noreferrer">
+              {c.title || c.url}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 // ============ 消息气泡 ============
 function MessageItem({ msg, onCopy, onRegenerate }) {
   const isUser = msg.role === 'user'
@@ -283,6 +303,7 @@ function MessageItem({ msg, onCopy, onRegenerate }) {
             <ThinkingBlock text={msg.thinking} />
             <div className="md-body text-sm" style={{ color: 'var(--text-primary)' }}
               dangerouslySetInnerHTML={{ __html: mdToHtml(msg.content) }} />
+            <CitationList citations={msg.citations} />
           </>
         )}
         <div className="text-xs mt-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>{formatTime(msg.created_at)}</div>
@@ -387,6 +408,7 @@ function StreamBubble({ sending, onStop, onRetry }) {
             <span className="ml-1.5 text-xs" style={{ color: 'var(--text-secondary)' }}>正在输入…</span>
           </div>
         )}
+        <CitationList citations={sending.citations} />
         {sending.stopped ? (
           <div className="mt-2 flex items-center gap-2">
             <span className="text-xs" style={{ color: 'var(--color-error)' }}>{sending.error || '已停止生成'}</span>
@@ -790,6 +812,8 @@ export default function ChatAssistantPage() {
   // 避免 mdToHtml 全量重渲染导致 UI 卡顿（感知为「卡顿后一次性出大量文本」）
   const streamBufRef = useRef({ streamId: null, text: '', thinking: '' })
   const streamRafRef = useRef(null)
+  // 本次流的引用来源累积（SSE citations 事件；按 url 去重，streamId 绑定防旧流迟到污染）
+  const citationsRef = useRef({ streamId: null, items: [] })
   const flushStreamBuf = useCallback(() => {
     streamRafRef.current = null
     const { streamId: sid, text, thinking } = streamBufRef.current
@@ -1024,11 +1048,13 @@ export default function ChatAssistantPage() {
     abortRef.current = controller
     // 流的唯一身份：停止后立刻发新消息时，旧流的迟到回调不会误操作新流
     const streamId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    const st = { streamId, sessionId, content, text: '', thinking: '', toolStatus: null, stopped: false, error: '', manual: false }
+    const st = { streamId, sessionId, content, text: '', thinking: '', toolStatus: null, citations: [], stopped: false, error: '', manual: false }
     sendingRef.current = st
     setSending(st)
     // 本次流开始：重置节流缓冲（避免残留上一流的未 flush 内容）
     streamBufRef.current = { streamId, text: '', thinking: '' }
+    // 本次流开始：重置引用累积（避免上一流的 citations 残留）
+    citationsRef.current = { streamId, items: [] }
     // 本次流开始：重置链接抓取状态（避免上一流的 url_status 残留）
     clearLinkTimer(); setLinkStatus(null)
     if (streamRafRef.current) { cancelAnimationFrame(streamRafRef.current); streamRafRef.current = null }
@@ -1066,13 +1092,30 @@ export default function ChatAssistantPage() {
         if (sendingRef.current?.streamId !== streamId) return
         updateLinkStatus(data?.status, data?.url, data?.error)
       },
+      onCitations: data => {
+        // streamId 守卫：旧流迟到的 citations 不得写入新流的累积
+        const buf = citationsRef.current
+        if (buf.streamId !== streamId) return
+        const items = Array.isArray(data?.citations) ? data.citations : []
+        for (const item of items) {
+          if (!item || !item.url) continue
+          if (!buf.items.some(x => x.url === item.url)) {
+            buf.items.push({ url: item.url, title: item.title || '' })
+          }
+        }
+        // 同步发送中气泡：流式期间实时显示来源累积
+        setSending(prev =>
+          (prev && prev.streamId === streamId) ? { ...prev, citations: buf.items } : prev)
+      },
       onDone: data => {
         const full = String(data.text || '')
         const thinking = String(data.thinking || '')
         manualStopRef.current = false
         // 优先用后端返回的数据库 id（重新回答/定位需要真实 id），缺失时回退本地临时 id
         const newId = data.message_id || `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-        setMessages(prev => [...prev, { id: newId, role: 'assistant', content: full, thinking, created_at: new Date().toISOString() }])
+        // 仅当仍是本次流时挂载累积的引用（旧流迟到 done 不污染新流消息）
+        const citations = citationsRef.current.streamId === streamId ? citationsRef.current.items : []
+        setMessages(prev => [...prev, { id: newId, role: 'assistant', content: full, thinking, citations, created_at: new Date().toISOString() }])
         // 发送成功：文件已上传为会话上下文，清空上传区（失败时保留 docs 便于重试）
         setDocs([])
         // 流结束：若仍停留在 fetching（事件顺序异常），清除残留状态

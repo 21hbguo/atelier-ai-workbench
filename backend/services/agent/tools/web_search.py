@@ -53,8 +53,9 @@ _rate_lock = threading.Lock()
 
 # ---- 结果缓存（相同 query 短 TTL，命中不消耗搜索次数）----
 # SEARCH_CACHE_TTL 秒内相同关键词直接复用结果，显著降低上游请求频率。
+# 缓存同时保存原始结果 items，供缓存命中时上报来源引用（citations）。
 _CACHE_TTL = max(0, int(os.getenv("SEARCH_CACHE_TTL", "300")))
-_cache: dict[str, tuple[float, str]] = {}  # key -> (expire_ts, 格式化结果)
+_cache: dict[str, tuple[float, str, list[dict]]] = {}  # key -> (expire_ts, 格式化结果, 原始 items)
 _cache_lock = threading.Lock()
 
 # ---- 全局上游保护（防上游封禁的核心，进程内共享；单进程 uvicorn 部署）----
@@ -317,14 +318,30 @@ def _cache_get(key: str) -> str | None:
         item = _cache.get(key)
         if item is None:
             return None
-        expire, text = item
+        expire, text, _items = item
         if now >= expire:
             _cache.pop(key, None)
             return None
         return text
 
 
-def _cache_set(key: str, text: str) -> None:
+def _cache_get_items(key: str) -> list[dict] | None:
+    """取缓存中的原始结果 items（供缓存命中时上报来源引用），未命中/过期返回 None。"""
+    if _CACHE_TTL <= 0:
+        return None
+    now = time.monotonic()
+    with _cache_lock:
+        item = _cache.get(key)
+        if item is None:
+            return None
+        expire, _text, items = item
+        if now >= expire:
+            _cache.pop(key, None)
+            return None
+        return items
+
+
+def _cache_set(key: str, text: str, items: list[dict]) -> None:
     """写缓存；顺手清理过期条目防止无限增长。"""
     if _CACHE_TTL <= 0 or not text:
         return
@@ -332,9 +349,9 @@ def _cache_set(key: str, text: str) -> None:
         now = time.monotonic()
         # 惰性清理：超过 128 条时清一遍过期项
         if len(_cache) > 128:
-            for k in [k for k, (exp, _) in _cache.items() if exp <= now]:
+            for k in [k for k, (exp, _, _) in _cache.items() if exp <= now]:
                 _cache.pop(k, None)
-        _cache[key] = (now + _CACHE_TTL, text)
+        _cache[key] = (now + _CACHE_TTL, text, items)
 
 
 def _enhance_query(query: str) -> str:
@@ -413,6 +430,8 @@ async def web_search_search(args: dict, ctx: AgentContext) -> str:
     cache_key = f"{query}|{max_results}"
     cached = _cache_get(cache_key)
     if cached is not None:
+        # 缓存命中同样上报来源引用（引用不因缓存而缺失）；items 缺失时回退文本提取
+        _report_citations(ctx, _cache_get_items(cache_key) or _extract_citations_from_text(cached))
         return cached
 
     # 每用户全局限流（滑动窗口）：超限时明确告知，不报错、不消耗更多资源
@@ -459,8 +478,10 @@ async def web_search_search(args: dict, ctx: AgentContext) -> str:
                 continue
             if items:
                 text = _format_results(query, items)
-                _cache_set(cache_key, text)
+                _cache_set(cache_key, text, items)
                 _breaker_record_success()
+                # 上报来源引用（前 8 条，按结果顺序；失败路径不加）
+                _report_citations(ctx, items)
                 return text
             errors.append(f"{provider}: 无结果")
 
@@ -488,3 +509,37 @@ def _format_results(query: str, items: list[dict]) -> str:
             head = title
         lines.append(f"{head}\n{desc}".rstrip() if desc else head)
     return "\n\n".join(lines)
+
+
+_URL_RE = re.compile(r"https?://\S+")
+
+
+def _extract_citations_from_text(text: str) -> list[dict]:
+    """从缓存的格式化结果文本里回退提取引用（旧格式缓存 / items 缺失时的兜底）。
+
+    每块结果格式为 "标题 — url\n描述"（块间空行分隔）；标题可能含 " — "，
+    因此用 rpartition 从右侧切出 url。
+    """
+    out: list[dict] = []
+    for block in str(text or "").split("\n\n"):
+        first_line = block.split("\n", 1)[0]
+        if " — " in first_line:
+            title, _, url = first_line.rpartition(" — ")
+        else:
+            m = _URL_RE.search(first_line)
+            if not m:
+                continue
+            url, title = m.group(0), ""
+        if url:
+            out.append({"url": url, "title": title.strip()})
+        if len(out) >= 8:
+            break
+    return out
+
+
+def _report_citations(ctx: AgentContext, items: list[dict]) -> None:
+    """把搜索结果前 8 条的 url/title 上报到 ctx.citations（引用机制，去重由 add_citation 保证）。"""
+    for it in items[:8]:
+        url = str(it.get("url") or "").strip()
+        if url:
+            ctx.add_citation(url, str(it.get("title") or ""))

@@ -70,6 +70,7 @@ async def run_agent_stream(
         {"type": "chunk", "text": 增量文本} / {"type": "thinking", "text": 思考增量}：LLM 流式透传
         {"type": "tool_status", "name": 工具名, "status": "executing"}：执行工具前
         {"type": "tool_status", "name": 工具名, "status": "done", "result_len": N}：执行完
+        {"type": "citations", "citations": [{"url", "title"}, ...]}：工具执行后新增的来源引用（仅增量）
         {"type": "done", "text": 最终文本回复, "thinking": 各轮思考过程合并}：最终回复
 
     Raises:
@@ -86,6 +87,7 @@ async def run_agent_stream(
     total_usage = None  # 多轮 LLM 调用的 usage 累积（按 token 量扣费用）
 
     executed_calls = 0  # 已执行的工具调用累计数
+    sent_citations = 0  # 已推送的来源引用条数（citations 事件只发增量）
     # 最多 max_tool_calls + 1 轮 LLM 调用：最后一轮不带 tools
     for _round in range(max_tool_calls + 1):
         send_tools = get_tools_schema(tools_names) if executed_calls < max_tool_calls else []
@@ -196,6 +198,10 @@ async def run_agent_stream(
                 )
 
             yield {"type": "tool_status", "name": name, "status": "done", "result_len": len(result)}
+            # 引用上报：工具执行后若 ctx 新增了来源引用，推送 citations 增量事件（每次只发新增部分）
+            if len(ctx.citations) > sent_citations:
+                yield {"type": "citations", "citations": ctx.citations[sent_citations:]}
+                sent_citations = len(ctx.citations)
             work.append({"role": "tool", "tool_call_id": call_id, "content": result})
         executed_calls += len(calls)
 
