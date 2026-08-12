@@ -337,6 +337,29 @@ def _cache_set(key: str, text: str) -> None:
         _cache[key] = (now + _CACHE_TTL, text)
 
 
+def _enhance_query(query: str) -> str:
+    """关键词自动增强（硬兜底，不依赖 LLM 自觉构造具体词）。
+
+    规则：
+    1. 纯宽泛新闻词（「今天新闻」「今日热点」「最新消息」等）→ 替换为「日期+今日要闻+头条」；
+    2. 含时间敏感词（今天/今日/最新/近期等）但无具体日期 → 自动附加当天日期；
+    3. 其他查询保持原样。
+    """
+    q = query.strip()
+    if not q:
+        return q
+    now = datetime.now()
+    today = f"{now.year}年{now.month}月{now.day}日"
+    # 纯宽泛新闻词（去掉语气词后只剩 今日/新闻/热点/要闻 等）
+    bare = re.sub(r"[?？!！。，,\s]", "", q)
+    if re.fullmatch(r"(今天|今日|现在|最新|实时|近期|最近)?(新闻|消息|热点|要闻|资讯|时事|头条)?(是什么|有哪些|有什么|汇总|速览|排行榜)?", bare):
+        return f"{today} 今日要闻 头条"
+    # 时间敏感但无具体日期 → 附加当天日期
+    if not re.search(r"\d{4}年|\d{1,2}月\d{1,2}日", q) and re.search(r"今天|今日|现在|最新|实时|近期|最近", q):
+        return f"{q} {today}"
+    return q
+
+
 @agent_tool(
     name="web_search",
     description=(
@@ -363,28 +386,6 @@ def _cache_set(key: str, text: str) -> None:
         "required": ["query"],
     },
 )
-def _enhance_query(query: str) -> str:
-    """关键词自动增强（硬兜底，不依赖 LLM 自觉构造具体词）。
-
-    规则：
-    1. 纯宽泛新闻词（「今天新闻」「今日热点」「最新消息」等）→ 替换为「日期+今日要闻+头条」；
-    2. 含时间敏感词（今天/今日/最新/近期等）但无具体日期 → 自动附加当天日期；
-    3. 其他查询保持原样。
-    """
-    q = query.strip()
-    if not q:
-        return q
-    now = datetime.now()
-    today = f"{now.year}年{now.month}月{now.day}日"
-    # 纯宽泛新闻词（去掉语气词后只剩 今日/新闻/热点/要闻 等）
-    bare = re.sub(r"[?？!！。，,\s]", "", q)
-    if re.fullmatch(r"(今天|今日|现在|最新|实时|近期|最近)?(新闻|消息|热点|要闻|资讯|时事|头条)?(是什么|有哪些|有什么|汇总|速览|排行榜)?", bare):
-        return f"{today} 今日要闻 头条"
-    # 时间敏感但无具体日期 → 附加当天日期
-    if not re.search(r"\d{4}年|\d{1,2}月\d{1,2}日", q) and re.search(r"今天|今日|现在|最新|实时|近期|最近", q):
-        return f"{q} {today}"
-    return q
-
 
 async def web_search_search(args: dict, ctx: AgentContext) -> str:
     query = str(args.get("query") or "").strip()
