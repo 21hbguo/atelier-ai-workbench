@@ -24,12 +24,14 @@ from backend.services.agent import AgentContext
 from backend.services.agent.loop import run_agent_stream
 from backend.services.llm_model_service import get_active as get_active_model, get_all as get_all_models, get_by_model_id
 from backend.services.billing_service import BillingService
+from backend.services.subscription_service import get_entitlements_in_conn
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 # 每用户每分钟发送次数限制（内存滑动窗口，进程重启重置，够防刷）
 _rate_buckets: dict[int, deque] = {}
+_active_chat_requests: dict[int, int] = {}
 _RATE_BUCKET_MAX = 20000  # 桶数上限，超出后清理过期桶，防止内存无限增长
 
 
@@ -191,12 +193,16 @@ async def upload_chat_file(
     user_id = user["user_id"]
     with get_db() as conn:
         _owns_session(conn, session_id, user_id)
+        entitlements = get_entitlements_in_conn(conn, user_id)
+        if not entitlements["features"].get("file_upload"):
+            raise HTTPException(status_code=403, detail="当前套餐不支持文件上传")
         # 会话文件数配额（防磁盘/DB 无限增长）
         cnt = conn.execute(
             "SELECT COUNT(*) AS cnt FROM chat_files WHERE session_id = %s", (session_id,)
         ).fetchone()["cnt"]
-        if cnt >= _MAX_FILES_PER_SESSION:
-            raise HTTPException(status_code=400, detail=f"每个会话最多上传 {_MAX_FILES_PER_SESSION} 个文件，请清理或新建会话")
+        max_files = min(_MAX_FILES_PER_SESSION, max(0, int(entitlements["features"].get("max_chat_files") or 0)))
+        if cnt >= max_files:
+            raise HTTPException(status_code=400, detail=f"当前套餐每个会话最多上传 {max_files} 个文件，请升级套餐或新建会话")
 
     # 分块读取：内存占用上限 = MAX_FILE_SIZE + 1MB，超大文件在读完前即被拒绝
     content = b""
@@ -432,8 +438,9 @@ async def list_sessions(user=Depends(get_current_user)):
 @router.post("/sessions")
 async def create_session(user=Depends(get_current_user)):
     user_id = user["user_id"]
-    max_sessions = get_limit_config()["chat_max_sessions"]
     with get_db() as conn:
+        entitlements = get_entitlements_in_conn(conn, user_id)
+        max_sessions = min(get_limit_config()["chat_max_sessions"], max(1, int(entitlements["features"].get("max_chat_sessions") or 1)))
         cnt = conn.execute("SELECT COUNT(*) AS cnt FROM chat_sessions WHERE user_id = %s", (user_id,)).fetchone()["cnt"]
         if cnt >= max_sessions:
             raise HTTPException(status_code=400, detail=f"会话数量已达上限（{max_sessions} 个），请先删除旧会话")
@@ -588,6 +595,28 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                 and body.model_id != (active_model.get("model_id") or ""):
             raise HTTPException(status_code=400, detail="该模型未配置接口，请在模型档案中填写 API 地址和 Key")
 
+    with get_db() as conn:
+        entitlements = get_entitlements_in_conn(conn, user_id)
+        if not entitlements["active"]:
+            raise HTTPException(status_code=403, detail="当前订阅已暂停或撤销")
+        allowed_models = entitlements["allowed_models"]
+        target_model_id = target_model.get("model_id") or body.model_id
+        if allowed_models and target_model_id not in allowed_models:
+            raise HTTPException(status_code=403, detail="当前套餐不支持该模型")
+        if body.web_search and not entitlements["features"].get("web_search"):
+            raise HTTPException(status_code=403, detail="当前套餐不支持联网搜索")
+        session = _owns_session(conn, session_id, user_id)
+        max_messages = get_limit_config()["chat_max_messages"]
+        msg_cnt = conn.execute("SELECT COUNT(*) AS cnt FROM chat_messages WHERE session_id = %s", (session_id,)).fetchone()["cnt"]
+        if msg_cnt >= max_messages:
+            raise HTTPException(status_code=400, detail=f"该会话消息已达上限（{max_messages} 条），请新建会话继续")
+
+    active_limit = entitlements["max_concurrent_requests"]
+    active_count = _active_chat_requests.get(user_id, 0)
+    if active_count >= active_limit:
+        raise HTTPException(status_code=429, detail=f"当前套餐最多同时进行 {active_limit} 个对话请求")
+    _active_chat_requests[user_id] = active_count + 1
+
     cost_per = float(BillingService.charge_points(Decimal(str(_chat_cost_per_request(target_model)))))
     req_id = str(uuid.uuid4())
 
@@ -599,46 +628,52 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
     if body.reasoning_effort not in efforts:
         body.reasoning_effort = target_model.get("default_reasoning_effort") or "auto"
 
-    # 校验会话归属 + 消息上限（先校验后扣费，避免 402 留下孤儿消息）
-    with get_db() as conn:
-        session = _owns_session(conn, session_id, user_id)
-        max_messages = get_limit_config()["chat_max_messages"]
-        msg_cnt = conn.execute("SELECT COUNT(*) AS cnt FROM chat_messages WHERE session_id = %s", (session_id,)).fetchone()["cnt"]
-        if msg_cnt >= max_messages:
-            raise HTTPException(status_code=400, detail=f"该会话消息已达上限（{max_messages} 条），请新建会话继续")
-
     # 先扣积分
     try:
-        balance_after = PointsService.consume(
+        precharge = PointsService.consume_with_breakdown(
             user_id, cost_per, f"AI助手对话 x1", tx_type="chat_consume", request_key=f"chat:{req_id}"
         )
+        balance_after = precharge["balance"]
     except ValueError as e:
+        _active_chat_requests[user_id] = max(0, _active_chat_requests.get(user_id, 1) - 1)
         raise HTTPException(status_code=402, detail=str(e))
+    except Exception:
+        _active_chat_requests[user_id] = max(0, _active_chat_requests.get(user_id, 1) - 1)
+        raise
 
     # 再落库用户消息（file_ids 快照会话当前已解析文件 id，前端据此显示关联文件图标）
-    with get_db() as conn:
-        # 会话行锁：与 ChatService 的上下文压缩（阶段1/3 同样 FOR UPDATE）串行化，
-        # 保证「本事务插入的消息」要么在压缩读取范围内、要么 id 大于压缩边界，
-        # 避免压缩期间插入的消息同时被摘要与 id > summary_until 过滤而永久丢失。
-        conn.execute("SELECT id FROM chat_sessions WHERE id = %s FOR UPDATE", (session_id,))
-        file_rows = conn.execute(
-            "SELECT id, original_name, page_content FROM chat_files WHERE session_id = %s AND status = 'parsed' ORDER BY id ASC",
-            (session_id,),
-        ).fetchall()
-        file_ids = [r["id"] for r in file_rows]
-        user_msg_row = conn.execute(
-            "INSERT INTO chat_messages (session_id, role, content, file_ids) VALUES (%s, 'user', %s, %s::jsonb) RETURNING id",
-            (session_id, content, json.dumps(file_ids)),
-        ).fetchone()
-        user_msg_id = user_msg_row["id"] if user_msg_row else None
-        # 首轮自动生成标题
-        if (session["title"] or "").strip() in ("", "新对话") and msg_cnt == 0:
-            conn.execute(
-                "UPDATE chat_sessions SET title = %s, updated_at = NOW() WHERE id = %s",
-                (_default_title(content), session_id),
-            )
-        else:
-            conn.execute("UPDATE chat_sessions SET updated_at = NOW() WHERE id = %s", (session_id,))
+    try:
+        with get_db() as conn:
+            # 会话行锁：与 ChatService 的上下文压缩（阶段1/3 同样 FOR UPDATE）串行化，
+            # 保证「本事务插入的消息」要么在压缩读取范围内、要么 id 大于压缩边界，
+            # 避免压缩期间插入的消息同时被摘要与 id > summary_until 过滤而永久丢失。
+            conn.execute("SELECT id FROM chat_sessions WHERE id = %s FOR UPDATE", (session_id,))
+            file_rows = []
+            if entitlements["features"].get("file_upload"):
+                file_rows = conn.execute(
+                    "SELECT id, original_name, page_content FROM chat_files WHERE session_id = %s AND status = 'parsed' ORDER BY id ASC",
+                    (session_id,),
+                ).fetchall()
+            file_ids = [r["id"] for r in file_rows]
+            user_msg_row = conn.execute(
+                "INSERT INTO chat_messages (session_id, role, content, file_ids) VALUES (%s, 'user', %s, %s::jsonb) RETURNING id",
+                (session_id, content, json.dumps(file_ids)),
+            ).fetchone()
+            user_msg_id = user_msg_row["id"] if user_msg_row else None
+            # 首轮自动生成标题
+            if (session["title"] or "").strip() in ("", "新对话") and msg_cnt == 0:
+                conn.execute(
+                    "UPDATE chat_sessions SET title = %s, updated_at = NOW() WHERE id = %s",
+                    (_default_title(content), session_id),
+                )
+            else:
+                conn.execute("UPDATE chat_sessions SET updated_at = NOW() WHERE id = %s", (session_id,))
+    except Exception:
+        try:
+            PointsService.refund(user_id, cost_per, "AI助手回复失败退还", request_key=f"chat_refund:{req_id}")
+        finally:
+            _active_chat_requests[user_id] = max(0, _active_chat_requests.get(user_id, 1) - 1)
+        raise
 
     # 历史消息不在此处加载：由 ChatService.prepare_session_messages 带压缩状态（id > summary_until）
     # 统一组装，保证三区块结构（区块2 文档块固定前缀 + 区块3 纯追加历史）逐轮稳定。
@@ -658,7 +693,13 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
     # 工具列表裁剪：有文档 → 全量工具（文档检索/总结/搜索/抓取）；
     # 仅联网搜索 → 同时注册 web_search + fetch_url：纯搜索模式也需要 fetch_url
     # 抓正文做链接扩散（搜→选→抓→扩散），否则模型拿到搜索结果后无法抓取正文
-    tools_names = _AGENT_TOOLS if attached_docs else (["web_search", "fetch_url"] if body.web_search else None)
+    tools_names = None
+    if use_agent:
+        tools_names = ["rag_memory_search", "document_summary_list", "document_summary_summarize"] if attached_docs else []
+        if entitlements["features"].get("web_search"):
+            tools_names.extend(["web_search", "fetch_url"])
+        if entitlements["features"].get("file_write"):
+            tools_names.append("file_ops_write_text")
 
     def _refund_once() -> None:
         # refund 幂等（request_key 唯一），重复调用安全
@@ -686,7 +727,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
             if use_agent:
                 # 会话有上传文档：agent 工具循环（流式多轮；自动模式无需前端指定）
                 try:
-                    ctx = AgentContext(session_id=session_id, user_id=user_id)
+                    ctx = AgentContext(session_id=session_id, user_id=user_id, extra={"entitlements": entitlements})
                     # 纯联网搜索模式（无文档）时，system 注入搜索工具使用指南 + 当天日期
                     agent_system = build_system_prompt(target_model)
                     # 链接访问指引（通道一）：仅当 fetch_url 工具实际注册给模型时才指引，
@@ -726,7 +767,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                         system=agent_system,
                         messages=messages,
                         tools_names=tools_names,
-                        max_tool_calls=5,  # 收紧轮数：agent 多轮 LLM 调用会放大 API 成本
+                        max_tool_calls=max(0, int(entitlements["features"].get("max_tool_calls") or 0)),
                         max_tokens=ChatService._resolve_max_output_tokens(target_model),
                         override=override,
                         ctx=ctx,
@@ -759,7 +800,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                             final_balance = _record_chat_usage(
                                 user_id=user_id, session_id=session_id, message_id=new_msg_id,
                                 model_cfg=target_model, usage=event.get("usage"),
-                                req_id=req_id, pre_charged=cost_per, pre_balance=balance_after,
+                                req_id=req_id, pre_charged=cost_per, pre_balance=balance_after, pre_allocation=precharge,
                             )
                             yield f"event: done\ndata: {json.dumps({'text': text, 'thinking': thinking, 'points_balance': final_balance, 'message_id': new_msg_id}, ensure_ascii=False)}\n\n"
                 except LLMError as e:
@@ -772,7 +813,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
             urls = []
             try:
                 from backend.services.url_fetcher import extract_urls, fetch_url
-                urls = extract_urls(content)
+                urls = extract_urls(content) if entitlements["features"].get("web_search") else []
             except Exception as e:
                 logger.warning("[chat/send] url_fetcher 不可用或提取失败，跳过链接自动抓取: %s", e)
                 urls = []
@@ -855,7 +896,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                     final_balance = _record_chat_usage(
                         user_id=user_id, session_id=session_id, message_id=new_msg_id,
                         model_cfg=target_model, usage=event.get("usage"),
-                        req_id=req_id, pre_charged=cost_per, pre_balance=balance_after,
+                        req_id=req_id, pre_charged=cost_per, pre_balance=balance_after, pre_allocation=precharge,
                     )
                     yield f"event: done\ndata: {json.dumps({'text': event['text'], 'thinking': event.get('thinking', ''), 'points_balance': final_balance, 'message_id': new_msg_id}, ensure_ascii=False)}\n\n"
                 elif event["type"] == "error":
@@ -877,6 +918,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
             # 兜底：流结束但既未完成也未退款（理论不应发生）
             if not finished and not refunded:
                 _refund_once()
+            _active_chat_requests[user_id] = max(0, _active_chat_requests.get(user_id, 1) - 1)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream",
                              headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})

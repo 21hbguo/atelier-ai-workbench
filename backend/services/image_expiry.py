@@ -126,13 +126,11 @@ def extend_images(filenames: list[str], user_id: int) -> dict:
         total_cost=len(eligible)*get_extend_cost_per_image()
         if total_cost <= 0:
             return {"success": success, "skipped": skipped, "failed": failed, "total_cost": 0, "points": None}
-        if user["points"] < total_cost:
+        from backend.services.points_service import PointsService
+        try:
+            new_balance = PointsService.consume(user_id, total_cost, f"延长图片有效期 {len(eligible)} 张", tx_type=IMAGE_EXTEND_TX_TYPE, request_key=f"image-extend:{user_id}:{','.join(eligible)}", conn=conn)
+        except ValueError:
             raise ValueError("积分不足")
-        cursor=conn.execute("UPDATE users SET points = points - %s WHERE id = %s AND points >= %s", (total_cost, user_id, total_cost))
-        if cursor.rowcount <= 0:
-            raise ValueError("积分不足")
-        new_balance=conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()["points"]
-        conn.execute("INSERT INTO point_transactions (user_id, amount, balance_after, type, description) VALUES (%s, %s, %s, %s, %s)", (user_id, -total_cost, new_balance, IMAGE_EXTEND_TX_TYPE, f"延长图片有效期 {len(eligible)} 张"))
         for filename in eligible:
             row=row_map[filename]
             base=_parse_dt(row["expires_at"]) or _now()

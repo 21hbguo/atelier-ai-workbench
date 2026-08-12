@@ -115,6 +115,12 @@ _runtime_config = {
     "points_cost_per_image_extend": int(os.getenv("POINTS_COST_PER_IMAGE_EXTEND", "2")),
     "points_register_bonus": int(os.getenv("POINTS_REGISTER_BONUS", "50")),
     "points_migration_amount": int(os.getenv("POINTS_MIGRATION_AMOUNT", "50")),
+    "points_unit_version": int(os.getenv("POINTS_UNIT_VERSION", "100")),
+    "points_per_rmb": float(os.getenv("POINTS_PER_RMB", "100")),
+    "usd_cny_fx_rate": float(os.getenv("USD_CNY_FX_RATE", "7.2")),
+    "platform_markup": float(os.getenv("PLATFORM_MARKUP", "1")),
+    "min_charge_points": int(os.getenv("MIN_CHARGE_POINTS", "1")),
+    "rounding_mode": os.getenv("POINTS_ROUNDING_MODE", "ceil"),
     "invite_enabled": os.getenv("INVITE_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
     "invite_register_reward_points": int(os.getenv("INVITE_REGISTER_REWARD_POINTS", "20")),
     "invite_recharge_rebate_percent": float(os.getenv("INVITE_RECHARGE_REBATE_PERCENT", "10")),
@@ -271,6 +277,35 @@ def get_limit_config():
     if out["login_rate_limit_per_minute_per_ip"] < 1: out["login_rate_limit_per_minute_per_ip"] = 1
     if out["register_rate_limit_per_minute_per_ip"] < 1: out["register_rate_limit_per_minute_per_ip"] = 1
     return out
+
+
+def get_billing_config():
+    cfg = get_config()
+    defaults = _runtime_config_defaults
+    try:
+        points_per_rmb = float(cfg.get("points_per_rmb", defaults["points_per_rmb"]))
+    except (TypeError, ValueError):
+        points_per_rmb = defaults["points_per_rmb"]
+    try:
+        fx_rate = float(cfg.get("usd_cny_fx_rate", defaults["usd_cny_fx_rate"]))
+    except (TypeError, ValueError):
+        fx_rate = defaults["usd_cny_fx_rate"]
+    try:
+        markup = float(cfg.get("platform_markup", defaults["platform_markup"]))
+    except (TypeError, ValueError):
+        markup = defaults["platform_markup"]
+    try:
+        min_charge = int(cfg.get("min_charge_points", defaults["min_charge_points"]))
+    except (TypeError, ValueError):
+        min_charge = defaults["min_charge_points"]
+    return {
+        "points_unit_version": int(cfg.get("points_unit_version", defaults["points_unit_version"])),
+        "points_per_rmb": max(1.0, points_per_rmb),
+        "usd_cny_fx_rate": max(0.0001, fx_rate),
+        "platform_markup": max(0.0001, markup),
+        "min_charge_points": max(1, min_charge),
+        "rounding_mode": "ceil",
+    }
 def get_invite_config():
     cfg=get_config()
     def _to_float(v,d=0):

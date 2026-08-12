@@ -37,7 +37,7 @@ def init_db():
                 is_frozen BOOLEAN DEFAULT FALSE,
                 last_ip VARCHAR(45),
                 last_active TIMESTAMP,
-                points INTEGER DEFAULT 0,
+                points NUMERIC(18,0) DEFAULT 0,
                 created_at TIMESTAMP DEFAULT NOW()
             )""",
             """CREATE TABLE IF NOT EXISTS user_requests (
@@ -227,8 +227,8 @@ def init_db():
             """CREATE TABLE IF NOT EXISTS point_transactions (
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL REFERENCES users(id),
-                amount INTEGER NOT NULL,
-                balance_after INTEGER NOT NULL,
+                amount NUMERIC(18,0) NOT NULL,
+                balance_after NUMERIC(18,0) NOT NULL,
                 type VARCHAR(32) NOT NULL,
                 description TEXT,
                 request_key VARCHAR(128),
@@ -549,6 +549,145 @@ def init_db():
             "CREATE INDEX IF NOT EXISTS idx_chat_usage_user_created ON chat_usage_records(user_id, created_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_chat_usage_session ON chat_usage_records(session_id)",
             "CREATE INDEX IF NOT EXISTS idx_chat_usage_request ON chat_usage_records(request_id)",
+            "ALTER TABLE chat_usage_records ADD COLUMN IF NOT EXISTS pricing_version_id INTEGER",
+            "ALTER TABLE chat_usage_records ADD COLUMN IF NOT EXISTS calculated_cost_points NUMERIC(18,4) DEFAULT 0",
+            "ALTER TABLE chat_usage_records ADD COLUMN IF NOT EXISTS charged_points NUMERIC(18,0) DEFAULT 0",
+            "ALTER TABLE chat_usage_records ADD COLUMN IF NOT EXISTS subscription_points_used NUMERIC(18,0) DEFAULT 0",
+            "ALTER TABLE chat_usage_records ADD COLUMN IF NOT EXISTS wallet_points_used NUMERIC(18,0) DEFAULT 0",
+            "ALTER TABLE chat_usage_records ADD COLUMN IF NOT EXISTS price_snapshot JSONB DEFAULT '{}'::jsonb",
+            "ALTER TABLE chat_usage_records ADD COLUMN IF NOT EXISTS usage_missing BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE llm_models ADD COLUMN IF NOT EXISTS cache_creation_price_per_million NUMERIC(12,4)",
+            """CREATE TABLE IF NOT EXISTS model_price_versions (
+                id SERIAL PRIMARY KEY,
+                model_id VARCHAR(128) NOT NULL,
+                source_currency VARCHAR(8) NOT NULL DEFAULT 'usd',
+                input_price_per_million NUMERIC(18,4),
+                output_price_per_million NUMERIC(18,4),
+                cache_read_price_per_million NUMERIC(18,4),
+                cache_creation_price_per_million NUMERIC(18,4),
+                usd_cny_fx_rate NUMERIC(18,8) NOT NULL,
+                platform_markup NUMERIC(18,8) NOT NULL,
+                points_per_rmb NUMERIC(18,4) NOT NULL,
+                rmb_input_price_per_million NUMERIC(18,4),
+                rmb_output_price_per_million NUMERIC(18,4),
+                rmb_cache_read_price_per_million NUMERIC(18,4),
+                rmb_cache_creation_price_per_million NUMERIC(18,4),
+                points_per_1k_input NUMERIC(18,4),
+                points_per_1k_output NUMERIC(18,4),
+                points_per_1k_cache_read NUMERIC(18,4),
+                points_per_1k_cache_creation NUMERIC(18,4),
+                snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+                effective_at TIMESTAMP DEFAULT NOW(),
+                created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_model_price_versions_model_effective ON model_price_versions(model_id, effective_at DESC, id DESC)",
+            """CREATE TABLE IF NOT EXISTS subscription_plans (
+                id SERIAL PRIMARY KEY,
+                code VARCHAR(64) UNIQUE NOT NULL,
+                name VARCHAR(128) NOT NULL,
+                description TEXT DEFAULT '',
+                price_rmb NUMERIC(12,2) NOT NULL DEFAULT 0,
+                cycle_days INTEGER NOT NULL DEFAULT 30,
+                grant_points NUMERIC(18,0) NOT NULL DEFAULT 0,
+                features JSONB NOT NULL DEFAULT '{}'::jsonb,
+                allowed_models JSONB NOT NULL DEFAULT '[]'::jsonb,
+                max_concurrent_requests INTEGER NOT NULL DEFAULT 1,
+                enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                is_free BOOLEAN NOT NULL DEFAULT FALSE,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )""",
+            """CREATE TABLE IF NOT EXISTS subscription_orders (
+                id SERIAL PRIMARY KEY,
+                order_no VARCHAR(64) UNIQUE NOT NULL,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                plan_id INTEGER NOT NULL REFERENCES subscription_plans(id),
+                plan_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+                amount_rmb NUMERIC(12,2) NOT NULL,
+                channel VARCHAR(32) NOT NULL,
+                status VARCHAR(16) NOT NULL DEFAULT 'pending',
+                payer_name VARCHAR(128) DEFAULT '',
+                tx_no VARCHAR(128) DEFAULT '',
+                proof_url VARCHAR(1024) DEFAULT '',
+                remark TEXT DEFAULT '',
+                submit_ip VARCHAR(45) DEFAULT '',
+                risk_level VARCHAR(16) DEFAULT 'low',
+                risk_flags JSONB NOT NULL DEFAULT '[]'::jsonb,
+                reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                review_note TEXT DEFAULT '',
+                created_at TIMESTAMP DEFAULT NOW(),
+                reviewed_at TIMESTAMP
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_subscription_orders_user_created ON subscription_orders(user_id, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_subscription_orders_status_created ON subscription_orders(status, created_at DESC)",
+            """CREATE TABLE IF NOT EXISTS user_subscriptions (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                plan_id INTEGER NOT NULL REFERENCES subscription_plans(id),
+                status VARCHAR(16) NOT NULL DEFAULT 'active',
+                current_cycle_id INTEGER,
+                next_plan_id INTEGER REFERENCES subscription_plans(id),
+                started_at TIMESTAMP,
+                expires_at TIMESTAMP,
+                last_order_id INTEGER REFERENCES subscription_orders(id) ON DELETE SET NULL,
+                updated_at TIMESTAMP DEFAULT NOW()
+            )""",
+            """CREATE TABLE IF NOT EXISTS subscription_cycles (
+                id SERIAL PRIMARY KEY,
+                subscription_id INTEGER NOT NULL REFERENCES user_subscriptions(id) ON DELETE CASCADE,
+                plan_id INTEGER NOT NULL REFERENCES subscription_plans(id),
+                period_start TIMESTAMP NOT NULL,
+                period_end TIMESTAMP NOT NULL,
+                granted_points NUMERIC(18,0) NOT NULL DEFAULT 0,
+                remaining_points NUMERIC(18,0) NOT NULL DEFAULT 0,
+                entitlements_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+                status VARCHAR(16) NOT NULL DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_subscription_cycles_subscription_period ON subscription_cycles(subscription_id, period_start DESC)",
+            """CREATE TABLE IF NOT EXISTS point_buckets (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                bucket_type VARCHAR(16) NOT NULL,
+                cycle_id INTEGER REFERENCES subscription_cycles(id) ON DELETE SET NULL,
+                granted_points NUMERIC(18,0) NOT NULL DEFAULT 0,
+                remaining_points NUMERIC(18,0) NOT NULL DEFAULT 0,
+                expires_at TIMESTAMP,
+                status VARCHAR(16) NOT NULL DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_point_buckets_user_consume ON point_buckets(user_id, bucket_type, status, expires_at, id)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_point_buckets_permanent_user ON point_buckets(user_id) WHERE bucket_type = 'permanent'",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_point_buckets_cycle ON point_buckets(cycle_id) WHERE cycle_id IS NOT NULL",
+            """CREATE TABLE IF NOT EXISTS point_transaction_allocations (
+                id SERIAL PRIMARY KEY,
+                transaction_id INTEGER NOT NULL REFERENCES point_transactions(id) ON DELETE CASCADE,
+                bucket_id INTEGER NOT NULL REFERENCES point_buckets(id) ON DELETE RESTRICT,
+                amount NUMERIC(18,0) NOT NULL
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_point_allocations_transaction ON point_transaction_allocations(transaction_id)",
+            "CREATE INDEX IF NOT EXISTS idx_point_allocations_bucket ON point_transaction_allocations(bucket_id)",
+            """CREATE TABLE IF NOT EXISTS billing_audit_logs (
+                id SERIAL PRIMARY KEY,
+                admin_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                action VARCHAR(64) NOT NULL,
+                target_type VARCHAR(32) NOT NULL,
+                target_id VARCHAR(128) NOT NULL,
+                reason TEXT DEFAULT '',
+                old_state JSONB DEFAULT '{}'::jsonb,
+                new_state JSONB DEFAULT '{}'::jsonb,
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
+            """CREATE TABLE IF NOT EXISTS points_unit_migrations (
+                id SERIAL PRIMARY KEY,
+                version INTEGER UNIQUE NOT NULL,
+                factor NUMERIC(12,4) NOT NULL,
+                dry_run BOOLEAN NOT NULL DEFAULT FALSE,
+                report JSONB NOT NULL DEFAULT '{}'::jsonb,
+                applied_at TIMESTAMP DEFAULT NOW()
+            )""",
         ]
             for sql in statements:
                 conn.execute(sql)
@@ -624,7 +763,7 @@ def init_db():
             if not _column_exists(conn, "image_metadata", "is_permanent"):
                 conn.execute("ALTER TABLE image_metadata ADD COLUMN is_permanent BOOLEAN DEFAULT FALSE")
             if not _column_exists(conn, "tasks", "points_cost"):
-                conn.execute("ALTER TABLE tasks ADD COLUMN points_cost INTEGER DEFAULT 0")
+                conn.execute("ALTER TABLE tasks ADD COLUMN points_cost NUMERIC(18,0) DEFAULT 0")
             if not _column_exists(conn, "tasks", "points_balance_after"):
                 conn.execute("ALTER TABLE tasks ADD COLUMN points_balance_after INTEGER")
             if not _column_exists(conn, "tasks", "is_deleted"):
@@ -689,11 +828,25 @@ def init_db():
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite_code_unique ON users(invite_code) WHERE invite_code IS NOT NULL AND invite_code<>''")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_users_inviter_user_id ON users(inviter_user_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_recharge_inviter_user_id ON recharge_requests(inviter_user_id)")
-            # 迁移：积分支持小数（内测 0.5 积分/次的聊天定价）；ALTER TYPE 幂等，重复执行无副作用
-            conn.execute("ALTER TABLE users ALTER COLUMN points TYPE NUMERIC(12,2)")
-            conn.execute("ALTER TABLE point_transactions ALTER COLUMN amount TYPE NUMERIC(12,2)")
-            conn.execute("ALTER TABLE point_transactions ALTER COLUMN balance_after TYPE NUMERIC(12,2)")
-            conn.execute("ALTER TABLE tasks ALTER COLUMN points_balance_after TYPE NUMERIC(12,2)")
+            # 钱包字段只有在积分单位迁移完成后才收紧为整数，避免旧库在迁移前被截断。
+            unit_migration = conn.execute(
+                "SELECT 1 FROM points_unit_migrations WHERE version = 100 AND dry_run = FALSE LIMIT 1"
+            ).fetchone()
+            if unit_migration:
+                conn.execute("ALTER TABLE users ALTER COLUMN points TYPE NUMERIC(18,0) USING ROUND(points)")
+                conn.execute("ALTER TABLE point_transactions ALTER COLUMN amount TYPE NUMERIC(18,0) USING ROUND(amount)")
+                conn.execute("ALTER TABLE point_transactions ALTER COLUMN balance_after TYPE NUMERIC(18,0) USING ROUND(balance_after)")
+                conn.execute("ALTER TABLE tasks ALTER COLUMN points_cost TYPE NUMERIC(18,0) USING ROUND(points_cost)")
+                conn.execute("ALTER TABLE tasks ALTER COLUMN points_balance_after TYPE NUMERIC(18,0) USING ROUND(points_balance_after)")
+
+            conn.execute(
+                """INSERT INTO subscription_plans
+                   (code, name, description, price_rmb, cycle_days, grant_points, features, allowed_models, is_free, sort_order)
+                   VALUES ('free', '免费套餐', '基础对话能力，按需使用永久积分。', 0, 30, 0,
+                           '{"web_search": false, "file_upload": false, "file_write": false, "max_tool_calls": 0, "max_chat_sessions": 3, "max_chat_files": 0}'::jsonb,
+                           '[]'::jsonb, TRUE, 0)
+                   ON CONFLICT (code) DO NOTHING"""
+            )
 
         # 初始化默认分类
             count = conn.execute("SELECT COUNT(*) AS cnt FROM categories").fetchone()["cnt"]

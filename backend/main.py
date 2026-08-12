@@ -7,7 +7,7 @@ from datetime import datetime
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from backend.routers import generate, upload, tasks, images, prompts, stats, config, auth, square, admin, points, announcements, notifications, account, shares, favorites, prompt_optimize, vmq, chat
+from backend.routers import generate, upload, tasks, images, prompts, stats, config, auth, square, admin, points, announcements, notifications, account, shares, favorites, prompt_optimize, vmq, chat, subscriptions
 from backend.services.image_gen import close_http_client
 from backend.services.llm_client import LLMClient
 from backend.services.classification_service import ClassificationService
@@ -83,6 +83,8 @@ app.include_router(favorites.router)
 app.include_router(prompt_optimize.router)
 app.include_router(vmq.router)
 app.include_router(chat.router)
+app.include_router(subscriptions.router)
+app.include_router(subscriptions.admin_router)
 
 
 @app.get("/appPush")

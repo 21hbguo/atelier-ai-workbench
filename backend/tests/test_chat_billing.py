@@ -73,7 +73,7 @@ def test_record_chat_usage_token_cost_exceeds_precharge():
     req_id = "req-scenario-1"
 
     with patch.object(chat_module.PointsService, "consume", return_value=76.25) as mock_consume, \
-         patch.object(chat_module.PointsService, "add_points") as mock_add, \
+        patch.object(chat_module.PointsService, "refund") as mock_refund, \
          _mock_db_conn() as conn:
         final_balance = _record_chat_usage(
             user_id=1, session_id=2, message_id=3,
@@ -81,15 +81,15 @@ def test_record_chat_usage_token_cost_exceeds_precharge():
             pre_charged=10.0, pre_balance=100.0,
         )
 
-    # diff = 23.75 - 10 = 13.75 → consume 一次
+    # 实际费用 23.75 向上取整为 24，diff = 24 - 10 = 14 → consume 一次
     mock_consume.assert_called_once()
     args, kwargs = mock_consume.call_args
     assert args[0] == 1                       # user_id
-    assert args[1] == 13.75                   # amount = float(diff)
+    assert args[1] == 14.0                    # amount = float(diff)
     assert args[2] == "AI对话按量补差"          # description
     assert kwargs["tx_type"] == "chat_token_adjust"
     assert kwargs["request_key"] == f"chat_token_adjust:{req_id}"
-    mock_add.assert_not_called()
+    mock_refund.assert_not_called()
     # consume 返回值作为 final_balance 回传
     assert final_balance == 76.25
 
@@ -112,7 +112,7 @@ def test_record_chat_usage_token_cost_below_precharge():
     req_id = "req-scenario-2"
 
     with patch.object(chat_module.PointsService, "consume") as mock_consume, \
-         patch.object(chat_module.PointsService, "add_points", return_value=98.4) as mock_add, \
+        patch.object(chat_module.PointsService, "refund", return_value=98) as mock_refund, \
          _mock_db_conn() as conn:
         final_balance = _record_chat_usage(
             user_id=1, session_id=2, message_id=3,
@@ -120,16 +120,15 @@ def test_record_chat_usage_token_cost_below_precharge():
             pre_charged=50.0, pre_balance=50.0,
         )
 
-    # diff = 1.6 - 50 = -48.4 → add_points 一次，amount=48.4
-    mock_add.assert_called_once()
-    args, kwargs = mock_add.call_args
+    # 实际费用 1.6 向上取整为 2，diff = 2 - 50 = -48 → refund 一次
+    mock_refund.assert_called_once()
+    args, kwargs = mock_refund.call_args
     assert args[0] == 1                       # user_id
-    assert args[1] == 48.4                    # amount = float(-diff)
-    assert kwargs["tx_type"] == "chat_token_adjust"
-    assert kwargs["description"] == "AI对话按量退还差额"
+    assert args[1] == 48.0                    # amount = float(-diff)
+    assert args[2] == "AI对话按量退还差额"
     assert kwargs["request_key"] == f"chat_token_adjust:{req_id}"
     mock_consume.assert_not_called()
-    assert final_balance == 98.4
+    assert final_balance == 98
 
     params = _insert_params(conn)
     assert params[11] == Decimal("1.6")       # cost_points
@@ -150,7 +149,7 @@ def test_record_chat_usage_token_cost_equals_precharge():
     req_id = "req-scenario-3"
 
     with patch.object(chat_module.PointsService, "consume") as mock_consume, \
-         patch.object(chat_module.PointsService, "add_points") as mock_add, \
+        patch.object(chat_module.PointsService, "refund") as mock_refund, \
          _mock_db_conn() as conn:
         final_balance = _record_chat_usage(
             user_id=1, session_id=2, message_id=3,
@@ -159,7 +158,7 @@ def test_record_chat_usage_token_cost_equals_precharge():
         )
 
     mock_consume.assert_not_called()
-    mock_add.assert_not_called()
+    mock_refund.assert_not_called()
     # diff=0 时不调整余额，回传 pre_balance
     assert final_balance == 100.0
     # 仍落一条 usage 记录
@@ -186,7 +185,7 @@ def test_compute_token_cost_usage_none_falls_back_per_request():
     # 验证 _record_chat_usage 不补差不退款
     req_id = "req-scenario-4"
     with patch.object(chat_module.PointsService, "consume") as mock_consume, \
-         patch.object(chat_module.PointsService, "add_points") as mock_add, \
+        patch.object(chat_module.PointsService, "refund") as mock_refund, \
          _mock_db_conn() as conn:
         final_balance = _record_chat_usage(
             user_id=1, session_id=2, message_id=3,
@@ -195,7 +194,7 @@ def test_compute_token_cost_usage_none_falls_back_per_request():
         )
 
     mock_consume.assert_not_called()
-    mock_add.assert_not_called()
+    mock_refund.assert_not_called()
     assert final_balance == 100.0
     params = _insert_params(conn)
     assert params[11] == Decimal("10")        # cost_points
@@ -221,7 +220,7 @@ def test_compute_token_cost_no_unit_price_falls_back_per_request():
 
     req_id = "req-scenario-5"
     with patch.object(chat_module.PointsService, "consume") as mock_consume, \
-         patch.object(chat_module.PointsService, "add_points") as mock_add, \
+        patch.object(chat_module.PointsService, "refund") as mock_refund, \
          _mock_db_conn() as conn:
         final_balance = _record_chat_usage(
             user_id=1, session_id=2, message_id=3,
@@ -230,7 +229,7 @@ def test_compute_token_cost_no_unit_price_falls_back_per_request():
         )
 
     mock_consume.assert_not_called()
-    mock_add.assert_not_called()
+    mock_refund.assert_not_called()
     assert final_balance == 100.0
     params = _insert_params(conn)
     assert params[11] == Decimal("10")        # cost_points

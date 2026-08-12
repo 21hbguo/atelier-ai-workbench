@@ -982,13 +982,11 @@ async def refund_recharge_request(request_id: int, body: dict, admin=Depends(req
         points = int(item.get("points") or 0)
         if points <= 0:
             raise HTTPException(status_code=400, detail="该申请无有效积分，无法回退发放")
-        conn.execute("UPDATE users SET points = GREATEST(0, points - %s) WHERE id = %s", (points, user_id))
-        new_balance = conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()["points"]
+        try:
+            new_balance = PointsService.consume(user_id, points, f"积分回退 (¥{item['amount']})", tx_type="recharge_refund", request_key=f"recharge-refund:{request_id}", conn=conn)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="用户当前积分不足，无法回退")
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        conn.execute(
-            "INSERT INTO point_transactions (user_id, amount, balance_after, type, description, recharge_request_id, request_key) VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
-            (user_id, -points, new_balance, "recharge_refund", f"积分回退 (¥{item['amount']})", request_id, f"recharge-refund:{request_id}"),
-        )
         conn.execute(
             "UPDATE recharge_requests SET status = 'refunded', review_note = %s, reviewed_at = %s, reviewed_by = %s WHERE id = %s",
             (review_note, now, admin["user_id"], request_id),

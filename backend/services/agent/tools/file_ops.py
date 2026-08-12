@@ -32,6 +32,8 @@ MAX_CONTENT_CHARS = 200_000
     },
 )
 async def file_ops_write_text(args: dict, ctx: AgentContext) -> str:
+    if not ctx.extra.get("entitlements", {}).get("features", {}).get("file_write"):
+        return "当前套餐不支持文件写入。"
     content = str(args.get("content") or "")
     if not content.strip():
         return "写入内容为空，请提供 content 参数。"

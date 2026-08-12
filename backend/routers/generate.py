@@ -26,6 +26,7 @@ from backend.auth import get_current_user, record_request, update_user_ip, get_c
 from backend.database import get_db
 from backend.services.image_expiry import RETENTION_DAYS, mark_image_permanent
 from backend.config import get_config
+from backend.services.subscription_service import get_entitlements_in_conn
 
 router = APIRouter(prefix="/api/generate", tags=["generate"])
 GLOBAL_GENERATE_ACTIVE_LIMIT = 20
@@ -77,6 +78,14 @@ def _reserve_generation_slot(task_id: str, task_type: str, task_params: dict, us
         user = conn.execute("SELECT id FROM users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
         if not user:
             raise HTTPException(status_code=401, detail="用户不存在")
+        entitlements = get_entitlements_in_conn(conn, user_id)
+        if not entitlements["active"]:
+            raise HTTPException(status_code=403, detail="当前订阅已暂停或撤销")
+        allowed_models = entitlements["allowed_models"]
+        model_id = str(task_params.get("model_id") or "")
+        if allowed_models and model_id not in allowed_models:
+            raise HTTPException(status_code=403, detail="当前套餐不支持该模型")
+        limit = min(limit, entitlements["max_concurrent_requests"])
         active_all = conn.execute(
             "SELECT COUNT(*) AS cnt FROM tasks WHERE LOWER(status) IN ('pending','queued','processing','running','generating') AND completed_at IS NULL AND COALESCE(updated_at,created_at,NOW()) >= NOW() - interval '30 minute'"
         ).fetchone()["cnt"]
@@ -94,12 +103,19 @@ def _reserve_generation_slot(task_id: str, task_type: str, task_params: dict, us
             raise HTTPException(status_code=402, detail=f"积分不足，需要 {cost} 积分")
         TaskManager.create_task(task_id, task_type, task_params, user_id=user_id, points_cost=cost, points_balance_after=points_balance_after, conn=conn)
         return points_balance_after
-def _consume_generation_slot_for_existing_task(task_id: str, user_id: int, cost: int, consume_request_key: str):
+def _consume_generation_slot_for_existing_task(task_id: str, user_id: int, model_id: str, cost: int, consume_request_key: str):
     limit = get_limit_config()["generate_concurrent_limit_per_user"]
     with get_db() as conn:
         user = conn.execute("SELECT id,is_admin FROM users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
         if not user:
             raise HTTPException(status_code=401, detail="用户不存在")
+        entitlements = get_entitlements_in_conn(conn, user_id)
+        if not entitlements["active"]:
+            raise HTTPException(status_code=403, detail="当前订阅已暂停或撤销")
+        allowed_models = entitlements["allowed_models"]
+        if allowed_models and model_id not in allowed_models:
+            raise HTTPException(status_code=403, detail="当前套餐不支持该模型")
+        limit = min(limit, entitlements["max_concurrent_requests"])
         active_all = conn.execute("SELECT COUNT(*) AS cnt FROM tasks WHERE LOWER(status) IN ('pending','queued','processing','running','generating') AND completed_at IS NULL AND COALESCE(updated_at,created_at,NOW()) >= NOW() - interval '30 minute'").fetchone()["cnt"]
         if active_all >= GLOBAL_GENERATE_ACTIVE_LIMIT:
             raise HTTPException(status_code=429, detail=f"当前全站生成任务已满，请稍后再试（最多同时 {GLOBAL_GENERATE_ACTIVE_LIMIT} 张）")
@@ -132,7 +148,7 @@ def retry_generation_task(task_id: str):
     cost = int(task.get("points_cost") or _get_model_cost(params.get("model_id"), params.get("resolution")))
     consume_request_key = f"consume:{task_id}:retry:{retry_count}"
     refund_request_key = f"refund:{task_id}:retry:{retry_count}"
-    slot = _consume_generation_slot_for_existing_task(task_id, task["user_id"], cost, consume_request_key)
+    slot = _consume_generation_slot_for_existing_task(task_id, task["user_id"], str(params.get("model_id") or ""), cost, consume_request_key)
     clean_params = {k: v for k, v in params.items() if k not in {"external_task_id", "provider_id", "provider_trace", "cost_unit", "cost_amount", "_refund_request_key", "_consume_request_key"}}
     clean_params["_retry_count"] = retry_count
     clean_params["_consume_request_key"] = consume_request_key
