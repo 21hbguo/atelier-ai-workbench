@@ -532,7 +532,8 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                         agent_system += (
                             "\n\n【联网搜索模式】用户已开启联网搜索，回答实时/新闻/数据类问题前应使用 "
                             "web_search 工具获取信息。关键词必须具体（含时间/领域/对象限定），"
-                            "避免「今日新闻」「最新消息」这类宽泛词；首次结果不满意时换更具体的关键词"
+                            "避免「今日新闻」「最新消息」这类宽泛词；若首次结果多为栏目页/首页等"
+                            "聚合页（标题含首页/栏目/中心/大全），应换一组不同的、更具体的关键词"
                             "再搜一次；基于搜索结果回答并注明来源，搜不到就如实说明，不要编造。"
                         )
                     messages = await ChatService.prepare_session_messages(
