@@ -265,7 +265,7 @@ class PointsService:
             """SELECT id, bucket_type, cycle_id, remaining_points FROM point_buckets
                WHERE user_id = %s AND remaining_points > 0 AND status = 'active'
                  AND (bucket_type = 'permanent' OR expires_at IS NULL OR expires_at > %s)
-                 AND (%s IS NULL OR bucket_type = %s)
+                 AND (bucket_type = %s OR %s::varchar IS NULL)
                ORDER BY CASE WHEN bucket_type = 'subscription' THEN 0 ELSE 1 END,
                         CASE WHEN bucket_type = 'subscription' THEN expires_at END ASC NULLS LAST, id ASC
                FOR UPDATE""",
