@@ -933,6 +933,11 @@ export default function AdminPage() {
     await chatFetch(`/api/admin/llm-models/${encodeURIComponent(modelId)}`, { method: 'DELETE' })
     fetchLlmModels()
   }
+
+  // 测试 LLM 连接：传表单当前值（可未保存），后端返回 { ok, text|error, latency_ms }
+  const testLlmModel = async (payload) => {
+    return chatFetch('/api/admin/llm-models/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+  }
   const handleCreateUser = async () => {
     const payload = { account: (createUserDraft.username || '').trim(), password: (createUserDraft.password || '').trim(), nickname: (createUserDraft.nickname || '').trim() }
     if (!/^[A-Za-z0-9_]{4,16}$/.test(payload.account)) { dialog.alert('账号需为4到16位字母、数字或下划线'); return }
@@ -1883,7 +1888,7 @@ export default function AdminPage() {
           </div>
         ) : tab === 'llm_models' ? (
           <AdminLlmModelsTab items={llmModels} loading={llmModelsLoading} onRefresh={fetchLlmModels}
-            onSave={saveLlmModel} onDelete={deleteLlmModel} dialog={dialog} />
+            onSave={saveLlmModel} onDelete={deleteLlmModel} onTest={testLlmModel} dialog={dialog} />
         ) : tab === 'history' ? (
           <AdminHistoryTab historyTotal={historyTotal} historyQuery={historyQuery} setHistoryQuery={setHistoryQuery} historySummary={historySummary} loading={loading} history={history} modelLabelMap={modelLabelMap} handleDeleteHistory={handleDeleteHistory} historyPage={historyPage} setHistoryPage={setHistoryPage} />
         ) : (

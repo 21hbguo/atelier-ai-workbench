@@ -17,19 +17,21 @@ const EMPTY_DRAFT = {
   enabled: true, notes: '',
 }
 
-export default function AdminLlmModelsTab({ items, loading, onRefresh, onSave, onDelete, dialog }) {
+export default function AdminLlmModelsTab({ items, loading, onRefresh, onSave, onDelete, onTest, dialog }) {
   const [editing, setEditing] = useState(null) // null | { isNew, draft }
   const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState(null) // null | { ok, text, error, latency_ms }
 
-  const openNew = () => setEditing({ isNew: true, draft: { ...EMPTY_DRAFT } })
-  const openEdit = (m) => setEditing({
+  const openNew = () => { setEditing({ isNew: true, draft: { ...EMPTY_DRAFT } }); setTestResult(null) }
+  const openEdit = (m) => { setEditing({
     isNew: false,
     draft: {
       ...m,
       reasoning_efforts_text: (m.reasoning_efforts || []).join(','),
       capabilities_text: (m.capabilities || []).join(','),
     },
-  })
+  }); setTestResult(null) }
   const setDraft = (patch) => setEditing(prev => ({ ...prev, draft: { ...prev.draft, ...patch } }))
 
   const handleSave = async () => {
@@ -68,6 +70,25 @@ export default function AdminLlmModelsTab({ items, loading, onRefresh, onSave, o
       })
       setEditing(null)
     } catch (e) { dialog.alert(e.message || '保存失败') } finally { setSaving(false) }
+  }
+
+  // 测试连接：用表单当前值（可未保存）调后端最小请求，验证配置可用性并捕捉错误
+  const handleTest = async () => {
+    const d = editing.draft
+    if (!d.model_id?.trim()) { dialog.alert('请先填写模型 ID'); return }
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const res = await onTest({
+        model_id: d.model_id.trim(),
+        base_url: d.base_url?.trim() || '',
+        api_key: d.api_key?.trim() || '',
+        protocol: d.protocol,
+      })
+      setTestResult(res || { ok: false, error: '无响应' })
+    } catch (e) {
+      setTestResult({ ok: false, error: e.message || '测试请求失败' })
+    } finally { setTesting(false) }
   }
 
   return (
@@ -298,8 +319,20 @@ export default function AdminLlmModelsTab({ items, loading, onRefresh, onSave, o
             </div>
             <div className="flex gap-2 px-4 py-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
               <button onClick={() => setEditing(null)} className="flex-1 py-2 rounded-2xl text-xs font-medium border transition-colors" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>取消</button>
-              <button onClick={handleSave} disabled={saving} className="flex-1 py-2 rounded-2xl text-xs font-medium text-white transition-colors disabled:opacity-40" style={{ background: 'var(--accent)' }}>{saving ? '保存中...' : '保存'}</button>
+              <button onClick={handleTest} disabled={testing || saving}
+                className="flex-1 py-2 rounded-2xl text-xs font-medium border transition-colors disabled:opacity-40"
+                style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
+                {testing ? '测试中…' : '测试连接'}
+              </button>
+              <button onClick={handleSave} disabled={saving || testing} className="flex-1 py-2 rounded-2xl text-xs font-medium text-white transition-colors disabled:opacity-40" style={{ background: 'var(--accent)' }}>{saving ? '保存中...' : '保存'}</button>
             </div>
+            {testResult && (
+              <div className="px-4 py-2.5 border-t text-xs break-words" style={{ borderColor: 'var(--border-color)', color: testResult.ok ? 'var(--color-success)' : 'var(--color-error)', background: 'color-mix(in srgb, ' + (testResult.ok ? 'var(--color-success)' : 'var(--color-error)') + ' 6%, transparent)' }}>
+                {testResult.ok
+                  ? <>✓ 连接成功（{testResult.latency_ms != null ? `${testResult.latency_ms}ms` : '耗时未知'}）：{testResult.text || '模型已响应'}</>
+                  : <>✗ 连接失败：{testResult.error || '未知错误'}{testResult.latency_ms != null ? `（${testResult.latency_ms}ms）` : ''}</>}
+              </div>
+            )}
           </div>
         </div>
       )}

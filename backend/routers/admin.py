@@ -1740,6 +1740,93 @@ async def admin_update_llm_model(model_id: str, body: dict, admin=Depends(requir
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.post("/llm-models/test")
+async def admin_test_llm_model(body: dict, admin=Depends(require_admin)):
+    """测试 LLM 连接：用表单当前值（可未保存）发一个最小请求，验证能否正常调用。
+
+    body: { model_id, base_url, api_key, protocol } —— 留空字段回退全局配置。
+    返回 { ok: true, text, latency_ms } 或 { ok: false, error }（错误透出具体原因）。
+    """
+    import time
+    import httpx
+    from backend.config import get_llm_config
+    from backend.services.llm_client import LLMClient
+
+    # 构造测试配置：表单值优先，留空回退全局（与 _model_override 语义一致）
+    llm_cfg = dict(get_llm_config())
+    form_base_url = str(body.get("base_url") or "").strip()
+    form_api_key = str(body.get("api_key") or "").strip()
+    if str(body.get("model_id") or "").strip():
+        llm_cfg["model"] = str(body["model_id"]).strip()
+    if form_base_url:
+        llm_cfg["base_url"] = form_base_url
+    if form_api_key:
+        key = form_api_key
+        if key.startswith("env:"):
+            key = os.environ.get(key[4:], "")
+        llm_cfg["api_key"] = key
+    if str(body.get("protocol") or "").strip():
+        llm_cfg["protocol"] = str(body["protocol"]).strip()
+
+    # 安全：自定义 API 地址 + 空 Key 时禁止回退全局 Key（避免生产 Key 被发往任意 URL）
+    if form_base_url and not form_api_key:
+        return {"ok": False, "error": "自定义 API 地址需同时填写 API Key（或留空地址以使用全局配置）"}
+
+    if not llm_cfg.get("enabled", True):
+        return {"ok": False, "error": "LLM 服务未启用"}
+    if not llm_cfg.get("api_key"):
+        return {"ok": False, "error": "API Key 为空（表单与全局配置均未提供）"}
+    if not llm_cfg.get("base_url"):
+        return {"ok": False, "error": "API 地址为空（表单与全局配置均未提供）"}
+
+    # 最小测试请求：max_tokens 取 64（思考模式会先占用 reasoning_tokens，太小会没有正式回答）
+    try:
+        url, headers, payload = LLMClient._build_request(
+            llm_cfg, "", [{"role": "user", "content": "ping"}], 64, "auto", None, None,
+        )
+    except Exception as e:
+        return {"ok": False, "error": f"请求构造失败：{e}"}
+
+    start = time.monotonic()
+    try:
+        client = LLMClient._get_client()
+        timeout = httpx.Timeout(float(llm_cfg.get("timeout_seconds") or 30), connect=5.0)
+        resp = await client.post(url, headers=headers, json=payload, timeout=timeout)
+        latency_ms = int((time.monotonic() - start) * 1000)
+        if resp.status_code >= 400:
+            detail = ""
+            try:
+                data = resp.json()
+                detail = str(data.get("error") or data.get("message") or data.get("detail") or "")
+            except Exception:
+                detail = resp.text[:200] or ""
+            return {"ok": False, "error": f"HTTP {resp.status_code}：{detail or '无详情'}", "latency_ms": latency_ms}
+        text = LLMClient._extract_text(resp.json())
+        if not text.strip():
+            # 思考型模型可能只返回 reasoning_content（正式回答为空）——也视为链路正常
+            try:
+                reasoning = ""
+                for ch in (resp.json().get("choices") or []):
+                    m = ch.get("message") or {}
+                    reasoning = str(m.get("reasoning_content") or "")
+                    if reasoning:
+                        break
+            except Exception:
+                reasoning = ""
+            if reasoning.strip():
+                return {"ok": True, "text": f"(仅思考输出) {reasoning.strip()[:120]}", "latency_ms": latency_ms}
+            return {"ok": False, "error": "接口返回 200 但无内容", "latency_ms": latency_ms}
+        return {"ok": True, "text": text.strip()[:120], "latency_ms": latency_ms}
+    except httpx.TimeoutException:
+        return {"ok": False, "error": "请求超时（连接/响应超过限制），请检查 API 地址与网络"}
+    except httpx.HTTPStatusError as e:
+        return {"ok": False, "error": f"HTTP {e.response.status_code}：{e.response.text[:200]}"}
+    except httpx.ConnectError as e:
+        return {"ok": False, "error": f"连接失败：{e}"}
+    except Exception as e:
+        return {"ok": False, "error": f"调用异常：{type(e).__name__}: {e}"}
+
+
 @router.delete("/llm-models/{model_id}")
 @router.post("/llm-models/{model_id}/delete")
 async def admin_delete_llm_model(model_id: str, admin=Depends(require_admin)):
