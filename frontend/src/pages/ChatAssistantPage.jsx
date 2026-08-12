@@ -244,22 +244,41 @@ function ThinkingBlock({ text, isStreaming = false }) {
   )
 }
 
-// ============ 引用来源列表（SSE citations 事件，最多显示 8 条） ============
+// ============ 引用来源卡片（SSE citations 事件，最多显示 8 条；兼容 {url,title,snippet?}） ============
 function CitationList({ citations = [] }) {
   if (!Array.isArray(citations) || citations.length === 0) return null
   const shown = citations.slice(0, 8)
   return (
     <div className="mt-2.5 pt-2 border-t" style={{ borderColor: 'var(--border-color)' }}>
-      <div className="mb-1 text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>来源</div>
-      <ul className="space-y-0.5">
-        {shown.map((c, i) => (
-          <li key={c.url || i} className="min-w-0">
-            <a className="chat-user-link text-[11px]" href={c.url} target="_blank" rel="noopener noreferrer">
-              {c.title || c.url}
+      <div className="mb-1.5 text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>来源</div>
+      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+        {shown.map((c, i) => {
+          let host = ''
+          try { host = c.url ? new URL(c.url).host : '' } catch { /* 非法 URL 不显示域名 */ }
+          return (
+            <a key={c.url || i} href={c.url} target="_blank" rel="noopener noreferrer"
+              className="block min-w-0 rounded-lg border p-2 transition-colors hover:bg-bg-hover"
+              style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
+              <div className="flex items-center gap-1.5 min-w-0">
+                {host && (
+                  <img src={`https://www.google.com/s2/favicons?domain=${host}&sz=32`} alt=""
+                    className="w-4 h-4 flex-shrink-0 rounded-sm"
+                    onError={e => { e.target.style.display = 'none' }} />
+                )}
+                <span className="min-w-0 truncate text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
+                  {c.title || host || c.url}
+                </span>
+              </div>
+              {host && (
+                <div className="mt-0.5 truncate text-[10px]" style={{ color: 'var(--text-secondary)' }}>{host}</div>
+              )}
+              {c.snippet && (
+                <div className="mt-1 line-clamp-2 text-[10px] leading-snug" style={{ color: 'var(--text-secondary)' }}>{c.snippet}</div>
+              )}
             </a>
-          </li>
-        ))}
-      </ul>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -467,7 +486,7 @@ const EFFORT_LABELS = { auto: '自动', low: '低', medium: '中', high: '高', 
 // 思考强度固定顺序（auto 最左、max 最右）：UI 展示不依赖模型档案/CSV 的原始顺序
 const EFFORT_ORDER = ['auto', 'low', 'medium', 'high', 'xhigh', 'max']
 
-function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, reasoningEffort, onReasoningEffort, efforts, modelLabel, pendingQueue, onEditPending, onRemovePending, models, chatModelId, onSelectModel, onUploadClick, docs, onRemoveDoc, uploadingCount, uploadNote, webSearch, onWebSearch, linkStatus }) {
+function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, reasoningEffort, onReasoningEffort, efforts, modelLabel, pendingQueue, onEditPending, onRemovePending, models, chatModelId, onSelectModel, onUploadClick, docs, onRemoveDoc, uploadingCount, uploadNote, webSearch, onWebSearch, linkStatus, dragActive, dragHandlers }) {
   const [effortOpen, setEffortOpen] = useState(false)
   const [modelOpen, setModelOpen] = useState(false)
   const EFFORT_OPTIONS = (Array.isArray(efforts) && efforts.length ? efforts : ['auto', 'low', 'medium', 'high', 'xhigh', 'max'])
@@ -557,7 +576,15 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
         )}
         {/* 卡片式输入区：布局对齐绘画页 ChatInput（设置|上传在左，发送在右） */}
         <div className="rounded-2xl border transition-all duration-300"
-          style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-md)', position: 'relative' }}>
+          style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-md)', position: 'relative' }}
+          {...dragHandlers}>
+          {/* 拖拽上传高亮覆盖层（pointer-events-none 保证 drop 落到本容器） */}
+          {dragActive && (
+            <div className="absolute inset-0 z-10 rounded-2xl flex items-center justify-center pointer-events-none"
+              style={{ background: 'color-mix(in srgb, var(--bg-ai-bubble) 92%, transparent)', border: '2px dashed var(--accent)' }}>
+              <span className="text-sm font-medium" style={{ color: 'var(--accent)' }}>松开鼠标上传文件</span>
+            </div>
+          )}
           {docs.length > 0 && (
             <div className="flex gap-2 p-3 pb-0 overflow-x-auto">
               {docs.map(doc => (
@@ -660,7 +687,7 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
                 )}
                 {/* 搜索开关（默认关闭；开启后回答会实时检索互联网） */}
                 <button type="button" onClick={onWebSearch}
-                  title={webSearch ? '搜索已开启：回答将实时检索互联网' : '搜索已关闭（默认），点击开启'}
+                  title={webSearch ? '联网已开启：模型会按需实时检索互联网' : '联网已关闭：模型不联网，仅凭知识回答'}
                   className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg transition-colors"
                   style={{
                     color: webSearch ? 'var(--accent)' : 'var(--text-secondary)',
@@ -764,9 +791,9 @@ export default function ChatAssistantPage() {
   const [chatModelId, setChatModelId] = useState(() => {
     try { return localStorage.getItem('chat_model_id') || '' } catch { return '' }
   }) // '' = 激活模型
-  // 联网搜索开关（默认关闭；偏好持久化到 localStorage）
+  // 联网开关（默认开启：模型自主判断是否需要联网；偏好持久化到 localStorage，显式关闭过才关）
   const [webSearch, setWebSearch] = useState(() => {
-    try { return localStorage.getItem('chat_web_search') === '1' } catch { return false }
+    try { return localStorage.getItem('chat_web_search') !== '0' } catch { return true }
   })
   const toggleWebSearch = useCallback(() => {
     setWebSearch(prev => {
@@ -788,6 +815,9 @@ export default function ChatAssistantPage() {
   // 会话文档列表（对齐 AI 绘画参考图交互）：{id,name,ext,size,status,progress,error,file_id,char_count,file}
   const [docs, setDocs] = useState([])
   const fileRef = useRef(null)
+  // 拖拽上传：输入区高亮状态 + dragenter/dragleave 配对计数（防闪烁）
+  const [dragActive, setDragActive] = useState(false)
+  const dragCounterRef = useRef(0)
   const docStartedRef = useRef(new Set())
   const docAbortRef = useRef(new Map())
   const [sessionListOpen, setSessionListOpen] = useState(false)
@@ -960,11 +990,9 @@ export default function ChatAssistantPage() {
       ? { ...d, ...(typeof patch === 'function' ? patch(d) : patch) } : d))
   }, [])
 
-  // 选择文件：扩展名/大小校验 + 单次 5 个 + 会话 20 个上限截取
-  const handleFilesSelected = useCallback(e => {
-    const files = Array.from(e.target.files || [])
-    e.target.value = ''
-    if (!files.length) return
+  // 文件入队：扩展名/大小校验 + 单次 5 个 + 会话 20 个上限截取（文件选择器与拖拽上传共用）
+  const addDocs = useCallback((files) => {
+    if (!files || !files.length) return
     const sid = activeIdRef.current
     if (!sid) { showUploadNote('请先创建/选择会话再上传文档'); return }
     let picked = files
@@ -1000,6 +1028,13 @@ export default function ChatAssistantPage() {
       return [...prev, ...items]
     })
   }, [])
+
+  // 文件选择器选择：转交 addDocs 统一校验入队
+  const handleFilesSelected = useCallback(e => {
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''
+    addDocs(files)
+  }, [addDocs])
 
   // 上传单个文档（进度/成功/失败状态，对齐绘画页 uploadItem）
   const startDocUpload = useCallback(async item => {
@@ -1042,6 +1077,54 @@ export default function ChatAssistantPage() {
     docAbortRef.current.get(id)?.abort()
     setDocs(prev => prev.filter(d => d.id !== id))
   }, [])
+
+  // 拖拽上传：window 级 dragover/drop 阻止浏览器直接打开文件
+  // （仅拦截含文件的拖拽；文本/链接拖拽放行浏览器默认行为，如拖入输入框插入文本）
+  useEffect(() => {
+    const preventFileDefault = (e) => {
+      if (e.dataTransfer?.types?.includes?.('Files')) e.preventDefault()
+    }
+    window.addEventListener('dragover', preventFileDefault)
+    window.addEventListener('drop', preventFileDefault)
+    return () => {
+      window.removeEventListener('dragover', preventFileDefault)
+      window.removeEventListener('drop', preventFileDefault)
+    }
+  }, [])
+
+  // 拖拽上传：输入区高亮 + drop 入队（复用 addDocs 校验链路，pending 由现有 effect 自动上传）
+  const handleDragEnter = useCallback((e) => {
+    e.preventDefault()
+    if (!e.dataTransfer?.types?.includes?.('Files')) return // 非文件拖拽不拦截
+    dragCounterRef.current += 1
+    setDragActive(true)
+  }, [])
+  const handleDragOver = useCallback((e) => {
+    e.preventDefault()
+    if (!e.dataTransfer?.types?.includes?.('Files')) return
+    e.dataTransfer.dropEffect = 'copy'
+  }, [])
+  const handleDragLeave = useCallback((e) => {
+    e.preventDefault()
+    dragCounterRef.current = Math.max(0, dragCounterRef.current - 1)
+    if (dragCounterRef.current === 0) setDragActive(false)
+  }, [])
+  const handleDropFiles = useCallback((e) => {
+    const hasFiles = e.dataTransfer?.items
+      ? Array.from(e.dataTransfer.items).some(it => it.kind === 'file')
+      : (e.dataTransfer?.files?.length > 0)
+    if (!hasFiles) return // 非文件拖拽（文本/链接）：放行浏览器默认行为
+    e.preventDefault()
+    dragCounterRef.current = 0
+    setDragActive(false)
+    addDocs(Array.from(e.dataTransfer.files || []))
+  }, [addDocs])
+  const dragHandlers = {
+    onDragEnter: handleDragEnter,
+    onDragOver: handleDragOver,
+    onDragLeave: handleDragLeave,
+    onDrop: handleDropFiles,
+  }
 
   const startStream = useCallback((sessionId, content, reasoningEffort = 'auto', useWeb = null, localUserMsgId = null) => {
     const controller = new AbortController()
@@ -1100,7 +1183,7 @@ export default function ChatAssistantPage() {
         for (const item of items) {
           if (!item || !item.url) continue
           if (!buf.items.some(x => x.url === item.url)) {
-            buf.items.push({ url: item.url, title: item.title || '' })
+            buf.items.push({ url: item.url, title: item.title || '', snippet: item.snippet })
           }
         }
         // 同步发送中气泡：流式期间实时显示来源累积
@@ -1588,7 +1671,7 @@ export default function ChatAssistantPage() {
             uploadingCount={docs.filter(d => d.status === 'uploading' || d.status === 'pending').length}
             uploadNote={uploadNote}
             webSearch={webSearch} onWebSearch={toggleWebSearch}
-            linkStatus={linkStatus} />
+            linkStatus={linkStatus} dragActive={dragActive} dragHandlers={dragHandlers} />
         </div>
       </div>
       {toast && (
