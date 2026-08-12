@@ -27,10 +27,15 @@ class AgentContext:
     user_id: Optional[int] = None
     chat_file_ids: Optional[list[int]] = None
     extra: dict[str, Any] = field(default_factory=dict)
+    # 当前用户消息的数据库 id（chat_messages.id），生图工具透传进任务 params 用于后台补图落库
+    message_id: Optional[int] = None
     # 工具执行过程中收集的来源引用（{"url": str, "title": str}），由 loop 增量推给前端
     citations: list[dict] = field(default_factory=list)
     # 工具执行过程中收集的画图/可视化 widget（{"kind": str, "title": str, "code": str}），由 loop 增量推给前端
     widgets: list[dict] = field(default_factory=list)
+    # 生图任务超时上报：image_gen 超时（任务仍在后台生成）时置
+    # {"task_id": str, "status": "processing"}，由 loop 推 image_task 事件（只发一次）
+    image_task: Optional[dict] = None
 
     @property
     def has_session(self) -> bool:

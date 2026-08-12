@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { MessageCircle, Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, ChevronLeft, Brain, AlertCircle, CheckSquare, Cpu, ChevronDown, Check, Paperclip, FileText, Settings, Globe } from 'lucide-react'
+import { MessageCircle, Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, ChevronLeft, Brain, AlertCircle, CheckSquare, Cpu, ChevronDown, Check, Paperclip, FileText, Settings, Globe, Image as ImageIcon } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
 import { useAppDialog } from '../components/AppDialogProvider'
-import { chatAPI, pointsAPI } from '../api'
+import { chatAPI, pointsAPI, taskAPI } from '../api'
 import { readUser } from '../auth'
 import { mdToHtml } from '../utils/markdown'
 import WidgetViewer from '../components/WidgetViewer'
@@ -406,7 +406,8 @@ function StreamBubble({ sending, onStop, onRetry }) {
       <div className="max-w-[85%] sm:max-w-[78%] rounded-2xl px-4 py-3" style={{ background: 'var(--bg-ai-bubble)', boxShadow: 'var(--shadow-md)' }}>
         <ThinkingBlock text={sending.thinking} isStreaming={!sending.stopped} />
         {/* 工具调用状态（agent 模式：tool_status 事件，executing 显示加载中，done 时已清除） */}
-        {sending.toolStatus && (
+        {/* image_gen 特化为图片占位卡片（骨架 shimmer），其他工具保持通用文字条 */}
+        {sending.toolStatus && sending.toolStatus.name !== 'image_gen' && (
           <div className="mb-2 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs"
             style={{
               background: 'color-mix(in srgb, var(--accent) 8%, transparent)',
@@ -416,6 +417,25 @@ function StreamBubble({ sending, onStop, onRetry }) {
             <Settings size={13} className="animate-spin flex-shrink-0" style={{ color: 'var(--accent)' }} />
             <span className="flex-shrink-0 font-medium" style={{ color: 'var(--accent)' }}>正在调用工具</span>
             <span className="min-w-0 truncate">{sending.toolStatus.name || '…'}</span>
+          </div>
+        )}
+        {sending.toolStatus?.name === 'image_gen' && (
+          <div className="mb-2 rounded-xl overflow-hidden"
+            style={{ border: '1px solid var(--border-color)', background: 'var(--bg-card)' }}>
+            <div className="card-feed-skeleton-card" style={{ aspectRatio: '4 / 3' }}>
+              <div className="card-feed-skeleton-shimmer" />
+            </div>
+            <div className="flex items-center gap-1.5 px-3 py-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
+              <ImageIcon size={13} className="animate-pulse flex-shrink-0" style={{ color: 'var(--accent)' }} />
+              <span className="font-medium" style={{ color: 'var(--accent)' }}>正在生成图片…</span>
+            </div>
+          </div>
+        )}
+        {/* 工具等待超时后生图转入后台：image_task 事件到达，任务轮询中 */}
+        {sending.pendingImage && (
+          <div className="mb-2 flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-secondary)' }}>
+            <ImageIcon size={13} className="animate-pulse flex-shrink-0" style={{ color: 'var(--accent)' }} />
+            <span>图片正在后台生成，完成后将自动插入回复…</span>
           </div>
         )}
         {hasText ? (
@@ -455,6 +475,10 @@ function StreamBubble({ sending, onStop, onRetry }) {
 }
 
 // ============ 空状态引导 ============
+// 后台图片任务轮询参数（SSE image_task 事件触发，见 ChatAssistantPage 内轮询逻辑）
+const IMAGE_POLL_INTERVAL_MS = 8000
+const IMAGE_POLL_MAX = 120 // 约 16 分钟上限（任务要求最长 15 分钟/120 次）
+
 const EXAMPLES = [
   '帮我写一个提示词：一只在月光下奔跑的银色狐狸，水墨风格',
   '优化这段提示词：城市夜景，霓虹灯，赛博朋克',
@@ -771,7 +795,7 @@ export default function ChatAssistantPage() {
   const [messages, setMessages] = useState([])
   const [messagesLoading, setMessagesLoading] = useState(false)
   const [input, setInput] = useState('')
-  const [sending, setSending] = useState(null) // { sessionId, content, text, thinking, toolStatus, stopped, error, manual }
+  const [sending, setSending] = useState(null) // { sessionId, content, text, thinking, toolStatus, citations, widgets, pendingImage, stopped, error, manual }
   // 链接抓取状态（SSE url_status 事件）：{ status: 'fetching'|'ok'|'failed', url, error } | null
   const [linkStatus, setLinkStatus] = useState(null)
   const linkTimerRef = useRef(null)
@@ -1131,12 +1155,95 @@ export default function ChatAssistantPage() {
     onDrop: handleDropFiles,
   }
 
+  // ============ 后台图片任务轮询（SSE image_task 事件） ============
+  // 工具等待超时后生图任务在后台继续，后端通过 image_task 下发任务 id；
+  // 前端轮询任务状态，完成后把图片 markdown 补进对应对话气泡。
+  // 状态独立于 sending 生命周期（done 后 sending 被清空，轮询仍可继续补图）。
+  // 当前轮询中的后台图片任务：{ taskId, streamId } | null
+  const pendingImageRef = useRef(null)
+  const imagePollTimerRef = useRef(null)
+  // 本流 done 时记录的 assistant 消息 id：轮询完成时把图片补进该消息（sending 已清空场景）
+  const lastAssistantMsgIdRef = useRef(null)
+  // 本流已追加的后台图片文本累积（streamId 绑定）：done 前追加进 sending 的文本
+  // 会被后端完整文本覆盖，onDone 需将其合并进最终消息
+  const pendingImageAppendRef = useRef({ streamId: null, text: '' })
+  // 终止轮询（同时清除 sending 中的 pendingImage 展示状态）
+  const stopImagePolling = useCallback(() => {
+    if (imagePollTimerRef.current) { clearInterval(imagePollTimerRef.current); imagePollTimerRef.current = null }
+    const pid = pendingImageRef.current
+    pendingImageRef.current = null
+    if (pid) {
+      setSending(prev => (prev && prev.streamId === pid.streamId && prev.pendingImage) ? { ...prev, pendingImage: null } : prev)
+    }
+  }, [])
+  // 把图片 markdown/失败提示追加到对应消息：sending 在 → sending.text；已清空 → messages 中按消息 id 匹配
+  const appendImageMarkdown = useCallback((msgId, streamId, text) => {
+    if (pendingImageAppendRef.current.streamId !== streamId) {
+      pendingImageAppendRef.current = { streamId, text: '' }
+    }
+    pendingImageAppendRef.current.text += text
+    if (sendingRef.current?.streamId === streamId) {
+      // 流式未结束：直接追加 sending.text（同步 streamBuf 防节流 flush 覆盖）
+      streamBufRef.current.text += text
+      setSending(prev => (prev && prev.streamId === streamId) ? { ...prev, text: prev.text + text } : prev)
+    } else if (msgId) {
+      // done 后 sending 已清空：追加到 messages 中对应 assistant 消息
+      setMessages(prev => prev.map(m => (m.id === msgId ? { ...m, content: m.content + text } : m)))
+    }
+    // 找不到对应消息（如已被重新回答删除）：放弃本地追加，任务结果仍保留在后端
+  }, [])
+  // 单次查询任务状态：completed/failed 终止轮询并补文本，其余状态等待下一轮
+  const pollImageOnce = useCallback(async (taskId, streamId) => {
+    if (pendingImageRef.current?.streamId !== streamId) return
+    let res
+    try {
+      res = await taskAPI.get(taskId)
+    } catch {
+      return // 查询失败：等下一轮（计时器驱动），不终止轮询
+    }
+    // 异步返回后再守卫：期间可能已被新任务/新流替换
+    if (pendingImageRef.current?.streamId !== streamId) return
+    const status = res.data?.status || ''
+    const urls = Array.isArray(res.data?.result_urls) ? res.data.result_urls : []
+    if (status === 'completed') {
+      const file = urls.length ? String(urls[0]).split('/').pop() : ''
+      if (file) {
+        appendImageMarkdown(lastAssistantMsgIdRef.current, streamId, `\n\n![图片](/api/images/file/${file})`)
+      }
+      stopImagePolling()
+    } else if (status === 'failed') {
+      appendImageMarkdown(lastAssistantMsgIdRef.current, streamId, `\n\n图片生成失败:${res.data?.error || '未知错误'},积分已自动退还。`)
+      stopImagePolling()
+    } else {
+      // processing/queued/pending：继续轮询，并同步展示状态（仅 sending 还在时可见）
+      setSending(prev => (prev && prev.streamId === streamId) ? { ...prev, pendingImage: { taskId, status } } : prev)
+    }
+  }, [appendImageMarkdown, stopImagePolling])
+  // 启动轮询：立即查一次 + 每 8s 一次，最多 IMAGE_POLL_MAX 次
+  const startImagePolling = useCallback((taskId, streamId) => {
+    stopImagePolling() // 上一任务的轮询（若在跑）立即终止，避免新旧任务叠加
+    pendingImageRef.current = { taskId, streamId }
+    let count = 0
+    const tick = async () => {
+      count += 1
+      if (count > IMAGE_POLL_MAX) { stopImagePolling(); return }
+      if (pendingImageRef.current?.streamId !== streamId) return
+      await pollImageOnce(taskId, streamId)
+    }
+    tick() // 立即查一次（任务可能已完成，不必等首个 8s）
+    imagePollTimerRef.current = setInterval(tick, IMAGE_POLL_INTERVAL_MS)
+  }, [pollImageOnce, stopImagePolling])
+  // 组件卸载：终止后台图片轮询
+  useEffect(() => () => stopImagePolling(), [stopImagePolling])
+
   const startStream = useCallback((sessionId, content, reasoningEffort = 'auto', useWeb = null, localUserMsgId = null) => {
     const controller = new AbortController()
     abortRef.current = controller
+    // 新流开始：终止上一流遗留的后台图片轮询（旧任务结果不再补进新流，防串流）
+    stopImagePolling()
     // 流的唯一身份：停止后立刻发新消息时，旧流的迟到回调不会误操作新流
     const streamId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    const st = { streamId, sessionId, content, text: '', thinking: '', toolStatus: null, citations: [], widgets: [], stopped: false, error: '', manual: false }
+    const st = { streamId, sessionId, content, text: '', thinking: '', toolStatus: null, citations: [], widgets: [], pendingImage: null, stopped: false, error: '', manual: false }
     sendingRef.current = st
     setSending(st)
     // 本次流开始：重置节流缓冲（避免残留上一流的未 flush 内容）
@@ -1208,12 +1315,26 @@ export default function ChatAssistantPage() {
         setSending(prev =>
           (prev && prev.streamId === streamId) ? { ...prev, widgets: buf.items } : prev)
       },
+      onImageTask: data => {
+        // 工具等待超时后生图转入后台：拿到任务 id 启动轮询（每 8s 一次，最多 120 次）。
+        // 轮询状态独立于 sending 生命周期（done 后 sending 清空仍可补图）。
+        const taskId = data?.task_id
+        if (!taskId || sendingRef.current?.streamId !== streamId) return
+        startImagePolling(String(taskId), streamId)
+        setSending(prev =>
+          (prev && prev.streamId === streamId) ? { ...prev, pendingImage: { taskId: String(taskId), status: 'queued' } } : prev)
+      },
       onDone: data => {
-        const full = String(data.text || '')
         const thinking = String(data.thinking || '')
         manualStopRef.current = false
         // 优先用后端返回的数据库 id（重新回答/定位需要真实 id），缺失时回退本地临时 id
         const newId = data.message_id || `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        // done 前已完成的后台图片追加（completed/failed 先于 done 到达时，追加文本已写入
+        // sending.text，会被后端完整文本覆盖）→ 合并进最终消息文本，避免图片 markdown 丢失
+        const appended = pendingImageAppendRef.current.streamId === streamId ? pendingImageAppendRef.current.text : ''
+        const full = String(data.text || '') + appended
+        // 记录本流消息 id：done 后到达的后台图片任务完成时，把 markdown 补进该消息
+        lastAssistantMsgIdRef.current = newId
         // 仅当仍是本次流时挂载累积的引用（旧流迟到 done 不污染新流消息）
         const citations = citationsRef.current.streamId === streamId ? citationsRef.current.items : []
         // 同上：widgets 仅当仍是本次流时挂载（取完再清理 sending，避免发送中状态已置 null 丢失）
@@ -1255,6 +1376,9 @@ export default function ChatAssistantPage() {
           // 自动失败：错误追加为消息，清空状态让队列继续自动发送
           if (sendingRef.current?.streamId === streamId) sendingRef.current = null
           setSending(prev => (prev && prev.streamId === streamId) ? null : prev)
+          // 本流无成功消息：后台图片任务完成后无处可补，放弃本地补图
+          // （任务结果仍保留在后端；lastAssistantMsgIdRef 残留旧值会补错消息）
+          lastAssistantMsgIdRef.current = null
           setMessages(prev => [...prev, { id: `err-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, role: 'assistant', content: '', error: errMsg, created_at: new Date().toISOString() }])
         }
         if (/积分不足|余额不足/.test(errMsg)) {
@@ -1263,7 +1387,7 @@ export default function ChatAssistantPage() {
         }
       },
     }).finally(() => { if (abortRef.current === controller) abortRef.current = null })
-  }, [dialog, refreshSessions, flushStreamBuf, clearLinkTimer, updateLinkStatus])
+  }, [dialog, refreshSessions, flushStreamBuf, clearLinkTimer, updateLinkStatus, stopImagePolling, startImagePolling])
 
   // ============ 排队队列操作 ============
   const MAX_PENDING = 10
@@ -1408,6 +1532,7 @@ export default function ChatAssistantPage() {
     abortRef.current?.abort()
     sendingRef.current = null
     setSending(null)
+    stopImagePolling() // 切会话后旧会话的后台图片任务不再补图（消息列表已切换）
     clearPending()
     skipMessagesLoadRef.current = null // 切换会话不再跳过加载
     setActiveId(id)
@@ -1420,6 +1545,7 @@ export default function ChatAssistantPage() {
     abortRef.current?.abort()
     sendingRef.current = null
     setSending(null)
+    stopImagePolling() // 新建会话后旧会话的后台图片任务不再补图
     clearPending()
     try {
       const res = await chatAPI.createSession()

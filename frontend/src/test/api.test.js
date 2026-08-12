@@ -653,3 +653,61 @@ describe('interceptor refresh logic', () => {
     await expect(errorHandler(err)).rejects.toThrow('forbidden')
   })
 })
+
+describe('chatAPI.sendStream SSE events', () => {
+  let origFetch
+  // 构造 SSE 响应：events 为 [eventType, payload] 数组，逐个编码为 event/data 行
+  const sseResponse = (events) => {
+    const encoder = new TextEncoder()
+    const chunks = events.map(([type, payload]) => encoder.encode(`event: ${type}\ndata: ${JSON.stringify(payload)}\n\n`))
+    let i = 0
+    return {
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: () => (i < chunks.length
+            ? Promise.resolve({ value: chunks[i++], done: false })
+            : Promise.resolve({ done: true })),
+        }),
+      },
+    }
+  }
+  beforeEach(() => { origFetch = global.fetch })
+  afterEach(() => { global.fetch = origFetch })
+
+  it('dispatches image_task event to onImageTask', async () => {
+    global.fetch = vi.fn(() => Promise.resolve(sseResponse([
+      ['image_task', { task_id: 'task-123' }],
+      ['done', { text: 'ok' }],
+    ])))
+    const onImageTask = vi.fn()
+    const onDone = vi.fn()
+    await api.chatAPI.sendStream('s1', 'hi', { onImageTask, onDone })
+    expect(onImageTask).toHaveBeenCalledWith({ task_id: 'task-123' })
+    expect(onDone).toHaveBeenCalled()
+  })
+
+  it('does not break when image_task arrives without task_id', async () => {
+    global.fetch = vi.fn(() => Promise.resolve(sseResponse([
+      ['image_task', { other: 1 }],
+      ['done', { text: 'ok' }],
+    ])))
+    const onImageTask = vi.fn()
+    const onDone = vi.fn()
+    await api.chatAPI.sendStream('s1', 'hi', { onImageTask, onDone })
+    expect(onImageTask).toHaveBeenCalledWith({ other: 1 })
+    expect(onDone).toHaveBeenCalled()
+  })
+
+  it('keeps unknown SSE events silent (no callback invoked)', async () => {
+    global.fetch = vi.fn(() => Promise.resolve(sseResponse([
+      ['mystery_event', { a: 1 }],
+      ['done', { text: 'ok' }],
+    ])))
+    const onImageTask = vi.fn()
+    const onDone = vi.fn()
+    await api.chatAPI.sendStream('s1', 'hi', { onImageTask, onDone })
+    expect(onImageTask).not.toHaveBeenCalled()
+    expect(onDone).toHaveBeenCalled()
+  })
+})

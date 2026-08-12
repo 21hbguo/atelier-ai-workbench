@@ -16,10 +16,11 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def _ctx(user_id=1, allowed_models=None):
+def _ctx(user_id=1, allowed_models=None, message_id=None):
     return AgentContext(
         session_id=10,
         user_id=user_id,
+        message_id=message_id,
         extra={"entitlements": {"allowed_models": allowed_models or []}},
     )
 
@@ -27,7 +28,7 @@ def _ctx(user_id=1, allowed_models=None):
 # ---------- 成功 ----------
 
 def test_image_gen_success_returns_markdown_image():
-    ctx = _ctx()
+    ctx = _ctx(message_id=42)
     with patch.object(image_gen_module, "create_generation_task", return_value={"task_id": "t-abc", "status": "processing"}), \
          patch.object(image_gen_module, "wait_generation_task", AsyncMock(return_value={
              "status": "completed",
@@ -46,6 +47,11 @@ def test_image_gen_success_returns_markdown_image():
         task_params = args_pos[2] if len(args_pos) >= 3 else kwargs.get("task_params")
         assert task_params["prompt"] == "一只在月球上的猫"
         assert task_params["size"] == "auto"
+        # 聊天上下文透传：message_id / session_id 进入任务 params（后台补图落库用）
+        assert task_params["_chat_message_id"] == 42
+        assert task_params["_chat_session_id"] == 10
+        # 完成路径不设置 image_task（图已在回复文本中，无需前端轮询）
+        assert ctx.image_task is None
 
 
 def test_image_gen_success_multiple_images():
@@ -73,9 +79,16 @@ def test_image_gen_timeout_returns_guidance():
              "timed_out": True,
          })):
         result = _run(image_gen({"prompt": "海边日落"}, ctx))
-    assert "图片正在生成中" in result
-    assert "t-slow" in result
-    assert "AI 绘画" in result
+        assert "图片正在生成中" in result
+        assert "t-slow" in result
+        assert "AI 绘画" in result
+        # 超时路径上报 image_task：前端据 task_id 轮询后台补图
+        assert ctx.image_task == {"task_id": "t-slow", "status": "processing"}
+        # 任务 params 同样携带聊天上下文（patch 在 with 块内生效，断言必须在块内）
+        args_pos, kwargs = image_gen_module.create_generation_task.call_args
+        task_params = args_pos[2] if len(args_pos) >= 3 else kwargs.get("task_params")
+        assert task_params["_chat_session_id"] == 10
+        assert task_params["_chat_message_id"] is None
 
 
 # ---------- 失败 ----------
@@ -100,6 +113,8 @@ def test_image_gen_task_failed_message():
     assert "图片生成失败" in result
     assert "上游生成失败" in result
     assert "积分已自动退还" in result
+    # 失败路径不设置 image_task（失败文案已在回复文本中，无需前端轮询）
+    assert ctx.image_task is None
 
 
 # ---------- 参数与校验 ----------
@@ -113,6 +128,12 @@ def test_image_gen_missing_prompt():
 def test_image_gen_no_user_context():
     ctx = AgentContext()
     result = _run(image_gen({"prompt": "p"}, ctx))
+    assert "缺少用户上下文" in result
+
+
+def test_image_gen_none_ctx_defensive():
+    # 工具被直接调用（ctx=None）时不抛异常，返回缺少用户上下文
+    result = _run(image_gen({"prompt": "p"}, None))
     assert "缺少用户上下文" in result
 
 

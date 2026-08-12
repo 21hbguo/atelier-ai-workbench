@@ -59,7 +59,8 @@ WAIT_INTERVAL = 3.0
 )
 async def image_gen(args: dict, ctx: AgentContext) -> str:
     """执行生图：创建任务 → 同步等待（≤100s）→ 返回 markdown 图片或指引文案。"""
-    user_id = ctx.user_id
+    # ctx 可能为 None（工具被直接调用的场景），新增上下文读取均做 None 防御
+    user_id = ctx.user_id if ctx is not None else None
     if not user_id:
         return "生图工具不可用：缺少用户上下文，请重新发起对话。"
     prompt = str(args.get("prompt") or "").strip()
@@ -94,6 +95,9 @@ async def image_gen(args: dict, ctx: AgentContext) -> str:
         "model_id": model_id,
         "share_to_square": False,
         "client_request_id": None,
+        # 内部字段（以下划线开头）：透传聊天上下文供后台补图落库，绝不上报上游 provider
+        "_chat_message_id": ctx.message_id if ctx is not None else None,
+        "_chat_session_id": ctx.session_id if ctx is not None else None,
     }
     if image_urls:
         task_params["image_urls"] = image_urls
@@ -128,5 +132,9 @@ async def image_gen(args: dict, ctx: AgentContext) -> str:
         return f"图片生成失败：{wait.get('error') or '未知错误'}（任务ID {task_id}），本次生成积分已自动退还。"
     if status == "not_found":
         return f"图片生成任务不存在（任务ID {task_id}）。"
-    # 仍在生成（超时）：任务已提交并在后台继续，返回指引文案
+    # 仍在生成（超时）：任务已提交并在后台继续，返回指引文案；
+    # 上报 ctx.image_task，由 loop 推 image_task 事件，前端据此轮询补图（完成/失败路径不设置：
+    # 图已包含在回复文本中，无需前端轮询）
+    if ctx is not None:
+        ctx.image_task = {"task_id": task_id, "status": "processing"}
     return f"图片正在生成中，任务ID {task_id}，预计 1-3 分钟完成，可稍后在「AI 绘画」页面查看。"

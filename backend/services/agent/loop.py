@@ -106,6 +106,7 @@ async def run_agent_stream(
         {"type": "chunk", "text": 增量文本} / {"type": "thinking", "text": 思考增量}：LLM 流式透传
         {"type": "tool_status", "name": 工具名, "status": "executing"}：执行工具前
         {"type": "tool_status", "name": 工具名, "status": "done", "result_len": N}：执行完
+        {"type": "image_task", "task_id": 任务ID, "status": "processing"}：生图任务超时仍在后台生成（只发一次）
         {"type": "heartbeat"}：工具执行超过 10s 未完成时的保活事件（上层可转 SSE 注释行）
         {"type": "citations", "citations": [{"url", "title"}, ...]}：工具执行后新增的来源引用（仅增量）
         {"type": "widget", "widget": {"kind", "title", "code"}}：工具执行后新增的画图 widget（仅增量）
@@ -254,6 +255,11 @@ async def run_agent_stream(
                 )
 
             yield {"type": "tool_status", "name": name, "status": "done", "result_len": len(result)}
+            # 生图任务超时上报：image_gen 超时后置 ctx.image_task，推 image_task 事件
+            # （前端据 task_id 轮询后台补图），推完即重置，保证只发一次
+            if ctx.image_task:
+                yield {"type": "image_task", **ctx.image_task}
+                ctx.image_task = None
             # 生图类工具（image_gen）返回的 markdown 图片收集：部分 LLM 在「最后一轮不带 tools」
             # 时不会原样粘贴工具返回的图片链接，而是在最终回复前自动追加，保证图片一定展示
             if name == "image_gen" and result:

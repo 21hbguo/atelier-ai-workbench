@@ -14,6 +14,7 @@ import logging
 import os
 import uuid
 from datetime import datetime, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Optional
 
 from backend.auth import record_request, update_user_ip
@@ -42,7 +43,14 @@ class GenerationError(Exception):
         self.status_code = status_code
 
 
-def get_model_cost(model_id: str, resolution: str = None) -> int:
+def _points(value) -> Decimal:
+    try:
+        return Decimal(str(value)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    except Exception:
+        return Decimal(0)
+
+
+def get_model_cost(model_id: str, resolution: str = None) -> Decimal:
     """按模型档案 points_cost 或 grsai-vip 分辨率档位计算单次生图积分成本。"""
     models = get_generation_models() or {}
     model = models.get(model_id) or {}
@@ -55,13 +63,13 @@ def get_model_cost(model_id: str, resolution: str = None) -> int:
             cost = resolution_costs.get("auto", params.get("points_cost"))
         if cost is not None:
             try:
-                return max(1, int(cost))
+                return max(Decimal(0), _points(cost))
             except (ValueError, TypeError):
                 pass
     cost = params.get("points_cost")
     if cost is not None:
         try:
-            return max(1, int(cost))
+            return max(Decimal(0), _points(cost))
         except (ValueError, TypeError):
             pass
     return PointsService.cost_per_generation()
@@ -78,7 +86,7 @@ def find_idempotent_task(user_id: int, client_request_id: str):
         ).fetchone()
 
 
-def _reserve_generation_slot(task_id: str, task_type: str, task_params: dict, user_id: int, cost: int):
+def _reserve_generation_slot(task_id: str, task_type: str, task_params: dict, user_id: int, cost: Decimal):
     """套餐/订阅/并发校验 + 扣费 + 创建 tasks 行（同一事务）。失败抛 GenerationError。"""
     limit = get_limit_config()["generate_concurrent_limit_per_user"]
     with get_db() as conn:
@@ -112,7 +120,7 @@ def _reserve_generation_slot(task_id: str, task_type: str, task_params: dict, us
         return points_balance_after
 
 
-def _consume_generation_slot_for_existing_task(task_id: str, user_id: int, model_id: str, cost: int, consume_request_key: str):
+def _consume_generation_slot_for_existing_task(task_id: str, user_id: int, model_id: str, cost: Decimal, consume_request_key: str):
     """重试场景的校验 + 扣费（任务行已存在，不重建）。失败抛 GenerationError。"""
     limit = get_limit_config()["generate_concurrent_limit_per_user"]
     with get_db() as conn:
@@ -162,8 +170,13 @@ def _build_task_meta(task_id: str, task_type: str, params: dict):
     return meta
 
 
-def _build_submit_payload(task_type: str, params: dict, cost: int, refund_request_key: str = None):
-    """提交给上游 GenGateway 的请求体（含 _cost / _refund_request_key 内部字段）。"""
+def _build_submit_payload(task_type: str, params: dict, cost: Decimal, refund_request_key: str = None):
+    """提交给上游 GenGateway 的请求体（含 _cost / _refund_request_key 内部字段）。
+
+    内部字段（下划线开头：_cost / _refund_request_key / _chat_message_id / _chat_session_id）
+    仅保留在本地 task_params 与 tasks.params 落库中，供完成/失败路径补图落库使用；
+    GenGateway.submit 为显式参数调用，内部字段不会上报上游 provider。
+    """
     payload = {
         "prompt": params.get("prompt") or "",
         "size": params.get("size") or "auto",
@@ -173,8 +186,13 @@ def _build_submit_payload(task_type: str, params: dict, cost: int, refund_reques
         "model_id": params.get("model_id"),
         "share_to_square": bool(params.get("share_to_square")),
         "client_request_id": params.get("client_request_id"),
-        "_cost": cost,
+        "_cost": str(cost),
     }
+    # 聊天内生图上下文：透传 _chat_message_id 供任务完成后把图片 markdown 追加回对应 chat_messages
+    if params.get("_chat_message_id") is not None:
+        payload["_chat_message_id"] = params["_chat_message_id"]
+    if params.get("_chat_session_id") is not None:
+        payload["_chat_session_id"] = params["_chat_session_id"]
     if task_type == "text_image":
         payload["image_urls"] = params.get("image_urls") or []
     if refund_request_key:
@@ -189,7 +207,7 @@ def retry_generation_task(task_id: str):
         return None
     params = dict(task.get("params") or {})
     retry_count = int(params.get("_retry_count") or 0) + 1
-    cost = int(task.get("points_cost") or get_model_cost(params.get("model_id"), params.get("resolution")))
+    cost = _points(task.get("points_cost") or get_model_cost(params.get("model_id"), params.get("resolution")))
     consume_request_key = f"consume:{task_id}:retry:{retry_count}"
     refund_request_key = f"refund:{task_id}:retry:{retry_count}"
     slot = _consume_generation_slot_for_existing_task(task_id, task["user_id"], str(params.get("model_id") or ""), cost, consume_request_key)
@@ -225,6 +243,68 @@ def _share_to_square(user_id: int, file_path: str, prompt: str, size: str, task_
                 PromptEmbeddingService.upsert_square(int(row["id"]))
         except Exception:
             logger.exception(f"[submit.square_embedding.fail] user={user_id} filename={filename}")
+
+
+def _append_chat_image_result(chat_message_id, task_id: str, result_urls: list = None, error: str = None) -> None:
+    """聊天内生图任务终态后，把图片 markdown / 失败文案幂等追加回 chat_messages。
+
+    仅当任务 params 携带 _chat_message_id（AI 助手 image_gen 工具触发）时调用：
+    - 成功：对每张图 basename 调 mark_image_permanent（永久保留，聊天记录里的图不随
+      2 天过期失效），再追加 `![图片](/api/images/file/{filename})` markdown；
+    - 失败：追加失败文案；
+    - 幂等：成功守卫用图片 URL、失败守卫用失败文案——消息已含结果（工具在等待期内
+      完成、图片/文案已在回复文本中的场景）时不影响任何行；不能以 task_id 为守卫
+      （超时指引文案本身含任务 ID，会误拦需要补写的场景）；
+    - 消息尚未落库（UPDATE 影响 0 行）时静默跳过：该场景下 assistant 消息落库时
+      已包含工具返回的图片/文案，无需补写。
+    使用独立 get_db() 连接，不依赖调用方正在使用的连接。
+    """
+    if not chat_message_id:
+        return
+    try:
+        if result_urls:
+            # 1) 图片永久保留标记（与消息是否已落库无关，无条件执行）
+            marks = []
+            for url in result_urls:
+                filename = os.path.basename(str(url or ""))
+                if not filename:
+                    continue
+                mark_image_permanent(filename)
+                marks.append(f"![图片](/api/images/file/{filename})")
+            if not marks:
+                return
+            append_text = "\n\n" + "\n\n".join(marks)
+            log_tag = "已追加图片"
+        elif error:
+            append_text = f"\n\n图片生成失败：{error or '未知错误'}"
+            log_tag = "已追加失败文案"
+        else:
+            # 无结果也无错误信息（异常兜底场景），不写任何内容
+            return
+        # 2) 幂等追加：守卫按「内容是否已含结果」判断——
+        #    - 成功：消息已含该图片 URL（工具在等待期内完成、图片已在回复文本中）则跳过；
+        #    - 失败：消息已含失败文案则跳过。
+        #    注意不能用 task_id 做守卫：超时场景的指引文案本身就含任务 ID，
+        #    会误把需要补图的场景当成「已有结果」拦截。
+        if result_urls:
+            first = os.path.basename(str(result_urls[0]))
+            guard = f"%/api/images/file/{first}%" if first else None
+        else:
+            guard = "%图片生成失败%"
+        if not guard:
+            return
+        with get_db() as conn:
+            cur = conn.execute(
+                "UPDATE chat_messages SET content = content || %s WHERE id = %s AND content NOT LIKE %s",
+                (append_text, chat_message_id, guard),
+            )
+            affected = cur.rowcount if cur is not None else 0
+        if affected:
+            logger.info(f"[chat.image_backfill] task={task_id} msg={chat_message_id} {log_tag}")
+        else:
+            logger.info(f"[chat.image_backfill] task={task_id} msg={chat_message_id} 消息未落库或已含任务结果，跳过补写")
+    except Exception:
+        logger.exception(f"[chat.image_backfill] task={task_id} msg={chat_message_id} 补写失败")
 
 
 async def _run_generation(task_id: str, task_type: str, submit_payload: dict, meta: dict, user_id: int, is_admin: bool):
@@ -263,6 +343,15 @@ async def _run_generation(task_id: str, task_type: str, submit_payload: dict, me
                 except Exception:
                     logger.exception(f"[submit.share.fail] type={task_type} task={task_id} user={user_id}")
             TaskManager.update_task(task_id, status="completed", progress=100, result_urls=urls)
+            # 聊天内生图：任务完成后把图片 markdown 幂等追加回对应 chat_messages
+            # （超时场景消息已落库且仅含指引文案 → 补写图片；等待期内完成的场景消息落库
+            # 时已含图 → NOT LIKE 守卫幂等跳过）。task_params 由 submit_payload 构建，
+            # 保留 _chat_message_id 内部字段（不上报上游）。
+            _append_chat_image_result(
+                (task_params or {}).get("_chat_message_id"),
+                task_id,
+                result_urls=urls,
+            )
             try:
                 FinanceService.record_task_entry(task_id, "completed")
             except Exception:
@@ -281,6 +370,16 @@ async def _run_generation(task_id: str, task_type: str, submit_payload: dict, me
             logger.exception(f"[finance.record.fail] type={task_type} task={task_id} status=failed")
         StatsService.record_failed()
         record_request(user_id, "failed")
+        # 聊天内生图：失败路径同样幂等追加失败文案（消息未落库则静默跳过）
+        try:
+            task_row = TaskManager.get_task(task_id) or {}
+            _append_chat_image_result(
+                (task_row.get("params") or {}).get("_chat_message_id"),
+                task_id,
+                error=str(e),
+            )
+        except Exception:
+            logger.exception(f"[chat.image_backfill] task={task_id} 失败路径补图异常")
         try:
             PointsService.refund(user_id, submit_payload.get("_cost") or PointsService.cost_per_generation(), "生成失败退还", request_key=submit_payload.get("_refund_request_key") or f"refund:{task_id}", model_id=str(submit_payload.get("model_id") or ""))
         except Exception:
