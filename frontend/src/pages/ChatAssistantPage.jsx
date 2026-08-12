@@ -1365,8 +1365,6 @@ export default function ChatAssistantPage() {
       if (ui < 0) return prev
       return [...prev.slice(0, ui), { ...userMsg, id: userLocalId, created_at: new Date().toISOString() }]
     })
-    // 防御：本地未找到分支点时（理论上已拦），不发重答避免服务器/本地状态不一致
-    if (!messages.some(m => m.id === userMsg.id)) return
     startStream(sid, userMsg.content, effortRef.current, null, userLocalId)
   }
 
