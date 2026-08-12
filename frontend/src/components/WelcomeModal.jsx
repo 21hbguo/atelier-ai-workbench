@@ -26,7 +26,7 @@ export default function WelcomeModal({ points, onClose }) {
             <span className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>积分</span>
           </div>
           <p className="text-xs leading-relaxed mb-5" style={{ color: 'var(--text-secondary)' }}>
-            积分可用于生成 AI 图片，每日签到也可获取积分哦
+            积分可用于对话、生图等多种 AI 功能，每日签到还可免费领取
           </p>
           <button onClick={onClose} className="w-full py-2.5 rounded-2xl text-sm font-medium text-white hover:opacity-90 active:scale-[0.98] transition-all" style={{ background: 'var(--accent)' }}>
             开始创作

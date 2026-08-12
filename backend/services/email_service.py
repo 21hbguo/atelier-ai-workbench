@@ -43,22 +43,22 @@ class IPv4SMTP_SSL(smtplib.SMTP_SSL):
 VERIFICATION_EMAIL_HTML = """\
 <!DOCTYPE html>
 <html>
-<head><meta charset="UTF-8"><title>Atelier·AI造梦工坊 邮箱验证</title></head>
+<head><meta charset="UTF-8"><title>Atelier · AI 工作台 邮箱验证</title></head>
 <body style="margin:0;padding:0;background-color:#F9FBF8;font-family:Arial,sans-serif;">
 <div style="width:90%;max-width:600px;margin:20px auto;background-color:#FFFFFF;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(176,209,187,0.15);">
   <div style="background-color:#B0D1BB;color:#FFFFFF;padding:24px 20px;">
-    <h1 style="margin:0;font-size:26px;font-weight:600;">Atelier<span style="font-size:16px;margin-left:8px;opacity:0.9;">AI 造梦工坊</span></h1>
-    <p style="margin:6px 0 0;font-size:13px;opacity:0.8;">开启你的AI创作之旅 · 一键生图</p>
+    <h1 style="margin:0;font-size:26px;font-weight:600;">Atelier<span style="font-size:16px;margin-left:8px;opacity:0.9;">AI 工作台</span></h1>
+    <p style="margin:6px 0 0;font-size:13px;opacity:0.8;">多模型聚合 · 多模态创作 · 安全私密</p>
   </div>
   <div style="padding:35px 30px;color:#5A7063;">
     <p style="font-size:16px;line-height:1.7;">你好，<span style="color:#8CB39E;font-weight:500;">{email}</span>：</p>
-    <p style="font-size:16px;line-height:1.7;margin:16px 0;">感谢使用 <strong style="color:#7AA88F;">Atelier·AI造梦工坊</strong>，你的验证码为：</p>
+    <p style="font-size:16px;line-height:1.7;margin:16px 0;">感谢使用 <strong style="color:#7AA88F;">Atelier · AI 工作台</strong>，你的验证码为：</p>
     <div style="background-color:#F2F7F4;padding:20px 24px;border-radius:10px;text-align:center;margin:20px 0;border:1px dashed #B0D1BB;">
       <strong style="font-size:32px;color:#4A7A5C;letter-spacing:6px;font-family:'Courier New',Courier,monospace;user-select:all;-webkit-user-select:all;">{code}</strong>
       <p style="margin:8px 0 0;font-size:12px;color:#999;">长按或双击验证码即可选中复制</p>
     </div>
     <p style="font-size:15px;line-height:1.7;color:#708579;">该验证码用于账号身份验证，3分钟内有效<br>请勿泄露或转发给他人，如非本人操作请忽略本邮件</p>
-    <p style="font-size:16px;line-height:1.7;margin-top:30px;text-align:right;color:#8CB39E;">Atelier · AI 造梦工坊</p>
+    <p style="font-size:16px;line-height:1.7;margin-top:30px;text-align:right;color:#8CB39E;">Atelier · AI 工作台</p>
   </div>
 </div>
 </body>
@@ -77,7 +77,7 @@ def _send_email_sync(to_email, code):
 
     html = VERIFICATION_EMAIL_HTML.format(email=to_email, code=code)
     msg = MIMEText(html, "html", "utf-8")
-    msg["Subject"] = "Atelier·AI造梦工坊 邮箱验证码"
+    msg["Subject"] = "Atelier · AI 工作台 邮箱验证码"
     sender_name = cfg.get('sender_name', '')
     if sender_name:
         msg["From"] = formataddr((str(Header(sender_name, 'utf-8')), cfg['sender']))
@@ -100,7 +100,7 @@ def _build_email_html(to_email, code):
 
 
 def _build_email_subject():
-    return "Atelier·AI造梦工坊 邮箱验证码"
+    return "Atelier · AI 工作台 邮箱验证码"
 
 
 # ---- SendGrid 熔断（circuit breaker）----
@@ -144,7 +144,7 @@ async def _send_via_sendgrid(to_email, code, cfg):
     sender=(cfg.get("sendgrid_sender") or cfg.get("smtp_sender") or "").strip()
     if not api_key or not sender:
         raise HTTPException(status_code=500, detail="SendGrid 未配置，请联系管理员")
-    sender_name=(cfg.get("smtp_sender_name") or "Atelier·AI造梦工坊").strip()
+    sender_name=(cfg.get("smtp_sender_name") or "Atelier · AI 工作台").strip()
     payload={"personalizations":[{"to":[{"email":to_email}]}],"from":{"email":sender,"name":sender_name},"subject":_build_email_subject(),"content":[{"type":"text/html","value":_build_email_html(to_email,code)}]}
     headers={"Authorization":f"Bearer {api_key}","Content-Type":"application/json"}
     try:

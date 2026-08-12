@@ -146,7 +146,7 @@ export default function AdminPage() {
     smtp_port: 465,
     smtp_password: '',
     smtp_sender: '',
-    smtp_sender_name: 'Atelier·AI造梦工坊',
+    smtp_sender_name: 'Atelier · AI 工作台',
     sendgrid_api_key: '',
     sendgrid_sender: '',
   })
@@ -369,7 +369,7 @@ export default function AdminPage() {
         smtp_port: Number(data.smtp_port || 465),
         smtp_password: data.smtp_password || '',
         smtp_sender: data.smtp_sender || '',
-        smtp_sender_name: data.smtp_sender_name || 'Atelier·AI造梦工坊',
+        smtp_sender_name: data.smtp_sender_name || 'Atelier · AI 工作台',
         sendgrid_api_key: data.sendgrid_api_key || '',
         sendgrid_sender: data.sendgrid_sender || '',
         llm_base_url: data.llm_base_url || '',
@@ -1682,7 +1682,7 @@ export default function AdminPage() {
                 </div>
                 <div>
                   <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>发件人名称</label>
-                  <input type="text" value={runtimeConfig.smtp_sender_name} onChange={e => onConfigInput('smtp_sender_name', e.target.value)} placeholder="Atelier·AI造梦工坊" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                  <input type="text" value={runtimeConfig.smtp_sender_name} onChange={e => onConfigInput('smtp_sender_name', e.target.value)} placeholder="Atelier · AI 工作台" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
                 <div>
                   <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>授权码</label>

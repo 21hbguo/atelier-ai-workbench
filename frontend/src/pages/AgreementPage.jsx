@@ -14,7 +14,7 @@ export default function AgreementPage() {
           <p className="text-xs opacity-60">最后更新日期：2026年5月5日</p>
 
           <h2 className="text-base font-semibold mt-6" style={{ color: 'var(--text-primary)' }}>一、服务说明</h2>
-          <p>Atelier · AI 造梦工坊（以下简称"本平台"）是一个 AI 图像生成服务平台。用户通过消耗积分使用 AI 图像生成、提示词优化等功能。注册并使用本平台即表示您同意本协议的全部条款。</p>
+          <p>Atelier · AI 工作台（以下简称"本平台"）是一个多模态 AI 服务平台。用户通过消耗积分使用 AI 图像生成、提示词优化等功能。注册并使用本平台即表示您同意本协议的全部条款。</p>
 
           <h2 className="text-base font-semibold mt-6" style={{ color: 'var(--text-primary)' }}>二、账号注册</h2>
           <p>1. 用户需通过邮箱验证码完成注册，注册时需提供有效的邮箱地址。</p>

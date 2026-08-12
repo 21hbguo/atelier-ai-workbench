@@ -22,7 +22,7 @@ describe('WelcomeModal', () => {
     expect(screen.getByText('50')).toBeInTheDocument()
     expect(screen.getByText('积分')).toBeInTheDocument()
     expect(screen.getByText('注册赠送')).toBeInTheDocument()
-    expect(screen.getByText('积分可用于生成 AI 图片，每日签到也可获取积分哦')).toBeInTheDocument()
+    expect(screen.getByText('积分可用于对话、生图等多种 AI 功能，每日签到还可免费领取')).toBeInTheDocument()
     expect(screen.getByText('开始创作')).toBeInTheDocument()
   })
 

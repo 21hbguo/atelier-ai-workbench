@@ -269,7 +269,7 @@ describe('reference upload flow', () => {
     await waitFor(() =>
       expect(screen.getByText('存在上传失败的参考图，请删除后重新添加')).toBeInTheDocument()
     )
-    fireEvent.change(screen.getByPlaceholderText('把脑洞变成画✨ 支持文生图+图生图'), {
+    fireEvent.change(screen.getByPlaceholderText('和 AI 助手聊聊，支持多模型对话与多模态创作 ✨'), {
       target: { value: 'test prompt' },
     })
     expect(screen.getByTitle('生成')).toBeDisabled()
@@ -341,7 +341,7 @@ describe('reference upload flow', () => {
         </ThemeProvider>
       </MemoryRouter>
     )
-    fireEvent.change(await screen.findByPlaceholderText('把脑洞变成画✨ 支持文生图+图生图'), {
+    fireEvent.change(await screen.findByPlaceholderText('和 AI 助手聊聊，支持多模型对话与多模态创作 ✨'), {
       target: { value: 'prompt' },
     })
     fireEvent.change(container.querySelector('input[type="file"]'), {
@@ -377,12 +377,12 @@ describe('reference upload flow', () => {
     fireEvent.change(within(modelLabel.closest('label')).getByRole('combobox'), {
       target: { value: 'grsai-vip' },
     })
-    fireEvent.change(screen.getByPlaceholderText('把脑洞变成画✨ 支持文生图+图生图'), {
+    fireEvent.change(screen.getByPlaceholderText('和 AI 助手聊聊，支持多模型对话与多模态创作 ✨'), {
       target: { value: 'vip prompt' },
     })
     fireEvent.change(getSelect('分辨率'), { target: { value: 'high' } })
     fireEvent.change(getSelect('画质'), { target: { value: 'high' } })
-    fireEvent.keyDown(screen.getByPlaceholderText('把脑洞变成画✨ 支持文生图+图生图'), {
+    fireEvent.keyDown(screen.getByPlaceholderText('和 AI 助手聊聊，支持多模型对话与多模态创作 ✨'), {
       key: 'Enter',
       code: 'Enter',
     })
@@ -413,10 +413,10 @@ describe('reference upload flow', () => {
     })
     fireEvent.change(getSelect('比例'), { target: { value: '16:9' } })
     fireEvent.change(getSelect('分辨率'), { target: { value: 'high' } })
-    fireEvent.change(screen.getByPlaceholderText('把脑洞变成画✨ 支持文生图+图生图'), {
+    fireEvent.change(screen.getByPlaceholderText('和 AI 助手聊聊，支持多模型对话与多模态创作 ✨'), {
       target: { value: 'vip prompt' },
     })
-    fireEvent.keyDown(screen.getByPlaceholderText('把脑洞变成画✨ 支持文生图+图生图'), {
+    fireEvent.keyDown(screen.getByPlaceholderText('和 AI 助手聊聊，支持多模型对话与多模态创作 ✨'), {
       key: 'Enter',
       code: 'Enter',
     })
@@ -436,7 +436,7 @@ describe('reference upload flow', () => {
         refineOptimizeCost={20}
       />
     )
-    fireEvent.change(screen.getByPlaceholderText('把脑洞变成画✨ 支持文生图+图生图'), {
+    fireEvent.change(screen.getByPlaceholderText('和 AI 助手聊聊，支持多模型对话与多模态创作 ✨'), {
       target: { value: 'vip prompt' },
     })
     fireEvent.click(screen.getByTitle('参数设置'))

@@ -134,7 +134,7 @@ _runtime_config = {
     "smtp_port": int(os.getenv("SMTP_PORT", "465")),
     "smtp_password": os.getenv("SMTP_PASSWORD", ""),
     "smtp_sender": os.getenv("SMTP_SENDER", ""),
-    "smtp_sender_name": os.getenv("SMTP_SENDER_NAME", "Atelier·AI造梦工坊"),
+    "smtp_sender_name": os.getenv("SMTP_SENDER_NAME", "Atelier · AI 工作台"),
     "sendgrid_api_key": os.getenv("SENDGRID_API_KEY", ""),
     "sendgrid_sender": os.getenv("SENDGRID_SENDER", ""),
     "resend_api_key": os.getenv("RESEND_API_KEY", ""),
@@ -292,7 +292,7 @@ def get_turnstile_config():
 
 
 def get_email_delivery_config():
-    return {"smtp_server":_runtime_config.get("smtp_server","smtp.qq.com"),"smtp_port":int(_runtime_config.get("smtp_port",465)),"smtp_password":_runtime_config.get("smtp_password",""),"smtp_sender":_runtime_config.get("smtp_sender",""),"smtp_sender_name":_runtime_config.get("smtp_sender_name","Atelier·AI造梦工坊"),"sendgrid_api_key":(_runtime_config.get("sendgrid_api_key") or "").strip(),"sendgrid_sender":(_runtime_config.get("sendgrid_sender") or "").strip(),"resend_api_key":(_runtime_config.get("resend_api_key") or "").strip(),"resend_sender":(_runtime_config.get("resend_sender") or "onboarding@resend.dev").strip()}
+    return {"smtp_server":_runtime_config.get("smtp_server","smtp.qq.com"),"smtp_port":int(_runtime_config.get("smtp_port",465)),"smtp_password":_runtime_config.get("smtp_password",""),"smtp_sender":_runtime_config.get("smtp_sender",""),"smtp_sender_name":_runtime_config.get("smtp_sender_name","Atelier · AI 工作台"),"sendgrid_api_key":(_runtime_config.get("sendgrid_api_key") or "").strip(),"sendgrid_sender":(_runtime_config.get("sendgrid_sender") or "").strip(),"resend_api_key":(_runtime_config.get("resend_api_key") or "").strip(),"resend_sender":(_runtime_config.get("resend_sender") or "onboarding@resend.dev").strip()}
 
 
 def IMAGE_GEN_API_URL():
@@ -382,7 +382,7 @@ def get_smtp_config():
         "port": int(_runtime_config.get("smtp_port", 465)),
         "password": _runtime_config.get("smtp_password", ""),
         "sender": _runtime_config.get("smtp_sender", ""),
-        "sender_name": _runtime_config.get("smtp_sender_name", "Atelier·AI造梦工坊"),
+        "sender_name": _runtime_config.get("smtp_sender_name", "Atelier · AI 工作台"),
     }
 
 

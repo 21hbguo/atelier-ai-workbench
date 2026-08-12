@@ -1165,7 +1165,7 @@ const ChatInput = forwardRef(function ChatInput({ onSubmit, loading, requestCost
             )}
             <textarea ref={textareaRef} value={prompt} onChange={e => setPrompt(e.target.value)} onPaste={handlePaste}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(false) } }}
-              placeholder="把脑洞变成画✨ 支持文生图+图生图"
+              placeholder="和 AI 助手聊聊，支持多模型对话与多模态创作 ✨"
               className="block w-full resize-none bg-transparent outline-none py-2"
               rows={1} style={{ color: 'var(--text-primary)', minHeight: '40px', maxHeight: '80px', fontSize: '15px', paddingLeft: '10px' }} />
             <div className="mt-2 flex items-center justify-between gap-3">

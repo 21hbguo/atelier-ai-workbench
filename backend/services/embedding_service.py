@@ -318,7 +318,7 @@ def search_chunks(file_ids: list[int], query: str, top_k: int = 3, embed_fn=None
 
 if __name__ == "__main__":
     sample = (
-        "Atelier 是一个 AI 造梦工坊，致力于把想法变成作品。"
+        "Atelier 是一个多模态 AI 工作台，聚合主流大模型，致力于把想法变成作品。"
         "用户上传提示词后，系统会调用多个图像生成模型完成创作，并自动托管到图床。"
         "平台支持积分体系、邀请返利和每日签到，用户可以持续获得生成额度。\n"
         "分块功能是 RAG 检索的基础：长文档先切句，再聚合为接近目标长度的块。"

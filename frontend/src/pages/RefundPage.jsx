@@ -41,7 +41,7 @@ export default function RefundPage() {
           <h2 className="text-base font-semibold mt-6" style={{ color: 'var(--text-primary)' }}>五、特别说明</h2>
           <p>1. 平台保留在合理范围内调整积分消耗标准的权利，调整前将提前公告通知。</p>
           <p>2. 如遇系统故障或不可抗力导致的大规模服务中断，平台将视情况进行积分补偿或异常核查。</p>
-          <p>3. 本规则的最终解释权归 Atelier · AI 造梦工坊所有。</p>
+          <p>3. 本规则的最终解释权归 Atelier · AI 工作台所有。</p>
         </div>
       </div>
     </div>
