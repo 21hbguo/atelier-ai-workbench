@@ -40,10 +40,10 @@ else
     echo -e "${YELLOW}[1/4] 未发现更新包，跳过代码更新${NC}"
 fi
 
-# 重新构建镜像
+# 重新构建镜像（只构建 app；searxng 用官方镜像、db 用 postgres 镜像，无需构建）
 echo ""
-echo -e "${YELLOW}[2/4] 重新构建 Docker 镜像...${NC}"
-docker compose build --progress=plain
+echo -e "${YELLOW}[2/4] 重新构建 app 镜像...${NC}"
+docker compose build app
 
 # 运行数据库迁移
 echo ""
@@ -58,10 +58,10 @@ for i in $(seq 1 30); do
 done
 docker compose run --rm app alembic upgrade head 2>/dev/null || echo -e "  ${YELLOW}数据库迁移跳过${NC}"
 
-# 重启服务
+# 重启服务（只重建 app；searxng/db 保持运行不中断）
 echo ""
-echo -e "${YELLOW}[4/4] 重启服务...${NC}"
-docker compose up -d --force-recreate
+echo -e "${YELLOW}[4/4] 重启 app 服务...${NC}"
+docker compose up -d --force-recreate app
 
 echo ""
 echo -e "${GREEN}========================================${NC}"

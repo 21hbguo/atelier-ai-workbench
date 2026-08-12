@@ -44,6 +44,36 @@ if ! docker compose version &> /dev/null; then
     exit 1
 fi
 
+# Step 1.5: Docker 镜像加速（国内服务器拉取镜像快很多，失败率显著降低）
+echo ""
+echo -e "${YELLOW}[1.5/5] 配置 Docker 镜像加速...${NC}"
+DOCKER_CONF="/etc/docker/daemon.json"
+NEED_ACCEL=1
+if [ -f "$DOCKER_CONF" ] && grep -q "registry-mirrors" "$DOCKER_CONF" 2>/dev/null; then
+    NEED_ACCEL=0
+fi
+if [ "$NEED_ACCEL" = "1" ]; then
+    echo "  检测到未配置 registry-mirrors，写入国内镜像加速地址..."
+    mkdir -p /etc/docker
+    # 备份已有配置（若有）
+    [ -f "$DOCKER_CONF" ] && cp "$DOCKER_CONF" "${DOCKER_CONF}.bak.$(date +%s)"
+    cat > "$DOCKER_CONF" <<'EOF'
+{
+  "registry-mirrors": [
+    "https://docker.m.daocloud.io",
+    "https://docker.1ms.run",
+    "https://docker.xuanyuan.me"
+  ]
+}
+EOF
+    echo "  正在重启 Docker 使加速生效..."
+    systemctl restart docker 2>/dev/null || service docker restart 2>/dev/null || true
+    sleep 3
+    echo -e "  ${GREEN}镜像加速已配置${NC}"
+else
+    echo -e "  ${GREEN}已存在 registry-mirrors 配置，跳过${NC}"
+fi
+
 # Step 2: 配置 .env
 echo ""
 echo -e "${YELLOW}[2/5] 配置环境变量...${NC}"
@@ -57,10 +87,10 @@ else
     read -r
 fi
 
-# Step 3: 构建镜像
+# Step 3: 构建镜像（app 本地构建；searxng/db 自动拉取官方镜像）
 echo ""
-echo -e "${YELLOW}[3/5] 构建 Docker 镜像...${NC}"
-docker compose build --progress=plain
+echo -e "${YELLOW}[3/5] 构建应用镜像...${NC}"
+docker compose build app
 
 # Step 4: 迁移现有数据
 echo ""
@@ -108,6 +138,25 @@ echo ""
 # 获取本机 IP
 LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
 echo -e "  访问地址: ${YELLOW}http://${LOCAL_IP}:5173${NC}"
+echo ""
+
+# 健康检查：searxng 联网搜索是否就绪
+echo -e "${YELLOW}正在检查联网搜索服务（searxng）...${NC}"
+SEARXNG_PORT="${SEARXNG_PORT:-8082}"
+SEARXNG_OK=0
+for i in $(seq 1 10); do
+    if curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://127.0.0.1:${SEARXNG_PORT}/" 2>/dev/null | grep -q 200; then
+        SEARXNG_OK=1
+        break
+    fi
+    sleep 2
+done
+if [ "$SEARXNG_OK" = "1" ]; then
+    echo -e "  ${GREEN}✓ 联网搜索服务（searxng）已就绪，聊天页可开启「联网搜索」使用${NC}"
+else
+    echo -e "  ${YELLOW}! 联网搜索服务（searxng）暂未就绪，稍后可用 docker compose logs searxng 查看；${NC}"
+    echo -e "  ${YELLOW}  不影响主站使用，搜索会自动回退到已配置的云搜索供应商${NC}"
+fi
 echo ""
 echo -e "  常用命令:"
 echo -e "    启动: ${YELLOW}docker compose up -d${NC}"
