@@ -223,23 +223,6 @@ async def _searxng(query: str, base_url: str, n: int) -> list[dict]:
     return out
 
 
-@agent_tool(
-    name="web_search",
-    description=(
-        "联网搜索互联网获取实时信息（有成本：每次搜索消耗搜索 API 额度，"
-        "同一次对话最多搜索 2 次）。当用户问题涉及实时新闻、最新数据、"
-        "模型知识范围外或需要核实的信息时使用；一次搜索尽量覆盖所有子问题"
-        "（合并关键词），不要为同一问题反复搜索；返回网页标题、链接与摘要。"
-    ),
-    parameters={
-        "type": "object",
-        "properties": {
-            "query": {"type": "string", "description": "搜索关键词"},
-            "max_results": {"type": "integer", "description": "返回结果条数，默认 5，最大 10"},
-        },
-        "required": ["query"],
-    },
-)
 def _rate_limited(user_id: int) -> bool:
     """每用户滑动窗口限流：窗口内搜索次数达到上限返回 True（被限流）。"""
     if user_id is None:
@@ -352,6 +335,23 @@ def _cache_set(key: str, text: str) -> None:
         _cache[key] = (now + _CACHE_TTL, text)
 
 
+@agent_tool(
+    name="web_search",
+    description=(
+        "联网搜索互联网获取实时信息（有成本：每次搜索消耗搜索 API 额度，"
+        "同一次对话最多搜索 2 次）。当用户问题涉及实时新闻、最新数据、"
+        "模型知识范围外或需要核实的信息时使用；一次搜索尽量覆盖所有子问题"
+        "（合并关键词），不要为同一问题反复搜索；返回网页标题、链接与摘要。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "搜索关键词"},
+            "max_results": {"type": "integer", "description": "返回结果条数，默认 5，最大 10"},
+        },
+        "required": ["query"],
+    },
+)
 async def web_search_search(args: dict, ctx: AgentContext) -> str:
     query = str(args.get("query") or "").strip()
     if not query:
