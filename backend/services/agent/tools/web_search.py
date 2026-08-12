@@ -671,7 +671,8 @@ def _extract_citations_from_text(text: str) -> list[dict]:
     """从缓存的格式化结果文本里回退提取引用（旧格式缓存 / items 缺失时的兜底）。
 
     每块结果格式为 "标题 — url\n描述"（块间空行分隔）；标题可能含 " — "，
-    因此用 rpartition 从右侧切出 url。
+    因此用 rpartition 从右侧切出 url；摘要取描述行前 150 字符（description 字段，
+    与 _report_citations 的输入契约一致）。
     """
     out: list[dict] = []
     for block in str(text or "").split("\n\n"):
@@ -684,15 +685,21 @@ def _extract_citations_from_text(text: str) -> list[dict]:
                 continue
             url, title = m.group(0), ""
         if url:
-            out.append({"url": url, "title": title.strip()})
+            rest = block.split("\n", 1)[1] if "\n" in block else ""
+            out.append({
+                "url": url,
+                "title": title.strip(),
+                "description": rest.strip()[:150],
+            })
         if len(out) >= 8:
             break
     return out
 
 
 def _report_citations(ctx: AgentContext, items: list[dict]) -> None:
-    """把搜索结果前 8 条的 url/title 上报到 ctx.citations（引用机制，去重由 add_citation 保证）。"""
+    """把搜索结果前 8 条的 url/title/摘要（description 前 150 字符）上报到 ctx.citations（引用机制，去重由 add_citation 保证）。"""
     for it in items[:8]:
         url = str(it.get("url") or "").strip()
         if url:
-            ctx.add_citation(url, str(it.get("title") or ""))
+            snippet = str(it.get("description") or "").strip()[:150]
+            ctx.add_citation(url, str(it.get("title") or ""), snippet or None)

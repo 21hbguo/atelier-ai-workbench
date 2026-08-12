@@ -58,8 +58,8 @@ async def fetch_url_tool(args: dict, ctx: AgentContext) -> str:
     if not text:
         return f"链接 {result.get('url') or url} 可访问，但未提取到正文内容。"
 
-    # 上报来源引用（SSE citations 事件），供前端展示来源链接
-    ctx.add_citation(str(result.get("url") or url), str(result.get("title") or ""))
+    # 上报来源引用（SSE citations 事件），供前端展示来源链接；摘要取正文前 200 字符
+    ctx.add_citation(str(result.get("url") or url), str(result.get("title") or ""), text[:200])
 
     parts = [f"标题：{title}", f"URL：{result.get('url') or url}", "正文：", text]
     # 链接扩散：页面内可用链接（最多 10 条）附在正文后，供模型继续调用 fetch_url

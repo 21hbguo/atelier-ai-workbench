@@ -31,13 +31,17 @@ class AgentContext:
     def has_session(self) -> bool:
         return self.session_id is not None
 
-    def add_citation(self, url: str, title: str = "") -> None:
+    def add_citation(self, url: str, title: str = "", snippet: Optional[str] = None) -> None:
         """记录一条来源引用。
 
-        url 已存在则跳过（去重）；url 为空时忽略；title 可为空串。
+        url 已存在则跳过（去重）；url 为空时忽略；title 可为空串；
+        snippet 为可选摘要（可为空串/None，空则不写入条目，保持向后兼容）。
         """
         if not url:
             return
         if any(c.get("url") == url for c in self.citations):
             return
-        self.citations.append({"url": url, "title": title or ""})
+        item = {"url": url, "title": title or ""}
+        if snippet:
+            item["snippet"] = snippet
+        self.citations.append(item)

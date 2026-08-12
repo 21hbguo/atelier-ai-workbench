@@ -1,9 +1,9 @@
 """引用（citations）机制单元测试（pytest，不依赖数据库/聊天模块）。
 
 覆盖：
-1. AgentContext.add_citation：追加 / url 去重 / 空 url 忽略；
-2. fetch_url 工具：成功时上报 url+title，失败 / 空正文时不加；
-3. web_search 工具：供应商成功与缓存命中两条路径都上报引用（前 8 条）；
+1. AgentContext.add_citation：追加 / url 去重 / 空 url 忽略 / snippet 可选；
+2. fetch_url 工具：成功时上报 url+title+正文摘要（前 200 字符），失败 / 空正文时不加；
+3. web_search 工具：供应商成功与缓存命中两条路径都上报引用（前 8 条，含描述摘要）；
 4. run_agent_stream：工具执行后产出 citations 增量事件，且每次只发新增部分。
 
 异步测试沿用 test_stream_tools.py / test_url_fetcher.py 的写法：
@@ -32,9 +32,24 @@ def test_add_citation_appends_and_dedups():
     ctx.add_citation("https://a.example.com/1", "标题A")
     ctx.add_citation("https://a.example.com/1", "重复的标题")  # 同 url 去重，不覆盖原条目
     ctx.add_citation("https://b.example.com/2")  # title 可空
+    ctx.add_citation("https://c.example.com/3", "标题C", "摘要C")  # snippet 可选
     assert ctx.citations == [
         {"url": "https://a.example.com/1", "title": "标题A"},
         {"url": "https://b.example.com/2", "title": ""},
+        {"url": "https://c.example.com/3", "title": "标题C", "snippet": "摘要C"},
+    ]
+
+
+def test_add_citation_snippet_optional():
+    # 不传 / 传空 snippet → 条目不包含 snippet 键（保持向后兼容）
+    ctx = AgentContext()
+    ctx.add_citation("https://a.example.com/1", "标题A")
+    ctx.add_citation("https://b.example.com/2", "标题B", "")
+    ctx.add_citation("https://c.example.com/3", "标题C", None)  # type: ignore[arg-type]
+    assert ctx.citations == [
+        {"url": "https://a.example.com/1", "title": "标题A"},
+        {"url": "https://b.example.com/2", "title": "标题B"},
+        {"url": "https://c.example.com/3", "title": "标题C"},
     ]
 
 
@@ -58,8 +73,12 @@ def test_fetch_url_tool_reports_citation_on_success():
     with patch("backend.services.url_fetcher.fetch_url", fake):
         result = _run(fetch_url_tool({"url": "https://example.com/start"}, ctx))
     assert "这是正文内容" in result
-    # 引用 url 用最终地址（重定向后），title 一并上报
-    assert ctx.citations == [{"url": "https://final.example.com/page", "title": "页面标题"}]
+    # 引用 url 用最终地址（重定向后），title 一并上报，摘要取正文前 200 字符
+    assert ctx.citations == [{
+        "url": "https://final.example.com/page",
+        "title": "页面标题",
+        "snippet": "这是正文内容，供回答引用。",
+    }]
 
 
 def test_fetch_url_tool_no_citation_on_failure():
@@ -95,8 +114,8 @@ def test_web_search_reports_citations_on_success():
          patch("backend.services.agent.tools.web_search._serper", new=AsyncMock(return_value=items)):
         _run(web_search_search({"query": "pytest 引用唯一词甲", "max_results": 5}, ctx))
     assert ctx.citations == [
-        {"url": "https://w.example.com/1", "title": "结果标题1"},
-        {"url": "https://w.example.com/2", "title": "结果标题2"},
+        {"url": "https://w.example.com/1", "title": "结果标题1", "snippet": "描述1"},
+        {"url": "https://w.example.com/2", "title": "结果标题2", "snippet": "描述2"},
     ]
 
 
@@ -120,7 +139,11 @@ def test_web_search_cached_hit_reports_citations():
                                                          new=AsyncMock(return_value=items)) as m:
         _run(web_search_search({"query": "pytest 引用唯一词乙", "max_results": 5}, ctx2))
     assert m.await_count == 0  # 命中缓存，未调用供应商
-    assert ctx2.citations == [{"url": "https://w.example.com/cache", "title": "缓存标题"}]
+    assert ctx2.citations == [{
+        "url": "https://w.example.com/cache",
+        "title": "缓存标题",
+        "snippet": "缓存描述",
+    }]
 
 
 # ---------------------------------------------------------------- run_agent_stream citations 事件
@@ -183,12 +206,16 @@ def test_run_agent_stream_yields_citations_increments():
     ]
     # 每次只发新增部分：第一轮发 A，第二轮只发 B（不重复 A）
     cit_events = [e for e in events if e["type"] == "citations"]
-    assert cit_events[0]["citations"] == [{"url": "https://a.example.com/1", "title": "标题A"}]
-    assert cit_events[1]["citations"] == [{"url": "https://b.example.com/2", "title": "标题B"}]
+    assert cit_events[0]["citations"] == [{
+        "url": "https://a.example.com/1", "title": "标题A", "snippet": "正文内容",
+    }]
+    assert cit_events[1]["citations"] == [{
+        "url": "https://b.example.com/2", "title": "标题B", "snippet": "正文内容",
+    }]
     # ctx 累积全部引用，事件里无重复
     assert ctx.citations == [
-        {"url": "https://a.example.com/1", "title": "标题A"},
-        {"url": "https://b.example.com/2", "title": "标题B"},
+        {"url": "https://a.example.com/1", "title": "标题A", "snippet": "正文内容"},
+        {"url": "https://b.example.com/2", "title": "标题B", "snippet": "正文内容"},
     ]
     assert events[-1]["type"] == "done"
     assert events[-1]["text"] == "最终回答"

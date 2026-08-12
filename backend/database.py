@@ -481,6 +481,7 @@ def init_db():
                 session_id INTEGER NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
                 role VARCHAR(16) NOT NULL,
                 content TEXT NOT NULL,
+                citations JSONB,
                 created_at TIMESTAMP DEFAULT NOW()
             )""",
             "CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, id)",
@@ -488,6 +489,8 @@ def init_db():
             "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS thinking TEXT",
             # 迁移：聊天消息增加 file_ids（JSONB 数组，用户消息快照会话关联文件 id，前端显示文件图标）
             "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS file_ids JSONB",
+            # 迁移：聊天消息增加 citations（JSONB 数组，来源引用落库，刷新后仍可展示）
+            "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS citations JSONB",
             """CREATE TABLE IF NOT EXISTS llm_models (
                 id SERIAL PRIMARY KEY,
                 model_id VARCHAR(128) NOT NULL UNIQUE,
