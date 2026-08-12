@@ -22,3 +22,4 @@ openpyxl>=3.1          # xlsx 单元格提取
 python-pptx>=1.0       # pptx shape 文本提取
 json-repair>=0.25      # tool call 参数 JSON 容错
 resend>=0.9.0
+trafilatura>=1.8          # URL 抓取正文提取（url_fetcher 依赖）

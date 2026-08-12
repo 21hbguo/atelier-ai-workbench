@@ -22,6 +22,7 @@ const MD_STYLES = `
 .md-body input[type=checkbox]{accent-color:var(--accent);margin-right:.35em;vertical-align:-1px;pointer-events:none}
 .md-body blockquote{margin:.5em 0;padding:.4em .8em;border-left:3px solid var(--accent);border-radius:0 8px 8px 0;background:color-mix(in srgb,var(--bg-primary) 55%,transparent);color:var(--text-secondary)}
 .md-body a{color:var(--accent);text-decoration:underline;word-break:break-all}
+.chat-user-link{color:var(--accent);text-decoration:underline;word-break:break-all}
 .md-body img{max-width:100%;border-radius:10px;margin:.4em 0;display:block}
 .md-body hr{border:none;border-top:1px solid var(--border-color);margin:.8em 0}
 .md-body table{border-collapse:collapse;margin:.5em 0;width:100%;font-size:13px;display:block;overflow-x:auto}
@@ -54,6 +55,23 @@ function formatTime(s) {
     ? `${d.getMonth() + 1}月${d.getDate()}日`
     : `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
 }
+
+// ============ 用户消息裸 URL 链接化（安全：先 HTML 转义再替换，防 XSS） ============
+const escapeHtml = (text) => String(text)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;')
+
+// 在【已转义】文本上匹配裸 http(s) URL：转义后文本不含裸 < > " '，
+// href 直接取转义片段（&amp; 等在属性值中合法），天然无法逃逸属性/注入脚本。
+const USER_URL_RE = /(https?:\/\/[^\s<>"'）】。，；：！？、]+)/g
+const URL_TRAIL_RE = /[),.:!?\]}>"'）】。，：！？、]+$/ // 去掉 URL 尾部常见标点
+const linkifyUserText = (text) => escapeHtml(text).replace(USER_URL_RE, (m) => {
+  const url = m.replace(URL_TRAIL_RE, '')
+  return `<a class="chat-user-link" href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`
+})
 
 async function copyText(text) {
   try {
@@ -252,7 +270,8 @@ function MessageItem({ msg, onCopy, onRegenerate }) {
                 ))}
               </div>
             )}
-            <div className="text-sm whitespace-pre-wrap break-words" style={{ color: 'var(--text-primary)' }}>{msg.content}</div>
+            <div className="text-sm whitespace-pre-wrap break-words" style={{ color: 'var(--text-primary)' }}
+              dangerouslySetInnerHTML={{ __html: linkifyUserText(msg.content) }} />
           </>
         ) : msg.error ? (
           <div className="flex items-start gap-1.5 text-sm" style={{ color: 'var(--color-error)' }}>
@@ -315,7 +334,8 @@ function PendingQueueBubbles({ items }) {
                   ))}
                 </div>
               )}
-              <div className="text-sm whitespace-pre-wrap break-words" style={{ color: 'var(--text-primary)' }}>{item.text}</div>
+              <div className="text-sm whitespace-pre-wrap break-words" style={{ color: 'var(--text-primary)' }}
+                dangerouslySetInnerHTML={{ __html: linkifyUserText(item.text) }} />
             </div>
           </div>
           {/* 等待占位（模型思考动画） */}
@@ -425,7 +445,7 @@ const EFFORT_LABELS = { auto: '自动', low: '低', medium: '中', high: '高', 
 // 思考强度固定顺序（auto 最左、max 最右）：UI 展示不依赖模型档案/CSV 的原始顺序
 const EFFORT_ORDER = ['auto', 'low', 'medium', 'high', 'xhigh', 'max']
 
-function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, reasoningEffort, onReasoningEffort, efforts, modelLabel, pendingQueue, onEditPending, onRemovePending, models, chatModelId, onSelectModel, onUploadClick, docs, onRemoveDoc, uploadingCount, uploadNote, webSearch, onWebSearch }) {
+function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, reasoningEffort, onReasoningEffort, efforts, modelLabel, pendingQueue, onEditPending, onRemovePending, models, chatModelId, onSelectModel, onUploadClick, docs, onRemoveDoc, uploadingCount, uploadNote, webSearch, onWebSearch, linkStatus }) {
   const [effortOpen, setEffortOpen] = useState(false)
   const [modelOpen, setModelOpen] = useState(false)
   const EFFORT_OPTIONS = (Array.isArray(efforts) && efforts.length ? efforts : ['auto', 'low', 'medium', 'high', 'xhigh', 'max'])
@@ -503,6 +523,16 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
             ))}
           </div>
         )}
+        {/* 链接访问状态（url_status 事件：fetching/ok/failed） */}
+        {linkStatus && (
+          <div className="mb-2 flex items-center gap-1.5 px-1 text-[11px] truncate animate-fade-in-up"
+            style={{ color: linkStatus.status === 'failed' ? 'var(--color-error)' : linkStatus.status === 'ok' ? 'var(--color-success)' : 'var(--text-secondary)' }}>
+            {linkStatus.status === 'fetching' && <Globe size={11} className="animate-spin flex-shrink-0" style={{ color: 'var(--accent)' }} />}
+            {linkStatus.status === 'fetching' && <span>正在访问链接{linkStatus.url ? `：${linkStatus.url}` : '…'}</span>}
+            {linkStatus.status === 'ok' && <span>已获取链接内容</span>}
+            {linkStatus.status === 'failed' && <span>链接访问失败：{linkStatus.error || '未知错误'}</span>}
+          </div>
+        )}
         {/* 卡片式输入区：布局对齐绘画页 ChatInput（设置|上传在左，发送在右） */}
         <div className="rounded-2xl border transition-all duration-300"
           style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)', boxShadow: 'var(--shadow-md)', position: 'relative' }}>
@@ -561,6 +591,10 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
               onKeyDown={handleKeyDown}
               className="block w-full resize-none bg-transparent outline-none py-2"
               style={{ color: 'var(--text-primary)', minHeight: '40px', maxHeight: '80px', fontSize: '15px', paddingLeft: '10px' }} />
+            {/* 粘贴链接轻提示：输入含 http(s):// 时实时显示 */}
+            {/https?:\/\//i.test(value) && (
+              <div className="px-2.5 pb-1 text-[11px]" style={{ color: 'var(--text-secondary)' }}>发送后将自动访问该链接内容</div>
+            )}
             <div className="mt-2 flex items-center justify-between gap-3">
               <div className="flex items-center flex-shrink-0 whitespace-nowrap gap-0.5">
                 {/* 模型选择（与上传/联网搜索并排，样式统一） */}
@@ -686,6 +720,20 @@ export default function ChatAssistantPage() {
   const [messagesLoading, setMessagesLoading] = useState(false)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(null) // { sessionId, content, text, thinking, toolStatus, stopped, error, manual }
+  // 链接抓取状态（SSE url_status 事件）：{ status: 'fetching'|'ok'|'failed', url, error } | null
+  const [linkStatus, setLinkStatus] = useState(null)
+  const linkTimerRef = useRef(null)
+  const clearLinkTimer = useCallback(() => {
+    if (linkTimerRef.current) { clearTimeout(linkTimerRef.current); linkTimerRef.current = null }
+  }, [])
+  // fetching 持续显示；ok/failed 短暂显示后自动消失（ok 2.5s / failed 5s）
+  const updateLinkStatus = useCallback((status, url, error) => {
+    clearLinkTimer()
+    if (status === 'fetching') { setLinkStatus({ status, url, error }); return }
+    setLinkStatus({ status, url, error })
+    linkTimerRef.current = setTimeout(() => setLinkStatus(null), status === 'ok' ? 2500 : 5000)
+  }, [clearLinkTimer])
+  useEffect(() => () => clearLinkTimer(), [clearLinkTimer])
   const [cost, setCost] = useState(0)
   const [points, setPoints] = useState(() => readUser()?.points ?? 0)
   const [reasoningEffort, setReasoningEffort] = useState(() => localStorage.getItem('chat_reasoning_effort') || 'auto')
@@ -981,6 +1029,8 @@ export default function ChatAssistantPage() {
     setSending(st)
     // 本次流开始：重置节流缓冲（避免残留上一流的未 flush 内容）
     streamBufRef.current = { streamId, text: '', thinking: '' }
+    // 本次流开始：重置链接抓取状态（避免上一流的 url_status 残留）
+    clearLinkTimer(); setLinkStatus(null)
     if (streamRafRef.current) { cancelAnimationFrame(streamRafRef.current); streamRafRef.current = null }
     chatAPI.sendStream(sessionId, content, {
       signal: controller.signal,
@@ -1010,6 +1060,12 @@ export default function ChatAssistantPage() {
         (prev && prev.streamId === streamId)
           ? { ...prev, toolStatus: data?.status === 'done' ? null : { name: data?.name || '', status: data?.status || 'executing' } }
           : prev),
+      onUrlStatus: data => {
+        // streamId 守卫（与 onToolStatus 一致）：旧流迟到的 url_status（抓取最长 10s）
+        // 不得覆盖新流状态
+        if (sendingRef.current?.streamId !== streamId) return
+        updateLinkStatus(data?.status, data?.url, data?.error)
+      },
       onDone: data => {
         const full = String(data.text || '')
         const thinking = String(data.thinking || '')
@@ -1019,6 +1075,8 @@ export default function ChatAssistantPage() {
         setMessages(prev => [...prev, { id: newId, role: 'assistant', content: full, thinking, created_at: new Date().toISOString() }])
         // 发送成功：文件已上传为会话上下文，清空上传区（失败时保留 docs 便于重试）
         setDocs([])
+        // 流结束：若仍停留在 fetching（事件顺序异常），清除残留状态
+        setLinkStatus(prev => prev?.status === 'fetching' ? null : prev)
         // 仅当仍是本次流时才清理状态（streamId 唯一身份，旧流迟到回调不影响新流）
         if (sendingRef.current?.streamId === streamId) {
           sendingRef.current = null
@@ -1038,6 +1096,8 @@ export default function ChatAssistantPage() {
         const errMsg = msg || '生成失败'
         const isManual = manualStopRef.current
         manualStopRef.current = false
+        // 流异常结束（含手动停止）：若仍停留在 fetching，清除残留链接状态
+        setLinkStatus(prev => prev?.status === 'fetching' ? null : prev)
         if (isManual) {
           // 手动停止：保留错误气泡 + 重试按钮，不自动继续队列
           if (sendingRef.current?.streamId === streamId) {
@@ -1057,7 +1117,7 @@ export default function ChatAssistantPage() {
         }
       },
     }).finally(() => { if (abortRef.current === controller) abortRef.current = null })
-  }, [dialog, refreshSessions, flushStreamBuf])
+  }, [dialog, refreshSessions, flushStreamBuf, clearLinkTimer, updateLinkStatus])
 
   // ============ 排队队列操作 ============
   const MAX_PENDING = 10
@@ -1484,7 +1544,8 @@ export default function ChatAssistantPage() {
             onUploadClick={openFilePicker} docs={docs} onRemoveDoc={removeDoc}
             uploadingCount={docs.filter(d => d.status === 'uploading' || d.status === 'pending').length}
             uploadNote={uploadNote}
-            webSearch={webSearch} onWebSearch={toggleWebSearch} />
+            webSearch={webSearch} onWebSearch={toggleWebSearch}
+            linkStatus={linkStatus} />
         </div>
       </div>
       {toast && (
