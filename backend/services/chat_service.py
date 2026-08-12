@@ -20,14 +20,14 @@ logger = logging.getLogger(__name__)
 SYSTEM_PROMPT_PATH = Path(DATA_DIR) / "prompts" / "chat_system.md"
 
 # 文件缺失/读取失败时的内置兜底提示词（与 md 文件内容保持一致）
-_DEFAULT_SYSTEM_PROMPT = """你是 Atelier 网站的 AI 智能助手，服务于 Atelier·AI造梦工坊 的用户。
+_DEFAULT_SYSTEM_PROMPT = """你是 Atelier 网站的 AI 智能助手，服务于 Atelier · AI 工作台 的用户。
 
 你的能力与职责：
 1. 回答各类问题：知识问答、学习辅导、生活建议、技术咨询等，覆盖用户日常所需。
 2. 内容创作：撰写文案、润色文字、翻译、起标题、头脑风暴等。
 3. 技术辅助：编程答疑、代码审查建议、报错分析等（涉及代码时用代码块给出可直接使用的代码）。
 4. 创意与规划：帮助用户梳理思路、制定计划、分析利弊，给出清晰可行的建议。
-5. 网站相关：解答关于 Atelier 网站功能、AI 绘画、提示词撰写等使用问题（本聊天不支持直接出图，需要生成图片时引导用户到网站的「AI绘画」页面使用）。
+5. 网站相关：解答关于 Atelier 网站功能、多模型对话、AI 绘画、提示词撰写等使用问题（本聊天为对话模式，需要生成图片时引导用户到网站的「AI 绘画」页面使用）。
 
 回答要求：
 - 默认使用中文回复；用户用英文提问时可用英文回复。
@@ -536,7 +536,8 @@ class ChatService:
                 elif event["type"] == "thinking":
                     yield {"type": "thinking", "text": event["text"]}
                 elif event["type"] == "done":
-                    yield {"type": "done", "text": event["text"], "thinking": event.get("thinking", "")}
+                    # 透传 usage（llm_client 已解析的统一 schema），供上层按 token 量扣费落库
+                    yield {"type": "done", "text": event["text"], "thinking": event.get("thinking", ""), "usage": event.get("usage")}
                 elif event["type"] == "error":
                     yield {"type": "error", "detail": event["detail"]}
         except Exception:

@@ -276,6 +276,69 @@ class LLMClient:
                 })
         return calls
 
+    # ---------- usage 解析 ----------
+
+    @staticmethod
+    def _extract_usage_openai(usage_dict: dict | None) -> dict | None:
+        """OpenAI 协议 usage 解析为统一 schema。
+        OpenAI 的 prompt_tokens 实际包含 cached_tokens，需扣除得到纯输入 token。"""
+        if not usage_dict:
+            return None
+        try:
+            prompt_tokens = int(usage_dict.get("prompt_tokens") or 0)
+            completion_tokens = int(usage_dict.get("completion_tokens") or 0)
+            prompt_details = usage_dict.get("prompt_tokens_details") or {}
+            completion_details = usage_dict.get("completion_tokens_details") or {}
+            cache_read = int(prompt_details.get("cached_tokens") or 0)
+            reasoning = int(completion_details.get("reasoning_tokens") or 0)
+            # OpenAI 的 prompt_tokens 包含 cached_tokens，扣除得到纯输入
+            input_tokens = max(prompt_tokens - cache_read, 0)
+            total = int(usage_dict.get("total_tokens") or 0) or (input_tokens + completion_tokens + cache_read)
+            return {
+                "input_tokens": input_tokens,
+                "output_tokens": completion_tokens,
+                "cache_read_tokens": cache_read,
+                "cache_creation_tokens": 0,  # OpenAI 无缓存写概念
+                "reasoning_tokens": reasoning,
+                "total_tokens": total,
+            }
+        except Exception:
+            logger.warning("[llm_client] OpenAI usage 解析失败: %r", usage_dict)
+            return None
+
+    @staticmethod
+    def _extract_usage_anthropic(usage_dict: dict | None) -> dict | None:
+        """Anthropic 协议 usage 解析为统一 schema。
+        Anthropic 的 input_tokens 本身不含缓存；缓存读/写分别在
+        cache_read_input_tokens / cache_creation_input_tokens。"""
+        if not usage_dict:
+            return None
+        try:
+            input_tokens = int(usage_dict.get("input_tokens") or 0)
+            # 流式 message_start 阶段 output_tokens 可能尚为 0，message_delta 会覆盖为累积值
+            output_tokens = int(usage_dict.get("output_tokens") or 0)
+            cache_read = int(usage_dict.get("cache_read_input_tokens") or 0)
+            cache_creation = int(usage_dict.get("cache_creation_input_tokens") or 0)
+            total = input_tokens + output_tokens + cache_read + cache_creation
+            return {
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cache_read_tokens": cache_read,
+                "cache_creation_tokens": cache_creation,
+                "reasoning_tokens": 0,  # Anthropic 暂无独立 reasoning 字段
+                "total_tokens": total,
+            }
+        except Exception:
+            logger.warning("[llm_client] Anthropic usage 解析失败: %r", usage_dict)
+            return None
+
+    @classmethod
+    def _extract_usage(cls, proto: str, usage_dict: dict | None) -> dict | None:
+        """按协议分派 usage 解析，返回统一 schema；上游未返回 usage 时为 None。"""
+        if proto == "anthropic":
+            return cls._extract_usage_anthropic(usage_dict)
+        return cls._extract_usage_openai(usage_dict)
+
     # ---------- 统一入口 ----------
 
     @classmethod
@@ -319,7 +382,9 @@ class LLMClient:
             thinking = cls._extract_thinking(data, proto)
             if not text.strip() and not tool_calls:
                 raise LLMError("LLM 暂无返回内容，请重试")
-            return {"text": text, "tool_calls": tool_calls, "thinking": thinking}
+            # usage: 上游未返回则为 None（调用方可用于按量计费/统计，本次不影响按次扣费）
+            return {"text": text, "tool_calls": tool_calls, "thinking": thinking,
+                    "usage": cls._extract_usage(proto, data.get("usage"))}
         except httpx.TimeoutException:
             logger.warning("[llm_client] LLM API timeout (complete_tools)")
             raise LLMError("请求超时，请重试")
@@ -403,6 +468,9 @@ class LLMClient:
             thinking = str(resp.get("thinking") or "")
             if thinking:
                 done["thinking"] = thinking
+            # 降级非流式重试时也把 usage 透传出去（保持与流式 done 一致）
+            if resp.get("usage") is not None:
+                done["usage"] = resp.get("usage")
             yield done
             return
 
@@ -425,12 +493,17 @@ class LLMClient:
             yield {"type": "error", "detail": "消息内容为空"}
             return
 
+        proto = cls.protocol(llm_cfg)
         url, headers, body = cls._build_request(
             llm_cfg, system, messages, max_tokens, reasoning_effort, temperature, extra_body,
             tools=tools,
         )
         if stream:
             body["stream"] = True
+            # OpenAI 协议下显式要求最后一个 chunk 携带 usage（choices 为空的那一片）
+            # Anthropic 不支持此字段，避免污染请求体
+            if proto == "openai":
+                body["stream_options"] = {"include_usage": True}
 
         try:
             client = cls._get_client()
@@ -440,6 +513,9 @@ class LLMClient:
                 full_thinking = ""
                 # delta.tool_calls 按 index 分片：内部先按 index 累积 id/name/arguments 字符串
                 tool_calls_buf: dict[int, dict] = {}
+                # usage 原始字段累积：OpenAI 在最后一片 choices=[] 的 chunk 里整体给出；
+                # Anthropic 在 message_start 给输入/缓存、message_delta 给累积输出
+                usage_raw: dict | None = None
                 async with client.stream("POST", url, headers=headers, json=body, timeout=timeout) as resp:
                     resp.raise_for_status()
                     lines = resp.aiter_lines()
@@ -469,6 +545,22 @@ class LLMClient:
                             event = json.loads(data_str)
                         except json.JSONDecodeError:
                             continue
+                        # usage 采集：
+                        # - OpenAI: 最后一个 chunk choices 为空但带 usage，直接整体覆盖
+                        # - Anthropic: message_start.message.usage 含输入/缓存；message_delta.usage.output_tokens 为累积输出
+                        if proto == "anthropic":
+                            etype = event.get("type")
+                            if etype == "message_start":
+                                usage_raw = dict((event.get("message") or {}).get("usage") or {})
+                            elif etype == "message_delta":
+                                u = event.get("usage") or {}
+                                if usage_raw is None:
+                                    usage_raw = {}
+                                if "output_tokens" in u:
+                                    usage_raw["output_tokens"] = u["output_tokens"]
+                        else:
+                            if event.get("usage"):
+                                usage_raw = event["usage"]
                         text = cls._extract_delta(event)
                         if text:
                             full_text += text
@@ -515,15 +607,19 @@ class LLMClient:
                 done_event = {"type": "done", "text": full_text, "tool_calls": full_tool_calls}
                 if full_thinking:
                     done_event["thinking"] = full_thinking
+                # usage: 上游未返回 usage 则为 None
+                done_event["usage"] = cls._extract_usage(proto, usage_raw)
                 yield done_event
             else:
                 resp = await client.post(url, headers=headers, json=body, timeout=timeout)
                 resp.raise_for_status()
-                text = cls._extract_text(resp.json())
+                data = resp.json()
+                text = cls._extract_text(data)
                 if not text.strip():
                     yield {"type": "error", "detail": "LLM 暂无返回内容，请重试"}
                     return
-                yield {"type": "done", "text": text}
+                # 非流式：usage 直接从响应顶层取（OpenAI/Anthropic 均在 data["usage"]）
+                yield {"type": "done", "text": text, "usage": cls._extract_usage(proto, data.get("usage"))}
         except httpx.TimeoutException:
             logger.warning("[llm_client] LLM API timeout")
             yield {"type": "error", "detail": "请求超时，请重试"}

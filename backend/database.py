@@ -528,6 +528,27 @@ def init_db():
                 created_at TIMESTAMP DEFAULT NOW()
             )""",
             "CREATE INDEX IF NOT EXISTS idx_chunks_file ON chat_file_chunks(file_id)",
+            """CREATE TABLE IF NOT EXISTS chat_usage_records (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                session_id INTEGER NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+                message_id INTEGER REFERENCES chat_messages(id) ON DELETE SET NULL,
+                model_key VARCHAR(128),
+                request_id VARCHAR(64),
+                input_tokens INTEGER DEFAULT 0,
+                output_tokens INTEGER DEFAULT 0,
+                cache_read_tokens INTEGER DEFAULT 0,
+                cache_creation_tokens INTEGER DEFAULT 0,
+                reasoning_tokens INTEGER DEFAULT 0,
+                total_tokens INTEGER DEFAULT 0,
+                cost_points NUMERIC(12,4) DEFAULT 0,
+                billing_mode VARCHAR(16) DEFAULT 'token',
+                is_refunded BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_chat_usage_user_created ON chat_usage_records(user_id, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_chat_usage_session ON chat_usage_records(session_id)",
+            "CREATE INDEX IF NOT EXISTS idx_chat_usage_request ON chat_usage_records(request_id)",
         ]
             for sql in statements:
                 conn.execute(sql)
@@ -540,6 +561,11 @@ def init_db():
             conn.execute("ALTER TABLE llm_models ADD COLUMN IF NOT EXISTS input_price_per_million NUMERIC(12,4)")
             conn.execute("ALTER TABLE llm_models ADD COLUMN IF NOT EXISTS output_price_per_million NUMERIC(12,4)")
             conn.execute("ALTER TABLE llm_models ADD COLUMN IF NOT EXISTS price_currency VARCHAR(8) NOT NULL DEFAULT 'usd'")
+            # 迁移：按 token 量扣费的 4 个单价字段（每 1K token 对应点数；NULL 表示未配置，回退按次扣费）
+            conn.execute("ALTER TABLE llm_models ADD COLUMN IF NOT EXISTS points_per_1k_input NUMERIC(10,4)")
+            conn.execute("ALTER TABLE llm_models ADD COLUMN IF NOT EXISTS points_per_1k_output NUMERIC(10,4)")
+            conn.execute("ALTER TABLE llm_models ADD COLUMN IF NOT EXISTS points_per_1k_cache_read NUMERIC(10,4)")
+            conn.execute("ALTER TABLE llm_models ADD COLUMN IF NOT EXISTS points_per_1k_cache_creation NUMERIC(10,4)")
 
         # llm_models 种子数据（放在列名迁移之后，保证新旧库都兼容）
             conn.execute("""INSERT INTO llm_models (model_id, label, protocol, max_input_tokens, max_output_tokens, reasoning_efforts, default_reasoning_effort, thinking_default, context_budget_chars, input_price_per_million, output_price_per_million, price_currency, notes) VALUES

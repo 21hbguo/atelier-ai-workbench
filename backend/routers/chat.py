@@ -8,6 +8,7 @@ import time
 import uuid
 import zipfile
 from collections import deque
+from decimal import Decimal
 from fastapi import APIRouter, HTTPException, Depends, Query, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -252,6 +253,90 @@ def _chat_cost_per_request(model=None) -> float:
     if price is not None and price > 0:
         return float(price)
     return float(get_limit_config()["points_cost_per_chat"])
+
+
+def _compute_token_cost(usage: dict | None, model_cfg: dict | None) -> tuple[Decimal, str]:
+    """按 token 量计算扣费，返回 (cost_points, billing_mode)。
+
+    - usage 为 None 或模型未配置 points_per_1k_input：回退按次扣费，返回 (points_per_request, 'per_request')
+    - 否则按 token 单价计算，返回 (calculated, 'token')
+    注意：reasoning_tokens 已包含在 output_tokens 内（OpenAI completion_tokens 口径），不重复计费。
+    """
+    cfg = model_cfg or {}
+    p_in = cfg.get("points_per_1k_input")
+    if usage is None or p_in is None:
+        per_req = cfg.get("points_per_request")
+        if per_req is None or per_req <= 0:
+            per_req = get_limit_config()["points_cost_per_chat"]
+        return Decimal(str(per_req)), "per_request"
+
+    def _unit(key: str) -> Decimal:
+        v = cfg.get(key)
+        return Decimal(str(v)) if v is not None else Decimal(0)
+
+    cost = (
+        Decimal(int(usage.get("input_tokens") or 0)) * _unit("points_per_1k_input")
+        + Decimal(int(usage.get("output_tokens") or 0)) * _unit("points_per_1k_output")
+        + Decimal(int(usage.get("cache_read_tokens") or 0)) * _unit("points_per_1k_cache_read")
+        + Decimal(int(usage.get("cache_creation_tokens") or 0)) * _unit("points_per_1k_cache_creation")
+    ) / Decimal(1000)
+    return cost, "token"
+
+
+def _record_chat_usage(*, user_id: int, session_id: int, message_id: int | None,
+                       model_cfg: dict | None, usage: dict | None, req_id: str,
+                       pre_charged: float, pre_balance: float) -> float:
+    """done 事件落库 usage 记录 + 按 token 量补差价（方案 A）。
+
+    保留现有「先按次预扣」机制不变：LLM 返回后若实际 token 费用与预扣不等则补差价
+    （差额为正再扣一笔，为负则退还），request_key=chat_token_adjust:{req_id} 保证幂等。
+    usage 缺失或模型未配 token 单价时完全回退现状（billing_mode='per_request'，不补差）。
+    返回最终余额供 done 事件回传前端。
+    """
+    cost_points, billing_mode = _compute_token_cost(usage, model_cfg)
+    model_key = (model_cfg or {}).get("model_id") or ""
+    u = usage or {}
+    try:
+        with get_db() as conn:
+            conn.execute(
+                """INSERT INTO chat_usage_records
+                   (user_id, session_id, message_id, model_key, request_id,
+                    input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+                    reasoning_tokens, total_tokens, cost_points, billing_mode)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (user_id, session_id, message_id, model_key, req_id,
+                 int(u.get("input_tokens") or 0), int(u.get("output_tokens") or 0),
+                 int(u.get("cache_read_tokens") or 0), int(u.get("cache_creation_tokens") or 0),
+                 int(u.get("reasoning_tokens") or 0), int(u.get("total_tokens") or 0),
+                 cost_points, billing_mode),
+            )
+    except Exception:
+        logger.exception("[chat/send] insert chat_usage_records failed")
+
+    final_balance = pre_balance
+    if billing_mode == "token":
+        diff = cost_points - Decimal(str(pre_charged))
+        if diff != 0:
+            adjust_key = f"chat_token_adjust:{req_id}"
+            try:
+                if diff > 0:
+                    final_balance = PointsService.consume(
+                        user_id, float(diff), "AI对话按量补差",
+                        tx_type="chat_token_adjust", request_key=adjust_key,
+                    )
+                else:
+                    final_balance = PointsService.add_points(
+                        user_id, float(-diff),
+                        tx_type="chat_token_adjust",
+                        description="AI对话按量退还差额",
+                        request_key=adjust_key,
+                    )
+            except ValueError:
+                # 余额不足以补差价：不阻断响应（回复已生成），仅记录
+                logger.warning("[chat/send] token adjust insufficient balance: user=%s diff=%s", user_id, diff)
+            except Exception:
+                logger.exception("[chat/send] token adjust failed")
+    return final_balance
 
 
 @router.get("/cost")
@@ -541,6 +626,15 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
             PointsService.refund(user_id, cost_per, "AI助手回复失败退还", request_key=f"chat_refund:{req_id}")
         except Exception:
             logger.exception("[chat/send] refund failed")
+        # 失败退款：标记对应 usage 记录（失败场景通常无 usage 记录，无则不更新任何行）
+        try:
+            with get_db() as conn:
+                conn.execute(
+                    "UPDATE chat_usage_records SET is_refunded = TRUE WHERE request_id = %s AND is_refunded = FALSE",
+                    (req_id,),
+                )
+        except Exception:
+            logger.exception("[chat/send] mark usage is_refunded failed")
 
     async def event_generator():
         finished = False
@@ -608,7 +702,12 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                                 ).fetchone()
                             finished = True
                             new_msg_id = new_row["id"] if new_row else None
-                            yield f"event: done\ndata: {json.dumps({'text': text, 'thinking': thinking, 'points_balance': balance_after, 'message_id': new_msg_id}, ensure_ascii=False)}\n\n"
+                            final_balance = _record_chat_usage(
+                                user_id=user_id, session_id=session_id, message_id=new_msg_id,
+                                model_cfg=target_model, usage=event.get("usage"),
+                                req_id=req_id, pre_charged=cost_per, pre_balance=balance_after,
+                            )
+                            yield f"event: done\ndata: {json.dumps({'text': text, 'thinking': thinking, 'points_balance': final_balance, 'message_id': new_msg_id}, ensure_ascii=False)}\n\n"
                 except LLMError as e:
                     refunded = True
                     _refund_once()
@@ -631,7 +730,12 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                         ).fetchone()
                     finished = True
                     new_msg_id = new_row["id"] if new_row else None
-                    yield f"event: done\ndata: {json.dumps({'text': event['text'], 'thinking': event.get('thinking', ''), 'points_balance': balance_after, 'message_id': new_msg_id}, ensure_ascii=False)}\n\n"
+                    final_balance = _record_chat_usage(
+                        user_id=user_id, session_id=session_id, message_id=new_msg_id,
+                        model_cfg=target_model, usage=event.get("usage"),
+                        req_id=req_id, pre_charged=cost_per, pre_balance=balance_after,
+                    )
+                    yield f"event: done\ndata: {json.dumps({'text': event['text'], 'thinking': event.get('thinking', ''), 'points_balance': final_balance, 'message_id': new_msg_id}, ensure_ascii=False)}\n\n"
                 elif event["type"] == "error":
                     refunded = True
                     _refund_once()

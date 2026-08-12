@@ -29,6 +29,21 @@ _NOT_FOUND_MSG = "Function {name} not found. Try again."
 _EXEC_ERROR_MSG = "工具 {name} 执行出错，请换一种方式重试或向用户说明错误。"
 _EMPTY_FINAL_MSG = "抱歉，我暂时无法完成这个任务，请换个说法再试一次。"
 
+# usage 统一 schema 的各分项键（与 llm_client._extract_usage 对齐）
+_USAGE_KEYS = ("input_tokens", "output_tokens", "cache_read_tokens",
+               "cache_creation_tokens", "reasoning_tokens", "total_tokens")
+
+
+def _merge_usage(acc, new):
+    """累加多轮 LLM 调用的 usage（agent 模式每轮一份）。任一为 None 时保留另一份。"""
+    if new is None:
+        return acc
+    if acc is None:
+        return {k: int(new.get(k) or 0) for k in _USAGE_KEYS}
+    for k in _USAGE_KEYS:
+        acc[k] = int(acc.get(k) or 0) + int(new.get(k) or 0)
+    return acc
+
 
 async def run_agent_stream(
     *,
@@ -68,6 +83,7 @@ async def run_agent_stream(
     work = [dict(m) for m in messages]
 
     thinking_parts: list[str] = []  # 每轮 LLM 的思考过程（agent 模式合并展示）
+    total_usage = None  # 多轮 LLM 调用的 usage 累积（按 token 量扣费用）
 
     executed_calls = 0  # 已执行的工具调用累计数
     # 最多 max_tool_calls + 1 轮 LLM 调用：最后一轮不带 tools
@@ -99,6 +115,8 @@ async def run_agent_stream(
                     round_text = str(event.get("text") or "")
                     round_thinking = str(event.get("thinking") or "")
                     round_calls = event.get("tool_calls") or []
+                    # 累积本轮 usage（多轮 agent 按 token 扣费需要总和）
+                    total_usage = _merge_usage(total_usage, event.get("usage"))
                 elif etype == "error":
                     round_error = str(event.get("detail") or "LLM 调用失败")
         except LLMError:
@@ -121,11 +139,11 @@ async def run_agent_stream(
         if not calls:
             # 无 tool_calls → 直接返回文本
             if text.strip():
-                yield {"type": "done", "text": text, "thinking": "\n\n".join(thinking_parts)}
+                yield {"type": "done", "text": text, "thinking": "\n\n".join(thinking_parts), "usage": total_usage}
                 return
             if not send_tools:
                 # 已不再传 tools 仍无内容（理论上 stream_tools 已兜底），防御退出
-                yield {"type": "done", "text": _EMPTY_FINAL_MSG, "thinking": "\n\n".join(thinking_parts)}
+                yield {"type": "done", "text": _EMPTY_FINAL_MSG, "thinking": "\n\n".join(thinking_parts), "usage": total_usage}
                 return
             continue  # 防御：空响应再走一轮
 
@@ -183,7 +201,7 @@ async def run_agent_stream(
 
     # 理论上已由「最后一轮不带 tools」保证返回；此处防御兜底
     logger.warning("[agent/loop] 达到最大轮数仍未得到文本回复，返回兜底文案")
-    yield {"type": "done", "text": _EMPTY_FINAL_MSG, "thinking": "\n\n".join(thinking_parts)}
+    yield {"type": "done", "text": _EMPTY_FINAL_MSG, "thinking": "\n\n".join(thinking_parts), "usage": total_usage}
 
 
 async def run_agent(
