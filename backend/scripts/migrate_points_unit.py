@@ -20,6 +20,9 @@ DB_FIELDS = (
     ("users", "points"),
     ("point_transactions", "amount"),
     ("point_transactions", "balance_after"),
+    ("point_buckets", "granted_points"),
+    ("point_buckets", "remaining_points"),
+    ("point_transaction_allocations", "amount"),
     ("recharge_requests", "points"),
     ("redemption_codes", "points"),
     ("tasks", "points_cost"),
@@ -143,7 +146,7 @@ def main():
                 if _column_exists(conn, table, column):
                     conn.execute(f"UPDATE {table} SET {column} = ROUND({column} * %s)", (FACTOR,))
             conn.execute("""INSERT INTO point_buckets (user_id, bucket_type, granted_points, remaining_points)
-                            SELECT id, points, points, points FROM users
+                            SELECT id, 'permanent', points, points FROM users
                             ON CONFLICT (user_id) WHERE bucket_type = 'permanent' DO NOTHING""")
             config = {}
             if CONFIG_FILE.exists():
