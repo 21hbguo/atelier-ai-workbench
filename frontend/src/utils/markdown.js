@@ -5,7 +5,7 @@
 //       - 无序列表（含缩进嵌套、- [x] 任务项）、1. 有序列表、> 引用、
 //       [链接](url)（仅 http/https）、![图片](url)（仅 http/https）、
 //       | 表格 |、--- 水平线、<url> 自动链接。
-// 公式：$$...$$ 块级公式、$...$ 行内公式（KaTeX 渲染，解析失败回退原文）。
+// 公式：$$...$$ / \[...\] 块级公式、$...$ / \(...\) 行内公式（KaTeX 渲染，解析失败回退原文）。
 
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
@@ -17,14 +17,24 @@ const KATEX_RE = /\uE000K(\d+)\uE000/g
 function extractFormulas(text) {
   const formulas = []
   let out = text
-  // 块级 $$...$$（优先处理，避免内部 $ 被行内规则误配）
+  // 块级 $$...$$ 与 \[...\]（优先处理，避免内部 $ 被行内规则误配）
   out = out.replace(/\$\$([\s\S]+?)\$\$/g, (_, latex) => {
     const idx = formulas.length
     formulas.push({ latex: latex.trim(), display: true })
     return `\uE000K${idx}\uE000`
   })
-  // 行内 $...$（不含 $、换行；前导字符不能是字母数字/$，避免货币 "$5" 误判）
+  out = out.replace(/(^|[^\\])\\\[([\s\S]+?)\\\]/g, (m, pre, latex) => {
+    const idx = formulas.length
+    formulas.push({ latex: latex.trim(), display: true })
+    return `${pre}\uE000K${idx}\uE000`
+  })
+  // 行内 $...$ 与 \(...\)（不含 $、换行；前导字符不能是字母数字/$，避免货币 "$5" 误判）
   out = out.replace(/(^|[^\w$])\$([^$\n]+?)\$(?!\w)/g, (m, pre, latex) => {
+    const idx = formulas.length
+    formulas.push({ latex: latex.trim(), display: false })
+    return `${pre}\uE000K${idx}\uE000`
+  })
+  out = out.replace(/(^|[^\\])\\\(([\s\S]+?)\\\)/g, (m, pre, latex) => {
     const idx = formulas.length
     formulas.push({ latex: latex.trim(), display: false })
     return `${pre}\uE000K${idx}\uE000`

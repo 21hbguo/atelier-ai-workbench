@@ -12,6 +12,27 @@ describe('mdToHtml 公式渲染', () => {
     expect(html).toContain('katex-display')
   })
 
+  it('行内公式 \\(...\\) 渲染为 KaTeX', () => {
+    const html = mdToHtml('质能方程 \\(E=mc^2\\) 很著名')
+    expect(html).toContain('class="katex"')
+  })
+
+  it('块级公式 \\[...\\] 渲染为 KaTeX display', () => {
+    const html = mdToHtml('\\[\n\\frac{a}{b}\n\\]')
+    expect(html).toContain('katex-display')
+  })
+
+  it('\\(...\\) 内含 \\left( \\right) 不被误截断', () => {
+    const html = mdToHtml('\\( \\left( \\frac{a}{b} \\right) \\)')
+    expect(html).toContain('class="katex"')
+  })
+
+  it('未闭合的 \\( 保持原样', () => {
+    const html = mdToHtml('半截公式 \\(E=mc^2')
+    expect(html).not.toContain('class="katex"')
+    expect(html).toContain('\\(E=mc^2')
+  })
+
   it('公式内特殊字符不被 markdown 规则破坏', () => {
     const html = mdToHtml('$x_i^*$')
     expect(html).toContain('class="katex"')
