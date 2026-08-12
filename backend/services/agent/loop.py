@@ -108,6 +108,7 @@ async def run_agent_stream(
         {"type": "tool_status", "name": 工具名, "status": "done", "result_len": N}：执行完
         {"type": "heartbeat"}：工具执行超过 10s 未完成时的保活事件（上层可转 SSE 注释行）
         {"type": "citations", "citations": [{"url", "title"}, ...]}：工具执行后新增的来源引用（仅增量）
+        {"type": "widget", "widget": {"kind", "title", "code"}}：工具执行后新增的画图 widget（仅增量）
         {"type": "done", "text": 最终文本回复, "thinking": 各轮思考过程合并}：最终回复
 
     Raises:
@@ -126,6 +127,7 @@ async def run_agent_stream(
 
     executed_calls = 0  # 已执行的工具调用累计数
     sent_citations = 0  # 已推送的来源引用条数（citations 事件只发增量）
+    sent_widgets = 0  # 已推送的画图 widget 条数（widget 事件只发增量）
     # 最多 max_tool_calls + 1 轮 LLM 调用：最后一轮不带 tools
     for _round in range(max_tool_calls + 1):
         send_tools = get_tools_schema(tools_names) if executed_calls < max_tool_calls else []
@@ -263,6 +265,10 @@ async def run_agent_stream(
             if len(ctx.citations) > sent_citations:
                 yield {"type": "citations", "citations": ctx.citations[sent_citations:]}
                 sent_citations = len(ctx.citations)
+            # widget 上报：工具执行后若 ctx 新增了画图 widget，逐个推送 widget 增量事件
+            while len(ctx.widgets) > sent_widgets:
+                yield {"type": "widget", "widget": ctx.widgets[sent_widgets]}
+                sent_widgets += 1
             work.append({"role": "tool", "tool_call_id": call_id, "content": result})
         executed_calls += len(calls)
 

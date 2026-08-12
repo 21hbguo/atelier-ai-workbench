@@ -706,6 +706,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
         if entitlements["features"].get("file_write"):
             tools_names.append("file_ops_write_text")
         tools_names.append("image_gen")
+        tools_names.append("show_widget")
 
     def _refund_once() -> None:
         # refund 幂等（request_key 唯一），重复调用安全
@@ -790,6 +791,21 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                             "4. 图片会以 markdown 形式返回，在回复中直接展示图片并附一句说明即可；"
                             "生成失败时如实转述错误原因（如积分不足），不编造结果。"
                         )
+                    if "show_widget" in tools_names:
+                        # 画图工具使用指南：仅在 show_widget 实际注册给模型时注入（通道一）
+                        agent_system += (
+                            "\n\n【画图工具】\n"
+                            "用户要求画线框图、流程图、架构图、时序图、思维导图、页面原型/网页 "
+                            "mockup 等图表或可视化内容时，应直接调用 show_widget 工具绘制，无需生成真实图片。\n"
+                            "使用规范：\n"
+                            "1. code 直接产出完整 SVG（以 <svg 开头、以 </svg> 结尾，建议 viewBox=\"0 0 680 400\" "
+                            "类比例；节点用圆角矩形 rx/ry，箭头用 <marker> 定义后由 <path>/<line> 引用；"
+                            "样式用属性或内联 style，禁止 <script> 与事件属性 on*）；\n"
+                            "2. 页面原型/mockup 可用 kind=html 产出页面片段（禁止 DOCTYPE/html/head/body/"
+                            "script/iframe，可含 <style>）；\n"
+                            "3. 一次调用产出 1 个图，复杂系统可拆成多次调用分别绘制；\n"
+                            "4. 调用后附一句简短说明即可，不要把 code 内容粘贴进回复。"
+                        )
                     messages = await ChatService.prepare_session_messages(
                         session_id, target_model, attached_docs,
                         system_prompt=agent_system, override=override,
@@ -823,14 +839,18 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                         elif etype == "citations":
                             # 工具执行的来源引用（SSE 实时展示；done 分支随消息落库）
                             yield f"event: citations\ndata: {json.dumps({'citations': event['citations']}, ensure_ascii=False)}\n\n"
+                        elif etype == "widget":
+                            # 画图工具产出的 widget（SVG/HTML 片段，SSE 实时推送前端渲染）
+                            yield f"event: widget\ndata: {json.dumps({'widget': event['widget']}, ensure_ascii=False)}\n\n"
                         elif etype == "done":
                             text = str(event.get("text") or "")
                             thinking = str(event.get("thinking") or "").strip()
                             with get_db() as conn:
                                 new_row = conn.execute(
-                                    "INSERT INTO chat_messages (session_id, role, content, thinking, citations) VALUES (%s, 'assistant', %s, %s, %s::jsonb) RETURNING id",
+                                    "INSERT INTO chat_messages (session_id, role, content, thinking, citations, widgets) VALUES (%s, 'assistant', %s, %s, %s::jsonb, %s::jsonb) RETURNING id",
                                     (session_id, text, thinking or None,
-                                     json.dumps(ctx.citations, ensure_ascii=False) if ctx.citations else None),
+                                     json.dumps(ctx.citations, ensure_ascii=False) if ctx.citations else None,
+                                     json.dumps(ctx.widgets, ensure_ascii=False) if ctx.widgets else None),
                                 ).fetchone()
                             finished = True
                             new_msg_id = new_row["id"] if new_row else None

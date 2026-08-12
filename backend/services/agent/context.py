@@ -5,8 +5,11 @@ ctx 携带会话/用户/文件等元信息，供工具内部查库（chat_files 
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -26,6 +29,8 @@ class AgentContext:
     extra: dict[str, Any] = field(default_factory=dict)
     # 工具执行过程中收集的来源引用（{"url": str, "title": str}），由 loop 增量推给前端
     citations: list[dict] = field(default_factory=list)
+    # 工具执行过程中收集的画图/可视化 widget（{"kind": str, "title": str, "code": str}），由 loop 增量推给前端
+    widgets: list[dict] = field(default_factory=list)
 
     @property
     def has_session(self) -> bool:
@@ -45,3 +50,17 @@ class AgentContext:
         if snippet:
             item["snippet"] = snippet
         self.citations.append(item)
+
+    def add_widget(self, kind: str, title: str, code: str) -> None:
+        """记录一个可视化 widget（线框图/流程图/架构图/时序图等）。
+
+        kind 限 svg/html；title 可为空串；code 须为非空字符串。
+        校验不通过时直接丢弃并记 warning，不抛异常（与 add_citation 的容错风格一致）。
+        """
+        if kind not in ("svg", "html"):
+            logger.warning("[agent/context] add_widget 忽略非法 kind=%r", kind)
+            return
+        if not isinstance(code, str) or not code.strip():
+            logger.warning("[agent/context] add_widget 忽略空 code（kind=%s）", kind)
+            return
+        self.widgets.append({"kind": kind, "title": title or "", "code": code})

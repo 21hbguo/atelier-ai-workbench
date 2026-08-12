@@ -7,6 +7,7 @@ from backend.services.agent.tools import fetch_url  # noqa: F401
 from backend.services.agent.tools import file_ops  # noqa: F401
 from backend.services.agent.tools import image_gen  # noqa: F401
 from backend.services.agent.tools import rag_memory  # noqa: F401
+from backend.services.agent.tools import svg_widget  # noqa: F401
 from backend.services.agent.tools import web_search  # noqa: F401
 
-__all__ = ["document_summary", "fetch_url", "file_ops", "image_gen", "rag_memory", "web_search"]
+__all__ = ["document_summary", "fetch_url", "file_ops", "image_gen", "rag_memory", "svg_widget", "web_search"]

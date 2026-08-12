@@ -5,6 +5,7 @@ import { useAppDialog } from '../components/AppDialogProvider'
 import { chatAPI, pointsAPI } from '../api'
 import { readUser } from '../auth'
 import { mdToHtml } from '../utils/markdown'
+import WidgetViewer from '../components/WidgetViewer'
 
 // markdown 渲染结果（.md-body）的样式，沿用全站 CSS 变量体系
 const MD_STYLES = `
@@ -323,6 +324,7 @@ function MessageItem({ msg, onCopy, onRegenerate }) {
             <div className="md-body text-sm" style={{ color: 'var(--text-primary)' }}
               dangerouslySetInnerHTML={{ __html: mdToHtml(msg.content) }} />
             <CitationList citations={msg.citations} />
+            <WidgetViewer widgets={msg.widgets} />
           </>
         )}
         <div className="text-xs mt-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>{formatTime(msg.created_at)}</div>
@@ -428,6 +430,7 @@ function StreamBubble({ sending, onStop, onRetry }) {
           </div>
         )}
         <CitationList citations={sending.citations} />
+        <WidgetViewer widgets={sending.widgets} />
         {sending.stopped ? (
           <div className="mt-2 flex items-center gap-2">
             <span className="text-xs" style={{ color: 'var(--color-error)' }}>{sending.error || '已停止生成'}</span>
@@ -844,6 +847,8 @@ export default function ChatAssistantPage() {
   const streamRafRef = useRef(null)
   // 本次流的引用来源累积（SSE citations 事件；按 url 去重，streamId 绑定防旧流迟到污染）
   const citationsRef = useRef({ streamId: null, items: [] })
+  // 本次流的 widget 累积（SSE widget 事件；streamId 绑定防旧流迟到污染，模式同 citationsRef）
+  const widgetsRef = useRef({ streamId: null, items: [] })
   const flushStreamBuf = useCallback(() => {
     streamRafRef.current = null
     const { streamId: sid, text, thinking } = streamBufRef.current
@@ -1131,13 +1136,15 @@ export default function ChatAssistantPage() {
     abortRef.current = controller
     // 流的唯一身份：停止后立刻发新消息时，旧流的迟到回调不会误操作新流
     const streamId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    const st = { streamId, sessionId, content, text: '', thinking: '', toolStatus: null, citations: [], stopped: false, error: '', manual: false }
+    const st = { streamId, sessionId, content, text: '', thinking: '', toolStatus: null, citations: [], widgets: [], stopped: false, error: '', manual: false }
     sendingRef.current = st
     setSending(st)
     // 本次流开始：重置节流缓冲（避免残留上一流的未 flush 内容）
     streamBufRef.current = { streamId, text: '', thinking: '' }
     // 本次流开始：重置引用累积（避免上一流的 citations 残留）
     citationsRef.current = { streamId, items: [] }
+    // 本次流开始：重置 widget 累积（避免上一流的 widgets 残留）
+    widgetsRef.current = { streamId, items: [] }
     // 本次流开始：重置链接抓取状态（避免上一流的 url_status 残留）
     clearLinkTimer(); setLinkStatus(null)
     if (streamRafRef.current) { cancelAnimationFrame(streamRafRef.current); streamRafRef.current = null }
@@ -1190,6 +1197,17 @@ export default function ChatAssistantPage() {
         setSending(prev =>
           (prev && prev.streamId === streamId) ? { ...prev, citations: buf.items } : prev)
       },
+      onWidget: data => {
+        // streamId 守卫（与 onToolStatus/onCitations 一致）：旧流迟到的 widget 不得写入新流
+        const buf = widgetsRef.current
+        if (buf.streamId !== streamId) return
+        const widget = data?.widget
+        if (!widget || !widget.code) return
+        buf.items.push(widget)
+        // 同步发送中气泡：流式期间实时显示 widget 卡片
+        setSending(prev =>
+          (prev && prev.streamId === streamId) ? { ...prev, widgets: buf.items } : prev)
+      },
       onDone: data => {
         const full = String(data.text || '')
         const thinking = String(data.thinking || '')
@@ -1198,7 +1216,9 @@ export default function ChatAssistantPage() {
         const newId = data.message_id || `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
         // 仅当仍是本次流时挂载累积的引用（旧流迟到 done 不污染新流消息）
         const citations = citationsRef.current.streamId === streamId ? citationsRef.current.items : []
-        setMessages(prev => [...prev, { id: newId, role: 'assistant', content: full, thinking, citations, created_at: new Date().toISOString() }])
+        // 同上：widgets 仅当仍是本次流时挂载（取完再清理 sending，避免发送中状态已置 null 丢失）
+        const widgets = widgetsRef.current.streamId === streamId ? widgetsRef.current.items : []
+        setMessages(prev => [...prev, { id: newId, role: 'assistant', content: full, thinking, citations, widgets, created_at: new Date().toISOString() }])
         // 发送成功：文件已上传为会话上下文，清空上传区（失败时保留 docs 便于重试）
         setDocs([])
         // 流结束：若仍停留在 fetching（事件顺序异常），清除残留状态
