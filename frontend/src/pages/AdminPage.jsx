@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Trash2, Users, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket, Megaphone, Wallet, Key, SlidersHorizontal, BarChart3, Mail, Tags, MessageSquare, Cpu } from 'lucide-react'
+import { Trash2, Users, Shield, Snowflake, Sun, Clock, Check, UserCheck, UserX, HardDrive, Download, X, Ban, Ticket, Megaphone, Wallet, Key, SlidersHorizontal, BarChart3, Mail, Tags, MessageSquare, Cpu, CreditCard } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { adminAPI, announcementAPI, configAPI, statsAPI, promptAPI, uploadAPI } from '../api'
 import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip } from 'recharts'
@@ -17,6 +17,7 @@ import AdminBannedTab from './admin-tabs/AdminBannedTab'
 import AdminHostingTab from './admin-tabs/AdminHostingTab'
 import AdminFinanceTab from './admin-tabs/AdminFinanceTab'
 import AdminClassificationTab from './admin-tabs/AdminClassificationTab'
+import AdminSubscriptionTab from './admin-tabs/AdminSubscriptionTab'
 import { readUser } from '../auth'
 import { useAppDialog } from '../components/AppDialogProvider'
 
@@ -251,7 +252,7 @@ export default function AdminPage() {
   }, [])
   useEffect(() => {
     const q=new URLSearchParams(location.search).get('tab')
-    if(q&&['stats','finance','users','history','chat','llm_models','hosting','banned','classification','codes','recharge_review','announcements','evlogs','config'].includes(q))setTab(q)
+    if(q&&['stats','finance','subscription','users','history','chat','llm_models','hosting','banned','classification','codes','recharge_review','announcements','evlogs','config'].includes(q))setTab(q)
   }, [location.search])
   const switchTab = useCallback((next) => { setTab(next); navigate(next==='users'?'/admin':`/admin?tab=${next}`, { replace: location.pathname === '/admin' }) }, [navigate,location.pathname])
 
@@ -1003,6 +1004,7 @@ export default function AdminPage() {
           {[
             { k: 'stats', l: '系统统计', i: BarChart3 },
             { k: 'finance', l: '财务中心', i: Wallet },
+            { k: 'subscription', l: '订阅与用量', i: CreditCard },
             { k: 'users', l: '用户管理', i: Users },
             { k: 'history', l: '生成历史', i: Clock },
             { k: 'chat', l: '聊天记录', i: MessageSquare },
@@ -1231,6 +1233,8 @@ export default function AdminPage() {
             handleEditFinanceRule={handleEditFinanceRule}
             handleDeleteFinanceRule={handleDeleteFinanceRule}
           />
+        ) : tab === 'subscription' ? (
+          <AdminSubscriptionTab />
         ) : tab === 'users' ? (
           <AdminUsersTab
             userTotal={userTotal} userQuery={userQuery} setUserQuery={setUserQuery}

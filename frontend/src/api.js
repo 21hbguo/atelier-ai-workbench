@@ -347,6 +347,24 @@ export const adminAPI = {
   approveAudit: (taskId, resultIds) => api.post(`/admin/audit/tasks/${taskId}/approve`, { result_ids: resultIds }),
   rejectAudit: (taskId, resultIds) => api.post(`/admin/audit/tasks/${taskId}/reject`, { result_ids: resultIds }),
   updateAuditResult: (resultId, data) => api.post(`/admin/audit/results/${resultId}`, data),
+  subscriptionPlans: () => api.get('/admin/subscription-plans'),
+  createSubscriptionPlan: data => api.post('/admin/subscription-plans', data),
+  updateSubscriptionPlan: (id, data) => api.patch(`/admin/subscription-plans/${id}`, data),
+  disableSubscriptionPlan: (id, data = {}) => api.post(`/admin/subscription-plans/${id}/disable`, data),
+  subscriptionOrders: (page = 1, size = 20, status = 'all', query = '') => api.get('/admin/subscription-orders', { params: { page, size, status, query } }),
+  approveSubscriptionOrder: (id, data = {}) => api.post(`/admin/subscription-orders/${id}/approve`, data),
+  rejectSubscriptionOrder: (id, data) => api.post(`/admin/subscription-orders/${id}/reject`, data),
+  refundSubscriptionOrder: (id, data) => api.post(`/admin/subscription-orders/${id}/refund`, data),
+  subscriptions: (page = 1, size = 20, query = '') => api.get('/admin/subscriptions', { params: { page, size, query } }),
+  grantSubscription: (userId, data) => api.post(`/admin/subscriptions/${userId}/grant`, data),
+  extendSubscription: (userId, data) => api.post(`/admin/subscriptions/${userId}/extend`, data),
+  suspendSubscription: (userId, data) => api.post(`/admin/subscriptions/${userId}/suspend`, data),
+  revokeSubscription: (userId, data) => api.post(`/admin/subscriptions/${userId}/revoke`, data),
+  subscriptionUsage: (days = 30) => api.get('/admin/subscription-usage', { params: { days } }),
+  billingConfig: () => api.get('/admin/billing-config'),
+  updateBillingConfig: data => api.patch('/admin/billing-config', data),
+  modelPrices: () => api.get('/admin/model-prices'),
+  createModelPriceVersion: (modelId, data) => api.post(`/admin/model-prices/${modelId}/versions`, data),
   titleItems: (itemType = 'prompt', query = '', page = 1, size = 20, onlyMissing = true, filters = {}) => { const params = { item_type: itemType, query, page, size, only_missing: onlyMissing }; if (filters.language) params.language = filters.language; if (filters.minChars !== '' && filters.minChars != null) params.min_chars = filters.minChars; if (filters.maxChars !== '' && filters.maxChars != null) params.max_chars = filters.maxChars; return api.get('/admin/title/items', { params }) },
   applyTitles: data => api.post('/admin/title/apply', data),
   testTitle: data => api.post('/admin/title/test', data),
@@ -366,6 +384,17 @@ export const pointsAPI = {
   getRechargeRequest: id => api.get(`/points/recharge/requests/${id}`),
   confirmRechargeRequest: id => api.post(`/points/recharge/requests/${id}/confirm`),
   rechargeRequests: (page = 1, size = 20) => api.get('/points/recharge/requests', { params: { page, size } }),
+}
+
+export const subscriptionAPI = {
+  plans: () => api.get('/subscriptions/plans'),
+  me: () => api.get('/subscriptions/me'),
+  usage: (days = 30) => api.get('/subscriptions/usage', { params: { days } }),
+  modelPrices: () => api.get('/subscriptions/model-prices'),
+  orders: (page = 1, size = 20) => api.get('/subscriptions/orders', { params: { page, size } }),
+  createOrder: data => api.post('/subscriptions/orders', data),
+  updateProof: (id, data) => api.post(`/subscriptions/orders/${id}/proof`, data),
+  confirmOrder: id => api.post(`/subscriptions/orders/${id}/confirm`),
 }
 
 export const announcementAPI = {

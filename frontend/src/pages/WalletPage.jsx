@@ -6,7 +6,7 @@ import {
 import MainLayout from '../components/MainLayout'
 import Pagination from '../components/Pagination'
 import { useAppDialog } from '../components/AppDialogProvider'
-import api, { pointsAPI, accountAPI, configAPI } from '../api'
+import api, { pointsAPI, accountAPI, configAPI, subscriptionAPI } from '../api'
 import { readUser } from '../auth'
 
 const typeMap = {
@@ -57,6 +57,7 @@ function getCountdownTone(seconds) {
 }
 
 const tabList = [
+  { key: 'subscription', label: '套餐与用量' },
   { key: 'records', label: '积分记录' },
   { key: 'donate', label: '捐赠支持' },
   { key: 'invite', label: '邀请中心' },
@@ -133,6 +134,29 @@ export default function WalletPage() {
   const [passwordSubmitting, setPasswordSubmitting] = useState(false)
   const [modelLabelMap, setModelLabelMap] = useState({})
   const [inviteRuleSeen, setInviteRuleSeen] = useState(false)
+  const [subscription, setSubscription] = useState(null)
+  const [subscriptionUsage, setSubscriptionUsage] = useState(null)
+  const [subscriptionPlans, setSubscriptionPlans] = useState([])
+  const [subscriptionOrders, setSubscriptionOrders] = useState([])
+  const [subscriptionPrices, setSubscriptionPrices] = useState([])
+  const [subscriptionChannel, setSubscriptionChannel] = useState('alipay')
+  const [subscriptionSubmitting, setSubscriptionSubmitting] = useState(false)
+  const [subscriptionPayerName, setSubscriptionPayerName] = useState('')
+  const [subscriptionTxNo, setSubscriptionTxNo] = useState('')
+  const [subscriptionProofUrl, setSubscriptionProofUrl] = useState('')
+
+  const fetchSubscription = async () => {
+    try {
+      const [me, usage, plans, orders, prices] = await Promise.all([
+        subscriptionAPI.me(), subscriptionAPI.usage(), subscriptionAPI.plans(), subscriptionAPI.orders(), subscriptionAPI.modelPrices(),
+      ])
+      setSubscription(me.data)
+      setSubscriptionUsage(usage.data)
+      setSubscriptionPlans(plans.data?.items || [])
+      setSubscriptionOrders(orders.data?.items || [])
+      setSubscriptionPrices(prices.data?.items || [])
+    } catch {}
+  }
 
   const fetchData = async (p = 1) => {
     setLoading(true)
@@ -154,6 +178,20 @@ export default function WalletPage() {
   }
 
   useEffect(() => { fetchData(page) }, [page])
+  useEffect(() => { fetchSubscription() }, [])
+
+  const handleSubscriptionOrder = async plan => {
+    setSubscriptionSubmitting(true)
+    try {
+      await subscriptionAPI.createOrder({ plan_id: plan.id, channel: subscriptionChannel, payer_name: subscriptionPayerName, tx_no: subscriptionTxNo, proof_url: subscriptionProofUrl })
+      await fetchSubscription()
+      dialog.alert('订阅订单已创建，请按所选方式完成支付并上传凭证。')
+    } catch (e) {
+      dialog.alert(e.message || '创建订阅订单失败')
+    } finally {
+      setSubscriptionSubmitting(false)
+    }
+  }
 
   useEffect(() => {
     api.get('/config').then(({ data }) => {
@@ -588,6 +626,23 @@ export default function WalletPage() {
             </div>
           </div>
 
+          {subscription && (
+            <div className="mb-5 p-4 rounded-2xl border" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{subscription.plan?.name || '免费套餐'}</div>
+                  <div className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>当前周期至 {formatTime(subscription.cycle?.period_end)}</div>
+                </div>
+                <button onClick={() => setTab('subscription')} className="px-3 py-1.5 rounded-2xl text-xs text-white" style={{ background: 'var(--accent)' }}>管理套餐</button>
+              </div>
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div><div className="text-lg font-semibold" style={{ color: 'var(--accent)' }}>{subscription.cycle?.remaining_points ?? 0}</div><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>周期积分</div></div>
+                <div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{subscription.permanent_points ?? 0}</div><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>永久积分</div></div>
+                <div><div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{subscription.total_points ?? points}</div><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>总积分</div></div>
+              </div>
+            </div>
+          )}
+
           <div className="mb-4 flex flex-wrap gap-2">
             {tabList.map(item => (
               <button
@@ -718,6 +773,48 @@ export default function WalletPage() {
                   <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
                 </>
               )}
+            </div>
+          )}
+
+          {tab === 'subscription' && (
+            <div className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-3">
+                {[
+                  ['本周期扣除', subscriptionUsage?.summary?.charged_points ?? 0],
+                  ['输入 / 输出 Token', `${subscriptionUsage?.summary?.input_tokens ?? 0} / ${subscriptionUsage?.summary?.output_tokens ?? 0}`],
+                  ['用量缺失请求', subscriptionUsage?.summary?.usage_missing_requests ?? 0],
+                ].map(([label, value]) => <div key={label} className="p-4 rounded-2xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>{label}</div><div className="mt-1 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{value}</div></div>)}
+              </div>
+              <div className="flex gap-2 items-center text-xs" style={{ color: 'var(--text-secondary)' }}>
+                <span>支付方式</span>
+                <button onClick={() => setSubscriptionChannel('alipay')} className="px-2 py-1 rounded-full border" style={{ borderColor: subscriptionChannel === 'alipay' ? 'var(--accent)' : 'var(--border-color)', color: subscriptionChannel === 'alipay' ? 'var(--accent)' : 'var(--text-secondary)' }}>支付宝</button>
+                <button onClick={() => setSubscriptionChannel('wechat')} className="px-2 py-1 rounded-full border" style={{ borderColor: subscriptionChannel === 'wechat' ? 'var(--accent)' : 'var(--border-color)', color: subscriptionChannel === 'wechat' ? 'var(--accent)' : 'var(--text-secondary)' }}>微信</button>
+              </div>
+              <div className="grid gap-2 md:grid-cols-3">
+                <input value={subscriptionPayerName} onChange={e => setSubscriptionPayerName(e.target.value)} placeholder="付款人姓名（可选）" className="px-3 py-2 rounded-2xl text-xs border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                <input value={subscriptionTxNo} onChange={e => setSubscriptionTxNo(e.target.value)} placeholder="交易号（可选）" className="px-3 py-2 rounded-2xl text-xs border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                <input value={subscriptionProofUrl} onChange={e => setSubscriptionProofUrl(e.target.value)} placeholder="支付凭证链接（可选）" className="px-3 py-2 rounded-2xl text-xs border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              {payConfig[`${subscriptionChannel}_pay_qr_url`] && <img src={payConfig[`${subscriptionChannel}_pay_qr_url`]} alt="支付二维码" className="w-28 h-28 object-contain rounded-xl border" style={{ borderColor: 'var(--border-color)' }} />}
+              <div className="grid gap-3 lg:grid-cols-3">
+                {subscriptionPlans.map(plan => <div key={plan.id} className="p-4 rounded-2xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+                  <div className="flex items-start justify-between gap-2"><div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{plan.name}</div><div className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>¥{plan.price_rmb}</div></div>
+                  <div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{plan.description || '按周期发放积分和功能权益'}</div>
+                  <div className="mt-3 text-sm" style={{ color: 'var(--text-primary)' }}>{plan.grant_points} 积分 / {plan.cycle_days} 天</div>
+                  <div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{plan.features?.web_search ? '联网搜索 ' : ''}{plan.features?.file_upload ? '文件上传 ' : ''}{plan.features?.file_write ? '文件写入' : ''}</div>
+                  {!plan.is_free && <button disabled={subscriptionSubmitting} onClick={() => handleSubscriptionOrder(plan)} className="mt-4 w-full px-3 py-2 rounded-2xl text-sm text-white disabled:opacity-50" style={{ background: 'var(--accent)' }}>{subscriptionSubmitting ? '提交中...' : '购买 / 续费'}</button>}
+                </div>)}
+              </div>
+              <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+                <div className="px-4 py-3 text-sm font-semibold" style={{ color: 'var(--text-primary)', background: 'var(--bg-card)' }}>订阅订单</div>
+                {subscriptionOrders.map(order => <div key={order.id} className="flex items-center justify-between gap-3 px-4 py-3 border-t text-sm" style={{ borderColor: 'var(--border-color)' }}><div><div style={{ color: 'var(--text-primary)' }}>{order.order_no}</div><div className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>¥{order.amount_rmb} · {formatTime(order.created_at)}</div></div><span className="text-xs" style={{ color: order.status === 'approved' ? 'var(--color-success)' : 'var(--color-warning)' }}>{statusMap[order.status]?.label || order.status}</span></div>)}
+                {!subscriptionOrders.length && <div className="px-4 py-8 text-center text-sm" style={{ color: 'var(--text-secondary)' }}>暂无订阅订单</div>}
+              </div>
+              <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+                <div className="px-4 py-3 text-sm font-semibold" style={{ color: 'var(--text-primary)', background: 'var(--bg-card)' }}>模型价格</div>
+                {subscriptionPrices.map(model => <div key={model.model_id} className="flex items-center justify-between gap-3 px-4 py-3 border-t text-xs" style={{ borderColor: 'var(--border-color)' }}><span style={{ color: 'var(--text-primary)' }}>{model.label}</span><span style={{ color: 'var(--text-secondary)' }}>输入 {model.points_per_1k?.input ?? '-'} / 输出 {model.points_per_1k?.output ?? '-'} 积分 / 千 Token</span></div>)}
+                {!subscriptionPrices.length && <div className="px-4 py-6 text-center text-xs" style={{ color: 'var(--text-secondary)' }}>暂无已配置的模型价格</div>}
+              </div>
             </div>
           )}
 
