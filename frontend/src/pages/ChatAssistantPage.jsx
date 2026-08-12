@@ -28,6 +28,9 @@ const MD_STYLES = `
 .md-body th,.md-body td{border:1px solid var(--border-color);padding:6px 10px;text-align:left}
 .md-body th{background:color-mix(in srgb,var(--accent) 8%,transparent);font-weight:600}
 .md-body strong{font-weight:700}
+.md-body .katex-clickable{cursor:pointer;border-radius:6px;transition:background .15s,box-shadow .15s;padding:0 3px}
+.md-body .katex-clickable:hover{background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.md-body .katex-clickable.katex-copied{box-shadow:0 0 0 1.5px var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent)}
 `
 
 function parseDate(s) {
@@ -715,6 +718,9 @@ export default function ChatAssistantPage() {
   const manualStopRef = useRef(false)
   const pointsRef = useRef(points)
   const activeIdRef = useRef(activeId)
+  // 新建会话后本地消息已就绪（handleSend/sendQueuedNext 已 setMessages），
+  // 跳过 useEffect([activeId]) 的异步加载，避免「空列表覆盖本地用户消息」的竞态丢消息
+  const skipMessagesLoadRef = useRef(null)
   const effortRef = useRef(reasoningEffort)
   const modelIdRef = useRef(chatModelId)
   // 流式渲染节流：chunk/thinking 高频到达时按帧合并 setState，
@@ -798,6 +804,8 @@ export default function ChatAssistantPage() {
   // 切换会话时加载消息
   useEffect(() => {
     if (!activeId) { setMessages([]); return }
+    if (skipMessagesLoadRef.current === activeId) { skipMessagesLoadRef.current = null; return }
+    skipMessagesLoadRef.current = null // 残留标记（如切换会话后）一并清掉
     let active = true
     setMessagesLoading(true)
     chatAPI.messages(activeId).then(res => {
@@ -807,6 +815,28 @@ export default function ChatAssistantPage() {
     }).finally(() => { if (active) setMessagesLoading(false) })
     return () => { active = false }
   }, [activeId, dialog])
+
+  // 公式点击复制：dangerouslySetInnerHTML 注入的内容无法绑 React 事件，用全局事件委托
+  useEffect(() => {
+    const onClick = async (e) => {
+      const el = e.target.closest?.('.katex-clickable')
+      if (!el) return
+      const latex = el.getAttribute('data-latex')
+      if (latex == null) return
+      e.preventDefault()
+      e.stopPropagation()
+      const ok = await copyText(latex)
+      if (ok) {
+        el.classList.add('katex-copied')
+        el.title = '已复制'
+        setTimeout(() => { el.classList.remove('katex-copied'); el.title = '点击复制公式' }, 1200)
+      } else {
+        dialog.alert('复制失败')
+      }
+    }
+    document.addEventListener('click', onClick)
+    return () => document.removeEventListener('click', onClick)
+  }, [dialog])
 
   // 自动滚动到底部
   useEffect(() => {
@@ -1082,6 +1112,7 @@ export default function ChatAssistantPage() {
         setSessions(prev => [s, ...prev])
         sid = s.id
         activeIdRef.current = s.id
+        skipMessagesLoadRef.current = s.id // 本地消息已就绪，跳过首次加载
         setActiveId(s.id)
       } catch (err) {
         releaseSendLock()
@@ -1119,6 +1150,7 @@ export default function ChatAssistantPage() {
         setSessions(prev => [s, ...prev])
         sid = s.id
         activeIdRef.current = s.id
+        skipMessagesLoadRef.current = s.id // 本地消息已就绪，跳过首次加载
         setActiveId(s.id)
       } catch (err) {
         releaseSendLock()
@@ -1144,6 +1176,7 @@ export default function ChatAssistantPage() {
     sendingRef.current = null
     setSending(null)
     clearPending()
+    skipMessagesLoadRef.current = null // 切换会话不再跳过加载
     setActiveId(id)
     setSessionListOpen(false)
   }
@@ -1159,6 +1192,7 @@ export default function ChatAssistantPage() {
       const res = await chatAPI.createSession()
       const s = res.data
       setSessions(prev => [s, ...prev])
+      skipMessagesLoadRef.current = s.id // 新建会话消息为空，跳过首次加载避免竞态覆盖
       setActiveId(s.id)
       setMessages([])
       setSessionListOpen(false)

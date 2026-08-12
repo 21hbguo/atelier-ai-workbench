@@ -33,6 +33,24 @@ describe('mdToHtml 公式渲染', () => {
     expect(html).toContain('\\(E=mc^2')
   })
 
+  it('公式包 katex-clickable 且带 data-latex 原文（点击复制）', () => {
+    const html = mdToHtml('质能方程 $E=mc^2$')
+    expect(html).toContain('class="katex-clickable"')
+    expect(html).toContain('data-latex="E=mc^2"')
+    expect(html).toContain('title="点击复制公式"')
+  })
+
+  it('块级公式 data-latex 保留多行内容', () => {
+    const html = mdToHtml('$$\n\\frac{a}{b}\n$$')
+    expect(html).toContain('katex-clickable katex-display')
+    expect(html).toContain('data-latex="\\frac{a}{b}"')
+  })
+
+  it('data-latex 属性值做 HTML 转义（防注入）', () => {
+    const html = mdToHtml('$a"b&c<d>$')
+    expect(html).toContain('data-latex="a&quot;b&amp;c&lt;d&gt;"')
+  })
+
   it('公式内特殊字符不被 markdown 规则破坏', () => {
     const html = mdToHtml('$x_i^*$')
     expect(html).toContain('class="katex"')

@@ -42,20 +42,8 @@ function extractFormulas(text) {
   return { text: out, formulas }
 }
 
-// 把占位符还原为 KaTeX 渲染结果；解析失败回退 LaTeX 原文
-function restoreFormulas(html, formulas) {
-  if (!formulas.length) return html
-  return html.replace(KATEX_RE, (_, n) => {
-    const f = formulas[Number(n)]
-    if (!f) return ''
-    try {
-      return katex.renderToString(f.latex, { throwOnError: false, displayMode: f.display })
-    } catch {
-      return f.latex
-    }
-  })
-}
-
+// 把占位符还原为 KaTeX 渲染结果；解析失败回退 LaTeX 原文。
+// 外层包 span.katex-clickable + data-latex 属性，供页面事件委托实现「点击复制公式」。
 function escapeHtml(text) {
   return String(text)
     .replace(/&/g, '&amp;')
@@ -63,6 +51,21 @@ function escapeHtml(text) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
+}
+
+function restoreFormulas(html, formulas) {
+  if (!formulas.length) return html
+  return html.replace(KATEX_RE, (_, n) => {
+    const f = formulas[Number(n)]
+    if (!f) return ''
+    try {
+      const inner = katex.renderToString(f.latex, { throwOnError: false, displayMode: f.display })
+      const cls = f.display ? 'katex-clickable katex-display' : 'katex-clickable'
+      return `<span class="${cls}" data-latex="${escapeHtml(f.latex)}" title="点击复制公式">${inner}</span>`
+    } catch {
+      return f.latex
+    }
+  })
 }
 
 const SAFE_URL_RE = /^https?:\/\//i
