@@ -857,7 +857,7 @@ export default function ChatAssistantPage() {
         try { localStorage.removeItem('chat_model_id') } catch {}
       }
     }).catch(() => {})
-    pointsAPI.balance().then(res => setPoints(Number(res.data?.points) ?? 0)).catch(() => {})
+    pointsAPI.balance().then(res => setPoints(Number(res.data?.points || 0))).catch(() => {})
     chatAPI.sessions().then(res => {
       const items = res.data?.items || []
       setSessions(items)
@@ -1156,7 +1156,7 @@ export default function ChatAssistantPage() {
         }
         if (/积分不足|余额不足/.test(errMsg)) {
           dialog.alert(errMsg)
-          pointsAPI.balance().then(res => setPoints(Number(res.data?.points) ?? 0)).catch(() => {})
+          pointsAPI.balance().then(res => setPoints(Number(res.data?.points || 0))).catch(() => {})
         }
       },
     }).finally(() => { if (abortRef.current === controller) abortRef.current = null })

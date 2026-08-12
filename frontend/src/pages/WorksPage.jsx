@@ -325,8 +325,8 @@ export default function WorksPage() {
     const seq = ++refreshSeqRef.current
     const uid = isAdmin ? selectedUserId : undefined
     const q = searchQuery || undefined
-    let allTasks = []
-    let allImages = []
+    let allTasks
+    let allImages
     const taskPromise = withTimeout(taskAPI.list(50, 0, uid, q, { signal: controller.signal }), 10000, '任务列表加载超时，请重试')
     const imagePromise = withTimeout(imageAPI.list(1, 100, uid, { signal: controller.signal }), 12000, '图片列表加载超时，已仅显示任务列表')
     try {
@@ -731,15 +731,14 @@ export default function WorksPage() {
     try { return (await taskAPI.get(taskId)).data } catch (e) { const msg = e?.message || ''; if (clientRequestId && (msg.includes('404') || msg.includes('任务不存在') || msg.toLowerCase().includes('not found'))) return (await taskAPI.getByClientRequestId(clientRequestId)).data; throw e }
   }, [])
   const submitGenerationWithRecovery = useCallback(async ({ hasImages, prompt, imageUrls, baseParams, realTaskId, submissionId, shareToSquare, localImageUrls }) => {
-    let lastError = null
+    let lastError
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const payloadBase={prompt,size:baseParams?.size||'auto',resolution:baseParams?.resolution||undefined,aspect_ratio:baseParams?.aspect_ratio??baseParams?.aspectRatio??undefined,quality:baseParams?.quality||undefined,model_id:baseParams?.model_id,task_id:realTaskId,client_request_id:submissionId,share_to_square:!!shareToSquare}
         const req = hasImages ? generateAPI.submitTextImage({ ...payloadBase, image_urls: imageUrls, local_image_urls: localImageUrls }) : generateAPI.submitText(payloadBase)
         return (await req).data
       } catch (e) {
-        lastError = e
-        try { return await getTaskStatusWithRecovery(realTaskId, submissionId) } catch (reconcileError) { lastError = reconcileError }
+        try { return await getTaskStatusWithRecovery(realTaskId, submissionId) } catch (reconcileError) { lastError = reconcileError || e }
         if (!shouldRetryNetworkError(lastError?.message || lastError) || attempt >= 2) break
         await sleep(1200 * (attempt + 1))
       }

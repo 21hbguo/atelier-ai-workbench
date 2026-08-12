@@ -74,6 +74,8 @@ export default function UnifiedDetailModal({
     return { card: sourceCard, isImage, raw, fullUrl, meta, expiryInfo }
   }, [nowTs])
   const activeView = getViewData(activeCard)
+  const raw = activeView?.raw
+  const isImage = activeView?.isImage ?? false
   const hasNavigation = cards.length > 1
   const canPrev = hasNavigation && activeIndex > 0
   const canNext = hasNavigation && activeIndex < cards.length - 1
@@ -96,6 +98,16 @@ export default function UnifiedDetailModal({
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [hasNavigation, handlePrev, handleNext])
+  const startPromptEditing = useCallback(() => {
+    if (!activeCard) return
+    setEditForm({
+      name: activeCard.name || '',
+      prompt: activeCard.prompt || '',
+      category: activeCard.category || '',
+      image_path: activeCard.imagePath || '',
+    })
+    setEditing(true)
+  }, [activeCard])
   useEffect(() => {
     if (shouldAutoEdit.current) {
       shouldAutoEdit.current = false
@@ -104,7 +116,7 @@ export default function UnifiedDetailModal({
       setEditing(false)
       setEditForm(null)
     }
-  }, [activeCard?.id, activeIndex])
+  }, [activeCard?.id, activeIndex, startPromptEditing])
   useLayoutEffect(() => {
     if (!modalStatePushed.current) {
       window.history.pushState({ __udm: 'modal', token: modalToken.current }, '')
@@ -174,9 +186,6 @@ export default function UnifiedDetailModal({
     else { lightboxStatePushed.current = false; setLightbox(false) }
   }
 
-  if (!activeView) return null
-
-  const { card: viewCard, isImage, raw, fullUrl, meta, expiryInfo } = activeView
   const handleDownloadImage = useCallback(async () => {
     if (!raw?.filename || downloading) return
     setDownloading(true)
@@ -215,16 +224,6 @@ export default function UnifiedDetailModal({
       promptAPI.categories().then(({ data }) => setCategories(data.categories || [])).catch(() => {})
     }
   }, [allowPromptEdit, isImage])
-
-  const startPromptEditing = () => {
-    setEditForm({
-      name: card.name || '',
-      prompt: card.prompt || '',
-      category: card.category || '',
-      image_path: card.imagePath || '',
-    })
-    setEditing(true)
-  }
 
   const handleImageUpload = async (e) => {
     const file = e.target.files?.[0]
@@ -268,6 +267,10 @@ export default function UnifiedDetailModal({
       setSaving(false)
     }
   }
+
+  if (!activeView) return null
+
+  const { card: viewCard, fullUrl, meta, expiryInfo } = activeView
 
   const handleCopy = async (text) => {
     try {

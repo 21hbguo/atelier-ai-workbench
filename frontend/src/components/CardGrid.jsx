@@ -369,7 +369,7 @@ export default function CardGrid({
               </div>
               {squareBody ? <p className="mt-3 text-xs leading-5 line-clamp-2" style={{ color: 'var(--text-secondary)' }}>{squareBody}</p> : null}
               <div className="mt-3 flex items-center gap-1.5">
-                {Boolean(card.prompt) ? (
+                {card.prompt ? (
                   <button
                     onClick={(e) => { e.stopPropagation(); onUsePrompt?.(card) }}
                     className="h-8 px-3 rounded-full text-[11px] font-medium border"

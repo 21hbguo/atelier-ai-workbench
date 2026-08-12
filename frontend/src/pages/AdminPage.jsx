@@ -513,7 +513,7 @@ export default function AdminPage() {
     ]
     const payload = { ...runtimeConfig }
     payload.default_model_id = (defaultModelId || '').trim() || 'gpt-image-2'
-    let recharge_packages = []
+    let recharge_packages
     for (const k of n) payload[k] = Number(payload[k])
     if (
       payload.generate_concurrent_limit_per_user < 1 ||
@@ -551,8 +551,8 @@ export default function AdminPage() {
         return { amount: Math.round(amount * 100) / 100, points: Math.round(points), label }
       })
     } catch (e) { dialog.alert(e.message || '捐赠档位 JSON 格式错误'); return }
-    let generation_models = {}
-    let generation_providers = {}
+    let generation_models
+    let generation_providers
     try {
       generation_models = JSON.parse(generationModelsText || '{}')
       generation_providers = JSON.parse(generationProvidersText || '{}')

@@ -39,7 +39,7 @@ vi.mock('../components/MainLayout', () => ({
 }))
 
 vi.mock('../components/CardGrid', () => ({
-  default: ({ cards, loading, emptyText, onCardClick, onFavorite, onUsePrompt, onUseImage, page, totalPages, total, showTotal, totalUnit }) => (
+  default: ({ cards, loading, emptyText, onCardClick, onFavorite, onUsePrompt, onUseImage, page, totalPages, total, showTotal, totalUnit, onPageChange }) => (
     <div data-testid="card-grid">
       {showTotal && total !== undefined && <span data-testid="card-total">{total}</span>}
       {totalUnit && <span data-testid="total-unit">{totalUnit}</span>}
