@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Trash2, Pencil, X, RefreshCw } from 'lucide-react'
+import { Plus, Trash2, Pencil, X, RefreshCw, Search, ChevronRight, ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react'
 
 const EFFORT_LABELS = { auto: '自动', low: '低', medium: '中', high: '高', max: '最高', xhigh: '超高' }
 const THINKING_LABELS = { enabled: '默认思考', disabled: '默认不思考', always: '始终思考' }
@@ -17,11 +17,38 @@ const EMPTY_DRAFT = {
   enabled: true, notes: '',
 }
 
+// 表头列定义：sortable 列点击表头排序；其余列（档位/默认/思考/能力/操作）不参与排序
+const COLUMNS = [
+  { header: '模型 ID', key: 'model_id', sortable: true },
+  { header: '显示名', key: 'label', sortable: true },
+  { header: '供应商', key: 'provider', sortable: true },
+  { header: '协议', key: 'protocol', sortable: true },
+  { header: '最大输入', key: 'max_input_tokens', sortable: true },
+  { header: '最大输出', key: 'max_output_tokens', sortable: true },
+  { header: '输入价', key: 'input_price_per_million', sortable: true },
+  { header: '输出价', key: 'output_price_per_million', sortable: true },
+  { header: '缓存价', key: 'cache_read_price_per_million', sortable: true },
+  { header: '输入积分', key: 'input_points_per_million', sortable: true },
+  { header: '输出积分', key: 'output_points_per_million', sortable: true },
+  { header: '单次积分', key: 'points_per_request', sortable: true },
+  { header: '档位', key: null, sortable: false },
+  { header: '默认', key: null, sortable: false },
+  { header: '思考', key: null, sortable: false },
+  { header: '能力', key: null, sortable: false },
+  { header: '预算', key: 'context_budget_chars', sortable: true },
+  { header: '状态', key: 'enabled', sortable: true },
+  { header: '操作', key: null, sortable: false },
+]
+
 export default function AdminLlmModelsTab({ items, loading, onRefresh, onSave, onDelete, onTest, dialog }) {
   const [editing, setEditing] = useState(null) // null | { isNew, draft }
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState(null) // null | { ok, text, error, latency_ms }
+  const [search, setSearch] = useState('')
+  const [sortKey, setSortKey] = useState('model_id')
+  const [sortDir, setSortDir] = useState('asc') // 'asc' | 'desc'
+  const [collapsedGroups, setCollapsedGroups] = useState({ disabled: true }) // 未启用组默认折叠
 
   const openNew = () => { setEditing({ isNew: true, draft: { ...EMPTY_DRAFT } }); setTestResult(null) }
   const openEdit = (m) => { setEditing({
@@ -91,83 +118,196 @@ export default function AdminLlmModelsTab({ items, loading, onRefresh, onSave, o
     } finally { setTesting(false) }
   }
 
+  // 分组：填好 key 且 enabled === true 视为已启用；其余归到未启用
+  const isConfigured = (m) => !!(m.api_key || '').trim() && m.enabled === true
+
+  // 搜索：按 model_id/label/provider/protocol 模糊匹配（不区分大小写）
+  const q = search.trim().toLowerCase()
+  const matchSearch = (m) => !q || [m.model_id, m.label, m.provider, m.protocol]
+    .some(v => String(v || '').toLowerCase().includes(q))
+
+  // 排序
+  const numericKeys = ['max_input_tokens','max_output_tokens','input_price_per_million','output_price_per_million','cache_read_price_per_million','input_points_per_million','output_points_per_million','points_per_request','context_budget_chars']
+  const sortItems = (arr) => {
+    const sorted = [...arr].sort((a, b) => {
+      let av = a[sortKey], bv = b[sortKey]
+      if (numericKeys.includes(sortKey)) {
+        av = Number(av) || 0; bv = Number(bv) || 0
+      } else {
+        av = String(av || '').toLowerCase(); bv = String(bv || '').toLowerCase()
+      }
+      if (av < bv) return sortDir === 'asc' ? -1 : 1
+      if (av > bv) return sortDir === 'asc' ? 1 : -1
+      return 0
+    })
+    return sorted
+  }
+
+  const handleSort = (key) => {
+    if (sortKey === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key); setSortDir('asc')
+    }
+  }
+
+  // 计算两组（搜索过滤 + 排序）
+  const configured = sortItems(items.filter(m => isConfigured(m) && matchSearch(m)))
+  const unconfigured = sortItems(items.filter(m => !isConfigured(m) && matchSearch(m)))
+
+  const toggleGroup = (key) => setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }))
+
+  // 表格渲染：两组共用，表头可排序列带方向图标
+  const renderTable = (rows) => (
+    <div className="overflow-x-auto rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
+      <table className="w-full text-xs">
+        <thead>
+          <tr style={{ background: 'var(--bg-card)' }}>
+            {COLUMNS.map(col => {
+              const isActive = col.sortable && sortKey === col.key
+              return (
+                <th
+                  key={col.header}
+                  onClick={col.sortable ? () => handleSort(col.key) : undefined}
+                  className={`px-3 py-2.5 text-left font-medium whitespace-nowrap ${col.sortable ? 'cursor-pointer select-none' : ''}`}
+                  style={{ color: 'var(--text-secondary)' }}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    {col.header}
+                    {col.sortable && (
+                      isActive ? (
+                        sortDir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+                      ) : (
+                        <ChevronsUpDown size={12} style={{ opacity: 0.3 }} />
+                      )
+                    )}
+                  </span>
+                </th>
+              )
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(m => (
+            <tr key={m.model_id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
+              <td className="px-3 py-2.5 font-mono whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>{m.model_id}</td>
+              <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>{m.label}</td>
+              <td className="px-3 py-2.5 whitespace-nowrap">{m.provider || '—'}</td>
+              <td className="px-3 py-2.5">{m.protocol}</td>
+              <td className="px-3 py-2.5 tabular-nums">{m.max_input_tokens >= 1000000 ? `${(m.max_input_tokens / 1000000).toFixed(2).replace(/\.?0+$/, '')}M` : m.max_input_tokens}</td>
+              <td className="px-3 py-2.5 tabular-nums">{m.max_output_tokens >= 1000 ? `${Math.round(m.max_output_tokens / 1000)}K` : m.max_output_tokens}</td>
+              <td className="px-3 py-2.5 tabular-nums">{m.input_price_per_million != null ? `${m.input_price_per_million}${m.price_currency === 'cny' ? '元' : '$'}` : '—'}</td>
+              <td className="px-3 py-2.5 tabular-nums">{m.output_price_per_million != null ? `${m.output_price_per_million}${m.price_currency === 'cny' ? '元' : '$'}` : '—'}</td>
+              <td className="px-3 py-2.5 tabular-nums">{m.cache_read_price_per_million != null ? `${m.cache_read_price_per_million}${m.price_currency === 'cny' ? '元' : '$'}` : '—'}</td>
+              <td className="px-3 py-2.5 tabular-nums">{m.input_points_per_million != null ? m.input_points_per_million : '—'}</td>
+              <td className="px-3 py-2.5 tabular-nums">{m.output_points_per_million != null ? m.output_points_per_million : '—'}</td>
+              <td className="px-3 py-2.5 tabular-nums">{m.points_per_request != null ? m.points_per_request : '—'}</td>
+              <td className="px-3 py-2.5">
+                <div className="flex flex-wrap gap-1 max-w-[260px]">
+                  {(m.reasoning_efforts || []).map(e => (
+                    <span key={e} className="px-1.5 py-0.5 rounded-md text-[10px]" style={{ background: 'color-mix(in srgb, var(--accent) 10%, transparent)', color: 'var(--text-secondary)' }}>{EFFORT_LABELS[e] || e}</span>
+                  ))}
+                </div>
+              </td>
+              <td className="px-3 py-2.5">{EFFORT_LABELS[m.default_reasoning_effort] || m.default_reasoning_effort}</td>
+              <td className="px-3 py-2.5">{THINKING_LABELS[m.thinking_default] || m.thinking_default}</td>
+              <td className="px-3 py-2.5">
+                <div className="flex flex-wrap gap-1 max-w-[180px]">
+                  {(m.capabilities || []).slice(0, 4).map(c => (
+                    <span key={c} className="px-1.5 py-0.5 rounded-md text-[10px]" style={{ background: 'color-mix(in srgb, var(--bg-hover) 80%, transparent)', color: 'var(--text-secondary)' }}>{c}</span>
+                  ))}
+                  {(m.capabilities || []).length > 4 && <span className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>+{(m.capabilities || []).length - 4}</span>}
+                </div>
+              </td>
+              <td className="px-3 py-2.5 tabular-nums">{m.context_budget_chars}</td>
+              <td className="px-3 py-2.5">
+                <span className="px-1.5 py-0.5 rounded-md text-[10px]" style={{ background: m.enabled ? 'color-mix(in srgb, var(--color-success) 15%, transparent)' : 'color-mix(in srgb, var(--color-error) 15%, transparent)', color: m.enabled ? 'var(--color-success)' : 'var(--color-error)' }}>
+                  {m.enabled ? '启用' : '停用'}
+                </span>
+              </td>
+              <td className="px-3 py-2.5">
+                <div className="flex items-center gap-1">
+                  <button onClick={() => openEdit(m)} title="编辑" className="p-1.5 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}><Pencil size={13} /></button>
+                  <button onClick={async () => {
+                    if (!await dialog.confirm(`确定删除模型档案「${m.model_id}」？`)) return
+                    try { await onDelete(m.model_id) } catch (e) { dialog.alert(e.message || '删除失败') }
+                  }} title="删除" className="p-1.5 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--color-error)' }}><Trash2 size={13} /></button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+
+  // 分组 section：可折叠标题栏 + 表格
+  const renderSection = (key, title, rows, isPositive) => {
+    const collapsed = !!collapsedGroups[key]
+    const badgeColor = isPositive ? 'var(--color-success)' : 'var(--text-secondary)'
+    const badgeBg = isPositive
+      ? 'color-mix(in srgb, var(--color-success) 15%, transparent)'
+      : 'color-mix(in srgb, var(--text-secondary) 10%, transparent)'
+    return (
+      <section>
+        <div
+          onClick={() => toggleGroup(key)}
+          className="flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer select-none transition-colors hover:bg-bg-hover"
+          style={{ border: '1px solid var(--border-color)', background: 'var(--bg-card)' }}
+        >
+          {collapsed
+            ? <ChevronRight size={14} style={{ color: 'var(--text-secondary)' }} />
+            : <ChevronDown size={14} style={{ color: 'var(--text-secondary)' }} />}
+          <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</span>
+          <span className="px-1.5 py-0.5 rounded-md text-[10px] font-medium" style={{ background: badgeBg, color: badgeColor }}>{rows.length}</span>
+        </div>
+        {!collapsed && (
+          <div className="mt-2">{renderTable(rows)}</div>
+        )}
+      </section>
+    )
+  }
+
   return (
     <div>
-      <div className="flex items-center gap-3 mb-4">
-        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>共 {items.length} 个模型档案</span>
-        <button onClick={onRefresh} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium border transition-colors" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
-          <RefreshCw size={13} /> 刷新
-        </button>
-        <button onClick={openNew} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium text-white transition-colors ml-auto" style={{ background: 'var(--accent)' }}>
-          <Plus size={13} /> 新增模型
-        </button>
+      <div className="flex flex-col gap-2 mb-4">
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="text-sm whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>
+            共 {configured.length + unconfigured.length} 个模型档案
+            <span className="ml-1.5 text-xs">（已启用 {configured.length} / 未启用 {unconfigured.length}）</span>
+          </span>
+          <button onClick={onRefresh} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium border transition-colors" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
+            <RefreshCw size={13} /> 刷新
+          </button>
+          <div className="relative flex-1 min-w-[180px] max-w-xs">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-secondary)' }} />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="搜索 ID / 名称 / 供应商 / 协议"
+              className="w-full pl-7 pr-3 py-1.5 rounded-xl text-xs border outline-none"
+              style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+            />
+          </div>
+          <button onClick={openNew} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium text-white transition-colors ml-auto" style={{ background: 'var(--accent)' }}>
+            <Plus size={13} /> 新增模型
+          </button>
+        </div>
+        <div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+          已启用：已填 API Key 且开启 · 未启用：未填 Key 或已停用 · 点击表头排序 · 点击分组标题折叠/展开
+        </div>
       </div>
 
       {loading ? (
         <div className="flex justify-center py-20"><div className="w-6 h-6 border-2 rounded-full animate-spin" style={{ borderTopColor: 'var(--accent)', borderColor: 'var(--border-color)' }} /></div>
       ) : items.length === 0 ? (
         <div className="text-center py-16 text-sm" style={{ color: 'var(--text-secondary)' }}>暂无模型档案</div>
+      ) : configured.length === 0 && unconfigured.length === 0 ? (
+        <div className="text-center py-16 text-sm" style={{ color: 'var(--text-secondary)' }}>未找到匹配的模型档案</div>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
-          <table className="w-full text-xs">
-            <thead>
-              <tr style={{ background: 'var(--bg-card)' }}>
-                {['模型 ID', '显示名', '供应商', '协议', '最大输入', '最大输出', '输入价', '输出价', '缓存价', '输入积分', '输出积分', '单次积分', '档位', '默认', '思考', '能力', '预算', '状态', '操作'].map(h => (
-                  <th key={h} className="px-3 py-2.5 text-left font-medium whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {items.map(m => (
-                <tr key={m.model_id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
-                  <td className="px-3 py-2.5 font-mono whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>{m.model_id}</td>
-                  <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>{m.label}</td>
-                  <td className="px-3 py-2.5 whitespace-nowrap">{m.provider || '—'}</td>
-                  <td className="px-3 py-2.5">{m.protocol}</td>
-                  <td className="px-3 py-2.5 tabular-nums">{m.max_input_tokens >= 1000000 ? `${(m.max_input_tokens / 1000000).toFixed(2).replace(/\.?0+$/, '')}M` : m.max_input_tokens}</td>
-                  <td className="px-3 py-2.5 tabular-nums">{m.max_output_tokens >= 1000 ? `${Math.round(m.max_output_tokens / 1000)}K` : m.max_output_tokens}</td>
-                  <td className="px-3 py-2.5 tabular-nums">{m.input_price_per_million != null ? `${m.input_price_per_million}${m.price_currency === 'cny' ? '元' : '$'}` : '—'}</td>
-                  <td className="px-3 py-2.5 tabular-nums">{m.output_price_per_million != null ? `${m.output_price_per_million}${m.price_currency === 'cny' ? '元' : '$'}` : '—'}</td>
-                  <td className="px-3 py-2.5 tabular-nums">{m.cache_read_price_per_million != null ? `${m.cache_read_price_per_million}${m.price_currency === 'cny' ? '元' : '$'}` : '—'}</td>
-                  <td className="px-3 py-2.5 tabular-nums">{m.input_points_per_million != null ? m.input_points_per_million : '—'}</td>
-                  <td className="px-3 py-2.5 tabular-nums">{m.output_points_per_million != null ? m.output_points_per_million : '—'}</td>
-                  <td className="px-3 py-2.5 tabular-nums">{m.points_per_request != null ? m.points_per_request : '—'}</td>
-                  <td className="px-3 py-2.5">
-                    <div className="flex flex-wrap gap-1 max-w-[260px]">
-                      {(m.reasoning_efforts || []).map(e => (
-                        <span key={e} className="px-1.5 py-0.5 rounded-md text-[10px]" style={{ background: 'color-mix(in srgb, var(--accent) 10%, transparent)', color: 'var(--text-secondary)' }}>{EFFORT_LABELS[e] || e}</span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2.5">{EFFORT_LABELS[m.default_reasoning_effort] || m.default_reasoning_effort}</td>
-                  <td className="px-3 py-2.5">{THINKING_LABELS[m.thinking_default] || m.thinking_default}</td>
-                  <td className="px-3 py-2.5">
-                    <div className="flex flex-wrap gap-1 max-w-[180px]">
-                      {(m.capabilities || []).slice(0, 4).map(c => (
-                        <span key={c} className="px-1.5 py-0.5 rounded-md text-[10px]" style={{ background: 'color-mix(in srgb, var(--bg-hover) 80%, transparent)', color: 'var(--text-secondary)' }}>{c}</span>
-                      ))}
-                      {(m.capabilities || []).length > 4 && <span className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>+{(m.capabilities || []).length - 4}</span>}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2.5 tabular-nums">{m.context_budget_chars}</td>
-                  <td className="px-3 py-2.5">
-                    <span className="px-1.5 py-0.5 rounded-md text-[10px]" style={{ background: m.enabled ? 'color-mix(in srgb, var(--color-success) 15%, transparent)' : 'color-mix(in srgb, var(--color-error) 15%, transparent)', color: m.enabled ? 'var(--color-success)' : 'var(--color-error)' }}>
-                      {m.enabled ? '启用' : '停用'}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => openEdit(m)} title="编辑" className="p-1.5 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}><Pencil size={13} /></button>
-                      <button onClick={async () => {
-                        if (!await dialog.confirm(`确定删除模型档案「${m.model_id}」？`)) return
-                        try { await onDelete(m.model_id) } catch (e) { dialog.alert(e.message || '删除失败') }
-                      }} title="删除" className="p-1.5 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--color-error)' }}><Trash2 size={13} /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-4">
+          {configured.length > 0 && renderSection('enabled', '已启用', configured, true)}
+          {unconfigured.length > 0 && renderSection('disabled', '未启用', unconfigured, false)}
         </div>
       )}
 
