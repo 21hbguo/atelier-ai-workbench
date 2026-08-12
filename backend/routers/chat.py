@@ -416,6 +416,29 @@ async def list_messages(session_id: int, user=Depends(get_current_user)):
     return {"items": items}
 
 
+@router.delete("/sessions/{session_id}/messages/{message_id}")
+async def delete_message(session_id: int, message_id: int, user=Depends(get_current_user)):
+    """删除指定消息及其后的所有消息（重新回答的重置分支点）。
+
+    前端「重新回答」流程：先删除对应 user 消息及之后全部（含旧回答），
+    再复用 send_message 链路重新发送同一问题 → 正常扣费/退款/落库。
+    """
+    user_id = user["user_id"]
+    with get_db() as conn:
+        _owns_session(conn, session_id, user_id)
+        row = conn.execute(
+            "SELECT id FROM chat_messages WHERE id = %s AND session_id = %s",
+            (message_id, session_id),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="消息不存在")
+        conn.execute(
+            "DELETE FROM chat_messages WHERE session_id = %s AND id >= %s",
+            (session_id, message_id),
+        )
+    return {"ok": True}
+
+
 @router.post("/sessions/{session_id}/messages")
 async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_current_user)):
     user_id = user["user_id"]
@@ -480,10 +503,11 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
             (session_id,),
         ).fetchall()
         file_ids = [r["id"] for r in file_rows]
-        conn.execute(
-            "INSERT INTO chat_messages (session_id, role, content, file_ids) VALUES (%s, 'user', %s, %s::jsonb)",
+        user_msg_row = conn.execute(
+            "INSERT INTO chat_messages (session_id, role, content, file_ids) VALUES (%s, 'user', %s, %s::jsonb) RETURNING id",
             (session_id, content, json.dumps(file_ids)),
-        )
+        ).fetchone()
+        user_msg_id = user_msg_row["id"] if user_msg_row else None
         # 首轮自动生成标题
         if (session["title"] or "").strip() in ("", "新对话") and msg_cnt == 0:
             conn.execute(
@@ -522,6 +546,9 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
         finished = False
         refunded = False
         try:
+            # 先回传用户消息的真实 id：前端用它替换本地临时 id，
+            # 使「重新回答」能定位刚发送的问题消息（删除分支点需要数据库 id）
+            yield f"event: user_message_id\ndata: {json.dumps({'message_id': user_msg_id}, ensure_ascii=False)}\n\n"
             if use_agent:
                 # 会话有上传文档：agent 工具循环（流式多轮；自动模式无需前端指定）
                 try:
@@ -574,12 +601,13 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                             text = str(event.get("text") or "")
                             thinking = str(event.get("thinking") or "").strip()
                             with get_db() as conn:
-                                conn.execute(
-                                    "INSERT INTO chat_messages (session_id, role, content, thinking) VALUES (%s, 'assistant', %s, %s)",
+                                new_row = conn.execute(
+                                    "INSERT INTO chat_messages (session_id, role, content, thinking) VALUES (%s, 'assistant', %s, %s) RETURNING id",
                                     (session_id, text, thinking or None),
-                                )
+                                ).fetchone()
                             finished = True
-                            yield f"event: done\ndata: {json.dumps({'text': text, 'thinking': thinking, 'points_balance': balance_after}, ensure_ascii=False)}\n\n"
+                            new_msg_id = new_row["id"] if new_row else None
+                            yield f"event: done\ndata: {json.dumps({'text': text, 'thinking': thinking, 'points_balance': balance_after, 'message_id': new_msg_id}, ensure_ascii=False)}\n\n"
                 except LLMError as e:
                     refunded = True
                     _refund_once()
@@ -596,12 +624,13 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                     yield f"event: thinking\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
                 elif event["type"] == "done":
                     with get_db() as conn:
-                        conn.execute(
-                            "INSERT INTO chat_messages (session_id, role, content, thinking) VALUES (%s, 'assistant', %s, %s)",
+                        new_row = conn.execute(
+                            "INSERT INTO chat_messages (session_id, role, content, thinking) VALUES (%s, 'assistant', %s, %s) RETURNING id",
                             (session_id, event["text"], event.get("thinking", "") or None),
-                        )
+                        ).fetchone()
                     finished = True
-                    yield f"event: done\ndata: {json.dumps({'text': event['text'], 'thinking': event.get('thinking', ''), 'points_balance': balance_after}, ensure_ascii=False)}\n\n"
+                    new_msg_id = new_row["id"] if new_row else None
+                    yield f"event: done\ndata: {json.dumps({'text': event['text'], 'thinking': event.get('thinking', ''), 'points_balance': balance_after, 'message_id': new_msg_id}, ensure_ascii=False)}\n\n"
                 elif event["type"] == "error":
                     refunded = True
                     _refund_once()

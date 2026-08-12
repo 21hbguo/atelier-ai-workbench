@@ -166,6 +166,8 @@ export const chatAPI = {
   deleteSession: id => api.delete(`/chat/sessions/${id}`),
   batchDeleteSessions: ids => api.post('/chat/sessions/batch-delete', { ids }),
   messages: id => api.get(`/chat/sessions/${id}/messages`),
+  // 删除指定消息及其后所有消息（「重新回答」的重置分支点）
+  deleteMessages: (sessionId, messageId) => api.delete(`/chat/sessions/${sessionId}/messages/${messageId}`),
   model: () => api.get('/chat/model'),
   models: () => api.get('/chat/models'),
   // 上传聊天文档（txt/md/csv/pdf/docx/xlsx/pptx 等，解析后注入对话上下文）
@@ -181,7 +183,7 @@ export const chatAPI = {
   },
   // SSE 流式发送消息：仿 promptOptimizeAPI.optimizeStream 的 fetch + ReadableStream 解析
   // 模式自动判定：会话有上传文件 → agent 工具链路；无 → 普通聊天（后端决定，前端不传 mode）
-  sendStream: async (sessionId, content, { onChunk, onDone, onError, onThinking, onToolStatus, signal, reasoning_effort = 'auto', model_id = '', web_search = false } = {}) => {
+  sendStream: async (sessionId, content, { onChunk, onDone, onError, onThinking, onToolStatus, onUserMessageId, signal, reasoning_effort = 'auto', model_id = '', web_search = false } = {}) => {
     // 空闲超时：超过该时长无任何事件则中断（防「无新答复但一直卡着」）。
     // DeepSeek 思考可能较长，取 180 秒。
     const IDLE_TIMEOUT_MS = 180000
@@ -235,6 +237,7 @@ export const chatAPI = {
             if (eventType === 'chunk') { partialText += String(data.text || ''); onChunk?.(data) }
             else if (eventType === 'thinking') { partialThinking += String(data.text || ''); onThinking?.(data) }
             else if (eventType === 'tool_status') onToolStatus?.(data)
+            else if (eventType === 'user_message_id') onUserMessageId?.(data)
             else if (eventType === 'done') { receivedDone = true; onDone?.(data) }
             else if (eventType === 'error') onError?.(data.detail)
           }

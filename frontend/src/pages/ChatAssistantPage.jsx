@@ -227,10 +227,10 @@ function ThinkingBlock({ text, isStreaming = false }) {
 }
 
 // ============ 消息气泡 ============
-function MessageItem({ msg, onCopy }) {
+function MessageItem({ msg, onCopy, onRegenerate }) {
   const isUser = msg.role === 'user'
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4 animate-fade-in-up group`}>
+    <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} mb-4 animate-fade-in-up group`}>
       <div className="relative max-w-[85%] sm:max-w-[78%] rounded-2xl px-4 py-3"
         style={{ background: isUser ? 'var(--bg-user-bubble)' : 'var(--bg-ai-bubble)', boxShadow: isUser ? 'none' : 'var(--shadow-md)' }}>
         {isUser ? (
@@ -267,15 +267,22 @@ function MessageItem({ msg, onCopy }) {
           </>
         )}
         <div className="text-xs mt-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>{formatTime(msg.created_at)}</div>
-        {!isUser && !msg.error && (
-          <button onClick={() => onCopy(msg.content)}
-            className="absolute -top-2.5 -right-2.5 hidden group-hover:flex p-1.5 rounded-lg"
-            style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}
-            title="复制">
+      </div>
+      {/* 操作按钮：放在气泡下方，小图标 + hover 提示；移动端始终可见（不再依赖 hover 显示） */}
+      {!isUser && !msg.error && (
+        <div className="flex items-center gap-0.5 mt-1 ml-1">
+          <button onClick={() => onCopy(msg.content)} title="复制"
+            className="p-1 rounded-lg hover:bg-bg-hover transition-colors"
+            style={{ color: 'var(--text-secondary)' }}>
             <Copy size={12} />
           </button>
-        )}
-      </div>
+          <button onClick={() => onRegenerate(msg)} title="重新回答"
+            className="p-1 rounded-lg hover:bg-bg-hover transition-colors"
+            style={{ color: 'var(--text-secondary)' }}>
+            <RefreshCw size={12} />
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -980,6 +987,22 @@ export default function ChatAssistantPage() {
       reasoning_effort: reasoningEffort,
       model_id: modelIdRef.current,
       web_search: useWeb === null ? webSearchRef.current : useWeb,
+      onUserMessageId: data => {
+        const realId = data?.message_id
+        if (!realId) return
+        // 用后端返回的真实 id 替换本地临时 id（重新回答需定位数据库 id）
+        setMessages(prev => {
+          let replaced = false
+          const next = prev.map(m => {
+            if (!replaced && m.role === 'user' && /^local-/.test(String(m.id))) {
+              replaced = true
+              return { ...m, id: String(realId) }
+            }
+            return m
+          })
+          return next
+        })
+      },
       onChunk: data => {
         const buf = streamBufRef.current
         if (buf.streamId !== streamId) return
@@ -1000,7 +1023,9 @@ export default function ChatAssistantPage() {
         const full = String(data.text || '')
         const thinking = String(data.thinking || '')
         manualStopRef.current = false
-        setMessages(prev => [...prev, { id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, role: 'assistant', content: full, thinking, created_at: new Date().toISOString() }])
+        // 优先用后端返回的数据库 id（重新回答/定位需要真实 id），缺失时回退本地临时 id
+        const newId = data.message_id || `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        setMessages(prev => [...prev, { id: newId, role: 'assistant', content: full, thinking, created_at: new Date().toISOString() }])
         // 发送成功：文件已上传为会话上下文，清空上传区（失败时保留 docs 便于重试）
         setDocs([])
         // 仅当仍是本次流时才清理状态（streamId 唯一身份，旧流迟到回调不影响新流）
@@ -1308,6 +1333,45 @@ export default function ChatAssistantPage() {
     startStream(sessionId, content, effortRef.current)
   }
 
+  // 「重新回答」：删除该回答分支点（对应问题消息及之后全部），再复用 send_message
+  // 链路重新发送同一问题 —— 扣费/退款/落库全部走现有逻辑，积分消耗与正常发送一致。
+  const handleRegenerate = async (msg) => {
+    if (!msg || msg.role !== 'assistant') return
+    if (sendingRef.current && !sendingRef.current.stopped) {
+      dialog.alert('请先停止当前生成，再重新回答')
+      return
+    }
+    const sid = activeIdRef.current
+    if (!sid) return
+    const idx = messages.findIndex(m => m.id === msg.id)
+    if (idx < 0) return
+    // 往前找对应的用户问题消息
+    let userMsg = null
+    for (let i = idx - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') { userMsg = messages[i]; break }
+    }
+    if (!userMsg) { dialog.alert('找不到对应的问题消息'); return }
+    if (/^(local-|err-)/.test(String(userMsg.id))) {
+      dialog.alert('该问题尚未同步到服务器，请刷新后重试')
+      return
+    }
+    const costText = cost > 0 ? `（消耗 ${cost} 积分）` : ''
+    const ok = await dialog.confirm(`重新回答将删除本条回答及其后的对话${costText}，确定吗？`)
+    if (!ok) return
+    try {
+      await chatAPI.deleteMessages(sid, userMsg.id)
+    } catch (err) {
+      dialog.alert(err.message || '操作失败，请重试')
+      return
+    }
+    // 本地同步截断到问题消息之前，然后重新发送
+    setMessages(prev => {
+      const ui = prev.findIndex(m => m.id === userMsg.id)
+      return ui < 0 ? prev : prev.slice(0, ui)
+    })
+    startStream(sid, userMsg.content, effortRef.current)
+  }
+
   const handleCopy = async (text) => {
     const ok = await copyText(String(text || ''))
     showToast(ok ? '已复制' : '复制失败', ok ? 'success' : 'error')
@@ -1404,7 +1468,7 @@ export default function ChatAssistantPage() {
                 )
               ) : (
                 <>
-                  {messages.map(msg => <MessageItem key={msg.id} msg={msg} onCopy={handleCopy} />)}
+                  {messages.map(msg => <MessageItem key={msg.id} msg={msg} onCopy={handleCopy} onRegenerate={handleRegenerate} />)}
                   {sending && <StreamBubble sending={sending} onStop={handleStop} onRetry={handleRetry} />}
                   {pendingQueue.length > 0 && <PendingQueueBubbles items={pendingQueue} />}
                 </>
