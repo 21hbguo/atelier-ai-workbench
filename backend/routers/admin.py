@@ -1714,8 +1714,9 @@ async def admin_delete_chat_session(session_id: int, admin=Depends(require_admin
 
 @router.get("/llm-models")
 async def admin_list_llm_models(admin=Depends(require_admin)):
-    from backend.services.llm_model_service import get_all
-    return {"items": get_all()}
+    from backend.services.llm_model_service import get_all, get_llm_config
+    llm_cfg = get_llm_config()
+    return {"items": get_all(), "global_model_id": str(llm_cfg.get("model") or "")}
 
 
 @router.post("/llm-models")

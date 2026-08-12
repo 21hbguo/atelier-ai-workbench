@@ -59,6 +59,7 @@ export default function AdminPage() {
   // 模型档案
   const [llmModels, setLlmModels] = useState([])
   const [llmModelsLoading, setLlmModelsLoading] = useState(false)
+  const [globalModelId, setGlobalModelId] = useState('')
 
   // 图床管理
   const [hostingImages, setHostingImages] = useState([])
@@ -922,6 +923,7 @@ export default function AdminPage() {
     try {
       const data = await chatFetch('/api/admin/llm-models')
       setLlmModels(data.items || [])
+      setGlobalModelId(data.global_model_id || '')
     } catch (e) { dialog.alert(e.message || '加载失败') } finally { setLlmModelsLoading(false) }
   }
 
@@ -1891,7 +1893,7 @@ export default function AdminPage() {
             ) : null}
           </div>
         ) : tab === 'llm_models' ? (
-          <AdminLlmModelsTab items={llmModels} loading={llmModelsLoading} onRefresh={fetchLlmModels}
+          <AdminLlmModelsTab items={llmModels} loading={llmModelsLoading} globalModelId={globalModelId} onRefresh={fetchLlmModels}
             onSave={saveLlmModel} onDelete={deleteLlmModel} onTest={testLlmModel} dialog={dialog} />
         ) : tab === 'history' ? (
           <AdminHistoryTab historyTotal={historyTotal} historyQuery={historyQuery} setHistoryQuery={setHistoryQuery} historySummary={historySummary} loading={loading} history={history} modelLabelMap={modelLabelMap} handleDeleteHistory={handleDeleteHistory} historyPage={historyPage} setHistoryPage={setHistoryPage} />

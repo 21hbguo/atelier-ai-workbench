@@ -40,7 +40,7 @@ const COLUMNS = [
   { header: '操作', key: null, sortable: false },
 ]
 
-export default function AdminLlmModelsTab({ items, loading, onRefresh, onSave, onDelete, onTest, dialog }) {
+export default function AdminLlmModelsTab({ items, loading, globalModelId = '', onRefresh, onSave, onDelete, onTest, dialog }) {
   const [editing, setEditing] = useState(null) // null | { isNew, draft }
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -118,8 +118,8 @@ export default function AdminLlmModelsTab({ items, loading, onRefresh, onSave, o
     } finally { setTesting(false) }
   }
 
-  // 分组：填好 key 且 enabled === true 视为已启用；其余归到未启用
-  const isConfigured = (m) => !!(m.api_key || '').trim() && m.enabled === true
+  // 分组：已填 API Key，或为全局激活模型（走 .env 全局配置），且 enabled === true 视为已启用；其余归到未启用
+  const isConfigured = (m) => m.enabled === true && (!!(m.api_key || '').trim() || m.model_id === globalModelId)
 
   // 搜索：按 model_id/label/provider/protocol 模糊匹配（不区分大小写）
   const q = search.trim().toLowerCase()
@@ -294,7 +294,7 @@ export default function AdminLlmModelsTab({ items, loading, onRefresh, onSave, o
           </button>
         </div>
         <div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-          已启用：已填 API Key 且开启 · 未启用：未填 Key 或已停用 · 点击表头排序 · 点击分组标题折叠/展开
+          已启用：已填 API Key 或为全局激活模型（走全局配置）且开启 · 未启用：未填 Key 且非激活模型，或已停用 · 点击表头排序 · 点击分组标题折叠/展开
         </div>
       </div>
 
