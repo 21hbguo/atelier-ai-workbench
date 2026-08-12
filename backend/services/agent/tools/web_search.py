@@ -18,9 +18,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import threading
 import time
 from collections import deque
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -347,6 +349,9 @@ def _cache_set(key: str, text: str) -> None:
         "而非具体新闻条目），必须换一组【不同的】更具体关键词再搜一次（每轮最多 2 次），"
         "不要用相同关键词重复搜索；\n"
         "4. 一次搜索尽量覆盖所有子问题（合并关键词），不要为同一问题反复搜索。\n"
+        "示例：用户问「今天有什么新闻」应搜索「2026年8月12日 今日要闻 头条」"
+        "而不是「今天新闻」；问「最近 AI 大事」应搜索「AI 人工智能 最新进展 2026年8月」；"
+        "问「股票行情」应搜索「A股 今日行情 涨跌」。\n"
         "返回网页标题、链接与摘要，回答时基于搜索结果并注明来源。"
     ),
     parameters={
@@ -358,10 +363,35 @@ def _cache_set(key: str, text: str) -> None:
         "required": ["query"],
     },
 )
+def _enhance_query(query: str) -> str:
+    """关键词自动增强（硬兜底，不依赖 LLM 自觉构造具体词）。
+
+    规则：
+    1. 纯宽泛新闻词（「今天新闻」「今日热点」「最新消息」等）→ 替换为「日期+今日要闻+头条」；
+    2. 含时间敏感词（今天/今日/最新/近期等）但无具体日期 → 自动附加当天日期；
+    3. 其他查询保持原样。
+    """
+    q = query.strip()
+    if not q:
+        return q
+    now = datetime.now()
+    today = f"{now.year}年{now.month}月{now.day}日"
+    # 纯宽泛新闻词（去掉语气词后只剩 今日/新闻/热点/要闻 等）
+    bare = re.sub(r"[?？!！。，,\s]", "", q)
+    if re.fullmatch(r"(今天|今日|现在|最新|实时|近期|最近)?(新闻|消息|热点|要闻|资讯|时事|头条)?(是什么|有哪些|有什么|汇总|速览|排行榜)?", bare):
+        return f"{today} 今日要闻 头条"
+    # 时间敏感但无具体日期 → 附加当天日期
+    if not re.search(r"\d{4}年|\d{1,2}月\d{1,2}日", q) and re.search(r"今天|今日|现在|最新|实时|近期|最近", q):
+        return f"{q} {today}"
+    return q
+
+
 async def web_search_search(args: dict, ctx: AgentContext) -> str:
     query = str(args.get("query") or "").strip()
     if not query:
         return "请提供搜索关键词（query 参数）。"
+    # 关键词自动增强：宽泛词附加日期/限定（硬兜底，不依赖 LLM 自觉）
+    query = _enhance_query(query)
     try:
         max_results = max(1, min(int(args.get("max_results") or 5), _MAX_RESULTS))
     except (TypeError, ValueError):
