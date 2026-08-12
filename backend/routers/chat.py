@@ -871,7 +871,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                     elif len(web_inject) > avail:
                         # 优先保留 <webpage> 头部与尾部防御句，只截断中间正文
                         keep_body = max(0, avail - len(web_inject) + len(str(result.get("text") or "").strip()))
-                        head, body, tail = web_inject.split(str(result.get("text") or "").strip(), 1)
+                        head, middle, tail = web_inject.split(str(result.get("text") or "").strip(), 1)
                         if keep_body > 0:
                             web_inject = head + str(result.get("text") or "").strip()[:keep_body] + "\n…[内容过长，已截断]" + tail
                         else:
