@@ -664,6 +664,14 @@ const MAX_DOC_SIZE = 10 * 1024 * 1024
 
 export default function ChatAssistantPage() {
   const dialog = useAppDialog()
+  const [toast, setToast] = useState(null)
+  const toastTimerRef = useRef(null)
+  const showToast = useCallback((message, type = 'success') => {
+    setToast({ message, type })
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = setTimeout(() => setToast(null), 2000)
+  }, [])
+  useEffect(() => () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current) }, [])
   const [sessions, setSessions] = useState([])
   const [sessionsLoading, setSessionsLoading] = useState(true)
   const [activeId, setActiveId] = useState(null)
@@ -829,14 +837,15 @@ export default function ChatAssistantPage() {
       if (ok) {
         el.classList.add('katex-copied')
         el.title = '已复制'
+        showToast('公式已复制')
         setTimeout(() => { el.classList.remove('katex-copied'); el.title = '点击复制公式' }, 1200)
       } else {
-        dialog.alert('复制失败')
+        showToast('复制失败', 'error')
       }
     }
     document.addEventListener('click', onClick)
     return () => document.removeEventListener('click', onClick)
-  }, [dialog])
+  }, [showToast])
 
   // 自动滚动到底部
   useEffect(() => {
@@ -1299,8 +1308,9 @@ export default function ChatAssistantPage() {
     startStream(sessionId, content, effortRef.current)
   }
 
-  const handleCopy = async (text) => {    const ok = await copyText(String(text || ''))
-    dialog.alert(ok ? '已复制到剪贴板' : '复制失败')
+  const handleCopy = async (text) => {
+    const ok = await copyText(String(text || ''))
+    showToast(ok ? '已复制' : '复制失败', ok ? 'success' : 'error')
   }
 
   const startRename = (s) => { const r = { id: s.id, title: s.title || '' }; renamingRef.current = r; setRenaming(r) }
@@ -1417,6 +1427,14 @@ export default function ChatAssistantPage() {
             webSearch={webSearch} onWebSearch={toggleWebSearch} />
         </div>
       </div>
+      {toast && (
+        <div className="fixed left-1/2 -translate-x-1/2 bottom-20 z-50 pointer-events-none">
+          <div className="px-3 py-1.5 rounded-lg text-xs font-medium animate-fade-in-up"
+            style={{ background: toast.type === 'success' ? 'var(--color-success)' : 'var(--color-error)', color: '#fff', boxShadow: 'var(--shadow-md)' }}>
+            {toast.message}
+          </div>
+        </div>
+      )}
       <style>{MD_STYLES}</style>
     </MainLayout>
   )
