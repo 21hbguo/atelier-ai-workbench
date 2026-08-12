@@ -39,6 +39,15 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+
+class _PollFailed(RuntimeError):
+    """任务/业务终态失败（如额度不足、文件格式不支持、页数超限）——重试无意义，不重试。"""
+
+
+class _ParseTimeout(Exception):
+    """轮询超时（内部用，统一转 ok=False）。"""
+
+
 BASE_URL = "https://mineru.net"
 BATCH_URL = f"{BASE_URL}/api/v4/file-urls/batch"            # 申请签名上传地址
 RESULT_URL = f"{BASE_URL}/api/v4/extract-results/batch/"     # 批量结果查询，batch_id 拼在末尾
@@ -79,11 +88,11 @@ async def _request_batch(client: httpx.AsyncClient, filename: str,
     }
     resp = await client.post(BATCH_URL, json=payload, headers=headers)
     if resp.status_code >= 400:
-        raise RuntimeError(f"MinerU 申请上传地址失败：HTTP {resp.status_code}")
+        raise _PollFailed(f"MinerU 申请上传地址失败：HTTP {resp.status_code}")
     body = resp.json()
     if not isinstance(body, dict) or body.get("code") not in (0, "0"):
         msg = (body or {}).get("msg") or (body or {}).get("message") or "未知错误"
-        raise RuntimeError(f"MinerU 申请上传地址失败：{msg}")
+        raise _PollFailed(f"MinerU 申请上传地址失败：{msg}")
     data = body.get("data") or {}
     batch_id = str(data.get("batch_id") or "").strip()
     urls = data.get("file_urls") or []
@@ -122,11 +131,11 @@ async def _poll_batch(client: httpx.AsyncClient, batch_id: str, token: str,
             raise _ParseTimeout(f"MinerU 解析超时（超过 {int(timeout)} 秒），可稍后重试")
         resp = await client.get(f"{RESULT_URL}{batch_id}", headers=headers)
         if resp.status_code >= 400:
-            raise RuntimeError(f"MinerU 查询任务失败：HTTP {resp.status_code}")
+            raise _PollFailed(f"MinerU 查询任务失败：HTTP {resp.status_code}")
         body = resp.json()
         if not isinstance(body, dict) or body.get("code") not in (0, "0"):
             msg = (body or {}).get("msg") or (body or {}).get("message") or "未知错误"
-            raise RuntimeError(f"MinerU 查询任务失败：{msg}")
+            raise _PollFailed(f"MinerU 查询任务失败：{msg}")
         results = (body.get("data") or {}).get("extract_result") or []
         if not results:
             await asyncio.sleep(interval)
@@ -136,7 +145,7 @@ async def _poll_batch(client: httpx.AsyncClient, batch_id: str, token: str,
         if state == _DONE:
             return item
         if state == _FAILED:
-            raise RuntimeError(str(item.get("err_msg") or "MinerU 解析失败"))
+            raise _PollFailed(str(item.get("err_msg") or "MinerU 解析失败"))
         if state not in _WAITING_STATES:
             # 未知状态防御，避免死循环
             raise RuntimeError(f"MinerU 任务状态异常：{state or '(空)'}")
@@ -159,10 +168,6 @@ async def _download_full_zip(client: httpx.AsyncClient, zip_url: str) -> str:
 
 
 # ---------------------------------------------------------------- 主流程
-
-class _ParseTimeout(Exception):
-    """轮询超时（内部用，统一转 ok=False）。"""
-
 
 def _read_file_bytes(path: str) -> bytes:
     with open(path, "rb") as f:
@@ -190,21 +195,31 @@ async def _parse_file_inner(path: str, filename: str,
 
 
 async def parse_file(path: str, filename: str, *, is_ocr: bool = True,
-                     language: str = "ch", timeout: float = 300.0,
+                     language: str = "ch", timeout: float = 120.0,
                      interval: float = 3.0) -> dict:
     """解析本地文件（PDF/Office/图片）为 markdown 文本。
 
     成功 → {"ok": True, "text": <全文>}；失败 → {"ok": False, "error": 中文}。
     任何异常都转为 ok=False，绝不抛出；MINERU_API_KEY 未配置时不发网络请求。
+    默认 timeout=120s：超过会返回超时错误（前端 SSE 空闲超时为 180s，
+    轮询期间无事件，超时必须低于该值，否则客户端会断开连接）。
+    瞬时故障（网络/HTTP 5xx/429）自动重试最多 3 次（指数退避）；
+    任务终态失败（_PollFailed）与超时（_ParseTimeout）不重试。
     """
     if not is_configured():
         return {"ok": False, "error": "MinerU 未配置"}
     if not path or not os.path.exists(path):
         return {"ok": False, "error": "文件不存在"}
-    try:
-        return await _parse_file_inner(path, filename, is_ocr, language, timeout, interval)
-    except _ParseTimeout as e:
-        return {"ok": False, "error": str(e)}
-    except Exception as e:  # noqa: BLE001 - 契约要求：绝不抛出
-        logger.warning("[mineru_client] 解析失败: %s", e)
-        return {"ok": False, "error": f"MinerU 解析失败：{e}"}
+    last_err: Exception | None = None
+    for attempt in range(3):
+        try:
+            return await _parse_file_inner(path, filename, is_ocr, language, timeout, interval)
+        except (_ParseTimeout, _PollFailed) as e:
+            return {"ok": False, "error": str(e)}
+        except Exception as e:  # noqa: BLE001 - 瞬时故障重试
+            last_err = e
+            if attempt < 2:
+                logger.warning("[mineru_client] 第 %d 次尝试失败，重试: %s", attempt + 1, e)
+                await asyncio.sleep(1.0 * (attempt + 1))
+    logger.warning("[mineru_client] 3 次尝试均失败: %s", last_err)
+    return {"ok": False, "error": f"MinerU 解析失败：{last_err}"}

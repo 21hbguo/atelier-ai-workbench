@@ -234,7 +234,7 @@ def test_parse_file_upload_failure():
          patch.object(mineru_client, "_request_batch",
                       new=AsyncMock(return_value=("b", "https://oss.example.com/u"))), \
          patch.object(mineru_client, "_upload_file",
-                      new=AsyncMock(side_effect=RuntimeError("文件上传失败：HTTP 403"))):
+                      new=AsyncMock(side_effect=mineru_client._PollFailed("文件上传失败：HTTP 403"))):
         result = _run(mineru_client.parse_file("/tmp/x.pdf", "x.pdf"))
     assert result["ok"] is False
     assert "HTTP 403" in result["error"]
@@ -252,6 +252,41 @@ def test_parse_file_poll_failed():
         result = _run(mineru_client.parse_file("/tmp/x.pdf", "x.pdf"))
     assert result["ok"] is False
     assert "页数超过" in result["error"]
+
+
+def test_parse_file_retries_transient_failure_then_succeeds():
+    """瞬时故障（网络/HTTP 5xx）自动重试，第二次成功。"""
+    with patch.dict(os.environ, {"MINERU_API_KEY": "sk-test"}, clear=True), \
+         patch.object(mineru_client.os.path, "exists", return_value=True), \
+         patch.object(mineru_client.os.path, "getsize", return_value=1024), \
+         patch.object(mineru_client, "_request_batch",
+                      new=AsyncMock(side_effect=[
+                          RuntimeError("MinerU 申请上传地址失败：HTTP 503"),
+                          ("b", "https://oss.example.com/u"),
+                      ])) as m_batch, \
+         patch.object(mineru_client, "_upload_file", new=AsyncMock()), \
+         patch.object(mineru_client, "_poll_batch",
+                      new=AsyncMock(return_value={"state": "done", "full_zip_url": "https://cdn.example.com/r.zip"})), \
+         patch.object(mineru_client, "_download_full_zip", new=AsyncMock(return_value="重试后成功")):
+        result = _run(mineru_client.parse_file("/tmp/x.pdf", "x.pdf"))
+    assert result == {"ok": True, "text": "重试后成功"}
+    assert m_batch.await_count == 2  # 第一次失败重试，第二次成功
+
+
+def test_parse_file_poll_failed_no_retry():
+    """终态失败（_PollFailed）不重试，只调用一次。"""
+    with patch.dict(os.environ, {"MINERU_API_KEY": "sk-test"}, clear=True), \
+         patch.object(mineru_client.os.path, "exists", return_value=True), \
+         patch.object(mineru_client.os.path, "getsize", return_value=1024), \
+         patch.object(mineru_client, "_request_batch",
+                      new=AsyncMock(return_value=("b", "https://oss.example.com/u"))), \
+         patch.object(mineru_client, "_upload_file", new=AsyncMock()), \
+         patch.object(mineru_client, "_poll_batch",
+                      new=AsyncMock(side_effect=mineru_client._PollFailed("文件格式不支持"))) as m_poll:
+        result = _run(mineru_client.parse_file("/tmp/x.pdf", "x.pdf"))
+    assert result["ok"] is False
+    assert "文件格式不支持" in result["error"]
+    assert m_poll.await_count == 1  # 终态失败不重试
 
 
 def test_parse_file_timeout():

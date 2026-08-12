@@ -77,7 +77,7 @@ DEFAULT_HEADERS = {
 
 MAX_BODY_BYTES = 5 * 1024 * 1024  # 响应体大小上限 5MB
 MAX_REDIRECTS = 5  # 最多跟随的重定向跳数
-MAX_FILE_BYTES = 50 * 1024 * 1024  # 文件下载体积上限 50MB
+MAX_FILE_BYTES = 200 * 1024 * 1024  # 文件下载体积上限 200MB（对齐 MinerU v4 上限）
 try:  # 可被环境变量 MINERU_MAX_FILE_BYTES 覆盖（单位：字节）
     MAX_FILE_BYTES = int(os.environ.get("MINERU_MAX_FILE_BYTES", str(MAX_FILE_BYTES)))
 except (TypeError, ValueError):  # noqa: S112 - 非法环境变量值回退默认
