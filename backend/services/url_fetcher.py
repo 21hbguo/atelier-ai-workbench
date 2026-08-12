@@ -5,9 +5,17 @@
   去重并保持出现顺序。
 - ``fetch_url(url: str, max_chars: int = 12000, timeout: float = 10.0) -> dict``：
   抓取网页并提取正文。成功返回
-  ``{"ok": True, "url": <最终URL>, "title": <标题或"">, "text": <正文>}``，
-  失败返回 ``{"ok": False, "error": <中文错误原因>}``。
+  ``{"ok": True, "url": <最终URL>, "title": <标题或"">, "text": <正文>,
+  "links": <页面链接列表，最多10条>}``，
+  失败返回 ``{"ok": False, "error": <中文错误原因>, "links": []}``。
   函数内部捕获一切异常并转为 ``ok=False``，绝不向上抛出。
+- ``extract_links_from_html(html_bytes, base_url, max_links=30) -> list[str]``：
+  从 HTML 中提取页面链接（纯函数、同步、不抛异常），供聊天 agent 做
+  「页面链接扩散（BFS）」自主搜索：标准库 html.parser 解析 <a href>，
+  相对链接经 ``urljoin`` 转绝对 URL，仅保留 http/https（大小写不敏感），
+  过滤资源文件扩展名（图片/视频/音频/样式/脚本/文档/归档/程序等，
+  忽略查询串后判断），去重保序，站外（与 base_url 不同域名）链接优先
+  （各自保持出现顺序），返回最多 max_links 条；解析失败返回 []。
 
 安全设计（SSRF 防护）：
 1. 仅允许 http/https scheme，其余直接拒绝。
@@ -20,6 +28,14 @@
    都重新做 DNS 解析 + IP 校验（防 DNS rebinding / 重定向到内网）。
 4. 响应体上限 5MB（流式读取截断）；请求超时由 ``httpx.Timeout`` 控制；
    使用浏览器 User-Agent。
+5. 文件链接（PDF/Office/图片）分支：URL 路径扩展名命中文件类型
+   （pdf/doc/docx/ppt/pptx/xls/xlsx + png/jpg/jpeg/jp2/webp/gif/bmp），
+   或响应 Content-Type 命中（application/pdf、openxmlformats-*、image/* 等）
+   时，按文件下载（体积上限 ``MAX_FILE_BYTES`` 50MB，可被环境变量
+   ``MINERU_MAX_FILE_BYTES`` 覆盖，同样逐跳 SSRF 校验）；下载完成后本地
+   ``document_parser.parse_file`` 解析优先（fast path），失败时降级 MinerU
+   云端（``mineru_client.parse_file``，is_ocr=True；图片无本地解析直接走
+   MinerU）；返回 ``title`` 为文件名。临时文件用后即删。
 
 正文提取：优先用 trafilatura（``include_comments=False, include_tables=True``，
 同步库经 ``asyncio.to_thread`` 包装）；trafilatura 不可用或提取为空时降级为
@@ -30,11 +46,17 @@ from __future__ import annotations
 import asyncio
 import html
 import ipaddress
+import os
 import re
 import socket
-from urllib.parse import urljoin, urlsplit, urlunsplit
+import tempfile
+from html.parser import HTMLParser  # 标准库，不引入第三方依赖
+from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
 import httpx
+
+# 本地文件解析（txt/md/pdf/docx/xlsx/pptx 等），fast path 优先于 MinerU 云端
+from backend.services.document_parser import parse_file  # noqa: E402
 
 try:  # trafilatura 为同步库；缺失时走降级提取，模块仍可用
     import trafilatura
@@ -55,6 +77,35 @@ DEFAULT_HEADERS = {
 
 MAX_BODY_BYTES = 5 * 1024 * 1024  # 响应体大小上限 5MB
 MAX_REDIRECTS = 5  # 最多跟随的重定向跳数
+MAX_FILE_BYTES = 50 * 1024 * 1024  # 文件下载体积上限 50MB
+try:  # 可被环境变量 MINERU_MAX_FILE_BYTES 覆盖（单位：字节）
+    MAX_FILE_BYTES = int(os.environ.get("MINERU_MAX_FILE_BYTES", str(MAX_FILE_BYTES)))
+except (TypeError, ValueError):  # noqa: S112 - 非法环境变量值回退默认
+    pass
+
+# 文件分支识别的扩展名集合（URL 路径扩展名命中即走文件下载分支）
+_FILE_EXTS = {
+    "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx",
+    "png", "jpg", "jpeg", "jp2", "webp", "gif", "bmp",
+}
+# 图片扩展名：本地 document_parser 不支持，直接走 MinerU（is_ocr=True）
+_IMAGE_EXTS = {"png", "jpg", "jpeg", "jp2", "webp", "gif", "bmp"}
+# Content-Type → 扩展名（防「无扩展名但实际是文件」的链接，如 /download?id=1）
+_MIME_EXT = {
+    "application/pdf": "pdf",
+    "application/msword": "doc",
+    "application/vnd.ms-excel": "xls",
+    "application/vnd.ms-powerpoint": "ppt",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+}
+# 简化 Content-Type（部分服务器省略前缀）的关键字兜底
+_MIME_KEYWORD_EXT = {
+    "wordprocessingml": "docx",
+    "spreadsheetml": "xlsx",
+    "presentationml": "pptx",
+}
 
 # SSRF 黑名单网段（契约要求）
 _PRIVATE_NETWORKS = [
@@ -228,19 +279,263 @@ def _extract_text(html_bytes: bytes) -> str:
     return _fallback_extract_text(html_bytes)
 
 
+# ---------------------------------------------------------------- 链接提取
+
+# 资源文件扩展名：链接指向这类文件时过滤（忽略查询串后按路径最后一段判断）。
+# 覆盖图片/视频/音频/样式/脚本/文档/归档/程序等，BFS 只扩散可读网页。
+_RESOURCE_EXTS = {
+    # 图片
+    "jpg", "jpeg", "png", "gif", "webp", "svg", "ico", "bmp", "avif", "jfif",
+    # 视频
+    "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v", "3gp",
+    # 音频
+    "mp3", "wav", "ogg", "oga", "flac", "aac", "m4a", "wma", "opus",
+    # 样式 / 脚本
+    "css", "js", "mjs", "map",
+    # 文档 / 数据
+    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+    "odt", "ods", "odp", "txt", "csv",
+    # 归档 / 程序
+    "zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz",
+    "exe", "dmg", "apk", "msi",
+}
+
+
+class _LinkParser(HTMLParser):
+    """HTMLParser 子类：收集所有 <a href> 的原始 href 值（含大写属性名）。"""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.hrefs: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() != "a":
+            return
+        for key, value in attrs:
+            if key.lower() == "href" and value:
+                self.hrefs.append(value)
+
+
+def _ext_from_path(path: str) -> str:
+    """取路径最后一段的扩展名（小写）；无扩展名返回空串。"""
+    if not path:
+        return ""
+    last = path.rstrip("/").rsplit("/", 1)[-1]
+    if "." not in last:
+        return ""
+    return last.rsplit(".", 1)[-1].lower()
+
+
+def extract_links_from_html(
+    html_bytes: bytes, base_url: str, max_links: int = 30
+) -> list[str]:
+    """从 HTML 中提取页面链接（供聊天 agent 页面链接扩散 BFS 搜索）。
+
+    - 标准库 html.parser 解析 <a href>；相对链接经 urljoin(base_url, href)
+      转为绝对 URL，仅保留 http/https scheme（大小写不敏感）；
+    - 过滤资源文件扩展名（图片/视频/音频/样式/脚本/文档等，忽略查询串）；
+    - 去重保序；站外（与 base_url 不同域名）链接优先，各自保持出现顺序；
+    - 返回最多 max_links 条；解析失败返回 []。
+    纯函数、同步、不抛异常。
+    """
+    if not html_bytes or not base_url:
+        return []
+    try:
+        parser = _LinkParser()
+        parser.feed(html_bytes.decode("utf-8", errors="replace"))
+        parser.close()
+    except Exception:  # noqa: BLE001 - 解析失败返回空
+        return []
+
+    base_host = (urlsplit(base_url).hostname or "").lower()
+    seen: set[str] = set()
+    external: list[str] = []  # 站外（与 base_url 不同域名）
+    internal: list[str] = []  # 站内
+    for href in parser.hrefs:
+        try:
+            href = html.unescape(href.strip())
+            if not href:
+                continue
+            absolute = urljoin(base_url, href)
+            parsed = urlsplit(absolute)
+            if parsed.scheme.lower() not in ("http", "https"):
+                continue
+            if _ext_from_path(parsed.path) in _RESOURCE_EXTS:
+                continue
+            # 去重按去掉 fragment 后的 URL（fragment 不参与网络请求）
+            normalized = urlunsplit(
+                (parsed.scheme.lower(), parsed.netloc, parsed.path, parsed.query, "")
+            )
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            host = (parsed.hostname or "").lower()
+            (external if host != base_host else internal).append(normalized)
+        except Exception:  # noqa: BLE001 - 单条链接解析失败跳过
+            continue
+    return (external + internal)[:max_links]
+
+
+# ---------------------------------------------------------------- 文件分支
+
+def _file_ext_from_url(url: str) -> str | None:
+    """URL 路径扩展名是否命中文件类型；命中返回小写扩展名，否则 None。
+
+    只取路径最后一段（文件名）的扩展名，目录名含点不误判。
+    """
+    path = urlsplit(url).path
+    if not path:
+        return None
+    last = path.rstrip("/").rsplit("/", 1)[-1]
+    if not last or "." not in last:
+        return None
+    ext = last.rsplit(".", 1)[-1].lower()
+    return ext if ext in _FILE_EXTS else None
+
+
+def _file_ext_from_content_type(content_type: str) -> str | None:
+    """Content-Type 是否命中文件类型；命中返回扩展名，否则 None。
+
+    覆盖 application/pdf、application/vnd.openxmlformats-*（docx/xlsx/pptx）、
+    application/msword、application/vnd.ms-excel/powerpoint、image/*。
+    """
+    ct = (content_type or "").split(";")[0].strip().lower()
+    if not ct:
+        return None
+    if ct in _MIME_EXT:
+        return _MIME_EXT[ct]
+    for keyword, ext in _MIME_KEYWORD_EXT.items():
+        if keyword in ct:
+            return ext
+    if ct.startswith("image/"):
+        sub = ct.split("/", 1)[1]
+        return sub if sub in _IMAGE_EXTS else None
+    return None
+
+
+def _is_html_content_type(content_type: str) -> bool:
+    """Content-Type 是否明确是 HTML 页面（用于「扩展名像文件但实际是网页」回退）。"""
+    ct = (content_type or "").split(";")[0].strip().lower()
+    return ct in ("text/html", "application/xhtml+xml")
+
+
+def _filename_from_url(url: str, ext: str) -> str:
+    """从最终 URL 提取文件名（作为 title）；提取不到时用 document.<ext>。"""
+    path = urlsplit(url).path
+    name = unquote(path.rstrip("/").rsplit("/", 1)[-1]) if path else ""
+    if not name or "." not in name:
+        name = f"document.{ext}"
+    return name
+
+
+def _truncate_text(text: str, max_chars: int) -> str:
+    """统一截断逻辑：超过 max_chars 时截断并追加中文省略标记。"""
+    if len(text) > max_chars:
+        return text[:max_chars] + "\n…[内容过长，已截断]"
+    return text
+
+
+def _get_mineru_client():
+    """惰性加载 mineru_client 模块（并行开发中，模块可能尚未就绪）。
+
+    契约（见 mineru_client.py）：``is_configured() -> bool``、
+    ``async parse_file(path, filename, *, is_ocr=True, language="ch")`` 返回
+    ``{"ok": True, "text": <markdown 全文>}`` 或 ``{"ok": False, "error": 中文}``。
+    模块未就绪时返回 None，调用方跳过 MinerU 降级。
+    """
+    try:
+        from backend.services import mineru_client  # noqa: PLC0415 - 函数内导入防模块未就绪
+        return mineru_client
+    except Exception:  # noqa: BLE001 - 模块缺失/导入失败一律视为未配置
+        return None
+
+
+def _mineru_configured(mineru) -> bool:
+    """安全调用 is_configured()，异常视为未配置。"""
+    try:
+        return bool(mineru.is_configured())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+async def _parse_file_content(
+    body: bytes, ext: str, final_url: str, max_chars: int, truncated: bool
+) -> dict:
+    """文件分支：本地 document_parser 优先，MinerU 云端兜底。
+
+    - 文本型文件（pdf/docx/xlsx/pptx 等）：本地 parse_file 成功即返回；
+      失败（损坏/扫描件/老格式 doc/xls/ppt 不支持）时若 MinerU 已配置则降级云端。
+    - 图片：本地不支持，直接走 MinerU（is_ocr=True）。
+    临时文件用后即删（try/finally unlink）。
+    """
+    if truncated:
+        size_mb = MAX_FILE_BYTES / (1024 * 1024)
+        label = f"{int(size_mb)}MB" if size_mb >= 1 else f"{MAX_FILE_BYTES // 1024}KB"
+        return {
+            "ok": False,
+            "error": f"文件超过大小上限（{label}），无法下载解析",
+        }
+    if not body:
+        return {"ok": False, "error": "文件内容为空"}
+    filename = _filename_from_url(final_url, ext)
+    is_image = ext in _IMAGE_EXTS
+
+    fd, path = tempfile.mkstemp(prefix="urlfetch_", suffix=f".{ext}")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(body)
+
+        # 本地 fast path（图片跳过：document_parser 不支持）
+        text = ""
+        if not is_image:
+            try:
+                text = await asyncio.to_thread(parse_file, path, ext)
+            except Exception:  # noqa: BLE001 - 本地失败走 MinerU 降级
+                text = ""
+        if text:
+            return {"ok": True, "url": final_url, "title": filename,
+                    "text": _truncate_text(text, max_chars), "links": []}
+
+        # MinerU 云端兜底
+        mineru = _get_mineru_client()
+        if mineru is None or not _mineru_configured(mineru):
+            if is_image:
+                return {"ok": False, "error": "图片解析需要配置 MinerU 服务"}
+            return {"ok": False, "error": "文件解析失败：本地解析未能提取文本，且 MinerU 服务未配置"}
+        try:
+            result = await mineru.parse_file(path, filename, is_ocr=True, language="ch")
+        except Exception as e:  # noqa: BLE001 - MinerU 调用异常转为可读错误
+            return {"ok": False, "error": f"文件解析失败：{e}"}
+        if not result or not result.get("ok"):
+            err = (result or {}).get("error") or "未知错误"
+            return {"ok": False, "error": f"文件解析失败：{err}"}
+        return {"ok": True, "url": final_url, "title": filename,
+                "text": _truncate_text(result.get("text") or "", max_chars),
+                "links": []}
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:  # noqa: S110 - 清理失败不致命
+            pass
+
+
 # ---------------------------------------------------------------- 抓取主流程
 
 async def fetch_url(url: str, max_chars: int = 12000, timeout: float = 10.0) -> dict:
     """抓取网页并提取正文。
 
-    成功：{"ok": True, "url": <最终URL>, "title": <标题或"">, "text": <正文>}
-    失败：{"ok": False, "error": <中文错误原因>}
+    成功：{"ok": True, "url": <最终URL>, "title": <标题或"">, "text": <正文>,
+           "links": <页面链接列表（最多10条，供 BFS 扩散）>}
+    失败：{"ok": False, "error": <中文错误原因>, "links": []}
     任何异常都会被捕获并转为 ok=False，绝不抛出。
     """
     try:
-        return await _fetch_url_inner(url, max_chars, timeout)
+        result = await _fetch_url_inner(url, max_chars, timeout)
     except Exception as e:  # noqa: BLE001 - 契约要求：绝不向上抛出
-        return {"ok": False, "error": f"抓取失败：{e}"}
+        result = {"ok": False, "error": f"抓取失败：{e}"}
+    # 向后兼容：所有失败路径统一补 links 字段；成功路径已在内部填充
+    result.setdefault("links", [])
+    return result
 
 
 async def _fetch_url_inner(url: str, max_chars: int, timeout: float) -> dict:
@@ -259,6 +554,7 @@ async def _fetch_url_inner(url: str, max_chars: int, timeout: float) -> dict:
     body = b""
     final_url = ""
     truncated = False
+    file_ext: str | None = None  # 非 None 表示文件分支（URL 扩展名或 Content-Type 命中）
 
     async with httpx.AsyncClient(
         follow_redirects=False, timeout=httpx.Timeout(timeout)
@@ -292,6 +588,10 @@ async def _fetch_url_inner(url: str, max_chars: int, timeout: float) -> dict:
             headers["Host"] = host_header
             extensions = {"sni_hostname": host} if scheme == "https" else None
 
+            # 文件分支预检：URL 路径扩展名命中文件类型（pdf/docx/图片等）→ 该跳
+            # 按文件下载（体积上限 MAX_FILE_BYTES）。重定向链上任何一跳命中即生效。
+            file_ext = _file_ext_from_url(current_url)
+
             try:
                 async with client.stream(
                     "GET", pinned_url, headers=headers, extensions=extensions
@@ -307,13 +607,24 @@ async def _fetch_url_inner(url: str, max_chars: int, timeout: float) -> dict:
                         current_url = urljoin(current_url, location)
                         continue  # 跟随重定向，进入下一跳（重新做安全校验）
 
-                    # 正常响应：流式读取并截断至 MAX_BODY_BYTES
+                    # Content-Type 兜底：无扩展名但实际是文件（如 /download?id=1
+                    # 直接返回 application/pdf）；URL 看着像文件但服务器明确返回
+                    # HTML 时回退为网页处理（防误伤伪文件链接）
+                    content_type = resp.headers.get("content-type", "")
+                    ct_ext = _file_ext_from_content_type(content_type)
+                    if ct_ext is not None:
+                        file_ext = ct_ext
+                    elif file_ext is not None and _is_html_content_type(content_type):
+                        file_ext = None
+
+                    # 正常响应：流式读取；文件分支上限 MAX_FILE_BYTES，网页 MAX_BODY_BYTES
+                    limit = MAX_FILE_BYTES if file_ext is not None else MAX_BODY_BYTES
                     chunks = []
                     size = 0
                     async for chunk in resp.aiter_bytes():
                         chunks.append(chunk)
                         size += len(chunk)
-                        if size >= MAX_BODY_BYTES:
+                        if size >= limit:
                             truncated = True
                             break
                     body = b"".join(chunks)
@@ -331,7 +642,11 @@ async def _fetch_url_inner(url: str, max_chars: int, timeout: float) -> dict:
             return {"ok": False, "error": f"重定向次数过多（超过 {MAX_REDIRECTS} 次）"}
 
     if truncated:
-        body = body[:MAX_BODY_BYTES]
+        body = body[: (MAX_FILE_BYTES if file_ext is not None else MAX_BODY_BYTES)]
+
+    # 文件分支：本地解析优先，MinerU 云端兜底
+    if file_ext is not None:
+        return await _parse_file_content(body, file_ext, final_url, max_chars, truncated)
 
     title = ""
     text = ""
@@ -342,7 +657,12 @@ async def _fetch_url_inner(url: str, max_chars: int, timeout: float) -> dict:
     if not text:
         return {"ok": False, "error": "无法从该链接提取正文内容（可能不是网页或内容为空）"}
 
-    if len(text) > max_chars:
-        text = text[:max_chars] + "\n…[内容过长，已截断]"
-
-    return {"ok": True, "url": final_url, "title": title, "text": text}
+    return {
+        "ok": True,
+        "url": final_url,
+        "title": title,
+        "text": _truncate_text(text, max_chars),
+        # 从流式读取拿到的原始 HTML 提取链接（以最终重定向 URL 为 base），
+        # 最多 10 条，供聊天 agent 做页面链接扩散（BFS）自主搜索
+        "links": extract_links_from_html(body, final_url, max_links=10),
+    }

@@ -17,7 +17,10 @@ from backend.services.agent.registry import agent_tool
         "先调用本工具获取正文，再基于正文回答，不要凭空猜测链接内容。\n"
         "参数说明：url 为用户给出的完整网页链接（http/https）；question 可选，"
         "用于带上用户针对该网页的具体问题（当前仅用于标注，正文内容不依赖它）。\n"
-        "返回该网页的标题、URL 与正文文本（正文过长会自动截断并在末尾标注）。"
+        "返回该网页的标题、URL 与正文文本（正文过长会自动截断并在末尾标注）。\n"
+        "成功返回时正文末尾附「可用链接」列表（页面内的相关链接，最多 10 条）："
+        "当正文信息不完整或需要更多细节时，可基于这些链接继续调用 fetch_url 逐个抓取，"
+        "进行多跳探索（链接扩散），直到信息足够再回答。"
     ),
     parameters={
         "type": "object",
@@ -59,4 +62,11 @@ async def fetch_url_tool(args: dict, ctx: AgentContext) -> str:
     ctx.add_citation(str(result.get("url") or url), str(result.get("title") or ""))
 
     parts = [f"标题：{title}", f"URL：{result.get('url') or url}", "正文：", text]
+    # 链接扩散：页面内可用链接（最多 10 条）附在正文后，供模型继续调用 fetch_url
+    # 做多跳探索（搜→选→抓→扩散）。无链接或链接为空时省略该节（向后兼容）。
+    links = [ln for ln in (result.get("links") or [])[:10]
+             if isinstance(ln, str) and ln.strip()]
+    if links:
+        parts.append("可用链接：")
+        parts.extend(f"{i}. {ln}" for i, ln in enumerate(links, start=1))
     return "\n".join(parts)

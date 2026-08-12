@@ -1,4 +1,4 @@
-"""web_search 工具：多供应商联网搜索（tavily / exa / serper / brave / searxng）。
+"""web_search 工具：多供应商联网搜索（tavily / exa / serper / brave / searxng / html）。
 
 环境变量配置（可同时配置多个，自动按优先级故障转移）：
 - TAVILY_API_KEY: Tavily 云搜索（api.tavily.com）
@@ -8,14 +8,18 @@
 - SEARXNG_URL: 自建 searxng 实例地址（如 https://searx.example.com，仅内网/公网可达时可用）
 
 兼容旧配置：
-- SEARCH_PROVIDER: serper | brave | tavily | searxng（显式指定单一供应商时仅用该供应商）
+- SEARCH_PROVIDER: serper | brave | tavily | searxng | html（显式指定单一供应商时仅用该供应商）
 - SEARCH_API_KEY: 指定供应商时的通用 key（新配置优先用各自独立 key）
 
-未配置任何 key 时返回明确中文错误。统一返回 "标题 — url\n描述" 列表文本。
+内置免费搜索兜底（provider "html"）：即使一个 key 都没配置也能搜索——直接抓取
+Bing / DuckDuckGo 的免费 HTML 结果页并解析链接。它始终排在降级链最后一环，
+稳定性与结果质量不如专用搜索 API。统一返回 "标题 — url\n描述" 列表文本。
 """
 from __future__ import annotations
 
 import asyncio
+import base64
+import html as html_lib
 import logging
 import os
 import re
@@ -24,6 +28,7 @@ import time
 from collections import deque
 from datetime import datetime
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -91,28 +96,40 @@ _PROVIDER_ENV = {
     "brave": "BRAVE_API_KEY",
     "searxng": "SEARXNG_URL",
 }
-# 默认启用顺序（也可用 SEARCH_PROVIDERS 显式指定顺序）
-_DEFAULT_PROVIDER_ORDER = ("tavily", "exa", "serper", "brave", "searxng")
+# 默认启用顺序（也可用 SEARCH_PROVIDERS 显式指定顺序）；"html" 为内置免费搜索兜底，
+# 始终排在最后（见 _configured_providers）
+_DEFAULT_PROVIDER_ORDER = ("tavily", "exa", "serper", "brave", "searxng", "html")
 
 
 def _configured_providers() -> list[str]:
     """返回可用的供应商列表：
     1) SEARCH_PROVIDER 显式指定时仅用该供应商（兼容旧配置，key 回退 SEARCH_API_KEY）；
-    2) 否则按默认顺序自动检测已配置独立 key 的供应商（SEARCH_PROVIDERS 可自定义顺序）。
+       显式指定了供应商但没配 key 时，回退到内置免费搜索 ["html"]（保证无 key 也能搜）；
+       显式指定 "html" 时直接返回 ["html"]；
+    2) 否则按默认顺序自动检测已配置独立 key 的供应商（SEARCH_PROVIDERS 可自定义顺序），
+       并在列表尾部【总是】追加 "html" 作为最后一环兜底（无 key 也能搜索）。
     """
     explicit = str(os.getenv("SEARCH_PROVIDER") or "").strip().lower()
     if explicit:
+        if explicit == "html":
+            return ["html"]
         if explicit in _PROVIDER_ENV:
             key_env = _PROVIDER_ENV[explicit]
             if os.getenv(key_env) or os.getenv("SEARCH_API_KEY"):
-                return [explicit]
-        return []
+                return [explicit]  # 显式配置了 key → 尊重显式配置，不追加 html
+        # 显式指定了供应商但没配 key → 用内置免费搜索兜底
+        return ["html"]
     order_env = str(os.getenv("SEARCH_PROVIDERS") or "").strip()
     if order_env:
         order = [s.strip().lower() for s in order_env.split(",") if s.strip()]
     else:
         order = list(_DEFAULT_PROVIDER_ORDER)
-    return [p for p in order if p in _PROVIDER_ENV and os.getenv(_PROVIDER_ENV[p])]
+    providers = [p for p in order if p in _PROVIDER_ENV and os.getenv(_PROVIDER_ENV[p])]
+    # 无论是否配置了 key，尾部总是追加内置免费搜索（无 key 时的最后兜底；
+    # SEARCH_PROVIDERS 显式包含 html 时已在上面的过滤中被剔除，这里统一补在最后）
+    if "html" not in providers:
+        providers.append("html")
+    return providers
 
 
 def _max_search_per_run() -> int:
@@ -126,16 +143,32 @@ def _max_search_per_run() -> int:
 
 def _unconfigured_message() -> str:
     return (
-        "未配置联网搜索：请设置至少一个供应商的 key/地址，例如 "
-        "TAVILY_API_KEY（Tavily）、EXA_API_KEY（Exa）、SERPER_API_KEY（Serper）、"
-        "BRAVE_API_KEY（Brave），或 SEARXNG_URL（自建 searxng 实例）。"
+        "未配置任何搜索服务 API key：将使用内置免费搜索（抓取 Bing/DuckDuckGo 结果页），"
+        "其稳定性与结果质量不如专用搜索 API。建议配置 TAVILY_API_KEY（Tavily）、"
+        "EXA_API_KEY（Exa）、SERPER_API_KEY（Serper）、BRAVE_API_KEY（Brave）或 "
+        "SEARXNG_URL（自建 searxng 实例）以获得更稳定可靠的搜索。"
     )
 
 
-async def _http_get(url: str, *, headers: dict | None = None, params: dict | None = None) -> dict:
+async def _http_get(url: str, *, headers: dict | None = None, params: dict | None = None,
+                  max_bytes: int | None = None) -> dict:
     h = dict(headers or {})
     h.setdefault("User-Agent", _BROWSER_UA)
     async with httpx.AsyncClient(timeout=_SEARCH_TIMEOUT) as client:
+        if max_bytes is not None:
+            # HTML 结果页：流式读取并限制响应体大小（超过 max_bytes 即截断，
+            # 防止上游返回超大页面占用内存/带宽），返回 {"html": 文本} 供解析
+            chunks: list[bytes] = []
+            size = 0
+            async with client.stream("GET", url, headers=h, params=params) as resp:
+                resp.raise_for_status()
+                async for chunk in resp.aiter_bytes():
+                    chunks.append(chunk)
+                    size += len(chunk)
+                    if size >= max_bytes:
+                        break
+            text = b"".join(chunks).decode(resp.encoding or "utf-8", errors="replace")
+            return {"html": text[:max_bytes]}
         resp = await client.get(url, headers=h, params=params)
         resp.raise_for_status()
         return resp.json()
@@ -224,6 +257,116 @@ async def _searxng(query: str, base_url: str, n: int) -> list[dict]:
             "description": str(r.get("content") or ""),
         })
     return out
+
+
+# ---------- 内置免费搜索兜底（provider "html"）：抓取 Bing / DuckDuckGo 免费 HTML 结果页 ----------
+# 无任何 API key 时的最后一环。页面结构随时可能变，解析失败时返回 []（外层视为该引擎失败），
+# 两引擎都失败则走主循环的"全部供应商失败"逻辑。限流/缓存/熔断由外层统一生效，这里不重复实现。
+
+_HTML_MAX_BYTES = 2 * 1024 * 1024  # 抓取 HTML 结果页的响应体大小上限（约 2MB，超出截断）
+
+
+def _strip_html_tags(s: str) -> str:
+    """去掉 HTML 标签并解码实体，返回纯文本。"""
+    s = re.sub(r"<[^>]+>", "", s or "")
+    return html_lib.unescape(s).strip()
+
+
+_BING_BLOCK_RE = re.compile(r'<li class="[^"]*\bb_algo\b[^"]*">(.*?)</li>', re.S)
+_BING_TITLE_RE = re.compile(r'<h2[^>]*>\s*<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>\s*</h2>', re.S)
+_BING_DESC_RE = re.compile(r'<p[^>]*>(.*?)</p>', re.S)
+
+
+def _bing_real_url(href: str) -> str:
+    """Bing 部分结果使用 ck/a 跳转链接（u 参数为 base64 编码的真实地址），尝试解回真实 URL。"""
+    if not href.startswith("https://www.bing.com/ck/a"):
+        return href
+    m = re.search(r"[?&]u=([^&]+)", href)
+    if not m:
+        return href
+    try:
+        decoded = base64.urlsafe_b64decode(m.group(1) + "==")
+        real = decoded.decode("utf-8", errors="replace")
+    except Exception:
+        return href
+    if real.startswith(("http://", "https://")):
+        return real
+    return href
+
+
+def _parse_bing_html(html_text: str, n: int) -> list[dict]:
+    """解析 Bing 搜索结果页（www.bing.com/search?q=）：识别 <li class="b_algo"> 结果块。
+
+    提取 title（<h2><a>…</a></h2>）、url（href，仅 http/https）、description（<p>…</p>），
+    返回最多 n 条 [{"title", "url", "description"}]；广告块/无 h2 标题、非 http 链接、
+    无链接的块被跳过；解析失败返回 []。
+    """
+    out: list[dict] = []
+    for block in _BING_BLOCK_RE.findall(str(html_text or "")):
+        m = _BING_TITLE_RE.search(block)
+        if not m:
+            continue  # 广告块或无 h2 标题的块
+        href = _bing_real_url(m.group(1))
+        if not href.startswith(("http://", "https://")):
+            continue
+        dm = _BING_DESC_RE.search(block)
+        out.append({
+            "title": _strip_html_tags(m.group(2)),
+            "url": href,
+            "description": _strip_html_tags(dm.group(1)) if dm else "",
+        })
+        if len(out) >= n:
+            break
+    return out
+
+
+_DDG_TITLE_RE = re.compile(
+    r'<a[^>]*rel="nofollow"[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', re.S
+)
+_DDG_SNIPPET_RE = re.compile(r'<a[^>]*class="result__snippet"[^>]*>(.*?)</a>', re.S)
+
+
+def _parse_ddg_html(html_text: str, n: int) -> list[dict]:
+    """解析 DuckDuckGo HTML 结果页（html.duckduckgo.com/html/?q=）。
+
+    每个结果由 <a rel="nofollow" class="result__a" href>（标题链接）标识，
+    摘要取紧随其后的 <a class="result__snippet">；非 http 链接跳过；
+    返回最多 n 条 [{"title", "url", "description"}]，解析失败返回 []。
+    """
+    title_matches = list(_DDG_TITLE_RE.finditer(str(html_text or "")))
+    snippet_matches = list(_DDG_SNIPPET_RE.finditer(str(html_text or "")))
+    out: list[dict] = []
+    si = 0
+    for tm in title_matches:
+        href = tm.group(1)
+        if not href.startswith(("http://", "https://")):
+            continue
+        while si < len(snippet_matches) and snippet_matches[si].start() < tm.end():
+            si += 1  # 跳过出现在该标题之前的 snippet（属于更早的结果）
+        desc = ""
+        if si < len(snippet_matches):
+            desc = _strip_html_tags(snippet_matches[si].group(1))
+            si += 1
+        out.append({"title": _strip_html_tags(tm.group(2)), "url": href, "description": desc})
+        if len(out) >= n:
+            break
+    return out
+
+
+async def _bing_html(query: str, n: int) -> list[dict]:
+    """抓取 Bing 搜索结果页并解析（_http_get 已带浏览器 UA 与超时；max_bytes 限制响应体）。"""
+    url = "https://www.bing.com/search?q=" + quote(query)
+    data = await _http_get(url, max_bytes=_HTML_MAX_BYTES)
+    html_text = data.get("html") if isinstance(data, dict) else str(data)
+    return _parse_bing_html(html_text, n)
+
+
+async def _ddg_html(query: str, n: int) -> list[dict]:
+    """抓取 DuckDuckGo HTML 结果页并解析（_http_get 已带浏览器 UA 与超时；max_bytes 限制响应体）。"""
+    url = "https://html.duckduckgo.com/html/?q=" + quote(query)
+    data = await _http_get(url, max_bytes=_HTML_MAX_BYTES)
+    html_text = data.get("html") if isinstance(data, dict) else str(data)
+    return _parse_ddg_html(html_text, n)
 
 
 def _rate_limited(user_id: int) -> bool:
@@ -457,7 +600,17 @@ async def web_search_search(args: dict, ctx: AgentContext) -> str:
         errors: list[str] = []
         for provider in providers:
             try:
-                if provider == "searxng":
+                if provider == "html":
+                    # 内置免费搜索兜底（最后一环）：先 Bing，空/异常则 DuckDuckGo，
+                    # 两者皆空/失败才记入 errors 走全败逻辑
+                    try:
+                        items = await _bing_html(query, max_results)
+                    except Exception as exc:
+                        logger.warning("[web_search] html(bing) 抓取失败，切换 DuckDuckGo: %s", exc)
+                        items = []
+                    if not items:
+                        items = await _ddg_html(query, max_results)
+                elif provider == "searxng":
                     items = await _searxng(query, os.getenv("SEARXNG_URL") or "", max_results)
                 else:
                     api_key = os.getenv(_PROVIDER_ENV[provider]) or os.getenv("SEARCH_API_KEY") or ""

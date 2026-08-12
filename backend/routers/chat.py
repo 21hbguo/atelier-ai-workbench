@@ -286,6 +286,16 @@ def _compute_token_cost(usage: dict | None, model_cfg: dict | None) -> tuple[Dec
 
 
 def _chat_price_snapshot(model_cfg: dict | None) -> dict:
+    cfg = model_cfg or {}
+    if cfg.get("points_per_1k_input") is not None:
+        snapshot = BillingService.build_price_snapshot(cfg)
+        snapshot["points_per_1k"] = {
+            "input": str(cfg.get("points_per_1k_input")) if cfg.get("points_per_1k_input") is not None else None,
+            "output": str(cfg.get("points_per_1k_output")) if cfg.get("points_per_1k_output") is not None else None,
+            "cache_read": str(cfg.get("points_per_1k_cache_read")) if cfg.get("points_per_1k_cache_read") is not None else None,
+            "cache_creation": str(cfg.get("points_per_1k_cache_creation")) if cfg.get("points_per_1k_cache_creation") is not None else None,
+        }
+        return snapshot
     snapshot = BillingService.get_model_price_snapshot(model_cfg)
     if snapshot.get("points_per_1k", {}).get("input") is not None:
         return snapshot
@@ -302,7 +312,7 @@ def _chat_price_snapshot(model_cfg: dict | None) -> dict:
 
 def _record_chat_usage(*, user_id: int, session_id: int, message_id: int | None,
                        model_cfg: dict | None, usage: dict | None, req_id: str,
-                       pre_charged: float, pre_balance: float) -> float:
+                       pre_charged: float, pre_balance: float, pre_allocation: dict | None = None) -> float:
     """done 事件落库 usage 记录 + 按 token 量补差价（方案 A）。
 
     保留现有「先按次预扣」机制不变：LLM 返回后若实际 token 费用与预扣不等则补差价
@@ -315,25 +325,6 @@ def _record_chat_usage(*, user_id: int, session_id: int, message_id: int | None,
     charged_points = BillingService.charge_points(cost_points)
     model_key = (model_cfg or {}).get("model_id") or ""
     u = usage or {}
-    try:
-        with get_db() as conn:
-            conn.execute(
-                """INSERT INTO chat_usage_records
-                   (user_id, session_id, message_id, model_key, request_id,
-                    input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
-                    reasoning_tokens, total_tokens, cost_points, billing_mode, pricing_version_id,
-                    calculated_cost_points, charged_points, price_snapshot, usage_missing)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                (user_id, session_id, message_id, model_key, req_id,
-                 int(u.get("input_tokens") or 0), int(u.get("output_tokens") or 0),
-                 int(u.get("cache_read_tokens") or 0), int(u.get("cache_creation_tokens") or 0),
-                 int(u.get("reasoning_tokens") or 0), int(u.get("total_tokens") or 0),
-                 cost_points, billing_mode, price_snapshot.get("pricing_version_id"), cost_points,
-                 charged_points, json.dumps(price_snapshot, ensure_ascii=False), usage is None),
-            )
-    except Exception:
-        logger.exception("[chat/send] insert chat_usage_records failed")
-
     final_balance = pre_balance
     if billing_mode == "token":
         diff = Decimal(charged_points) - Decimal(str(pre_charged))
@@ -346,17 +337,43 @@ def _record_chat_usage(*, user_id: int, session_id: int, message_id: int | None,
                         tx_type="chat_token_adjust", request_key=adjust_key,
                     )
                 else:
-                    final_balance = PointsService.add_points(
-                        user_id, float(-diff),
-                        tx_type="chat_token_adjust",
-                        description="AI对话按量退还差额",
-                        request_key=adjust_key,
+                    final_balance = PointsService.refund(
+                        user_id, float(-diff), "AI对话按量退还差额", request_key=adjust_key,
                     )
             except ValueError:
-                # 余额不足以补差价：不阻断响应（回复已生成），仅记录
                 logger.warning("[chat/send] token adjust insufficient balance: user=%s diff=%s", user_id, diff)
             except Exception:
                 logger.exception("[chat/send] token adjust failed")
+
+    allocation = {"subscription_points_used": 0, "wallet_points_used": 0}
+    if pre_allocation is not None:
+        try:
+            allocation = PointsService.get_allocation_breakdown(
+                user_id, [f"chat:{req_id}", f"chat_token_adjust:{req_id}"]
+            )
+        except Exception:
+            logger.exception("[chat/send] get point allocation breakdown failed")
+    try:
+        with get_db() as conn:
+            conn.execute(
+                """INSERT INTO chat_usage_records
+                   (user_id, session_id, message_id, model_key, request_id,
+                    input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+                    reasoning_tokens, total_tokens, cost_points, billing_mode, pricing_version_id,
+                    calculated_cost_points, charged_points, subscription_points_used, wallet_points_used,
+                    price_snapshot, usage_missing)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (user_id, session_id, message_id, model_key, req_id,
+                 int(u.get("input_tokens") or 0), int(u.get("output_tokens") or 0),
+                 int(u.get("cache_read_tokens") or 0), int(u.get("cache_creation_tokens") or 0),
+                 int(u.get("reasoning_tokens") or 0), int(u.get("total_tokens") or 0),
+                 cost_points, billing_mode, price_snapshot.get("pricing_version_id"), cost_points,
+                 charged_points, allocation["subscription_points_used"], allocation["wallet_points_used"],
+                 json.dumps(price_snapshot, ensure_ascii=False), usage is None),
+            )
+    except Exception:
+        logger.exception("[chat/send] insert chat_usage_records failed")
+
     return final_balance
 
 
@@ -638,8 +655,10 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                 cfg[k] = v
         if LLMClient.protocol(cfg) != "openai":
             use_agent = False
-    # 工具列表裁剪：有文档 → 全量工具（文档检索/总结/搜索）；仅联网搜索 → 只注册 web_search
-    tools_names = _AGENT_TOOLS if attached_docs else (["web_search"] if body.web_search else None)
+    # 工具列表裁剪：有文档 → 全量工具（文档检索/总结/搜索/抓取）；
+    # 仅联网搜索 → 同时注册 web_search + fetch_url：纯搜索模式也需要 fetch_url
+    # 抓正文做链接扩散（搜→选→抓→扩散），否则模型拿到搜索结果后无法抓取正文
+    tools_names = _AGENT_TOOLS if attached_docs else (["web_search", "fetch_url"] if body.web_search else None)
 
     def _refund_once() -> None:
         # refund 幂等（request_key 唯一），重复调用安全

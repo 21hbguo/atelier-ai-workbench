@@ -22,6 +22,7 @@ from backend.services.url_fetcher import (
     _check_host_safety,
     _is_private_ip,
     _resolve_safe_ip,
+    extract_links_from_html,
     extract_urls,
     fetch_url,
 )
@@ -41,11 +42,31 @@ def _run(coro):
 
 class _Handler(http.server.BaseHTTPRequestHandler):
     """本地测试页面：/ok 正常页、/redirect 302 到 /ok、/redirect-loop 自循环、
-    /redirect-internal 302 到内网、/empty 空正文、/long 长文、其余 404。"""
+    /redirect-internal 302 到内网、/empty 空正文、/long 长文、/links 链接页、
+    其余 404。"""
 
     def do_GET(self):  # noqa: N802 - http.server 协议方法名
         if self.path == "/ok":
             body = PAGE_HTML.encode("utf-8")
+            self._respond(200, body, "text/html; charset=utf-8")
+        elif self.path == "/links":
+            port = self.server.server_address[1]
+            body = (
+                '<!DOCTYPE html><html><head><meta charset="utf-8">'
+                "<title>链接页面标题</title></head><body>"
+                "<p>链接页面正文内容。</p>"
+                '<a href="/ok">相对链接</a>'
+                f'<a href="http://127.0.0.1:{port}/ok">绝对站内链接</a>'
+                '<a href="https://external.example.com/page1">站外链接1</a>'
+                '<a href="/ok">重复的相对链接</a>'
+                '<a href="https://external.example.com/page1">重复的站外链接</a>'
+                '<a href="/images/photo.jpg">图片资源</a>'
+                '<a href="https://cdn.example.com/style.css">样式资源</a>'
+                '<a href="javascript:void(0)">javascript 链接</a>'
+                '<a href="">空链接</a>'
+                '<a href="mailto:test@example.com">邮件链接</a>'
+                "</body></html>"
+            ).encode("utf-8")
             self._respond(200, body, "text/html; charset=utf-8")
         elif self.path == "/redirect":
             self.send_response(302)
@@ -239,6 +260,90 @@ def test_fetch_url_http_error(server):
         result = _run(fetch_url(server.base + "/missing-page"))
     assert result["ok"] is False
     assert "HTTP 404" in result["error"]
+
+
+# ---------------------------------------------------------------- 链接提取
+
+def test_extract_links_from_html_relative_and_filter():
+    html = (
+        '<html><body>'
+        '<a href="/a">站内1</a>'
+        '<a href="https://ext.example.com/x">站外1</a>'
+        '<a href="/a">重复站内</a>'
+        '<a href="https://ext.example.com/x">重复站外</a>'
+        '<a href="//other.example.com/y">协议相对站外</a>'
+        '<a href="/img/photo.jpg">图片资源</a>'
+        '<a href="https://cdn.example.com/app.js?ver=1">脚本资源</a>'
+        '<a href="javascript:void(0)">js伪协议</a>'
+        '<a href="mailto:a@b.com">邮件</a>'
+        '<a href="">空链接</a>'
+        "</body></html>"
+    ).encode("utf-8")
+    links = extract_links_from_html(html, "http://base.example.com/page")
+    # 站外优先且各自保持出现顺序；相对/协议相对链接转绝对；
+    # 资源扩展名（含带查询串的）、伪协议、邮件、空链接被过滤；去重保序
+    assert links == [
+        "https://ext.example.com/x",
+        "http://other.example.com/y",
+        "http://base.example.com/a",
+    ]
+
+
+def test_extract_links_from_html_max_links_and_bad_input():
+    # max_links 截断（站内链接按出现顺序取前 N 条）
+    html = b"<html><body>" + b"".join(
+        f'<a href="/p{i}">p{i}</a>'.encode() for i in range(50)
+    ) + b"</body></html>"
+    links = extract_links_from_html(html, "http://base.example.com/", max_links=5)
+    assert len(links) == 5
+    assert links[0] == "http://base.example.com/p0"
+    assert links[-1] == "http://base.example.com/p4"
+    # 非 HTML / 空输入不抛异常，返回 []
+    assert extract_links_from_html(b"not html at all", "http://base.example.com/") == []
+    assert extract_links_from_html(b"", "http://base.example.com/") == []
+    assert extract_links_from_html(b"<html></html>", "") == []
+    assert extract_links_from_html(None, "http://base.example.com/") == []
+
+
+def test_fetch_url_returns_links(server):
+    with patch("backend.services.url_fetcher._resolve_safe_ip",
+               side_effect=_allow_local(server.port)):
+        result = _run(fetch_url(server.base + "/links"))
+    assert result["ok"] is True
+    links = result["links"]
+    assert links, "成功响应应包含非空 links"
+    assert all(link.startswith(("http://", "https://")) for link in links)
+    # 站外链接优先
+    assert links[0] == "https://external.example.com/page1"
+    # 图片/样式资源与伪协议/邮件链接被过滤
+    assert not any(
+        "photo.jpg" in link or "style.css" in link
+        or "javascript" in link or "mailto" in link
+        for link in links
+    )
+    # 去重：站内绝对链接与相对链接指向同一 URL，/ok 只出现一次
+    assert sum(link.endswith("/ok") for link in links) == 1
+    # 最多 10 条
+    assert len(links) <= 10
+
+
+def test_fetch_url_links_empty_on_failure(server):
+    # HTTP 错误路径
+    with patch("backend.services.url_fetcher._resolve_safe_ip",
+               side_effect=_allow_local(server.port)):
+        result = _run(fetch_url(server.base + "/missing-page"))
+    assert result["ok"] is False
+    assert result["links"] == []
+    # 非 http/https scheme 拒绝路径
+    result = _run(fetch_url("ftp://example.com/file.txt"))
+    assert result["ok"] is False
+    assert result["links"] == []
+    # 空正文路径
+    with patch("backend.services.url_fetcher._resolve_safe_ip",
+               side_effect=_allow_local(server.port)):
+        result = _run(fetch_url(server.base + "/empty"))
+    assert result["ok"] is False
+    assert result["links"] == []
 
 
 # ---------------------------------------------------------------- SSRF 校验逻辑单测
