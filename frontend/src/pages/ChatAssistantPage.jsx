@@ -398,10 +398,11 @@ function EmptyState({ onPick }) {
       <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>帮你写提示词、优化描述，让灵感更快落地</p>
       <div className="flex flex-col gap-2 w-full max-w-sm">
         {EXAMPLES.map(q => (
-          <button key={q} onClick={() => onPick(q)}
-            className="text-left text-sm px-4 py-3 rounded-2xl transition-colors hover:bg-bg-hover"
+          <button key={q} onClick={() => onPick(q)} title="点击立即发送这个问题"
+            className="text-left text-sm px-4 py-3 rounded-2xl transition-colors hover:bg-bg-hover group flex items-center gap-2"
             style={{ border: '1px solid var(--border-color)', color: 'var(--text-primary)', background: 'var(--bg-card)' }}>
-            {q}
+            <span className="flex-1 min-w-0">{q}</span>
+            <Send size={13} className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: 'var(--accent)' }} />
           </button>
         ))}
       </div>
