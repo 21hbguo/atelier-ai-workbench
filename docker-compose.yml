@@ -17,6 +17,17 @@ services:
       timeout: 3s
       retries: 10
 
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${SEARXNG_PORT:-8082}:8080"
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml
+    environment:
+      SEARXNG_BASE_URL: ${SEARXNG_BASE_URL:-http://127.0.0.1:${SEARXNG_PORT:-8082}}
+
+
   app:
     build: .
     restart: unless-stopped
@@ -31,6 +42,8 @@ services:
       TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-true}
       TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-127.0.0.1,::1,private}
       FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1,::1}
+      # 联网搜索：容器内通过服务名访问 searxng；本地（非 docker）跑后端改为 http://127.0.0.1:8081
+      SEARXNG_URL: ${SEARXNG_URL:-http://searxng:8080}
     volumes:
       - ./data:/app/data
       - /etc/localtime:/etc/localtime:ro
