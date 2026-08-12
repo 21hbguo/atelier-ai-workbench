@@ -108,7 +108,7 @@ describe('Sidebar', () => {
     expect(screen.getByText('AI 绘画')).toBeInTheDocument()
     expect(screen.getByText('广场')).toBeInTheDocument()
     expect(screen.getByText('我的提示词')).toBeInTheDocument()
-    expect(screen.getAllByText('积分详情').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('积分').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('通知')).toBeInTheDocument()
   })
 

@@ -13,7 +13,7 @@ const navItems = [
   { path: '/works', icon: Image, label: '我的作品' },
   { path: '/square', icon: Globe, label: '广场' },
   { path: '/prompts', icon: BookOpen, label: '我的提示词' },
-  { path: '/wallet', icon: Wallet, label: '积分详情' },
+  { path: '/wallet', icon: Wallet, label: '积分' },
   { path: '/notifications', icon: Bell, label: '通知' },
   // { path: '/shares', icon: Share2, label: '分享管理' },
   // { path: '/settings', icon: Settings, label: '账号安全' },
@@ -138,7 +138,7 @@ export default function Sidebar({ open, onClose }) {
           </button>
         </div>
         <div className="px-3 py-2 border-t flex flex-wrap gap-x-1 gap-y-0.5 text-xs opacity-50" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
-          <Link to="/wallet" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>积分详情</Link>
+          <Link to="/wallet" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>积分</Link>
           <span>|</span>
           <Link to="/agreement" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>用户协议</Link>
           <span>|</span>

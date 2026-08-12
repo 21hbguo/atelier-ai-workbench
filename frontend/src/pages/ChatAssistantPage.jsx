@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { MessageCircle, Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, ChevronLeft, Brain, AlertCircle, CheckSquare, Cpu, ChevronDown, Check, Paperclip, FileText, Settings } from 'lucide-react'
+import { MessageCircle, Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, ChevronLeft, Brain, AlertCircle, CheckSquare, Cpu, ChevronDown, Check, Paperclip, FileText, Settings, Globe } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
 import { useAppDialog } from '../components/AppDialogProvider'
 import { chatAPI, pointsAPI } from '../api'
@@ -414,7 +414,7 @@ const EFFORT_LABELS = { auto: '自动', low: '低', medium: '中', high: '高', 
 // 思考强度固定顺序（auto 最左、max 最右）：UI 展示不依赖模型档案/CSV 的原始顺序
 const EFFORT_ORDER = ['auto', 'low', 'medium', 'high', 'xhigh', 'max']
 
-function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, reasoningEffort, onReasoningEffort, efforts, modelLabel, pendingQueue, onEditPending, onRemovePending, models, chatModelId, onSelectModel, onUploadClick, docs, onRemoveDoc, uploadingCount, uploadNote }) {
+function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, reasoningEffort, onReasoningEffort, efforts, modelLabel, pendingQueue, onEditPending, onRemovePending, models, chatModelId, onSelectModel, onUploadClick, docs, onRemoveDoc, uploadingCount, uploadNote, webSearch, onWebSearch }) {
   const [effortOpen, setEffortOpen] = useState(false)
   const [modelOpen, setModelOpen] = useState(false)
   const EFFORT_OPTIONS = (Array.isArray(efforts) && efforts.length ? efforts : ['auto', 'low', 'medium', 'high', 'xhigh', 'max'])
@@ -439,49 +439,7 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
       style={{ background: 'var(--bg-primary)', borderTop: '1px solid var(--border-color)', bottom: 'env(keyboard-inset-height, 0px)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
       <div className="mx-auto w-full max-w-3xl px-4 pt-2 pb-2">
         <div className="flex items-center gap-1.5 mb-1.5 px-1 flex-wrap">
-          {/* 模型选择 */}
-          {models.length > 0 ? (
-            <div className="relative">
-              <button onClick={() => setModelOpen(v => !v)}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
-                style={{
-                  background: activeModel ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'color-mix(in srgb, var(--accent) 10%, transparent)',
-                  borderColor: activeModel ? 'var(--accent)' : 'color-mix(in srgb, var(--accent) 25%, var(--border-color))',
-                  color: 'var(--accent)',
-                }}>
-                <Cpu size={13} />
-                <span>{activeModel?.label || modelLabel || '模型'}</span>
-                <ChevronDown size={11} className={modelOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
-              </button>
-              {modelOpen && (
-                <div className="absolute left-0 bottom-full mb-1.5 z-50 w-72 max-h-[45dvh] overflow-y-auto rounded-xl p-1 model-dropdown-scroll"
-                  style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-md)' }}>
-                  {models.map(m => (
-                    <button key={m.model_id} onClick={() => { onSelectModel(m.model_id); setModelOpen(false) }}
-                      className="w-full text-left flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-bg-hover transition-colors"
-                      style={{ background: m.model_id === chatModelId ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent' }}>
-                      <span className="flex-1 min-w-0">
-                        <span className="block text-xs font-medium truncate" style={{ color: m.model_id === chatModelId ? 'var(--accent)' : 'var(--text-primary)' }}>
-                          {m.label || m.model_id}
-                        </span>
-                        <span className="block text-[10px] truncate" style={{ color: 'var(--text-secondary)' }}>
-                          {m.model_id}{m.points_per_request != null && m.points_per_request > 0 ? ` · ${m.points_per_request} 积分/次` : ''}
-                        </span>
-                      </span>
-                      {m.model_id === chatModelId && <Check size={13} style={{ color: 'var(--accent)' }} />}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            modelLabel && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium"
-                style={{ background: 'color-mix(in srgb, var(--accent) 10%, transparent)', color: 'var(--accent)' }}>
-                {modelLabel}
-              </span>
-            )
-          )}
+          {/* 思考强度（模型选择已移至输入区，与上传/联网搜索并排） */}
           <button onClick={() => setEffortOpen(v => !v)}
             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
             style={{
@@ -587,6 +545,56 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
               style={{ color: 'var(--text-primary)', minHeight: '40px', maxHeight: '80px', fontSize: '15px', paddingLeft: '10px' }} />
             <div className="mt-2 flex items-center justify-between gap-3">
               <div className="flex items-center flex-shrink-0 whitespace-nowrap gap-0.5">
+                {/* 模型选择（与上传/联网搜索并排，样式统一） */}
+                {models.length > 0 ? (
+                  <div className="relative">
+                    <button type="button" onClick={() => setModelOpen(v => !v)} title="选择模型"
+                      className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors"
+                      style={{ color: activeModel ? 'var(--accent)' : 'var(--text-secondary)' }}>
+                      <Cpu size={15} />
+                      <span className="text-[11px] leading-none max-w-[8.5rem] truncate">{activeModel?.label || modelLabel || '模型'}</span>
+                      <ChevronDown size={11} className={modelOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                    </button>
+                    {modelOpen && (
+                      <div className="absolute left-0 bottom-full mb-1.5 z-50 w-72 max-h-[45dvh] overflow-y-auto rounded-xl p-1 model-dropdown-scroll"
+                        style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-md)' }}>
+                        {models.map(m => (
+                          <button key={m.model_id} onClick={() => { onSelectModel(m.model_id); setModelOpen(false) }}
+                            className="w-full text-left flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-bg-hover transition-colors"
+                            style={{ background: m.model_id === chatModelId ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent' }}>
+                            <span className="flex-1 min-w-0">
+                              <span className="block text-xs font-medium truncate" style={{ color: m.model_id === chatModelId ? 'var(--accent)' : 'var(--text-primary)' }}>
+                                {m.label || m.model_id}
+                              </span>
+                              <span className="block text-[10px] truncate" style={{ color: 'var(--text-secondary)' }}>
+                                {m.model_id}{m.points_per_request != null && m.points_per_request > 0 ? ` · ${m.points_per_request} 积分/次` : ''}
+                              </span>
+                            </span>
+                            {m.model_id === chatModelId && <Check size={13} style={{ color: 'var(--accent)' }} />}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  modelLabel && (
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-1 text-[11px] leading-none" style={{ color: 'var(--accent)' }}>
+                      <Cpu size={15} />
+                      {modelLabel}
+                    </span>
+                  )
+                )}
+                {/* 联网搜索开关（默认关闭；开启后回答会实时检索互联网） */}
+                <button type="button" onClick={onWebSearch}
+                  title={webSearch ? '联网搜索已开启：回答将实时检索互联网' : '联网搜索已关闭（默认），点击开启'}
+                  className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg transition-colors"
+                  style={{
+                    color: webSearch ? 'var(--accent)' : 'var(--text-secondary)',
+                    background: webSearch ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
+                  }}>
+                  <Globe size={15} />
+                  <span className="text-[11px] leading-none">{webSearch ? '联网' : '联网搜索'}</span>
+                </button>
                 <button type="button" onClick={onUploadClick}
                   title="上传文档/代码（txt/md/csv/pdf/docx/xlsx/pptx/py/js/ts/go/yaml 等 50+ 格式；一次最多 5 个，会话累计最多 20 个）"
                   className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors"
@@ -668,6 +676,19 @@ export default function ChatAssistantPage() {
   const [chatModelId, setChatModelId] = useState(() => {
     try { return localStorage.getItem('chat_model_id') || '' } catch { return '' }
   }) // '' = 激活模型
+  // 联网搜索开关（默认关闭；偏好持久化到 localStorage）
+  const [webSearch, setWebSearch] = useState(() => {
+    try { return localStorage.getItem('chat_web_search') === '1' } catch { return false }
+  })
+  const toggleWebSearch = useCallback(() => {
+    setWebSearch(prev => {
+      const next = !prev
+      try { localStorage.setItem('chat_web_search', next ? '1' : '0') } catch {}
+      return next
+    })
+  }, [])
+  const webSearchRef = useRef(webSearch)
+  webSearchRef.current = webSearch
   const [uploadNote, setUploadNote] = useState('')
   // 上传提示自动消失（timer 重置式：新提示重置计时，6 秒后清除）
   const uploadNoteTimerRef = useRef(null)
@@ -903,7 +924,7 @@ export default function ChatAssistantPage() {
     setDocs(prev => prev.filter(d => d.id !== id))
   }, [])
 
-  const startStream = useCallback((sessionId, content, reasoningEffort = 'auto') => {
+  const startStream = useCallback((sessionId, content, reasoningEffort = 'auto', useWeb = null) => {
     const controller = new AbortController()
     abortRef.current = controller
     // 流的唯一身份：停止后立刻发新消息时，旧流的迟到回调不会误操作新流
@@ -918,6 +939,7 @@ export default function ChatAssistantPage() {
       signal: controller.signal,
       reasoning_effort: reasoningEffort,
       model_id: modelIdRef.current,
+      web_search: useWeb === null ? webSearchRef.current : useWeb,
       onChunk: data => {
         const buf = streamBufRef.current
         if (buf.streamId !== streamId) return
@@ -1356,7 +1378,8 @@ export default function ChatAssistantPage() {
             models={selectableModels} chatModelId={chatModelId} onSelectModel={handleSelectModel}
             onUploadClick={openFilePicker} docs={docs} onRemoveDoc={removeDoc}
             uploadingCount={docs.filter(d => d.status === 'uploading' || d.status === 'pending').length}
-            uploadNote={uploadNote} />
+            uploadNote={uploadNote}
+            webSearch={webSearch} onWebSearch={toggleWebSearch} />
         </div>
       </div>
       <style>{MD_STYLES}</style>
