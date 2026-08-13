@@ -12,7 +12,7 @@ WORKDIR /app
 ENV TZ=Asia/Shanghai
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    nginx curl tzdata libreoffice-impress && \
+    nginx curl tzdata libreoffice-impress fonts-noto-cjk && \
     ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ >/etc/timezone && \
     rm -rf /var/lib/apt/lists/*
 
