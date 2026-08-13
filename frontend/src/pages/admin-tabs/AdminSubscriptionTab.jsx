@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
-import { adminAPI } from '../../api'
+import { adminAPI, configAPI } from '../../api'
 
-const FEATURE_DEFAULTS = { web_search: true, file_upload: true, file_write: true, max_tool_calls: 10, max_chat_sessions: 100, max_chat_files: 20 }
+const FEATURE_DEFAULTS = { web_search: true, file_upload: true, file_write: true, max_chat_sessions: 100, max_chat_files: 20 }
 
 const emptyPlan = { code: '', name: '', description: '', price_rmb: 0, cycle_days: 30, grant_points: 0, features: { ...FEATURE_DEFAULTS, package_type: 'membership', daily_quota: null, original_price_rmb: '' }, allowed_models: [], max_concurrent_requests: 1, enabled: true, is_free: false, sort_order: 0 }
 
@@ -20,23 +20,26 @@ export default function AdminSubscriptionTab() {
   const [draft, setDraft] = useState(emptyPlan)
   const [editingId, setEditingId] = useState(null)
   const [editOpen, setEditOpen] = useState(false)
+  const [freeDailyQuota, setFreeDailyQuota] = useState(5) // 全局配置：AI 助手每日免费次数
   const [loading, setLoading] = useState(true)
 
   const load = async () => {
     setLoading(true)
     try {
-      const [p, o, s, u, m] = await Promise.all([adminAPI.subscriptionPlans(), adminAPI.subscriptionOrders(), adminAPI.subscriptions(), adminAPI.subscriptionUsage(), adminAPI.modelPrices()])
+      const [p, o, s, u, m, c] = await Promise.all([adminAPI.subscriptionPlans(), adminAPI.subscriptionOrders(), adminAPI.subscriptions(), adminAPI.subscriptionUsage(), adminAPI.modelPrices(), configAPI.admin()])
       setPlans(p.data?.items || [])
       setOrders(o.data?.items || [])
       setSubscriptions(s.data?.items || [])
       setUsage(u.data)
       setPrices(m.data?.items || [])
+      setFreeDailyQuota(Number(c.data?.ai_daily_free_quota ?? 5))
     } finally { setLoading(false) }
   }
   useEffect(() => { Promise.resolve().then(load) }, [])
 
   const buildPayload = () => {
-    const f = draft.features || {}
+    const f = { ...(draft.features || {}) }
+    delete f.max_tool_calls // 工具调用次数不再做套餐限制
     return {
       ...draft,
       price_rmb: num(draft.price_rmb, 0),
@@ -51,7 +54,6 @@ export default function AdminSubscriptionTab() {
         web_search: Boolean(f.web_search),
         file_upload: Boolean(f.file_upload),
         file_write: Boolean(f.file_write),
-        max_tool_calls: num(f.max_tool_calls, FEATURE_DEFAULTS.max_tool_calls),
         max_chat_sessions: num(f.max_chat_sessions, FEATURE_DEFAULTS.max_chat_sessions),
         max_chat_files: num(f.max_chat_files, FEATURE_DEFAULTS.max_chat_files),
         daily_quota: f.daily_quota === '' || f.daily_quota == null ? null : Number(f.daily_quota),
@@ -100,13 +102,13 @@ export default function AdminSubscriptionTab() {
     {!editOpen && (
       <div className="p-4 rounded-2xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
         <div className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>新增套餐</div>
-        <PlanForm draft={draft} setDraft={setDraft} />
+        <PlanForm draft={draft} setDraft={setDraft} freeDailyQuota={freeDailyQuota} />
         <div className="flex justify-end mt-3">
           <button onClick={savePlan} className="px-3 py-1.5 rounded-2xl text-xs text-white" style={{ background: 'var(--accent)' }}>新增</button>
         </div>
       </div>
     )}
-    <Section title="套餐管理"><Table headers={['名称', '类型', '价格', '积分', '次数/权益', '操作']} rows={plans.map(plan => [plan.name, plan.features?.package_type === 'credits' ? '积分包' : (plan.features?.package_type === 'membership' ? '会员' : '其他'), `¥${plan.price_rmb}`, plan.grant_points, <RightsCell key="rights" plan={plan} />, <div className="flex gap-2" key="ops"><button onClick={() => openEdit(plan)}>编辑</button><button onClick={() => adminAPI.disableSubscriptionPlan(plan.id).then(load)}>下架</button></div>])} /></Section>
+    <Section title="套餐管理"><Table headers={['名称', '类型', '价格', '原价', '积分', '次数/权益', '操作']} rows={plans.map(plan => [plan.name, plan.features?.package_type === 'credits' ? '积分包' : (plan.features?.package_type === 'membership' ? '会员' : '其他'), `¥${plan.price_rmb}`, plan.features?.original_price_rmb ? `¥${plan.features.original_price_rmb}` : '-', plan.grant_points, <RightsCell key="rights" plan={plan} freeDailyQuota={freeDailyQuota} />, <div className="flex gap-2" key="ops"><button onClick={() => openEdit(plan)}>编辑</button><button onClick={() => adminAPI.disableSubscriptionPlan(plan.id).then(load)}>下架</button></div>])} /></Section>
     <Section title="订阅订单"><Table headers={['订单', '用户', '套餐', '金额', '状态', '操作']} rows={orders.map(order => [order.order_no, order.username || order.user_id, order.plan_name, `¥${order.amount_rmb}`, order.status, <div className="flex gap-2" key="ops">{order.status === 'pending' && <><button onClick={() => review(order, 'approve')}>通过</button><button onClick={() => review(order, 'reject')}>驳回</button></>} {order.status === 'approved' && <button onClick={() => review(order, 'refund')}>退款</button>}</div>])} /></Section>
     <Section title="用户订阅"><Table headers={['用户', '套餐', '周期积分', '到期', '状态', '操作']} rows={subscriptions.map(item => [item.username || item.user_id, item.plan_name, `${item.remaining_points ?? 0} / ${item.granted_points ?? 0}`, item.plan_package_type === 'credits' ? '永久' : (item.period_end ? new Date(item.period_end).toLocaleString('zh-CN') : '-'), item.status, <div className="flex gap-2" key="ops"><button onClick={() => operate(item, 'grant')}>补发</button><button onClick={() => operate(item, 'extend')}>续期</button></div>])} /></Section>
     <Section title="模型价格"><Table headers={['模型', '输入积分/千 Token', '输出积分/千 Token', '版本数']} rows={prices.map(item => [item.model_id, item.points_per_1k?.input ?? '-', item.points_per_1k?.output ?? '-', item.versions?.length ?? 0])} /></Section>
@@ -122,7 +124,7 @@ export default function AdminSubscriptionTab() {
             <button onClick={closeEdit} aria-label="关闭" className="p-1.5 rounded-lg hover:bg-bg-hover shrink-0" style={{ color: 'var(--text-secondary)' }}><X size={18} /></button>
           </div>
           <div className="overflow-y-auto p-5">
-            <PlanForm draft={draft} setDraft={setDraft} />
+            <PlanForm draft={draft} setDraft={setDraft} freeDailyQuota={freeDailyQuota} />
           </div>
           <div className="flex justify-end gap-2 px-5 py-4 border-t shrink-0" style={{ borderColor: 'var(--border-color)' }}>
             <button onClick={closeEdit} className="px-4 py-1.5 rounded-2xl text-xs" style={{ color: 'var(--text-secondary)' }}>取消</button>
@@ -135,13 +137,12 @@ export default function AdminSubscriptionTab() {
 }
 
 // 套餐次数/权益展示（表格权益列）
-function RightsCell({ plan }) {
+function RightsCell({ plan, freeDailyQuota }) {
   const f = plan.features || {}
-  const isCredits = f.package_type === 'credits'
   const items = []
-  if (isCredits) items.push('按积分消耗')
-  else items.push(`每日对话 ${f.daily_quota == null ? '不限' : `${Number(f.daily_quota).toLocaleString()} 次`}`)
-  items.push(`工具 ${f.max_tool_calls ?? '-'} 次/轮`)
+  if (plan.is_free) items.push(`每日对话 ${freeDailyQuota ?? 0} 次（全局配置）`)
+  else if (f.package_type === 'membership') items.push(`每日对话 ${f.daily_quota == null ? '不限' : `${Number(f.daily_quota).toLocaleString()} 次`}`)
+  else items.push('按积分消耗')
   items.push(`会话 ${f.max_chat_sessions ?? '-'}`)
   items.push(`文件 ${f.max_chat_files ?? '-'}/会话`)
   if (f.web_search) items.push('联网')
@@ -151,7 +152,7 @@ function RightsCell({ plan }) {
 }
 
 // 带 label 的表单（字段名显示在输入框外，不占用输入框内容）
-function PlanForm({ draft, setDraft }) {
+function PlanForm({ draft, setDraft, freeDailyQuota }) {
   const set = (key, value) => setDraft(v => ({ ...v, [key]: value }))
   const setFeature = (key, value) => setDraft(v => ({ ...v, features: { ...v.features, [key]: value } }))
   const f = draft.features || {}
@@ -160,6 +161,7 @@ function PlanForm({ draft, setDraft }) {
       <Field label="标识" hint="唯一 code，创建后不建议改"><input value={draft.code ?? ''} onChange={e => set('code', e.target.value)} className={inputCls} style={inputStyle} /></Field>
       <Field label="名称"><input value={draft.name ?? ''} onChange={e => set('name', e.target.value)} className={inputCls} style={inputStyle} /></Field>
       <Field label="价格（元）"><input type="number" min="0" step="0.01" value={draft.price_rmb ?? ''} onChange={e => set('price_rmb', e.target.value)} className={inputCls} style={inputStyle} /></Field>
+      <Field label="原价（元）" hint="划线价，留空则不显示"><input type="number" min="0" step="0.01" value={f.original_price_rmb ?? ''} onChange={e => setFeature('original_price_rmb', e.target.value)} className={inputCls} style={inputStyle} /></Field>
       <Field label="周期（天）" hint="积分包填 36500 即永久"><input type="number" min="1" value={draft.cycle_days ?? ''} onChange={e => set('cycle_days', e.target.value)} className={inputCls} style={inputStyle} /></Field>
       <Field label="套餐类型">
         <select value={f.package_type || 'membership'} onChange={e => setFeature('package_type', e.target.value)} className={inputCls} style={inputStyle}>
@@ -169,8 +171,11 @@ function PlanForm({ draft, setDraft }) {
         </select>
       </Field>
       <Field label="周期积分" hint="开通赠送或包内积分"><input type="number" min="0" value={draft.grant_points ?? ''} onChange={e => set('grant_points', e.target.value)} className={inputCls} style={inputStyle} /></Field>
-      <Field label="每日对话次数" hint="空 = 不限，积分包按积分消耗"><input type="number" min="0" value={f.daily_quota ?? ''} onChange={e => setFeature('daily_quota', e.target.value)} className={inputCls} style={inputStyle} /></Field>
-      <Field label="工具调用次数" hint="单轮对话内累计上限"><input type="number" min="0" value={f.max_tool_calls ?? ''} onChange={e => setFeature('max_tool_calls', e.target.value)} className={inputCls} style={inputStyle} /></Field>
+      {draft.is_free ? (
+        <Field label="每日对话次数" hint="免费套餐由全局配置控制"><div className={`${inputCls} opacity-60`} style={inputStyle}>全局配置 {freeDailyQuota ?? 0} 次/天（在系统设置中修改）</div></Field>
+      ) : (
+        <Field label="每日对话次数" hint="空 = 不限，积分包按积分消耗"><input type="number" min="0" value={f.daily_quota ?? ''} onChange={e => setFeature('daily_quota', e.target.value)} className={inputCls} style={inputStyle} /></Field>
+      )}
       <Field label="会话数上限" hint="聊天会话数"><input type="number" min="0" value={f.max_chat_sessions ?? ''} onChange={e => setFeature('max_chat_sessions', e.target.value)} className={inputCls} style={inputStyle} /></Field>
       <Field label="文件数上限" hint="单个会话可上传文件数"><input type="number" min="0" value={f.max_chat_files ?? ''} onChange={e => setFeature('max_chat_files', e.target.value)} className={inputCls} style={inputStyle} /></Field>
       <Field label="并发数" hint="同时进行的对话请求数"><input type="number" min="1" value={draft.max_concurrent_requests ?? ''} onChange={e => set('max_concurrent_requests', e.target.value)} className={inputCls} style={inputStyle} /></Field>

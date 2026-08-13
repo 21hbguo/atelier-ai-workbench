@@ -14,7 +14,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from backend.auth import get_current_user
 from backend.database import get_db
-from backend.config import get_limit_config, get_llm_config, UPLOAD_DIR, MAX_FILE_SIZE
+from backend.config import CHAT_UPLOAD_DIR, UPLOAD_DIR, get_limit_config, get_llm_config, MAX_FILE_SIZE
 from backend.services.points_service import PointsService
 from backend.services.banned_words import BannedWordsService
 from backend.services.chat_service import ChatService, build_system_prompt
@@ -77,6 +77,57 @@ def _owns_session(conn, session_id: int, user_id: int):
     if not row:
         raise HTTPException(status_code=404, detail="会话不存在")
     return row
+
+
+def _remove_chat_uploads(storage_names: list[str]) -> None:
+    for storage_name in storage_names:
+        path = CHAT_UPLOAD_DIR / os.path.basename(storage_name)
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            logger.exception("[chat] remove attachment failed: %s", storage_name)
+
+
+def reconcile_chat_uploads() -> dict:
+    """迁移旧聊天附件并仅清理 chat_files 未引用的独立目录文件。"""
+    with get_db() as conn:
+        names = {row["storage_name"] for row in conn.execute("SELECT storage_name FROM chat_files").fetchall()}
+    migrated = deleted = failed = 0
+    for name in names:
+        safe_name = os.path.basename(name)
+        source = UPLOAD_DIR / safe_name
+        target = CHAT_UPLOAD_DIR / safe_name
+        try:
+            if source.exists():
+                if target.exists():
+                    source.unlink()
+                else:
+                    source.replace(target)
+                migrated += 1
+        except OSError:
+            failed += 1
+            logger.exception("[chat] migrate attachment failed: %s", safe_name)
+    for path in CHAT_UPLOAD_DIR.iterdir():
+        if not path.is_file() or path.name in names:
+            continue
+        try:
+            path.unlink()
+            deleted += 1
+        except OSError:
+            failed += 1
+            logger.exception("[chat] cleanup attachment failed: %s", path.name)
+    return {"migrated": migrated, "deleted": deleted, "failed": failed}
+
+
+async def chat_upload_cleanup_loop(interval_seconds: int = 3600):
+    while True:
+        try:
+            result = await asyncio.to_thread(reconcile_chat_uploads)
+            if result["migrated"] or result["deleted"] or result["failed"]:
+                logger.info("[chat] attachment reconcile result=%s", result)
+        except Exception:
+            logger.exception("[chat] attachment reconcile crashed")
+        await asyncio.sleep(max(60, interval_seconds))
 
 
 def _model_override(model: dict | None) -> dict:
@@ -178,7 +229,7 @@ async def upload_chat_file(
     file: UploadFile = File(...),
     user=Depends(get_current_user),
 ):
-    """上传聊天文档：校验后存 data/uploads/，解析全文写入 chat_files，供后续对话注入上下文。"""
+    """上传聊天文档：校验后存 data/chat_uploads/，解析全文写入 chat_files，供后续对话注入上下文。"""
     user_id = user["user_id"]
     with get_db() as conn:
         _owns_session(conn, session_id, user_id)
@@ -204,7 +255,7 @@ async def upload_chat_file(
             raise HTTPException(status_code=400, detail=f"文件大小超过{MAX_FILE_SIZE // 1024 // 1024}MB限制")
     ext = _validate_chat_doc(file, content)
     storage_name = f"{secrets.token_hex(16)}.{ext}"
-    save_path = UPLOAD_DIR / storage_name
+    save_path = CHAT_UPLOAD_DIR / storage_name
     await asyncio.to_thread(_write_file, save_path, content)
 
     # 解析失败：删除已写文件并返回 4xx
@@ -429,11 +480,22 @@ async def list_sessions(user=Depends(get_current_user)):
 async def create_session(user=Depends(get_current_user)):
     user_id = user["user_id"]
     with get_db() as conn:
-        # 会话数量不限制（免费与付费权益一致，未来如需限制改读套餐 features.max_chat_sessions）
+        # 空会话复用（防恶意/重复点击新建产生海量垃圾会话）：若该用户已存在
+        # 无任何消息的会话，直接返回最早那个空会话，不再 INSERT——空会话无限点击
+        # 也只会得到同一个会话，数据库零增长。用户删除空会话后才真正新建。
         row = conn.execute(
-            "INSERT INTO chat_sessions (user_id, title) VALUES (%s, '新对话') RETURNING id, title, created_at, updated_at",
+            """SELECT s.id, s.title, s.created_at, s.updated_at
+               FROM chat_sessions s
+               WHERE s.user_id = %s
+                 AND NOT EXISTS (SELECT 1 FROM chat_messages m WHERE m.session_id = s.id)
+               ORDER BY s.id LIMIT 1""",
             (user_id,),
         ).fetchone()
+        if row is None:
+            row = conn.execute(
+                "INSERT INTO chat_sessions (user_id, title) VALUES (%s, '新对话') RETURNING id, title, created_at, updated_at",
+                (user_id,),
+            ).fetchone()
     return {
         "id": row["id"],
         "title": row["title"],
@@ -456,7 +518,11 @@ async def delete_session(session_id: int, user=Depends(get_current_user)):
     user_id = user["user_id"]
     with get_db() as conn:
         _owns_session(conn, session_id, user_id)
+        storage_names = [row["storage_name"] for row in conn.execute(
+            "SELECT storage_name FROM chat_files WHERE session_id = %s", (session_id,)
+        ).fetchall()]
         conn.execute("DELETE FROM chat_sessions WHERE id = %s", (session_id,))
+    _remove_chat_uploads(storage_names)
     return {"ok": True}
 
 
@@ -470,11 +536,16 @@ async def batch_delete_sessions(body: ChatBatchDeleteRequest, user=Depends(get_c
     user_id = user["user_id"]
     ids = list(dict.fromkeys(body.ids))  # 去重保序
     with get_db() as conn:
+        storage_names = [row["storage_name"] for row in conn.execute(
+            "SELECT cf.storage_name FROM chat_files cf JOIN chat_sessions s ON s.id = cf.session_id WHERE cf.session_id = ANY(%s) AND s.user_id = %s",
+            (ids, user_id),
+        ).fetchall()]
         cur = conn.execute(
             "DELETE FROM chat_sessions WHERE id = ANY(%s) AND user_id = %s",
             (ids, user_id),
         )
         deleted = cur.rowcount
+    _remove_chat_uploads(storage_names)
     return {"deleted": deleted}
 
 
@@ -724,6 +795,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
             ])
         tools_names.append("image_gen")
         tools_names.append("show_widget")
+        tools_names.append("rename_session")  # 对话早期给默认名会话自动起名
 
     def _refund_once() -> None:
         # refund 幂等（request_key 唯一），重复调用安全
@@ -873,7 +945,8 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                         system=agent_system,
                         messages=messages,
                         tools_names=tools_names,
-                        max_tool_calls=max(0, int(entitlements["features"].get("max_tool_calls") or 0)),
+                        # 工具调用次数不做套餐限制（None = 不限制；工具结果回填预算仍会兜底防成本失控）
+                        max_tool_calls=None,
                         max_tokens=ChatService._resolve_max_output_tokens(target_model),
                         override=override,
                         ctx=ctx,

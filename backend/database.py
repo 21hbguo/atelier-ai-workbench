@@ -862,7 +862,7 @@ def init_db():
                 """INSERT INTO subscription_plans
                    (code, name, description, price_rmb, cycle_days, grant_points, features, allowed_models, is_free, sort_order)
                    VALUES ('free', '免费套餐', '基础对话能力，按需使用永久积分。', 0, 30, 0,
-                           '{"web_search": true, "file_upload": true, "file_write": true, "max_tool_calls": 10, "max_chat_sessions": 100, "max_chat_files": 20}'::jsonb,
+                           '{"web_search": true, "file_upload": true, "file_write": true, "max_chat_sessions": 100, "max_chat_files": 20}'::jsonb,
                            '[]'::jsonb, TRUE, 0)
                    ON CONFLICT (code) DO NOTHING"""
             )
@@ -923,9 +923,9 @@ def init_db():
             # 仅保留未来做模型限制与积分限制的余地；幂等刷新已有库
             conn.execute(
                 """UPDATE subscription_plans
-                   SET features = '{"web_search": true, "file_upload": true, "file_write": true, "max_tool_calls": 10, "max_chat_sessions": 100, "max_chat_files": 20}'::jsonb,
+                   SET features = '{"web_search": true, "file_upload": true, "file_write": true, "max_chat_sessions": 100, "max_chat_files": 20}'::jsonb,
                        updated_at = NOW()
-                   WHERE is_free = TRUE AND features <> '{"web_search": true, "file_upload": true, "file_write": true, "max_tool_calls": 10, "max_chat_sessions": 100, "max_chat_files": 20}'::jsonb"""
+                   WHERE is_free = TRUE AND features <> '{"web_search": true, "file_upload": true, "file_write": true, "max_chat_sessions": 100, "max_chat_files": 20}'::jsonb"""
             )
             # 存量免费用户周期快照同步刷新（权益读取走 entitlements_snapshot，需一并迁移才立即生效）
             conn.execute(

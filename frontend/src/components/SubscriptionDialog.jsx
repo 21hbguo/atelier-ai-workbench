@@ -200,7 +200,8 @@ export default function SubscriptionDialog({ open, onClose }) {
                         const orig = Number(plan.features?.original_price_rmb)
                         const price = Number(plan.price_rmb)
                         const showOrig = Number.isFinite(orig) && orig > price
-                        const discount = showOrig ? `${((price / orig) * 10).toFixed(1).replace(/\.0$/, '')}折` : null
+                        // 折扣自动计算：现价 ÷ 原价 × 10，最多一位小数（9.0 显示 9 折）；上限 9.9 避免四舍五入成 10 折
+                        const discount = showOrig ? `${Math.min(9.9, (price / orig) * 10).toFixed(1).replace(/\.0$/, '')}折` : null
                         const isCredit = plan.features?.package_type === 'credits'
                         const isBest = !plan.is_free && plan.id === bestId
                         const cycleText = isCredit ? '永久有效' : (plan.cycle_days >= 36500 ? '长期有效' : `${plan.cycle_days} 天有效`)
