@@ -99,7 +99,7 @@ export default function SubscriptionDialog({ open, onClose }) {
 
   return (
     <div className="fixed inset-0 z-[93] flex items-center justify-center p-4" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/50" />
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-md" />
       <div
         className="relative w-full max-w-4xl max-h-[85vh] overflow-hidden rounded-2xl flex flex-col"
         style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }}
