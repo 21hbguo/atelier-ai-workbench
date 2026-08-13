@@ -97,3 +97,37 @@ def safe_parse_arguments(raw: Optional[str]) -> dict:
 
     logger.debug("[agent/parser] 参数解析全部失败，返回 {}: %s", text[:200])
     return {}
+
+
+def validate_tool_args(parameters: Optional[dict], args: dict) -> list[str]:
+    """按工具声明的 JSON Schema 校验参数，返回人类可读的错误列表（空列表=通过）。
+
+    业界做法参照 openai-agents（pydantic model_validate）与 smolagents（Tool.validate）：
+    参数校验失败不静默容错，而是把明确错误回填给 LLM 让其修正重试。
+
+    Args:
+        parameters: 工具注册时的 parameters JSON Schema（可能为 None / 空 dict）。
+        args: LLM 传入并已解析的参数 dict。
+
+    Returns:
+        错误消息列表，如 ["'path' 是必填属性", "'path': 123 不是 'string' 类型"]；
+        无错误返回 []。
+    """
+    if not parameters or not isinstance(parameters, dict):
+        return []
+    if not isinstance(args, dict):
+        return [f"参数必须是 JSON 对象，实际为 {type(args).__name__}"]
+    try:
+        import jsonschema
+    except ImportError:  # 依赖缺失时跳过校验（不阻断工具执行）
+        logger.info("[agent/parser] jsonschema 未安装，跳过参数校验")
+        return []
+    errors = sorted(
+        jsonschema.Draft7Validator(parameters).iter_errors(args),
+        key=lambda e: list(e.path),
+    )
+    out = []
+    for e in errors:
+        path = "/".join(str(p) for p in e.path) or "(根)"
+        out.append(f"字段 '{path}': {e.message}")
+    return out

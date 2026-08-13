@@ -427,3 +427,17 @@ def test_error_message_no_server_path_leak(ws):
     assert result == "写入文件失败"
     result = _run(fow.file_ops_read({"path": "adir"}, _ctx()))
     assert str(ws) not in result
+
+
+def test_read_truncates_overlong_line(ws):
+    """单行超过 MAX_READ_LINE_CHARS 时截断并提示，防超长行撑爆模型上下文。"""
+    from backend.services.agent.workspace import MAX_READ_LINE_CHARS
+
+    root = _root(ws)
+    root.mkdir(parents=True, exist_ok=True)
+    long_line = "x" * (MAX_READ_LINE_CHARS + 500)
+    _write(root, "long.txt", f"{long_line}\n短行\n")
+    result = _run(fow.file_ops_read({"path": "long.txt"}, _ctx()))
+    assert "行过长已截断" in result
+    assert "1: " + long_line not in result  # 完整超长行不应出现
+    assert "2: 短行" in result

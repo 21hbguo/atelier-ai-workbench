@@ -21,5 +21,6 @@ python-docx>=1.1       # docx 段落+表格提取
 openpyxl>=3.1          # xlsx 单元格提取
 python-pptx>=1.0       # pptx shape 文本提取
 json-repair>=0.25      # tool call 参数 JSON 容错
+jsonschema>=4.18       # tool call 参数 JSON Schema 校验（agent 工具调用审查）
 resend>=0.9.0
 trafilatura>=1.8          # URL 抓取正文提取（url_fetcher 依赖）

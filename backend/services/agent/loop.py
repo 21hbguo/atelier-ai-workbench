@@ -17,8 +17,8 @@ import time
 from typing import Optional
 
 from backend.services.agent.context import AgentContext
-from backend.services.agent.parser import safe_parse_arguments
-from backend.services.agent.registry import get_tool, get_tools_schema
+from backend.services.agent.parser import safe_parse_arguments, validate_tool_args
+from backend.services.agent.registry import get_tool, get_tools_schema, list_tools
 from backend.services.llm_client import LLMClient, LLMError
 
 logger = logging.getLogger(__name__)
@@ -27,9 +27,19 @@ DEFAULT_MAX_TOOL_CALLS = 10
 DEFAULT_MAX_TOKENS = 2000
 
 # 工具不存在 / 执行出错时的回填文本
-_NOT_FOUND_MSG = "Function {name} not found. Try again."
-_NOT_ALLOWED_MSG = "Function {name} is not available in the current session."
-_EXEC_ERROR_MSG = "工具 {name} 执行出错，请换一种方式重试或向用户说明错误。"
+_NOT_FOUND_MSG = "Function {name} not found. Available tools: {available}."
+_NOT_ALLOWED_MSG = "Function {name} is not available in the current session. Available tools: {available}."
+# 参数校验失败：明确报错字段与原因，引导模型修正后重试（参照 openai-agents/smolagents 的
+# 双层校验做法——不静默容错，错误即结果回填让模型自纠）
+_ARGS_VALIDATION_MSG = (
+    "工具 {name} 参数校验失败：{errors}。"
+    "请按工具的 parameters 说明修正参数后重试，不要重复相同的错误。"
+)
+# 工具执行异常：回显工具名/参数/异常类型与消息（模型自纠的关键信息），并给出重试指引
+_EXEC_ERROR_MSG = (
+    "工具 {name} 执行失败（参数: {args}）：{err_type}: {err}。"
+    "请修正后重试，不要重复相同的错误；若多次失败请换一种方式或向用户说明。"
+)
 _EMPTY_FINAL_MSG = "抱歉，我暂时无法完成这个任务，请换个说法再试一次。"
 
 # usage 统一 schema 的各分项键（与 llm_client._extract_usage 对齐）
@@ -225,14 +235,29 @@ async def run_agent_stream(
                 args = {}
 
             tool = get_tool(name)
+            # 候选工具名单（供"未找到/未开放"错误提示模型可用工具）
+            available = tools_names if tools_names is not None else list_tools()
+            available_str = ", ".join(available) or "(无)"
             if tool is None:
-                result = _NOT_FOUND_MSG.format(name=name)
+                result = _NOT_FOUND_MSG.format(name=name, available=available_str)
                 logger.warning("[agent/loop] 工具 %r 未注册，回填错误信息", name)
             elif tools_names is not None and name not in tools_names:
                 # 纵深防御：即使模型输出了本轮未开放的工签名，也拒绝执行
-                result = _NOT_ALLOWED_MSG.format(name=name)
+                result = _NOT_ALLOWED_MSG.format(name=name, available=available_str)
                 logger.warning("[agent/loop] 工具 %r 不在本轮允许列表，拒绝执行", name)
             else:
+                # 参数 schema 校验（错误即结果：校验失败回填错误文本，让模型自纠）
+                arg_errors = validate_tool_args(tool.get("parameters"), args)
+                if arg_errors:
+                    result = _ARGS_VALIDATION_MSG.format(
+                        name=name, errors="；".join(arg_errors[:5])
+                    )
+                    logger.warning("[agent/loop] 工具 %r 参数校验失败: %s", name, arg_errors)
+                    yield {"type": "tool_status", "name": name, "status": "done", "result_len": len(result)}
+                    # 校验失败的调用同样要回填 role=tool 消息（与正常路径一致），
+                    # 让模型在下一轮看到错误并修正参数；continue 跳过 handler 执行
+                    work.append({"role": "tool", "tool_call_id": call_id, "content": result})
+                    continue
                 started = time.monotonic()
                 try:
                     # 工具执行期间（如生图最长约 100s）以 10s 为粒度轮询完成状态，
@@ -251,9 +276,14 @@ async def run_agent_stream(
                         if not handler_task.done():
                             handler_task.cancel()
                     result = "" if raw_result is None else str(raw_result)
-                except Exception:
+                except Exception as e:
                     logger.exception("[agent/loop] 工具 %r 执行异常", name)
-                    result = _EXEC_ERROR_MSG.format(name=name)
+                    result = _EXEC_ERROR_MSG.format(
+                        name=name,
+                        args=repr(args)[:500],
+                        err_type=type(e).__name__,
+                        err=str(e)[:300] or type(e).__name__,
+                    )
                 logger.info(
                     "[agent/loop] tool=%s duration_ms=%d result_len=%d",
                     name, int((time.monotonic() - started) * 1000), len(result),

@@ -24,6 +24,7 @@ from backend.services.agent.workspace import (
     MAX_GREP_RESULTS,
     MAX_LINE_CHARS,
     MAX_LIST_ITEMS,
+    MAX_READ_LINE_CHARS,
     MAX_READ_LINES,
     resolve_workspace_path,
     user_workspace_root,
@@ -127,7 +128,12 @@ async def file_ops_read(args: dict, ctx: AgentContext) -> str:
     total = len(lines)
     start = offset - 1
     chunk = lines[start:start + limit]
-    body = "\n".join(f"{start + i + 1}: {line}" for i, line in enumerate(chunk))
+    body_lines = []
+    for i, line in enumerate(chunk):
+        if len(line) > MAX_READ_LINE_CHARS:
+            line = line[:MAX_READ_LINE_CHARS] + "…（行过长已截断，可用 file_ops_grep 精确定位）"
+        body_lines.append(f"{start + i + 1}: {line}")
+    body = "\n".join(body_lines)
     tail = f"（共 {total} 行，显示 {len(chunk)} 行"
     if start + len(chunk) < total:
         tail += "，已截断请用 offset/limit 继续读取"

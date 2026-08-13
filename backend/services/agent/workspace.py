@@ -26,6 +26,8 @@ MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_CONTENT_CHARS = 200_000
 # 单次读取行数上限
 MAX_READ_LINES = 2000
+# 单行最大字符数：read 输出与 grep 命中行均按此截断（防超长单行撑爆模型上下文）
+MAX_READ_LINE_CHARS = 1000
 # 单次列目录条目上限
 MAX_LIST_ITEMS = 200
 # glob 结果上限
