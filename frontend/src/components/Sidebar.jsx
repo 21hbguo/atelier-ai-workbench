@@ -205,7 +205,6 @@ export default function Sidebar({ open, onClose }) {
                 </span>
                 {!collapsed && (
                   <span className="ml-1 min-w-0 flex-1 text-left leading-tight">
-                    <span className="block truncate text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{user.nickname || user.username}</span>
                     {isFreeUser && dailyTotal > 0 ? (
                       <span className="block text-[10px]" title="今日 AI 助手已用次数/免费总次数（用完后将扣除积分）">今日已用 {Math.max(0, dailyTotal - dailyRemaining)}/{dailyTotal} 次 · {points} 积分</span>
                     ) : (

@@ -145,16 +145,19 @@ describe('Sidebar', () => {
     expect(screen.getByText('AI 助手')).toBeInTheDocument()
   })
 
-  it('displays user nickname', () => {
+  it('does not display user nickname in sidebar footer', () => {
     renderSidebar()
-    expect(screen.getByText('测试员')).toBeInTheDocument()
-    expect(screen.getByText('测试员').closest('a')).toHaveAttribute('href', '/account')
+    // 左下角用户行不显示用户名/昵称（只显示次数与积分）
+    expect(screen.queryByText('测试员')).not.toBeInTheDocument()
+    expect(screen.queryByText('tester')).not.toBeInTheDocument()
   })
 
-  it('falls back to username when nickname is empty', () => {
+  it('keeps account link even without nickname', () => {
     readUserMock.mockReturnValue({ id: 1, username: 'tester', nickname: '', points: 0, is_admin: false })
     renderSidebar()
-    expect(screen.getByText('tester')).toBeInTheDocument()
+    // 用户行仍可点击跳转账户中心
+    const link = screen.getByTitle('账户中心')
+    expect(link).toHaveAttribute('href', '/account')
   })
 
   it('shows admin links for admin user', () => {
