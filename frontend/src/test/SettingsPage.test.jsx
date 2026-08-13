@@ -1,11 +1,12 @@
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 
-const { sessionsMock, changePasswordMock, alertMock, confirmMock } = vi.hoisted(() => ({
+const { sessionsMock, changePasswordMock, alertMock, confirmMock, configGetMock } = vi.hoisted(() => ({
   sessionsMock: vi.fn(),
   changePasswordMock: vi.fn(),
   alertMock: vi.fn(),
   confirmMock: vi.fn(async () => true),
+  configGetMock: vi.fn(),
 }))
 
 vi.mock('../components/AppDialogProvider', () => ({
@@ -14,6 +15,7 @@ vi.mock('../components/AppDialogProvider', () => ({
 
 vi.mock('../api', () => ({
   accountAPI: { sessions: sessionsMock, changePassword: changePasswordMock },
+  configAPI: { get: configGetMock },
   notificationAPI: { unreadCount: vi.fn(async () => ({ data: { count: 0 } })) },
   announcementAPI: { getUnread: vi.fn(async () => ({ data: { items: [] } })) },
 }))
@@ -47,6 +49,8 @@ beforeEach(() => {
   confirmMock.mockResolvedValue(true)
   sessionsMock.mockReset()
   changePasswordMock.mockReset()
+  configGetMock.mockReset()
+  configGetMock.mockResolvedValue({ data: { show_login_sessions: false } })
   mockSessions([])
 })
 
@@ -140,5 +144,28 @@ describe('SettingsPage', () => {
     sessionsMock.mockRejectedValue(new Error('网络错误'))
     renderPage()
     await waitFor(() => expect(alertMock).toHaveBeenCalledWith('网络错误'))
+  })
+
+  it('shows session history and risk warning when config flag is on', async () => {
+    configGetMock.mockResolvedValue({ data: { show_login_sessions: true } })
+    mockSessions([
+      { id: 's1', ip: '1.2.3.4', user_agent: 'Chrome', risk_level: 'high', is_current: true, created_at: '2025-01-01T12:00:00+08:00' },
+    ])
+    renderPage()
+    await waitFor(() => expect(screen.getByText('最近登录会话')).toBeInTheDocument())
+    expect(screen.getByText('1.2.3.4')).toBeInTheDocument()
+    expect(screen.getByText('Chrome')).toBeInTheDocument()
+    expect(screen.getByText('当前')).toBeInTheDocument()
+    expect(screen.getByText(/检测到近24小时存在多IP/)).toBeInTheDocument()
+  })
+
+  it('does not render session UI when config flag is off', async () => {
+    mockSessions([
+      { id: 's1', ip: '1.2.3.4', user_agent: 'Chrome', risk_level: 'high', is_current: true, created_at: '2025-01-01T12:00:00+08:00' },
+    ])
+    renderPage()
+    await waitFor(() => expect(sessionsMock).toHaveBeenCalled())
+    expect(screen.queryByText('最近登录会话')).not.toBeInTheDocument()
+    expect(screen.queryByText(/检测到近24小时存在多IP/)).not.toBeInTheDocument()
   })
 })

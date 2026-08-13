@@ -115,6 +115,7 @@ export default function AdminPage() {
   const [runtimeConfig, setRuntimeConfig] = useState({
     api_url: '',
     register_enabled: true,
+    show_login_sessions: false,
     image_hosting_upload_url: '',
     image_hosting_base_url: '',
     image_hosting_referer: '',
@@ -1544,6 +1545,15 @@ export default function AdminPage() {
                 </div>
                 <button type="button" onClick={() => onConfigToggle('register_enabled', !runtimeConfig.register_enabled)} className="relative inline-flex h-7 w-12 items-center rounded-full transition-colors" style={{ background: runtimeConfig.register_enabled ? 'var(--accent)' : 'var(--border-color)' }}>
                   <span className="inline-block h-5 w-5 transform rounded-full bg-white transition-transform" style={{ transform: runtimeConfig.register_enabled ? 'translateX(22px)' : 'translateX(3px)' }} />
+                </button>
+              </div>
+              <div className="mb-3 p-3 rounded-2xl border flex items-center justify-between gap-3" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+                <div>
+                  <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>显示最近登录会话</div>
+                  <div className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>开启后设置页展示用户最近登录会话列表与多IP登录风险提示</div>
+                </div>
+                <button type="button" onClick={() => onConfigToggle('show_login_sessions', !runtimeConfig.show_login_sessions)} className="relative inline-flex h-7 w-12 items-center rounded-full transition-colors" style={{ background: runtimeConfig.show_login_sessions ? 'var(--accent)' : 'var(--border-color)' }}>
+                  <span className="inline-block h-5 w-5 transform rounded-full bg-white transition-transform" style={{ transform: runtimeConfig.show_login_sessions ? 'translateX(22px)' : 'translateX(3px)' }} />
                 </button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

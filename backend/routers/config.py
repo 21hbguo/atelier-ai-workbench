@@ -12,6 +12,7 @@ class ConfigUpdate(BaseModel):
     api_url: Optional[str] = None
     api_key: Optional[str] = None
     register_enabled: Optional[bool] = None
+    show_login_sessions: Optional[bool] = None
     image_hosting_upload_url: Optional[str] = None
     image_hosting_base_url: Optional[str] = None
     image_hosting_referer: Optional[str] = None
@@ -78,6 +79,7 @@ async def get_runtime_config(user=Depends(get_optional_user)):
         return cfg
     return {
         "register_enabled": bool(cfg.get("register_enabled", True)),
+        "show_login_sessions": bool(cfg.get("show_login_sessions", False)),
         "wechat_pay_qr_url": cfg.get("wechat_pay_qr_url", ""),
         "alipay_pay_qr_url": cfg.get("alipay_pay_qr_url", ""),
         "donation_contact": cfg.get("donation_contact", ""),

@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react'
 import { ShieldAlert, KeyRound } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
 import Pagination from '../components/Pagination'
-import { accountAPI } from '../api'
+import { accountAPI, configAPI } from '../api'
 import { useAppDialog } from '../components/AppDialogProvider'
 
 export default function SettingsPage() {
   const dialog = useAppDialog()
-  // 功能开关：设为 true 即可恢复「最近登录会话」列表与「多IP登录风险提示」的显示（代码保留，便于复用）
-  const SHOW_LOGIN_SESSIONS = false
+  // 「最近登录会话」列表与「多IP登录风险提示」由管理后台「配置中心 → 显示最近登录会话」开关控制（默认隐藏）
+  const [showLoginSessions, setShowLoginSessions] = useState(false)
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -31,6 +31,10 @@ export default function SettingsPage() {
   }
 
   useEffect(() => { fetchSessions(page) }, [page])
+
+  useEffect(() => {
+    configAPI.get().then(({ data }) => setShowLoginSessions(Boolean(data?.show_login_sessions))).catch(() => {})
+  }, [])
 
   const onChangePassword = async () => {
     if (!oldPassword || !newPassword) return
@@ -93,7 +97,7 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {SHOW_LOGIN_SESSIONS && hasRisk && (
+          {showLoginSessions && hasRisk && (
             <div
               className="p-3 rounded-2xl border text-sm flex items-center gap-2"
               style={{
@@ -106,7 +110,7 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {SHOW_LOGIN_SESSIONS && (
+          {showLoginSessions && (
             <div className="p-4 rounded-2xl border" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
             <div className="text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>最近登录会话</div>
             {loading ? (

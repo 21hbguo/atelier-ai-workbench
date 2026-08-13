@@ -91,6 +91,7 @@ _runtime_config = {
     "api_url": os.getenv("IMAGE_GEN_API_URL", "https://api.wuyinkeji.com/api/async"),
     "api_key": os.getenv("IMAGE_GEN_API_KEY", ""),
     "register_enabled": os.getenv("REGISTER_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
+    "show_login_sessions": os.getenv("SHOW_LOGIN_SESSIONS", "false").lower() in {"1", "true", "yes", "on"},
     "image_hosting_upload_url": os.getenv("IMAGE_HOSTING_UPLOAD_URL", "https://img.heliar.top/upload"),
     "image_hosting_base_url": os.getenv("IMAGE_HOSTING_BASE_URL", "https://img.heliar.top"),
     "image_hosting_referer": os.getenv("IMAGE_HOSTING_REFERER", "https://img.heliar.top/"),
