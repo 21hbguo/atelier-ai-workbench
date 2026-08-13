@@ -25,7 +25,6 @@ const WalletPage = lazy(() => import('./pages/WalletPage'))
 const ChatAssistantPage = lazy(() => import('./pages/ChatAssistantPage'))
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
 const SharesPage = lazy(() => import('./pages/SharesPage'))
-const LandingPage = lazy(() => import('./pages/LandingPage'))
 
 function ProtectedRoute({ children, authReady, user, fallback }) {
   if (!authReady) return fallback || null
@@ -138,9 +137,10 @@ function AppContent() {
           <Route path="/chat" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><ChatAssistantPage /></ProtectedRoute>} />
           <Route path="/notifications" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><NotificationsPage /></ProtectedRoute>} />
           <Route path="/announcements" element={<Navigate to="/notifications" replace />} />
-          {/* 根路径：已登录跳 /chat，未登录展示产品介绍落地页 */}
+          {/* 根路径：已登录跳 /chat，未登录跳 /login（落地页已摘除，LandingPage.jsx 仅保留源码） */}
           <Route path="/" element={
-            authReady && user ? <Navigate to="/chat" replace /> : <LandingPage />
+            !authReady ? routeFallback :
+            user ? <Navigate to="/chat" replace /> : <Navigate to="/login" replace />
           } />
           <Route path="/draw" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><ChatPage /></ProtectedRoute>} />
           <Route path="/works" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><WorksPage /></ProtectedRoute>} />
