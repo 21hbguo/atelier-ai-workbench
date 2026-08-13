@@ -187,8 +187,9 @@ def ensure_current_cycle_in_conn(conn, user_id: int, now: datetime | None = None
            VALUES (%s, 'permanent', %s, %s) ON CONFLICT (user_id) WHERE bucket_type = 'permanent' DO NOTHING""",
         (user_id, _points(user["points"]), _points(user["points"])),
     )
-    # 多订阅卡并存：从所有未过期的付费会员卡中选价格最高的一张（贵的优先；同价先购优先）。
-    # 每张卡独立倒计时（各自 started_at/expires_at），卡到期后自动切换下一张有效卡。
+    # 多订阅卡并存：从付费会员卡中选价格最高的一张（贵的优先；同价先购优先）。
+    # 每张卡独立倒计时（各自 started_at/expires_at），卡到期后自动切换下一张有效卡；
+    # 已过期的卡也会被选入并在循环中统一清理（expire 周期 + 标记卡失效），不留垃圾行。
     # 积分包（credits）是纯积分购买，不产生订阅卡，天然排除。
     while True:
         row = conn.execute(
@@ -197,10 +198,9 @@ def ensure_current_cycle_in_conn(conn, user_id: int, now: datetime | None = None
                WHERE us.user_id = %s AND us.status = 'active'
                  AND p.is_free = FALSE
                  AND (p.features->>'package_type') IS DISTINCT FROM 'credits'
-                 AND us.expires_at > %s
                ORDER BY p.price_rmb DESC, us.started_at ASC
                LIMIT 1 FOR UPDATE OF us""",
-            (user_id, now),
+            (user_id,),
         ).fetchone()
         if not row:
             break

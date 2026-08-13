@@ -176,3 +176,45 @@ def test_ensure_falls_back_to_free_when_no_active_paid_card():
     with patch.object(ss, "_get_plan", return_value=free_plan):
         state = ss.ensure_current_cycle_in_conn(conn, 1, now)
     assert state["plan"]["code"] == "free"
+
+
+def test_ensure_expires_stale_cards_and_switches_to_next():
+    """贵卡过期：自动清理（expire 周期 + 卡标记 expired）并切换到下一张有效卡。"""
+    conn = MagicMock(name="db_conn")
+    now = datetime.now()
+    conn.execute.side_effect = [
+        MagicMock(fetchone=MagicMock(return_value={"id": 1, "points": 0})),   # users
+        MagicMock(),                                                           # point_buckets
+        MagicMock(fetchone=MagicMock(return_value={                           # 选卡：月卡（最贵但已过期）
+            "id": 5, "user_id": 1, "plan_id": 7, "status": "active",
+            "current_cycle_id": 10, "expires_at": now - timedelta(days=1),
+            "price_rmb": 89.9,
+        })),
+        MagicMock(fetchone=MagicMock(return_value={                           # 月卡 cycle（已过期）
+            "id": 10, "plan_id": 7, "status": "active",
+            "period_end": now - timedelta(days=1),
+            "entitlements_snapshot": {"id": 7, "code": "member-month", "is_free": False,
+                                      "features": {"package_type": "membership"},
+                                      "allowed_models": [], "max_concurrent_requests": 1},
+        })),
+        MagicMock(),                                                           # UPDATE 卡 expired
+        MagicMock(fetchone=MagicMock(return_value={                           # 选卡：日卡（有效，次贵）
+            "id": 6, "user_id": 1, "plan_id": 8, "status": "active",
+            "current_cycle_id": 11, "expires_at": now + timedelta(days=2),
+            "price_rmb": 9.9,
+        })),
+        MagicMock(fetchone=MagicMock(return_value={                           # 日卡 cycle（有效）
+            "id": 11, "plan_id": 8, "status": "active", "period_end": now + timedelta(days=2),
+            "entitlements_snapshot": {"id": 8, "code": "member-day", "is_free": False,
+                                      "features": {"package_type": "membership"},
+                                      "allowed_models": [], "max_concurrent_requests": 1},
+        })),
+    ]
+    with patch.object(ss, "_expire_cycle_in_conn") as mock_expire:
+        state = ss.ensure_current_cycle_in_conn(conn, 1, now)
+    assert state["subscription"]["id"] == 6
+    assert state["plan"]["code"] == "member-day"
+    mock_expire.assert_called_once()  # 只 expire 过期的月卡周期
+    # 过期卡被标记 expired
+    update_calls = [c for c in conn.execute.call_args_list if "SET status = 'expired'" in str(c.args[0])]
+    assert len(update_calls) == 1
