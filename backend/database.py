@@ -866,59 +866,65 @@ def init_db():
                            '[]'::jsonb, TRUE, 0)
                    ON CONFLICT (code) DO NOTHING"""
             )
-            # 参考套餐：会员订阅 + 永久积分包（features.package_type 区分类型，前端分组展示）
-            conn.execute(
-                """INSERT INTO subscription_plans
-                   (code, name, description, price_rmb, cycle_days, grant_points, features, allowed_models, is_free, sort_order)
-                   VALUES
-                   ('member-day', '日卡', 'AI 助手专用，当天高额对话。', 9.9, 1, 0,
-                    '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "membership", "daily_quota": 60, "original_price_rmb": "9.9"}'::jsonb, '[]'::jsonb, FALSE, 1),
-                   ('member-month', '月卡', 'AI 助手专用，30 天每日高额对话。', 89.9, 30, 0,
-                    '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "membership", "daily_quota": 100, "original_price_rmb": "99.9"}'::jsonb, '[]'::jsonb, FALSE, 2),
-                   ('member-year', '年卡', 'AI 助手专用，365 天畅享，抢先体验新模型。', 199, 365, 0,
-                    '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "membership", "daily_quota": 200, "original_price_rmb": "399"}'::jsonb, '[]'::jsonb, FALSE, 3),
-                   ('member-permanent', '永久卡', 'AI 助手专用，一次购买长期使用，抢先体验新模型。', 299, 36500, 50,
-                    '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "membership", "daily_quota": null, "original_price_rmb": "599"}'::jsonb, '[]'::jsonb, FALSE, 4),
-                   ('credits-50', '积分体验包', '通用积分，永久有效，50 积分。', 9.9, 36500, 50,
-                    '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "credits", "original_price_rmb": "19.9"}'::jsonb, '[]'::jsonb, FALSE, 5),
-                   ('credits-500', '积分基础包', '通用积分，永久有效，500 积分。', 88, 36500, 500,
-                    '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "credits", "original_price_rmb": "99"}'::jsonb, '[]'::jsonb, FALSE, 6),
-                   ('credits-1000', '积分标准包', '通用积分，永久有效，1000 积分。', 168, 36500, 1000,
-                    '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "credits", "original_price_rmb": "199"}'::jsonb, '[]'::jsonb, FALSE, 7),
-                   ('credits-3000', '积分豪华包', '通用积分，永久有效，3000 积分。', 468, 36500, 3000,
-                    '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "credits", "original_price_rmb": "599"}'::jsonb, '[]'::jsonb, FALSE, 8)
-                   ON CONFLICT (code) DO NOTHING"""
-            )
-            # 文案统一：去掉「PPT 专用」，聊天→AI 助手（幂等刷新已有行）
-            conn.execute(
-                """UPDATE subscription_plans
-                   SET description = REPLACE(description, '聊天、PPT 专用', 'AI 助手专用'),
-                       updated_at = NOW()
-                   WHERE description LIKE '%聊天、PPT 专用%'"""
-            )
-            # 文案统一：助手专用 → AI 助手专用（幂等刷新已有库；排除已替换行避免重复叠加前缀）
-            conn.execute(
-                """UPDATE subscription_plans
-                   SET description = REPLACE(description, '助手专用', 'AI 助手专用'),
-                       updated_at = NOW()
-                   WHERE description LIKE '%助手专用%'
-                     AND description NOT LIKE '%AI 助手专用%'"""
-            )
-            # 积分包通用化 + 永久化（幂等刷新已有库）：描述去掉「AI 绘画专用」改为通用积分，
-            # 包名去掉「画图」；cycle_days 统一 36500（永久，与 member-permanent 同一约定）
-            conn.execute(
-                """UPDATE subscription_plans
-                   SET description = REPLACE(REPLACE(description, 'AI 绘画专用，', '通用积分，永久有效，'), '画图专用，', '通用积分，永久有效，'),
-                       name = REPLACE(name, '画图积分', '积分'),
-                       updated_at = NOW()
-                   WHERE features->>'package_type' = 'credits'
-                     AND description NOT LIKE '%通用积分%'"""
-            )
-            conn.execute(
-                """UPDATE subscription_plans
-                   SET cycle_days = 36500, updated_at = NOW()
-                   WHERE features->>'package_type' = 'credits' AND cycle_days IS DISTINCT FROM 36500"""
-            )
+            # 参考套餐（会员订阅 + 永久积分包）与文案迁移：仅首次初始化时执行一次。
+            # 一次性同步：2026-08-14 已把本地套餐同步到服务器；此后服务器套餐以数据库/
+            # 管理后台为准，启动不再覆盖（防止管理员后续改价/改文案/改周期被种子还原）。
+            paid_count = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM subscription_plans WHERE is_free = FALSE"
+            ).fetchone()["cnt"]
+            if paid_count == 0:
+                conn.execute(
+                    """INSERT INTO subscription_plans
+                       (code, name, description, price_rmb, cycle_days, grant_points, features, allowed_models, is_free, sort_order)
+                       VALUES
+                       ('member-day', '日卡', 'AI 助手专用，当天高额对话。', 9.9, 1, 0,
+                        '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "membership", "daily_quota": 60, "original_price_rmb": "9.9"}'::jsonb, '[]'::jsonb, FALSE, 1),
+                       ('member-month', '月卡', 'AI 助手专用，30 天每日高额对话。', 89.9, 30, 0,
+                        '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "membership", "daily_quota": 100, "original_price_rmb": "99.9"}'::jsonb, '[]'::jsonb, FALSE, 2),
+                       ('member-year', '年卡', 'AI 助手专用，365 天畅享，抢先体验新模型。', 199, 365, 0,
+                        '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "membership", "daily_quota": 200, "original_price_rmb": "399"}'::jsonb, '[]'::jsonb, FALSE, 3),
+                       ('member-permanent', '永久卡', 'AI 助手专用，一次购买长期使用，抢先体验新模型。', 299, 36500, 50,
+                        '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "membership", "daily_quota": null, "original_price_rmb": "599"}'::jsonb, '[]'::jsonb, FALSE, 4),
+                       ('credits-50', '积分体验包', '通用积分，永久有效，50 积分。', 9.9, 36500, 50,
+                        '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "credits", "original_price_rmb": "19.9"}'::jsonb, '[]'::jsonb, FALSE, 5),
+                       ('credits-500', '积分基础包', '通用积分，永久有效，500 积分。', 88, 36500, 500,
+                        '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "credits", "original_price_rmb": "99"}'::jsonb, '[]'::jsonb, FALSE, 6),
+                       ('credits-1000', '积分标准包', '通用积分，永久有效，1000 积分。', 168, 36500, 1000,
+                        '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "credits", "original_price_rmb": "199"}'::jsonb, '[]'::jsonb, FALSE, 7),
+                       ('credits-3000', '积分豪华包', '通用积分，永久有效，3000 积分。', 468, 36500, 3000,
+                        '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "credits", "original_price_rmb": "599"}'::jsonb, '[]'::jsonb, FALSE, 8)
+                       ON CONFLICT (code) DO NOTHING"""
+                )
+                # 文案统一：去掉「PPT 专用」，聊天→AI 助手（仅首次初始化执行）
+                conn.execute(
+                    """UPDATE subscription_plans
+                       SET description = REPLACE(description, '聊天、PPT 专用', 'AI 助手专用'),
+                           updated_at = NOW()
+                       WHERE description LIKE '%聊天、PPT 专用%'"""
+                )
+                # 文案统一：助手专用 → AI 助手专用（仅首次初始化执行；排除已替换行避免重复叠加前缀）
+                conn.execute(
+                    """UPDATE subscription_plans
+                       SET description = REPLACE(description, '助手专用', 'AI 助手专用'),
+                           updated_at = NOW()
+                       WHERE description LIKE '%助手专用%'
+                         AND description NOT LIKE '%AI 助手专用%'"""
+                )
+                # 积分包通用化 + 永久化（仅首次初始化执行）：描述去掉「AI 绘画专用」改为
+                # 通用积分、包名去掉「画图」；cycle_days 统一 36500（与 member-permanent 同一约定）
+                conn.execute(
+                    """UPDATE subscription_plans
+                       SET description = REPLACE(REPLACE(description, 'AI 绘画专用，', '通用积分，永久有效，'), '画图专用，', '通用积分，永久有效，'),
+                           name = REPLACE(name, '画图积分', '积分'),
+                           updated_at = NOW()
+                       WHERE features->>'package_type' = 'credits'
+                         AND description NOT LIKE '%通用积分%'"""
+                )
+                conn.execute(
+                    """UPDATE subscription_plans
+                       SET cycle_days = 36500, updated_at = NOW()
+                       WHERE features->>'package_type' = 'credits' AND cycle_days IS DISTINCT FROM 36500"""
+                )
             # free 权益与付费对齐（功能全开：联网搜索/文件上传/文件写入/工具调用），
             # 仅保留未来做模型限制与积分限制的余地；幂等刷新已有库
             conn.execute(
