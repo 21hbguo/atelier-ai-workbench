@@ -160,6 +160,13 @@ def test_write_create_existing_rejected(ws):
     assert (root / "f.txt").read_text(encoding="utf-8") == "old"
 
 
+def test_write_rejects_workspace_over_capacity(ws, monkeypatch):
+    monkeypatch.setattr(workspace, "MAX_WORKSPACE_BYTES", 5)
+    result = _run(fow.file_ops_write({"path": "f.txt", "content": "123456"}, _ctx()))
+    assert "总容量超过" in result
+    assert not (_root(ws) / "f.txt").exists()
+
+
 def test_write_create_new_and_append(ws):
     root = _root(ws)
     ctx = _ctx()

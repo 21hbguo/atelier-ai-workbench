@@ -3,7 +3,8 @@
 流程：组装 messages → LLMClient.stream_tools(tools=注册工具 schema) 流式多轮 →
 无 tool_calls 返回文本；有 tool_calls 逐个执行（参数三级容错解析，handler 异常转错误文本）
 → 以 openai 格式 {"role":"tool","tool_call_id","content"} 回填 messages → 循环；
-累计工具调用达 max_tool_calls 后下一轮不再传 tools，强制模型直接回答。
+累计工具调用达 max_tool_calls 后下一轮不再传 tools，强制模型直接回答
+（max_tool_calls=None 表示不限制工具调用次数）。
 
 注意：回填格式为 openai 协议（assistant.tool_calls + role=tool）；
 anthropic 协议下的 tool_result 转换由上层（调用方）负责。
@@ -14,11 +15,13 @@ import asyncio
 import logging
 import re
 import time
+from itertools import count
 from typing import Optional
 
 from backend.services.agent.context import AgentContext
 from backend.services.agent.parser import safe_parse_arguments, validate_tool_args
 from backend.services.agent.registry import get_tool, get_tools_schema, list_tools
+from backend.services.agent.sandbox import is_sandboxed, run_sandboxed
 from backend.services.llm_client import LLMClient, LLMError
 
 logger = logging.getLogger(__name__)
@@ -68,6 +71,13 @@ def _truncate_tool_result(text: str, limit: int) -> str:
         "需要中间内容请用 file_ops_read 的 offset/limit 分页或 file_ops_grep 定位）…\n"
     )
     return text[:half] + mark + text[-half:]
+
+
+async def _dispatch_tool(tool: dict, args: dict, ctx) -> str:
+    """沙箱名单内的工具走受限子进程执行，其余保持进程内。"""
+    if is_sandboxed(tool["name"]):
+        return await run_sandboxed(tool["name"], args, ctx)
+    return await tool["handler"](args, ctx)
 
 
 def _budget_hint(used: int) -> str:
@@ -133,7 +143,7 @@ async def run_agent_stream(
     system: str = "",
     messages: list,
     tools_names: Optional[list[str]] = None,
-    max_tool_calls: int = DEFAULT_MAX_TOOL_CALLS,
+    max_tool_calls: Optional[int] = DEFAULT_MAX_TOOL_CALLS,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     override: Optional[dict] = None,
     ctx: Optional[AgentContext] = None,
@@ -145,6 +155,7 @@ async def run_agent_stream(
         messages: 对话消息（role: user/assistant），内部会追加 assistant/tool 消息（不改调用方列表）。
         tools_names: 启用的工具名列表；None 表示全部已注册工具。
         max_tool_calls: 工具调用累计上限，达到后下一轮不再传 tools 强制直接回答。
+            None 表示不限制工具调用次数。
         max_tokens: 每轮 LLM 调用输出上限（默认 2000，聊天链路传入档案解析值）。
         override: per-model 覆盖（base_url/api_key/protocol/model），透传 LLMClient。
         ctx: 工具执行上下文（session_id/user_id 等）。
@@ -211,9 +222,10 @@ async def run_agent_stream(
             budget_hinted = True
         tool_results_total += len(content)
         work.append({"role": "tool", "tool_call_id": call_id, "content": content})
-    # 最多 max_tool_calls + 1 轮 LLM 调用：最后一轮不带 tools
-    for _round in range(max_tool_calls + 1):
-        send_tools = get_tools_schema(tools_names) if executed_calls < max_tool_calls else []
+    # 最多 max_tool_calls + 1 轮 LLM 调用：最后一轮不带 tools；max_tool_calls=None 时不限制
+    rounds = count() if max_tool_calls is None else range(max_tool_calls + 1)
+    for _round in rounds:
+        send_tools = get_tools_schema(tools_names) if max_tool_calls is None or executed_calls < max_tool_calls else []
         round_text = ""
         round_thinking = ""
         round_calls: list = []
@@ -333,7 +345,7 @@ async def run_agent_stream(
                 try:
                     # 工具执行期间（如生图最长约 100s）以 10s 为粒度轮询完成状态，
                     # 未完成时 yield heartbeat 事件供上层 SSE 保活（前端流不超时）。
-                    handler_task = asyncio.ensure_future(tool["handler"](args, ctx))
+                    handler_task = asyncio.ensure_future(_dispatch_tool(tool, args, ctx))
                     try:
                         while True:
                             done, _pending = await asyncio.wait({handler_task}, timeout=10.0)
@@ -399,7 +411,7 @@ async def run_agent(
     system: str = "",
     messages: list,
     tools_names: Optional[list[str]] = None,
-    max_tool_calls: int = DEFAULT_MAX_TOOL_CALLS,
+    max_tool_calls: Optional[int] = DEFAULT_MAX_TOOL_CALLS,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     override: Optional[dict] = None,
     ctx: Optional[AgentContext] = None,

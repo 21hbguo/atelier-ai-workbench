@@ -10,6 +10,8 @@ symlink）后再校验结果必须落在根目录内，否则抛 ValueError。�
 from __future__ import annotations
 
 import logging
+import os
+import shutil
 from pathlib import Path
 
 from backend import config
@@ -24,6 +26,8 @@ WORKSPACE_ROOT = config.USER_WORKSPACES_DIR
 MAX_FILE_BYTES = 10 * 1024 * 1024
 # 单次写入字符上限
 MAX_CONTENT_CHARS = 200_000
+# 每个用户工作区总容量上限
+MAX_WORKSPACE_BYTES = 100 * 1024 * 1024
 # 单次读取行数上限
 MAX_READ_LINES = 2000
 # 单行最大字符数：read 输出与 grep 命中行均按此截断（防超长单行撑爆模型上下文）
@@ -49,10 +53,52 @@ def user_workspace_root(user_id: int) -> Path:
 
 
 def ensure_user_workspace(user_id: int) -> Path:
-    """创建并返回用户工作区根目录。"""
+    """创建并返回用户工作区根目录。
+
+    权限设为 0o777（mkdir 后显式 chmod，绕过 umask）：受限沙箱子进程以
+    nobody 降权运行时需要能写入该目录。只对 user_{id} 根目录设置，不动
+    data/user_workspaces 上层目录的既有权限；已有目录也显式 chmod 兜底。
+    """
     root = user_workspace_root(user_id)
     root.mkdir(parents=True, exist_ok=True)
+    try:
+        root.chmod(0o777)
+    except OSError:
+        logger.warning("[agent/workspace] chmod 0o777 失败: %s", root)
     return root
+
+
+def workspace_usage_bytes(user_id: int) -> int:
+    root = user_workspace_root(user_id)
+    if not root.exists():
+        return 0
+    total = 0
+    for dirpath, _, filenames in os.walk(root):
+        for filename in filenames:
+            path = Path(dirpath) / filename
+            try:
+                if not path.is_symlink():
+                    total += path.stat().st_size
+            except OSError:
+                continue
+    return total
+
+
+def ensure_workspace_capacity(user_id: int, path: Path, new_size: int) -> None:
+    old_size = 0
+    try:
+        if path.exists() and path.is_file() and not path.is_symlink():
+            old_size = path.stat().st_size
+    except OSError:
+        pass
+    if workspace_usage_bytes(user_id) - old_size + new_size > MAX_WORKSPACE_BYTES:
+        raise ValueError(f"工作区总容量超过 {MAX_WORKSPACE_BYTES // (1024 * 1024)}MB 上限")
+
+
+def remove_user_workspace(user_id: int) -> None:
+    root = user_workspace_root(user_id)
+    if root.exists():
+        shutil.rmtree(root)
 
 
 def resolve_workspace_path(user_id: int, raw_path: str) -> Path:

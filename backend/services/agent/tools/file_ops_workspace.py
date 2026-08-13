@@ -25,6 +25,7 @@ from backend.services.agent.workspace import (
     MAX_LINE_CHARS,
     MAX_LIST_ITEMS,
     MAX_READ_LINE_CHARS,
+    ensure_workspace_capacity,
     MAX_READ_LINES,
     resolve_workspace_path,
     user_workspace_root,
@@ -187,11 +188,15 @@ async def file_ops_write(args: dict, ctx: AgentContext) -> str:
             if mode == "create" and path.exists():
                 return "文件已存在，如需覆盖请用 overwrite 模式"
             path.parent.mkdir(parents=True, exist_ok=True)
+            current_size = path.stat().st_size if mode == "append" and path.exists() else 0
+            ensure_workspace_capacity(user_id, path, current_size + len(content.encode("utf-8")))
             if mode == "append":
                 with open(path, "a", encoding="utf-8") as f:
                     f.write(content)
             else:
                 path.write_text(content, encoding="utf-8")
+    except ValueError as exc:
+        return str(exc)
     except OSError:
         logger.exception("[file_ops_workspace] 写入文件失败")
         return "写入文件失败"
@@ -257,7 +262,11 @@ async def file_ops_edit(args: dict, ctx: AgentContext) -> str:
         if count > 1 and not replace_all:
             return f"待替换文本出现 {count} 次，请提供更多上下文使 old_string 唯一，或设置 replace_all=true"
         try:
-            path.write_text(content.replace(old_string, new_string), encoding="utf-8")
+            updated = content.replace(old_string, new_string)
+            ensure_workspace_capacity(user_id, path, len(updated.encode("utf-8")))
+            path.write_text(updated, encoding="utf-8")
+        except ValueError as exc:
+            return str(exc)
         except OSError:
             logger.exception("[file_ops_workspace] 写入文件失败")
             return "写入文件失败"
