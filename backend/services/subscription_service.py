@@ -304,6 +304,16 @@ def create_order(user_id: int, plan_id: int, channel: str, submit_ip: str, payer
         plan = _get_plan(conn, plan_id=plan_id, for_update=True)
         if not plan or not plan.get("enabled") or plan.get("is_free"):
             raise ValueError("套餐不可购买")
+        # 已有未过期的付费会员套餐时禁止重复购买（credits 积分包是永久积分，任何时候可买）
+        if (plan.get("features") or {}).get("package_type") != "credits":
+            active_member = conn.execute(
+                """SELECT us.expires_at, p.features FROM user_subscriptions us
+                   JOIN subscription_plans p ON p.id = us.plan_id
+                   WHERE us.user_id = %s AND us.status = 'active' AND us.expires_at > NOW() AND p.is_free = FALSE""",
+                (user_id,),
+            ).fetchone()
+            if active_member and (active_member["features"] or {}).get("package_type") != "credits":
+                raise ValueError("当前套餐未过期，暂无法重复购买，过期后可再购买")
         order_no = f"SUB{datetime.now().strftime('%Y%m%d%H%M%S')}{user_id}{secrets.token_hex(4).upper()}"
         row = conn.execute(
             """INSERT INTO subscription_orders
