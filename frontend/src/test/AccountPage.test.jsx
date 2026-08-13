@@ -1,4 +1,4 @@
-import { render, screen, waitFor, cleanup } from '@testing-library/react'
+import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 
@@ -23,17 +23,27 @@ beforeEach(() => {
 })
 
 describe('AccountPage', () => {
-  it('loads and renders balance, check-in status, invitation summary and recent transactions', async () => {
+  it('loads and renders balance, check-in status and recent transactions', async () => {
     renderPage()
     await waitFor(() => expect(screen.getAllByText('248').length).toBeGreaterThan(0))
     expect(screen.getByText('今日已签到')).toBeInTheDocument()
-    expect(screen.getByText('3')).toBeInTheDocument()
+    expect(screen.queryByText('邀请好友')).not.toBeInTheDocument()
     expect(screen.getAllByText('每日签到').length).toBeGreaterThan(0)
   })
 
-  it('uses wallet query deep links for redeem and invite actions', () => {
+  it('opens points modal when points card is clicked', async () => {
     renderPage()
-    expect(screen.getByText('兑换码').closest('a')).toHaveAttribute('href', '/wallet?tab=redeem')
-    expect(screen.getByText('邀请中心').closest('a')).toHaveAttribute('href', '/wallet?tab=invite')
+    fireEvent.click(screen.getByText('当前积分'))
+    await waitFor(() => expect(screen.getByText('我的积分')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('已签到 ✓')).toBeInTheDocument())
+  })
+
+  it('opens redeem modal when redeem action is clicked', async () => {
+    renderPage()
+    const redeemAction = screen.getByText('兑换码')
+    expect(redeemAction.closest('a')).toBeNull()
+    fireEvent.click(redeemAction)
+    await waitFor(() => expect(screen.getByPlaceholderText('输入兑换码')).toBeInTheDocument())
+    expect(screen.getByText('领取')).toBeInTheDocument()
   })
 })

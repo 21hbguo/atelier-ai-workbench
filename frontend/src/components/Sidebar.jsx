@@ -19,7 +19,6 @@ const formatDate = ts => {
 const navItems = [
   { path: '/chat', icon: MessageCircle, label: 'AI 助手', shortLabel: '助手' },
   { path: '/draw', icon: Sparkles, label: 'AI 绘画', shortLabel: '绘画' },
-  { path: '/wallet', icon: Wallet, label: '积分', shortLabel: '积分' },
 ]
 
 const subNavItems = [

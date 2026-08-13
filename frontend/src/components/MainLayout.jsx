@@ -9,7 +9,6 @@ const quickNavItems = [
   { label: '绘画', path: '/draw' },
   { label: '作品', path: '/works' },
   { label: '广场', path: '/square' },
-  { label: '积分', path: '/wallet' },
   { label: '通知', path: '/notifications' },
 ]
 

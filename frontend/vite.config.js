@@ -6,7 +6,11 @@ const versionAssetPlugin=()=>({name:'version-asset',generateBundle(){this.emitFi
 export default defineConfig({
   define:{'import.meta.env.VITE_APP_BUILD_ID':JSON.stringify(buildId)},
   plugins: [react(), tailwindcss(), versionAssetPlugin()],
-  test: { environment: 'jsdom', setupFiles: './src/test/setup.js' },
+  test: {
+    environment: 'jsdom',
+    setupFiles: './src/test/setup.js',
+    env: { NODE_ENV: 'development' },
+  },
   server: {
     host: '0.0.0.0',
     port: 5173,
