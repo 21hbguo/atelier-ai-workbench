@@ -42,7 +42,9 @@ const COLUMNS = [
 
 export default function AdminLlmModelsTab({ items, loading, globalModelId = '', onRefresh, onSave, onDelete, onTest, dialog }) {
   const [editing, setEditing] = useState(null) // null | { isNew, draft }
+  const [batchDraft, setBatchDraft] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [batchSaving, setBatchSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState(null) // null | { ok, text, error, latency_ms }
   const [search, setSearch] = useState('')
@@ -51,6 +53,13 @@ export default function AdminLlmModelsTab({ items, loading, globalModelId = '', 
   const [collapsedGroups, setCollapsedGroups] = useState({ disabled: true }) // 未启用组默认折叠
 
   const openNew = () => { setEditing({ isNew: true, draft: { ...EMPTY_DRAFT } }); setTestResult(null) }
+  const openBatch = () => setBatchDraft({
+    model_ids: '', provider: '', protocol: 'openai', base_url: '', api_key: '',
+    max_input_tokens: 1000000, max_output_tokens: 128000,
+    reasoning_efforts_text: 'auto,low,medium,high,xhigh,max', default_reasoning_effort: 'auto',
+    thinking_default: 'enabled', context_budget_chars: 256000,
+    capabilities_text: '', enabled: true,
+  })
   const openEdit = (m) => { setEditing({
     isNew: false,
     draft: {
@@ -97,6 +106,34 @@ export default function AdminLlmModelsTab({ items, loading, globalModelId = '', 
       })
       setEditing(null)
     } catch (e) { dialog.alert(e.message || '保存失败') } finally { setSaving(false) }
+  }
+
+  const handleBatchSave = async () => {
+    const d = batchDraft
+    const rows = (d.model_ids || '').split('\n').map(line => line.trim()).filter(Boolean).map(line => {
+      const [modelId, ...labelParts] = line.split('|')
+      return { model_id: modelId.trim(), label: labelParts.join('|').trim() || modelId.trim() }
+    })
+    if (!rows.length) { dialog.alert('请至少填写一个模型 ID'); return }
+    if (rows.some(row => !row.model_id)) { dialog.alert('模型 ID 不能为空'); return }
+    const duplicates = rows.filter((row, index) => rows.findIndex(item => item.model_id === row.model_id) !== index).map(row => row.model_id)
+    if (duplicates.length) { dialog.alert(`模型 ID 重复：${[...new Set(duplicates)].join('、')}`); return }
+    const efforts = (d.reasoning_efforts_text || '').split(/[,，\s]+/).map(item => item.trim()).filter(Boolean)
+    if (!efforts.length) { dialog.alert('思考档位至少填一个'); return }
+    setBatchSaving(true)
+    try {
+      await onBatchSave(rows.map(row => ({
+        ...row,
+        provider: d.provider.trim(), protocol: d.protocol, base_url: d.base_url.trim(), api_key: d.api_key.trim(),
+        max_input_tokens: Number(d.max_input_tokens) || 1000000,
+        max_output_tokens: Number(d.max_output_tokens) || 128000,
+        reasoning_efforts: efforts, default_reasoning_effort: d.default_reasoning_effort,
+        thinking_default: d.thinking_default, context_budget_chars: Number(d.context_budget_chars) || 256000,
+        capabilities: (d.capabilities_text || '').split(/[,，;；\s]+/).map(item => item.trim()).filter(Boolean),
+        enabled: !!d.enabled,
+      })))
+      setBatchDraft(null)
+    } catch (e) { dialog.alert(e.message || '批量添加失败') } finally { setBatchSaving(false) }
   }
 
   // 测试连接：用表单当前值（可未保存）调后端最小请求，验证配置可用性并捕捉错误
@@ -292,6 +329,9 @@ export default function AdminLlmModelsTab({ items, loading, globalModelId = '', 
           <button onClick={openNew} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium text-white transition-colors ml-auto" style={{ background: 'var(--accent)' }}>
             <Plus size={13} /> 新增模型
           </button>
+          <button onClick={openBatch} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium border transition-colors" style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
+            <Plus size={13} /> 批量添加
+          </button>
         </div>
         <div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
           已启用：已填 API Key 或 Base URL，或为全局激活模型（走全局配置）且开启 · 未启用：未填 Key/Base URL 且非激活模型，或已停用 · 点击表头排序 · 点击分组标题折叠/展开
@@ -473,6 +513,70 @@ export default function AdminLlmModelsTab({ items, loading, globalModelId = '', 
                   : <>✗ 连接失败：{testResult.error || '未知错误'}{testResult.latency_ms != null ? `（${testResult.latency_ms}ms）` : ''}</>}
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {batchDraft && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setBatchDraft(null)}>
+          <div className="absolute inset-0 bg-black/50" />
+          <div className="relative w-full max-w-2xl rounded-2xl overflow-hidden" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }} onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>批量添加模型</h3>
+              <button onClick={() => setBatchDraft(null)} className="p-1.5 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}><X size={15} /></button>
+            </div>
+            <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[65vh] overflow-y-auto">
+              <div className="sm:col-span-2">
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>模型 ID *</label>
+                <textarea value={batchDraft.model_ids} onChange={e => setBatchDraft(prev => ({ ...prev, model_ids: e.target.value }))} rows={6} placeholder={'每行一个模型 ID，可用 | 指定显示名\n例如：\ngpt-5.6 | GPT-5.6\ngpt-5.6-mini'} className="w-full px-3 py-2 rounded-xl text-sm border outline-none resize-y font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>供应商</label>
+                <input value={batchDraft.provider} onChange={e => setBatchDraft(prev => ({ ...prev, provider: e.target.value }))} placeholder="如 openai / deepseek" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>协议</label>
+                <select value={batchDraft.protocol} onChange={e => setBatchDraft(prev => ({ ...prev, protocol: e.target.value }))} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}><option value="openai">openai</option><option value="anthropic">anthropic</option></select>
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>API 地址</label>
+                <input value={batchDraft.base_url} onChange={e => setBatchDraft(prev => ({ ...prev, base_url: e.target.value }))} placeholder="留空用全局 LLM_BASE_URL" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>API Key</label>
+                <input type="password" value={batchDraft.api_key} onChange={e => setBatchDraft(prev => ({ ...prev, api_key: e.target.value }))} placeholder="留空用全局 LLM_API_KEY" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>最大输入</label>
+                <input type="number" value={batchDraft.max_input_tokens} onChange={e => setBatchDraft(prev => ({ ...prev, max_input_tokens: e.target.value }))} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>最大输出</label>
+                <input type="number" value={batchDraft.max_output_tokens} onChange={e => setBatchDraft(prev => ({ ...prev, max_output_tokens: e.target.value }))} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>思考档位</label>
+                <input value={batchDraft.reasoning_efforts_text} onChange={e => setBatchDraft(prev => ({ ...prev, reasoning_efforts_text: e.target.value }))} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>默认思考档位</label>
+                <select value={batchDraft.default_reasoning_effort} onChange={e => setBatchDraft(prev => ({ ...prev, default_reasoning_effort: e.target.value }))} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>{batchDraft.reasoning_efforts_text.split(/[,，\s]+/).filter(Boolean).map(value => <option key={value} value={value}>{EFFORT_LABELS[value] || value}</option>)}</select>
+              </div>
+              <div>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>上下文预算</label>
+                <input type="number" value={batchDraft.context_budget_chars} onChange={e => setBatchDraft(prev => ({ ...prev, context_budget_chars: e.target.value }))} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>能力标签</label>
+                <input value={batchDraft.capabilities_text} onChange={e => setBatchDraft(prev => ({ ...prev, capabilities_text: e.target.value }))} placeholder="reasoning,vision,function_calling,streaming" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: 'var(--text-primary)' }}><input type="checkbox" checked={batchDraft.enabled} onChange={e => setBatchDraft(prev => ({ ...prev, enabled: e.target.checked }))} className="w-4 h-4 accent-[var(--accent)]" /> 启用这些模型</label>
+              </div>
+            </div>
+            <div className="flex gap-2 px-4 py-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
+              <button onClick={() => setBatchDraft(null)} disabled={batchSaving} className="flex-1 py-2 rounded-2xl text-xs font-medium border transition-colors" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>取消</button>
+              <button onClick={handleBatchSave} disabled={batchSaving} className="flex-1 py-2 rounded-2xl text-xs font-medium text-white transition-colors disabled:opacity-40" style={{ background: 'var(--accent)' }}>{batchSaving ? '添加中...' : '批量添加'}</button>
+            </div>
           </div>
         </div>
       )}

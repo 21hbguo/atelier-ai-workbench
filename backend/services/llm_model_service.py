@@ -199,67 +199,71 @@ def get_active() -> dict:
     return fb
 
 
-def upsert(data: dict) -> dict:
-    """新增或更新模型档案。**部分更新语义**：已存在的模型只覆盖 data 中传入的字段，
-    未传字段保留原值（避免误伤）；不存在的模型用默认值创建。"""
+def _build_row(data: dict, existing: dict | None = None) -> dict:
     model_id = str(data.get("model_id") or "").strip()
     if not model_id:
         raise ValueError("model_id 不能为空")
+    base = dict(existing) if existing else dict(FALLBACK_MODEL)
+    base["model_id"] = model_id
 
+    def _pick(key, fallback=None):
+        return data[key] if key in data else (base.get(key, fallback))
+
+    efforts = _pick("reasoning_efforts")
+    if efforts is None:
+        efforts = ["auto", "low", "medium", "high", "max", "xhigh"]
+    if not isinstance(efforts, list) or not efforts:
+        raise ValueError("reasoning_efforts 必须是数组")
+    efforts = [str(e).strip() for e in efforts if str(e).strip()]
+    if not efforts:
+        raise ValueError("reasoning_efforts 不能为空")
+    default_effort = str(_pick("default_reasoning_effort") or "auto")
+    if default_effort not in efforts:
+        default_effort = "auto"
+        if "auto" not in efforts:
+            efforts = ["auto"] + efforts
+
+    return {
+        "model_id": model_id,
+        "label": str(_pick("label") or model_id),
+        "provider": str(_pick("provider") or "").strip(),
+        "protocol": str(_pick("protocol") or "openai"),
+        "base_url": str(_pick("base_url") or "").strip(),
+        "api_key": str(_pick("api_key") or "").strip(),
+        "max_input_tokens": max(1024, int(_pick("max_input_tokens") or _pick("context_tokens") or 1000000)),
+        "max_output_tokens": max(1, int(_pick("max_output_tokens") or _pick("output_tokens") or 128000)),
+        "reasoning_efforts": efforts,
+        "default_reasoning_effort": default_effort,
+        "thinking_default": str(_pick("thinking_default") or "enabled"),
+        "context_budget_chars": max(1000, int(_pick("context_budget_chars") or 256000)),
+        "input_price_per_million": _to_price(_pick("input_price_per_million")),
+        "output_price_per_million": _to_price(_pick("output_price_per_million")),
+        "cache_read_price_per_million": _to_price(_pick("cache_read_price_per_million")),
+        "cache_creation_price_per_million": _to_price(_pick("cache_creation_price_per_million")),
+        "price_currency": str(_pick("price_currency") or "usd"),
+        "input_points_per_million": _to_price(_pick("input_points_per_million")),
+        "output_points_per_million": _to_price(_pick("output_points_per_million")),
+        "points_per_request": _to_price(_pick("points_per_request")),
+        "points_per_1k_input": _to_price(_pick("points_per_1k_input")),
+        "points_per_1k_output": _to_price(_pick("points_per_1k_output")),
+        "points_per_1k_cache_read": _to_price(_pick("points_per_1k_cache_read")),
+        "points_per_1k_cache_creation": _to_price(_pick("points_per_1k_cache_creation")),
+        "capabilities": [str(c).strip() for c in (_pick("capabilities") or []) if str(c).strip()],
+        "enabled": bool(_pick("enabled", True)),
+        "deprecation_date": str(_pick("deprecation_date") or "").strip(),
+        "source": str(_pick("source") or "").strip(),
+        "notes": str(_pick("notes") or ""),
+    }
+
+
+def upsert(data: dict) -> dict:
+    """新增或更新模型档案。**部分更新语义**：已存在的模型只覆盖 data 中传入的字段，
+    未传字段保留原值（避免误伤）；不存在的模型用默认值创建。"""
     with _write_lock:
         rows = _read_all()
+        model_id = str(data.get("model_id") or "").strip()
         existing = next((r for r in rows if r["model_id"] == model_id), None)
-        base = dict(existing) if existing else dict(FALLBACK_MODEL)
-        base["model_id"] = model_id
-
-        def _pick(key, fallback=None):
-            return data[key] if key in data else (base.get(key, fallback))
-
-        efforts = _pick("reasoning_efforts")
-        if efforts is None:
-            efforts = ["auto", "low", "medium", "high", "max", "xhigh"]
-        if not isinstance(efforts, list) or not efforts:
-            raise ValueError("reasoning_efforts 必须是数组")
-        efforts = [str(e).strip() for e in efforts if str(e).strip()]
-        if not efforts:
-            raise ValueError("reasoning_efforts 不能为空")
-        default_effort = str(_pick("default_reasoning_effort") or "auto")
-        if default_effort not in efforts:
-            default_effort = "auto"
-            if "auto" not in efforts:
-                efforts = ["auto"] + efforts
-
-        new_row = {
-            "model_id": model_id,
-            "label": str(_pick("label") or model_id),
-            "provider": str(_pick("provider") or "").strip(),
-            "protocol": str(_pick("protocol") or "openai"),
-            "base_url": str(_pick("base_url") or "").strip(),
-            "api_key": str(_pick("api_key") or "").strip(),
-            "max_input_tokens": max(1024, int(_pick("max_input_tokens") or _pick("context_tokens") or 1000000)),
-            "max_output_tokens": max(1, int(_pick("max_output_tokens") or _pick("output_tokens") or 128000)),
-            "reasoning_efforts": efforts,
-            "default_reasoning_effort": default_effort,
-            "thinking_default": str(_pick("thinking_default") or "enabled"),
-            "context_budget_chars": max(1000, int(_pick("context_budget_chars") or 256000)),
-            "input_price_per_million": _to_price(_pick("input_price_per_million")),
-            "output_price_per_million": _to_price(_pick("output_price_per_million")),
-            "cache_read_price_per_million": _to_price(_pick("cache_read_price_per_million")),
-            "cache_creation_price_per_million": _to_price(_pick("cache_creation_price_per_million")),
-            "price_currency": str(_pick("price_currency") or "usd"),
-            "input_points_per_million": _to_price(_pick("input_points_per_million")),
-            "output_points_per_million": _to_price(_pick("output_points_per_million")),
-            "points_per_request": _to_price(_pick("points_per_request")),
-            "points_per_1k_input": _to_price(_pick("points_per_1k_input")),
-            "points_per_1k_output": _to_price(_pick("points_per_1k_output")),
-            "points_per_1k_cache_read": _to_price(_pick("points_per_1k_cache_read")),
-            "points_per_1k_cache_creation": _to_price(_pick("points_per_1k_cache_creation")),
-            "capabilities": [str(c).strip() for c in (_pick("capabilities") or []) if str(c).strip()],
-            "enabled": bool(_pick("enabled", True)),
-            "deprecation_date": str(_pick("deprecation_date") or "").strip(),
-            "source": str(_pick("source") or "").strip(),
-            "notes": str(_pick("notes") or ""),
-        }
+        new_row = _build_row(data, existing)
         if existing:
             for i, r in enumerate(rows):
                 if r["model_id"] == model_id:
@@ -269,6 +273,29 @@ def upsert(data: dict) -> dict:
             rows.append(new_row)
         _write_all(rows)
     return dict(new_row)
+
+
+def add_many(items: list[dict]) -> list[dict]:
+    """批量新增模型档案，全部校验通过后一次写入，已存在模型不覆盖。"""
+    if not isinstance(items, list) or not items:
+        raise ValueError("models 至少需要一个模型")
+    if len(items) > 100:
+        raise ValueError("单次最多添加 100 个模型")
+    with _write_lock:
+        rows = _read_all()
+        existing_ids = {r["model_id"] for r in rows}
+        model_ids = [str(item.get("model_id") or "").strip() for item in items if isinstance(item, dict)]
+        if len(model_ids) != len(items) or not all(model_ids):
+            raise ValueError("模型 ID 不能为空")
+        duplicates = sorted({model_id for model_id in model_ids if model_ids.count(model_id) > 1})
+        if duplicates:
+            raise ValueError(f"批量内容存在重复模型 ID：{', '.join(duplicates)}")
+        conflicts = sorted(existing_ids.intersection(model_ids))
+        if conflicts:
+            raise ValueError(f"模型档案已存在：{', '.join(conflicts)}")
+        new_rows = [_build_row(item) for item in items]
+        _write_all(rows + new_rows)
+    return [dict(row) for row in new_rows]
 
 
 def delete(model_id: str) -> bool:
