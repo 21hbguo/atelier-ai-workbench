@@ -28,6 +28,7 @@ DEFAULT_MAX_TOKENS = 2000
 
 # 工具不存在 / 执行出错时的回填文本
 _NOT_FOUND_MSG = "Function {name} not found. Try again."
+_NOT_ALLOWED_MSG = "Function {name} is not available in the current session."
 _EXEC_ERROR_MSG = "工具 {name} 执行出错，请换一种方式重试或向用户说明错误。"
 _EMPTY_FINAL_MSG = "抱歉，我暂时无法完成这个任务，请换个说法再试一次。"
 
@@ -227,6 +228,10 @@ async def run_agent_stream(
             if tool is None:
                 result = _NOT_FOUND_MSG.format(name=name)
                 logger.warning("[agent/loop] 工具 %r 未注册，回填错误信息", name)
+            elif tools_names is not None and name not in tools_names:
+                # 纵深防御：即使模型输出了本轮未开放的工签名，也拒绝执行
+                result = _NOT_ALLOWED_MSG.format(name=name)
+                logger.warning("[agent/loop] 工具 %r 不在本轮允许列表，拒绝执行", name)
             else:
                 started = time.monotonic()
                 try:

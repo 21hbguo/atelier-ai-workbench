@@ -714,7 +714,11 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
         if entitlements["features"].get("web_search"):
             tools_names.extend(["web_search", "fetch_url"])
         if entitlements["features"].get("file_write"):
-            tools_names.append("file_ops_write_text")
+            tools_names.extend([
+                "file_ops_write_text",
+                "file_ops_read", "file_ops_write", "file_ops_edit",
+                "file_ops_list", "file_ops_glob", "file_ops_grep",
+            ])
         tools_names.append("image_gen")
         tools_names.append("show_widget")
 
