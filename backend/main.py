@@ -14,6 +14,7 @@ from backend.services.classification_service import ClassificationService
 from backend.services.content_audit_service import ContentAuditService
 from backend.services.task_manager import TaskManager
 from backend.services.image_expiry import expiry_cleanup_loop
+from backend.routers.chat import reconcile_chat_uploads, chat_upload_cleanup_loop
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
@@ -21,11 +22,20 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.expiry_cleanup_task = asyncio.create_task(expiry_cleanup_loop(int(os.getenv("IMAGE_EXPIRY_CLEANUP_INTERVAL_SECONDS", "3600"))))
+    await asyncio.to_thread(reconcile_chat_uploads)
+    app.state.chat_upload_cleanup_task = asyncio.create_task(chat_upload_cleanup_loop(int(os.getenv("CHAT_UPLOAD_CLEANUP_INTERVAL_SECONDS", "3600"))))
     await TaskManager.recover_orphaned_tasks()
     ClassificationService.resume_processing_tasks()
     ContentAuditService.resume_processing_tasks()
     yield
     t = getattr(app.state, "expiry_cleanup_task", None)
+    if t:
+        t.cancel()
+        try:
+            await t
+        except BaseException:
+            pass
+    t = getattr(app.state, "chat_upload_cleanup_task", None)
     if t:
         t.cancel()
         try:

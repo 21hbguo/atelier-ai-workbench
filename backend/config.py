@@ -38,6 +38,7 @@ PG_POOL_MAX = int(os.getenv("PG_POOL_MAX", "20"))
 # 所有数据统一放在 data/ 下
 DATA_DIR = PROJECT_ROOT / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"
+CHAT_UPLOAD_DIR = DATA_DIR / "chat_uploads"
 USER_WORKSPACES_DIR = DATA_DIR / "user_workspaces"
 GENERATED_IMAGES_DIR = DATA_DIR / "images"
 THUMBS_DIR = DATA_DIR / "thumbs"
@@ -46,7 +47,7 @@ EVO_THUMBS_DIR = DATA_DIR / "evo_thumbs"
 EVO_IMPORTED_DIR = DATA_DIR / "evo_images"
 
 # 确保目录存在
-for directory in [DATA_DIR, UPLOAD_DIR, USER_WORKSPACES_DIR, GENERATED_IMAGES_DIR, THUMBS_DIR, EVO_THUMBS_DIR, EVO_IMPORTED_DIR]:
+for directory in [DATA_DIR, UPLOAD_DIR, CHAT_UPLOAD_DIR, USER_WORKSPACES_DIR, GENERATED_IMAGES_DIR, THUMBS_DIR, EVO_THUMBS_DIR, EVO_IMPORTED_DIR]:
     directory.mkdir(parents=True, exist_ok=True)
 
 # 运行时可修改的配置

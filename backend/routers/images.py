@@ -18,7 +18,7 @@ from backend.database import get_db
 from backend.services.task_manager import TaskManager
 from backend.services.image_mapping import ImageUrlMapping
 from backend.auth import get_current_user, require_admin
-from backend.services.image_expiry import get_expiry_data, extend_images, RETENTION_DAYS, EXTEND_DAYS, get_extend_cost_per_image
+from backend.services.image_expiry import get_expiry_data, extend_images, RETENTION_DAYS, EXTEND_DAYS, get_extend_cost_per_image, remove_generated_image_thumbnails
 from backend.services.points_service import PointsService
 from backend.services.image_dimensions import get_image_dimensions
 
@@ -392,6 +392,7 @@ async def delete_image(filename: str, user=Depends(get_current_user)):
 
     try:
         image_path.unlink()
+        remove_generated_image_thumbnails(filename)
         with get_db() as conn:
             conn.execute("DELETE FROM image_metadata WHERE filename = %s", (filename,))
         TaskManager.remove_image_from_tasks(str(image_path))
@@ -432,6 +433,7 @@ async def batch_delete_images(body: BatchDeleteImagesRequest, user=Depends(get_c
         image_path = GENERATED_IMAGES_DIR / filename
         try:
             image_path.unlink()
+            remove_generated_image_thumbnails(filename)
             deleted.append(filename)
         except FileNotFoundError:
             failed.append({"filename": filename, "reason": "图片不存在"})

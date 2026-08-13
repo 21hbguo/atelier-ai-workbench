@@ -4,7 +4,8 @@ import logging
 import math
 import os
 from datetime import datetime, timedelta
-from backend.config import GENERATED_IMAGES_DIR, is_github_hosting_enabled, get_limit_config
+from pathlib import Path
+from backend.config import GENERATED_IMAGES_DIR, THUMBS_DIR, is_github_hosting_enabled, get_limit_config
 from backend.database import get_db
 from backend.services.task_manager import TaskManager
 logger=logging.getLogger(__name__)
@@ -97,6 +98,15 @@ def set_generated_image_expiry(filename: str, created_at: datetime | None = None
             _run(c)
     return payload
 
+
+def remove_generated_image_thumbnails(filename: str) -> None:
+    stem = Path(filename).stem
+    for thumb in THUMBS_DIR.glob(f"*_{stem}.webp"):
+        try:
+            thumb.unlink()
+        except OSError:
+            logger.exception("cleanup remove thumbnail failed filename=%s", thumb.name)
+
 def extend_images(filenames: list[str], user_id: int) -> dict:
     filenames=[f for f in dict.fromkeys([str(x).strip() for x in filenames if str(x).strip()]) if f]
     if not filenames:
@@ -157,6 +167,7 @@ async def cleanup_expired_images() -> dict:
                     deleted+=1
                 else:
                     missing+=1
+                remove_generated_image_thumbnails(filename)
                 conn.execute("DELETE FROM image_metadata WHERE filename = %s", (filename,))
                 try:
                     TaskManager.remove_image_from_tasks(str(image_path))
