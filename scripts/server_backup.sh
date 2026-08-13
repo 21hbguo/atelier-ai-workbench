@@ -12,7 +12,7 @@ mkdir -p "$work_dir"
 mkdir -p "$backup_root"
 cd "$project_dir"
 docker compose exec -T db pg_dump -U "${PG_USER:-app_user}" -d "${PG_DB:-app_db}" -Fc > "$work_dir/db.dump"
-for path in data/uploads data/images data/thumbs data/evo_images data/evo_thumbs data/config.json data/.jwt_secret; do
+for path in data/uploads data/chat_uploads data/images data/thumbs data/evo_images data/evo_thumbs data/config.json data/.jwt_secret; do
   [ -e "$path" ] && paths+=("$path")
 done
 [ -f .env ] && cp .env "$work_dir/.env"

@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>大卡片C · 原位展开大卡 · 账户页</title>
+<!--
+  基准页面 = 现有账户页（原样保留）
+  本方向：点击小卡片后，在页面内原位展开一张横向大卡（下方内容被推下），
+  大卡为全宽卡片，两栏布局，关闭后收起 —— 不遮罩、不遮挡上下文
+-->
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#F2F7F4;color:#2D4A3E;font:14px/1.5 Inter,"Noto Sans SC",system-ui,sans-serif}
+.page{max-width:960px;margin:0 auto;padding:28px 24px 60px}
+.page-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px}
+.page-head .eyebrow{font-size:12px;color:#7A8B82;margin-bottom:2px}
+.page-head h1{font-size:20px;font-weight:700;margin:0}
+.badge{font-size:12px;color:#7A8B82;background:#FAFAF7;border:1px solid #D9E3DE;padding:6px 12px;border-radius:99px;display:inline-flex;align-items:center;gap:6px}
+.badge i{width:6px;height:6px;border-radius:50%;background:#5B9A6F}
+.cgrid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px}
+.pcard{background:#FAFAF7;border:1px solid #D9E3DE;border-radius:18px;padding:16px}
+.pcard.profile{grid-column:span 2;position:relative;overflow:hidden}
+.pcard .ph{display:flex;gap:12px;align-items:center}
+.avatar{width:48px;height:48px;border-radius:50%;background:#3D7A5F;color:#fff;display:grid;place-items:center;font-weight:700;font-size:16px}
+.pcard .name{font-weight:700;font-size:15px;margin:0}
+.pcard .sub{font-size:12px;color:#7A8B82;margin:2px 0 0}
+.verify{display:inline-flex;align-items:center;gap:4px;margin-top:6px;font-size:10px;font-weight:700;color:#3D7A5F}
+.pcard .btns{display:flex;gap:8px;margin-top:14px}
+.pbtn{border:0;border-radius:9px;padding:8px 12px;font-size:12px;font-weight:600;cursor:pointer}
+.pbtn.primary{background:#3D7A5F;color:#fff}
+.pbtn.ghost{background:transparent;border:1px solid #D9E3DE;color:#2D4A3E}
+.qcard{background:#FAFAF7;border:1px solid #D9E3DE;border-radius:18px;padding:16px;cursor:pointer;transition:transform .15s;text-align:left;font:inherit;display:flex;flex-direction:column}
+.qcard:hover{transform:translateY(-2px)}
+.qcard .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.qcard .ic{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;font-size:13px;background:#E8F0EB;color:#3D7A5F}
+.qcard .lab{font-size:10px;color:#7A8B82;font-weight:500}
+.qcard .val{font-size:18px;font-weight:700;margin:0}
+.qcard .hint{font-size:10px;color:#7A8B82;margin:2px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sect{display:flex;align-items:center;justify-content:space-between;margin:22px 0 10px}
+.sect h2{font-size:14px;font-weight:600;margin:0}
+.sect span{font-size:11px;color:#7A8B82}
+.actions{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.act{background:#FAFAF7;border:1px solid #D9E3DE;border-radius:16px;padding:16px;cursor:pointer;text-align:left;font:inherit;transition:transform .15s}
+.act:hover{transform:translateY(-2px)}
+.act .ic{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;font-size:13px;background:rgba(61,122,95,.1);color:#3D7A5F;margin-bottom:10px}
+.act b{font-size:12px;display:block}
+.act p{font-size:10px;color:#7A8B82;margin:3px 0 0;line-height:1.5}
+.txline{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #E8EFEA}
+.txline:last-child{border:0}
+.txline .t{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;font-size:12px;background:#E8F0EB;color:#3D7A5F;flex-shrink:0}
+.txline .t.down{background:#F6E7E3;color:#C45B5B}
+.txline b{font-size:12px;display:block}
+.txline .muted{font-size:10px;color:#7A8B82}
+.txline .amt{margin-left:auto;font-weight:700;font-size:12px;color:#3D7A5F}
+.txline .amt.down{color:#C45B5B}
+/* 大卡片 · 原位展开 */
+.expand-wrap{overflow:hidden;max-height:0;transition:max-height .3s ease;margin:0}
+.expand-wrap.show{max-height:800px;margin:16px 0 0}
+.bigcard{background:#FAFAF7;border:1px solid #D9E3DE;border-radius:20px;box-shadow:0 16px 40px rgba(26,43,35,.1);overflow:hidden}
+.bigcard .bc-head{display:flex;align-items:center;gap:12px;padding:16px 18px 12px;border-bottom:1px solid #E8EFEA;background:#F2F7F4}
+.bigcard .bc-head .ic{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;background:#E8F0EB;color:#3D7A5F;font-size:15px}
+.bigcard .bc-head h3{margin:0;font-size:15px}
+.bigcard .bc-head p{margin:1px 0 0;font-size:11px;color:#7A8B82}
+.bigcard .close{margin-left:auto;border:1px solid #D9E3DE;background:#fff;border-radius:9px;width:28px;height:28px;cursor:pointer;font-size:14px;color:#2D4A3E;display:grid;place-items:center}
+.bigcard .bc-body{padding:16px 18px 18px;display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.bigcard .bc-foot{padding:10px 18px;border-top:1px solid #E8EFEA;background:#F2F7F4;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.btn{border:0;border-radius:10px;background:#3D7A5F;color:#fff;font:inherit;font-weight:600;padding:9px 14px;cursor:pointer;font-size:12px}
+.btn.ghost{background:#fff;border:1px solid #B8CBC0;color:#2E6B4E}
+.balance-row{display:flex;align-items:center;gap:16px;padding:14px;border:1px solid #E4ECE7;border-radius:14px;background:#F2F7F4;flex-wrap:wrap}
+.balance-row .num{font-size:28px;font-weight:800;letter-spacing:-.02em}
+.balance-row .muted{font-size:11px;color:#7A8B82}
+.chip{font-size:10px;padding:4px 9px;border-radius:99px;background:#E8F0EB;color:#2E6B4E;font-weight:600;white-space:nowrap}
+.chip.done{background:#E0EFE4;color:#2E6B4E}
+.mini-links{display:flex;gap:10px;margin:12px 0 0}
+.mini-links a{font-size:11px;color:#3D7A5F;font-weight:600;text-decoration:none;background:rgba(61,122,95,.08);padding:6px 10px;border-radius:99px}
+.sub-h{font-size:12px;color:#7A8B82;margin:0 0 8px;letter-spacing:.03em}
+.input{width:100%;border:1px solid #D9E3DE;border-radius:10px;padding:11px 12px;font:inherit;background:#fff;margin-bottom:10px}
+.more{width:100%;border:1px solid #D9E3DE;background:#fff;border-radius:10px;padding:9px;font:inherit;font-size:12px;font-weight:600;color:#2D4A3E;cursor:pointer}
+@media(max-width:800px){.cgrid{grid-template-columns:1fr 1fr}.actions{grid-template-columns:1fr}.pcard.profile{grid-column:span 2}.bigcard .bc-body{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="page-head"><div><div class="eyebrow">账户与偏好</div><h1>账户概览</h1></div><span class="badge"><i></i>账户状态正常</span></div>
+
+  <div class="cgrid">
+    <section class="pcard profile">
+      <div class="ph">
+        <div class="avatar">林</div>
+        <div><p class="name">林知夏</p><p class="sub">linzhixia@atelier.cn</p><span class="verify">✓ 账户已验证</span></div>
+      </div>
+      <div class="btns"><button class="pbtn primary">编辑资料</button><button class="pbtn ghost">账户安全</button></div>
+    </section>
+    <button class="qcard" data-card="points"><div class="top"><span class="ic">◈</span><span class="lab">当前积分</span></div><p class="val">1,248</p><p class="hint">可用于生成与对话</p></button>
+    <button class="qcard" data-card="points"><div class="top"><span class="ic" style="background:rgba(91,154,111,.12);color:#2E6B4E">✓</span><span class="lab">今日签到</span></div><p class="val" style="font-size:14px">今日已签到</p><p class="hint">明天再来签到</p></button>
+    <button class="qcard" data-card="status"><div class="top"><span class="ic" style="background:rgba(91,154,111,.12);color:#2E6B4E">◉</span><span class="lab">账户状态</span></div><p class="val" style="font-size:14px">正常</p><p class="hint">身份已验证</p></button>
+    <button class="qcard" data-card="notice"><div class="top"><span class="ic">🔔</span><span class="lab">通知</span></div><p class="val" style="font-size:14px">查看</p><p class="hint">2 条未读</p></button>
+  </div>
+
+  <div class="sect"><h2>常用功能</h2><span>快捷进入对应功能</span></div>
+  <div class="actions">
+    <button class="act" data-card="points"><div class="ic">◈</div><b>积分与套餐</b><p>查看余额、订阅与消费记录</p></button>
+    <button class="act" data-card="redeem"><div class="ic">✉</div><b>兑换码</b><p>兑换活动或邀请积分</p></button>
+    <button class="act" data-card="security"><div class="ic">🔒</div><b>安全设置</b><p>更新密码与查看登录会话</p></button>
+  </div>
+
+  <!-- 原位展开的大卡片 -->
+  <div class="expand-wrap" id="expand">
+    <section class="bigcard">
+      <div class="bc-head"><div class="ic" id="bcIcon">◈</div><div><h3 id="bcTitle">积分与签到</h3><p id="bcSub">当前积分、签到与消费记录</p></div><button class="close" id="bcClose">×</button></div>
+      <div class="bc-body" id="bcBody"></div>
+      <div class="bc-foot" id="bcFoot"></div>
+    </section>
+  </div>
+
+  <div class="sect"><h2>近期动态</h2><span>查看全部</span></div>
+  <div class="pcard" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+    <div class="txline"><span class="t">+</span><div><b>每日签到</b><div class="muted">今天 09:42 · +10 积分</div></div></div>
+    <div class="txline"><span class="t down">图</span><div><b>图像生成</b><div class="muted">昨天 21:16 · −24 积分</div></div></div>
+    <div class="txline"><span class="t">兑</span><div><b>兑换积分码</b><div class="muted">8 月 12 日 · +200 积分</div></div></div>
+  </div>
+</div>
+
+<script>
+const expand=document.getElementById('expand')
+const bcIcon=document.getElementById('bcIcon'),bcTitle=document.getElementById('bcTitle'),bcSub=document.getElementById('bcSub'),bcBody=document.getElementById('bcBody'),bcFoot=document.getElementById('bcFoot')
+
+const pointsBody=`
+  <div>
+    <p class="sub-h">余额与签到</p>
+    <div class="balance-row">
+      <div><div class="muted">可用积分</div><div class="num">1,248</div><div class="muted" style="margin-top:3px">本月 +320 · 今天 09:42 更新</div></div>
+      <div style="margin-left:auto"><button class="btn">立即签到 +10</button></div>
+      <span class="chip done">今日已签到</span>
+    </div>
+    <div class="mini-links"><a href="#">兑换积分码 ›</a><a href="#">充值中心 ›</a></div>
+  </div>
+  <div>
+    <p class="sub-h">积分记录 <span style="color:#7A8B82;font-weight:400">共 32 条</span></p>
+    <div class="txline"><span class="t">签</span><div style="flex:1"><b>每日签到</b><div class="muted">今天 09:42</div></div><span class="amt">+10</span></div>
+    <div class="txline"><span class="t down">图</span><div style="flex:1"><b>图像生成 · Flux Kontext Pro</b><div class="muted">昨天 21:16</div></div><span class="amt down">−24</span></div>
+    <div class="txline"><span class="t down">优</span><div style="flex:1"><b>提示词精细优化</b><div class="muted">8 月 12 日 18:02</div></div><span class="amt down">−5</span></div>
+    <div class="txline"><span class="t">兑</span><div style="flex:1"><b>兑换积分码</b><div class="muted">8 月 12 日</div></div><span class="amt">+200</span></div>
+    <div class="txline"><span class="t">邀</span><div style="flex:1"><b>邀请注册奖励</b><div class="muted">8 月 10 日</div></div><span class="amt">+20</span></div>
+  </div>`
+const pointsFoot=`<span class="muted" style="font-size:11px">积分记录仅显示最近 5 条</span><button class="more" style="width:auto;padding:8px 16px">加载更多记录</button>`
+
+const redeemBody=`
+  <div>
+    <p class="sub-h">兑换积分码</p>
+    <input class="input" placeholder="输入兑换码，如 ATELIER-XXXX">
+    <button class="btn" style="width:100%">立即兑换</button>
+    <div class="muted" style="font-size:11px;margin-top:10px">兑换后积分即时到账；兑换码有有效期，请尽快使用。</div>
+  </div>
+  <div>
+    <p class="sub-h">最近兑换</p>
+    <div class="txline"><span class="t">兑</span><div style="flex:1"><b>ATELIER-SUMMER</b><div class="muted">8 月 12 日</div></div><span class="amt">+200</span></div>
+    <div class="txline"><span class="t">兑</span><div style="flex:1"><b>ATELIER-WELCOME</b><div class="muted">6 月 01 日</div></div><span class="amt">+100</span></div>
+  </div>`
+const redeemFoot=`<span class="muted" style="font-size:11px">兑换码由活动或邀请获得</span><button class="btn ghost">查看兑换说明</button>`
+
+const securityBody=`
+  <div>
+    <p class="sub-h">登录密码</p>
+    <button class="btn ghost" style="width:100%">修改密码</button>
+  </div>
+  <div>
+    <p class="sub-h">登录设备 <span style="color:#7A8B82;font-weight:400">2 台在线</span></p>
+    <div class="txline"><span class="t" style="background:#E8F0EB">M</span><div style="flex:1"><b>MacBook Pro · Safari</b><div class="muted">当前设备 · 上海 · 3 分钟前活跃</div></div><span class="chip done">本机</span></div>
+    <div class="txline"><span class="t" style="background:#E8F0EB">i</span><div style="flex:1"><b>iPhone 15 · Safari</b><div class="muted">3 天前活跃</div></div><button class="btn ghost" style="padding:5px 10px;font-size:11px">下线</button></div>
+  </div>`
+const securityFoot=`<span class="muted" style="font-size:11px">下线其他设备可保护账户安全</span><button class="btn">全部下线</button>`
+
+const noticeBody=`
+  <div>
+    <p class="sub-h">消息 <span style="color:#7A8B82;font-weight:400">2 条未读</span></p>
+    <div class="txline"><span class="t" style="background:#E0EFE4">公</span><div style="flex:1"><b>平台更新公告：新增精细优化</b><div class="muted">8 月 12 日 10:00</div></div><span class="chip">未读</span></div>
+    <div class="txline"><span class="t">◈</span><div style="flex:1"><b>积分变动提醒：兑换 +200</b><div class="muted">8 月 12 日 09:02</div></div><span class="chip">未读</span></div>
+    <div class="txline"><span class="t">✓</span><div style="flex:1"><b>欢迎使用 Atelier-ai</b><div class="muted">5 月 18 日</div></div><span class="muted">已读</span></div>
+  </div>
+  <div>
+    <p class="sub-h">快捷入口</p>
+    <div class="mini-links"><a href="#">查看全部通知 ›</a><a href="#">公告中心 ›</a></div>
+  </div>`
+const noticeFoot=`<button class="more">查看全部通知</button>`
+
+const statusBody=`
+  <div>
+    <p class="sub-h">账户信息</p>
+    <div class="txline"><span class="t">✓</span><div style="flex:1"><b>账户验证</b><div class="muted">邮箱已验证</div></div><span class="chip done">正常</span></div>
+    <div class="txline"><span class="t">◉</span><div style="flex:1"><b>账户状态</b><div class="muted">无封禁或限制</div></div><span class="chip done">正常</span></div>
+    <div class="txline"><span class="t">日</span><div style="flex:1"><b>注册时间</b><div class="muted">2026 年 5 月 18 日</div></div></div>
+  </div>
+  <div>
+    <p class="sub-h">协议与说明</p>
+    <div class="txline"><span class="t">≡</span><div style="flex:1"><b>用户协议 / 隐私政策 / 退款说明</b></div><span class="muted">›</span></div>
+  </div>`
+const statusFoot=`<button class="more">返回账户概览</button>`
+
+const views={
+  points:{icon:'◈',title:'积分与签到',sub:'当前积分、签到与消费记录',body:pointsBody,foot:pointsFoot},
+  redeem:{icon:'✉',title:'兑换码',sub:'输入兑换码领取积分',body:redeemBody,foot:redeemFoot},
+  security:{icon:'🔒',title:'安全设置',sub:'密码与登录设备管理',body:securityBody,foot:securityFoot},
+  notice:{icon:'🔔',title:'通知',sub:'平台公告与消息提醒',body:noticeBody,foot:noticeFoot},
+  status:{icon:'◉',title:'账户状态',sub:'账户信息与协议说明',body:statusBody,foot:statusFoot},
+}
+function openCard(key){
+  const v=views[key];bcIcon.textContent=v.icon;bcTitle.textContent=v.title;bcSub.textContent=v.sub;bcBody.innerHTML=v.body;bcFoot.innerHTML=v.foot
+  expand.classList.add('show')
+  setTimeout(()=>expand.scrollIntoView({behavior:'smooth',block:'nearest'}),60)
+}
+function closeCard(){expand.classList.remove('show')}
+document.querySelectorAll('[data-card]').forEach(c=>c.addEventListener('click',()=>openCard(c.dataset.card)))
+document.getElementById('bcClose').addEventListener('click',closeCard)
+</script>
+</body>
+</html>
