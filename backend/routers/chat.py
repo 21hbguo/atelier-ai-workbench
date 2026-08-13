@@ -919,6 +919,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                 "file_ops_list", "file_ops_glob", "file_ops_grep",
                 "send_file",
                 "make_xlsx", "make_docx", "make_pptx", "make_deck",
+                "scientific_plot",
             ])
         tools_names.append("image_gen")
         tools_names.append("show_widget")
@@ -1069,6 +1070,13 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                             "2. 工具会生成同名 .pptx（可编辑交付）与 .html（网页版预览）两份文件并"
                             "自动发送文件卡片，回复附一句说明即可；\n"
                             "3. 简单 PPT（普通标题+要点页）用 make_pptx 即可，无需使用本工具。"
+                        )
+                    if "scientific_plot" in tools_names:
+                        agent_system += (
+                            "\n\n【科研作图】\n"
+                            "用户要求根据 CSV/XLSX 数据生成科研图时，调用 scientific_plot，而不是编写或执行任意绘图代码。"
+                            "先用 file_ops_list 查看工作区 uploads/ 中的文件名，再按用户目标选择图型与列名；"
+                            "该工具可生成折线、柱状、散点、分布、热图、火山图、PCA、ROC/PR 图，并自动发送 PNG、SVG、PDF 与配置文件。"
                         )
                     # 当天日期：动态内容追加到 system 最末尾，固定指南保持前缀稳定可命中缓存
                     if body.web_search and not attached_docs:
