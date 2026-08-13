@@ -70,7 +70,9 @@ class _FakeStreamTools:
 
     async def __call__(self, **kwargs):
         self.calls += 1
-        self.seen_messages.append(kwargs.get("messages") or [])
+        # 快照拷贝：run_agent_stream 内部复用同一 work 列表，存引用会让
+        # 所有 seen_messages[i] 指向最终状态
+        self.seen_messages.append(list(kwargs.get("messages") or []))
         idx = min(self.calls, len(self.rounds)) - 1
         for ev in self.rounds[idx]:
             yield ev
@@ -267,7 +269,7 @@ def test_exec_exception_message_contains_context(monkeypatch):
     assert "请修正后重试" in content          # 引导文案
 
 
-# ---------- 工具结果长度封顶（单条 + 当轮累积） ----------
+# ---------- 工具结果预算（codex RolloutBudget：总预算 + 软提示 + 兜底截断） ----------
 
 def test_truncate_tool_result_helper():
     from backend.services.agent.loop import _truncate_tool_result
@@ -276,12 +278,31 @@ def test_truncate_tool_result_helper():
     long_text = "A" * 10000 + "B" * 10000
     truncated = _truncate_tool_result(long_text, 5000)
     assert len(truncated) <= 5000
-    assert "结果过大已截断" in truncated
+    assert "已省略" in truncated  # 说明省略量（而非生硬"被截断"）
     assert truncated.startswith("A") and truncated.endswith("B")  # 保留头尾
 
 
-def test_tool_result_single_truncated(monkeypatch):
-    """单条工具结果超 20K 字符时截断回填（保留头尾 + 标记），不撑爆上下文。"""
+def test_tool_result_single_over_budget_truncated(monkeypatch):
+    """单条结果超总预算（60K）时截断兜底（保留头尾 + 省略量说明）；预算内不截断。"""
+    from backend.services.llm_client import LLMClient
+
+    rounds = [
+        [_done("", [_call("call_1", "test.validation_huge", {"path": "x", "limit": 70000})])],
+        [_done("完成", [])],
+    ]
+    fake = _FakeStreamTools(rounds)
+    monkeypatch.setattr(LLMClient, "stream_tools", fake)
+    _run(_collect(rounds, ["test.validation_huge"]))
+    tool_msgs = [m for m in fake.seen_messages[1] if m.get("role") == "tool"]
+    assert tool_msgs
+    content = tool_msgs[0]["content"]
+    assert len(content) < 70000  # 已被截断
+    assert "已省略" in content
+    assert content.endswith("H")  # 保留尾部
+
+
+def test_tool_result_within_budget_not_truncated(monkeypatch):
+    """预算内的单条结果（30K）完整回填，不截断（取代旧版 20K 单条硬上限）。"""
     from backend.services.llm_client import LLMClient
 
     rounds = [
@@ -294,13 +315,36 @@ def test_tool_result_single_truncated(monkeypatch):
     tool_msgs = [m for m in fake.seen_messages[1] if m.get("role") == "tool"]
     assert tool_msgs
     content = tool_msgs[0]["content"]
-    assert len(content) < 30000  # 已被截断
-    assert "结果过大已截断" in content
-    assert content.endswith("H")  # 保留尾部
+    assert content == "H" * 30000  # 完整保留
+    assert "已省略" not in content
+
+
+def test_tool_result_budget_hint_injected_once(monkeypatch):
+    """累积首超 50% 预算时注入软提示（不截断），且只注入一次。"""
+    from backend.services.llm_client import LLMClient
+
+    rounds = [
+        [_done("", [_call("call_1", "test.validation_huge", {"path": "x", "limit": 30000})])],
+        [_done("", [_call("call_2", "test.validation_huge", {"path": "x", "limit": 30000})])],
+        [_done("", [_call("call_3", "test.validation_huge", {"path": "x", "limit": 30000})])],
+        [_done("完成", [])],
+    ]
+    fake = _FakeStreamTools(rounds)
+    monkeypatch.setattr(LLMClient, "stream_tools", fake)
+    _run(_collect(rounds, ["test.validation_huge"]))
+    # 第 2 轮回填（30K+30K=60K > 50%*60K）应带软提示
+    tool_msgs2 = [m for m in fake.seen_messages[2] if m.get("role") == "tool"]
+    assert tool_msgs2
+    assert "预算提示" in tool_msgs2[-1]["content"]
+    # 第 3 轮内容完整（软提示不截断），且只注入过一次（提示不在每轮重复）
+    tool_msgs3 = [m for m in fake.seen_messages[3] if m.get("role") == "tool"]
+    assert tool_msgs3
+    assert "预算提示" not in tool_msgs3[-1]["content"]
+    assert tool_msgs3[-1]["content"].startswith("H")
 
 
 def test_tool_result_total_budget_shrinks(monkeypatch):
-    """当轮工具结果总累积超过 60K 后，后续结果压缩到 2K 并提示模型收敛。"""
+    """预算用尽后后续结果压缩到小上限并提示收尾（优雅终止，非硬切断）。"""
     from backend.services.llm_client import LLMClient
 
     rounds = [
@@ -310,8 +354,9 @@ def test_tool_result_total_budget_shrinks(monkeypatch):
     fake = _FakeStreamTools(rounds)
     monkeypatch.setattr(LLMClient, "stream_tools", fake)
     _run(_collect(rounds, ["test.validation_huge"]))
-    # 第 4 轮请求里应看到第 3 轮回填（累积已达 ~60K → 压缩到 2K）
+    # 第 4 轮请求里应看到第 3 轮回填（第 3 轮时累积已 ≥60K → 压缩到 2K + 收尾提示）
     tool_msgs = [m for m in fake.seen_messages[3] if m.get("role") == "tool"]
     assert tool_msgs
     last_content = tool_msgs[-1]["content"]
-    assert len(last_content) <= 2000 + len("…（结果过大已截断，如需完整内容请缩小范围或分页获取）…\n")
+    assert len(last_content) <= 5000
+    assert "预算已用尽" in last_content  # 优雅收尾提示

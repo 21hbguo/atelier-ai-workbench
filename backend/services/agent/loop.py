@@ -26,13 +26,13 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_TOOL_CALLS = 10
 DEFAULT_MAX_TOKENS = 2000
 
-# 工具结果回填封顶（防 agent 循环内 tool 消息无界累积撑爆上下文窗口）：
-# 单条工具结果上限 / 当轮工具结果总累积上限（参照 smolagents truncate_content 保留头尾）
-MAX_TOOL_RESULT_CHARS = 20_000
+# 工具结果预算（codex RolloutBudget 思路：总预算统一约束，取代单条硬截断）：
+# 当轮工具结果总预算；单条结果超预算才截断兜底；累积超过 50% 注入软提示引导模型收敛
 MAX_TOOL_RESULTS_TOTAL_CHARS = 60_000
-# 当轮累积已超限时，后续工具结果压缩到这个更小的上限并提示模型收敛
+_BUDGET_WARN_RATIO = 0.5  # 累积超过预算 50% 时注入预算提示（不截断内容）
+# 预算已用尽后的兜底：后续工具结果压缩到这个更小的上限并提示收尾
 _OVER_BUDGET_TOOL_RESULT_CHARS = 2_000
-_TOOL_RESULT_TRUNC_MSG = "\n…（结果过大已截断，如需完整内容请缩小范围或分页获取）…\n"
+_BUDGET_EXHAUSTED_MSG = "\n（本轮工具结果预算已用尽，请基于已有信息继续；如需更多内容请明确告知用户。）"
 
 
 # 工具不存在 / 执行出错时的回填文本
@@ -53,12 +53,30 @@ _EMPTY_FINAL_MSG = "抱歉，我暂时无法完成这个任务，请换个说法
 
 
 def _truncate_tool_result(text: str, limit: int) -> str:
-    """工具结果截断：保留头尾各半 + 截断标记（参照 smolagents truncate_content）。"""
+    """截断保留头尾各半（兜底手段，正常路径靠预算软提示引导收敛）。
+
+    参照 smolagents truncate_content；标记说明省略量并引导分页/定位，
+    让模型能找回缺失内容，而不是只看到生硬的"被截断"。
+    """
     text = "" if text is None else str(text)
     if len(text) <= limit:
         return text
-    half = max(0, (limit - len(_TOOL_RESULT_TRUNC_MSG)) // 2)
-    return text[:half] + _TOOL_RESULT_TRUNC_MSG + text[-half:]
+    half = max(0, (limit - 160) // 2)  # 预留标记空间
+    omitted = len(text) - half * 2
+    mark = (
+        f"\n…（结果较长，已省略中间约 {omitted} 字符，开头与结尾完整保留；"
+        "需要中间内容请用 file_ops_read 的 offset/limit 分页或 file_ops_grep 定位）…\n"
+    )
+    return text[:half] + mark + text[-half:]
+
+
+def _budget_hint(used: int) -> str:
+    """预算软提示：追加在工具结果末尾，引导模型收敛（不截断内容）。"""
+    remain = max(0, MAX_TOOL_RESULTS_TOTAL_CHARS - used)
+    return (
+        f"\n（预算提示：本轮工具结果累计约 {used} 字符，接近 {MAX_TOOL_RESULTS_TOTAL_CHARS} 上限，"
+        f"剩余约 {remain}。后续获取内容请优先缩小范围或分页，避免挤占模型上下文。）"
+    )
 
 # usage 统一 schema 的各分项键（与 llm_client._extract_usage 对齐）
 _USAGE_KEYS = ("input_tokens", "output_tokens", "cache_read_tokens",
@@ -160,17 +178,37 @@ async def run_agent_stream(
     sent_citations = 0  # 已推送的来源引用条数（citations 事件只发增量）
     sent_widgets = 0  # 已推送的画图 widget 条数（widget 事件只发增量）
     sent_files = 0  # 已推送的可下载文件条数（file 事件只发增量）
-    tool_results_total = 0  # 当轮已回填工具结果总字符数（封顶防上下文撑爆）
+    tool_results_total = 0  # 当轮已回填工具结果总字符数（预算记账）
+    budget_hinted = False  # 预算软提示是否已注入（只注入一次，避免刷屏）
 
     def _append_tool_result(call_id: str, result: str) -> None:
-        """回填 role=tool 消息：单条与当轮累积双重封顶，超限截断保留头尾并提示模型。"""
-        nonlocal tool_results_total
-        limit = (
-            _OVER_BUDGET_TOOL_RESULT_CHARS
-            if tool_results_total >= MAX_TOOL_RESULTS_TOTAL_CHARS
-            else MAX_TOOL_RESULT_CHARS
-        )
-        content = _truncate_tool_result(result, limit)
+        """回填 role=tool 消息：总预算记账（codex RolloutBudget 思路）。
+
+        三层策略：
+        1. 累积 ≤ 50% 预算：完整回填，不干预；
+        2. 累积首超 50%：完整回填 + 注入预算软提示，引导模型收敛（不截断内容）；
+        3. 预算已用尽或单条超预算：截断兜底（保留头尾 + 省略量说明），
+           并提示模型基于已有信息继续。
+        """
+        nonlocal tool_results_total, budget_hinted
+        result = "" if result is None else str(result)
+        content = result
+        if tool_results_total >= MAX_TOOL_RESULTS_TOTAL_CHARS:
+            # 预算已用尽：压缩后续结果并提示收尾
+            content = (
+                _truncate_tool_result(result, _OVER_BUDGET_TOOL_RESULT_CHARS)
+                + _BUDGET_EXHAUSTED_MSG
+            )
+        elif len(content) > MAX_TOOL_RESULTS_TOTAL_CHARS:
+            # 单条结果超总预算：兜底截断（不做独立单条上限，由总预算统一约束）
+            content = _truncate_tool_result(content, MAX_TOOL_RESULTS_TOTAL_CHARS)
+        elif (
+            not budget_hinted
+            and tool_results_total + len(content) > MAX_TOOL_RESULTS_TOTAL_CHARS * _BUDGET_WARN_RATIO
+        ):
+            # 首次超过 50% 预算：完整回填 + 软提示引导模型收敛
+            content += _budget_hint(tool_results_total + len(content))
+            budget_hinted = True
         tool_results_total += len(content)
         work.append({"role": "tool", "tool_call_id": call_id, "content": content})
     # 最多 max_tool_calls + 1 轮 LLM 调用：最后一轮不带 tools
