@@ -81,3 +81,35 @@ describe('mdToHtml 公式渲染', () => {
     expect(html).toContain('class="katex"')
   })
 })
+
+describe('mdToHtml 常用 Markdown', () => {
+  it('渲染删除线和裸链接，并保留 URL 后的标点', () => {
+    const html = mdToHtml('~~旧内容~~，详见 https://example.com/a?x=1。')
+    expect(html).toContain('<del>旧内容</del>')
+    expect(html).toContain('<a href="https://example.com/a?x=1"')
+    expect(html).toContain('>https://example.com/a?x=1</a>。')
+  })
+
+  it('渲染空 alt 图片', () => {
+    const html = mdToHtml('![](https://example.com/image.png)')
+    expect(html).toContain('<img src="https://example.com/image.png" alt="" loading="lazy" />')
+  })
+
+  it('渲染波浪号和缩进代码块', () => {
+    expect(mdToHtml('~~~js\nconst x = 1\n~~~')).toContain('language-js')
+    expect(mdToHtml('    const x = 1')).toContain('<pre class="md-code-block">')
+  })
+
+  it('渲染表格对齐和转义管道', () => {
+    const html = mdToHtml('| 名称 | 数值 |\n| :--- | ---: |\n| A\\|B | 10 |')
+    expect(html).toContain('<th style="text-align:left">名称</th>')
+    expect(html).toContain('<td style="text-align:right">10</td>')
+    expect(html).toContain('A|B')
+  })
+
+  it('转义原始 HTML，避免脚本注入', () => {
+    const html = mdToHtml('<script>alert(1)</script>')
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
+    expect(html).not.toContain('<script>')
+  })
+})

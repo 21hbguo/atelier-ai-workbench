@@ -142,8 +142,9 @@ function restoreFormulas(html, formulas) {
 
 const SAFE_URL_RE = /^https?:\/\//i
 
-// 行内 token：图片 | 双反引号代码 | 单反引号代码 | 链接 | 加粗 | 斜体（顺序即优先级）
-const INLINE_RE = /(!\[[^\]\n]+\]\([^)\n]+\))|(``[^`\n]+``)|(`[^`\n]+`)|(\[[^\]\n]+\]\([^)\n]+\))|(\*\*[^*\n]+\*\*)|(\*[^*\n]+\*)/g
+// 行内 token：图片 | 双反引号代码 | 单反引号代码 | 链接 | 删除线 | 加粗 | 斜体 | 裸链接（顺序即优先级）
+const INLINE_RE = /(!\[[^\]\n]*\]\([^)\n]+\))|(``[^`\n]+``)|(`[^`\n]+`)|(\[[^\]\n]+\]\([^)\n]+\))|(~~[^~\n]+~~)|(\*\*[^*\n]+\*\*)|(\*[^*\n]+\*)|(https?:\/\/[^\s<>"']+)/g
+const URL_TRAIL_RE = /[),.:!?\]}，。；：！？、】【]+$/
 
 function renderInline(text) {
   // 自动链接 <https://...> 先转成标准链接语法，再统一处理
@@ -182,9 +183,15 @@ function renderInline(text) {
         out += m[4]
       }
     } else if (m[5] != null) {
-      out += `<strong>${m[5].slice(2, -2)}</strong>`
+      out += `<del>${m[5].slice(2, -2)}</del>`
     } else if (m[6] != null) {
-      out += `<em>${m[6].slice(1, -1)}</em>`
+      out += `<strong>${m[6].slice(2, -2)}</strong>`
+    } else if (m[7] != null) {
+      out += `<em>${m[7].slice(1, -1)}</em>`
+    } else if (m[8] != null) {
+      const href = m[8].replace(URL_TRAIL_RE, '')
+      const trail = m[8].slice(href.length)
+      out += `<a href="${href}" target="_blank" rel="noopener noreferrer">${href}</a>${trail}`
     }
     last = m.index + m[0].length
   }
@@ -202,7 +209,35 @@ function isTableSeparator(line) {
 }
 
 function splitTableCells(row) {
-  return row.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim())
+  const text = row.trim().replace(/^\|/, '').replace(/\|$/, '')
+  const cells = []
+  let cell = ''
+  let escaped = false
+  for (const char of text) {
+    if (escaped) { cell += char; escaped = false }
+    else if (char === '\\') escaped = true
+    else if (char === '|') { cells.push(cell.trim()); cell = '' }
+    else cell += char
+  }
+  if (escaped) cell += '\\'
+  cells.push(cell.trim())
+  return cells
+}
+
+function tableAlignments(line) {
+  return splitTableCells(line).map(cell => {
+    const value = cell.trim()
+    if (value.startsWith(':') && value.endsWith(':')) return 'center'
+    if (value.endsWith(':')) return 'right'
+    if (value.startsWith(':')) return 'left'
+    return ''
+  })
+}
+
+function renderCodeBlock(code, rawLang = '') {
+  const label = rawLang ? (LANG_LABELS[rawLang.toLowerCase()] || rawLang) : ''
+  const langAttr = rawLang ? ` language-${rawLang}` : ''
+  return `<pre class="md-code-block"><div class="md-code-header"><span class="md-code-lang">${escapeHtml(label)}</span><span class="md-code-actions"><button type="button" class="md-copy-btn">复制</button><button type="button" class="md-download-btn">下载</button></span></div><code class="hljs${langAttr}">${highlightCode(code, rawLang)}</code></pre>`
 }
 
 // ---------- 列表（支持缩进嵌套 + 任务项） ----------
@@ -280,26 +315,22 @@ export function mdToHtml(text) {
   while (i < lines.length) {
     const line = lines[i]
 
-    // 代码块（含语言标注）
-    const fence = line.match(/^```([\w+-]*)\s*$/)
+    // 代码块（``` / ~~~，含语言标注）
+    const fence = line.match(/^(`{3,}|~{3,})([\w+-]*)\s*$/)
     if (fence) {
-      const rawLang = fence[1]
+      const marker = fence[1]
+      const rawLang = fence[2]
       const buf = []
       let closed = false
       i++
       while (i < lines.length) {
-        if (/^```\s*$/.test(lines[i])) { closed = true; i++; break }
+        if (new RegExp(`^${marker[0]}{${marker.length},}\\s*$`).test(lines[i])) { closed = true; i++; break }
         buf.push(lines[i])
         i++
       }
       if (closed) {
         // 围栏内提取原始文本 → hljs 高亮（内部自转义）→ 输出；失败则退回 escapeHtml 纯文本
-        const code = buf.join('\n')
-        const label = rawLang ? (LANG_LABELS[rawLang.toLowerCase()] || rawLang) : ''
-        const langAttr = rawLang ? ` language-${rawLang}` : ''
-        out.push(
-          `<pre class="md-code-block"><div class="md-code-header"><span class="md-code-lang">${escapeHtml(label)}</span><span class="md-code-actions"><button type="button" class="md-copy-btn">复制</button><button type="button" class="md-download-btn">下载</button></span></div><code class="hljs${langAttr}">${highlightCode(code, rawLang)}</code></pre>`
-        )
+        out.push(renderCodeBlock(buf.join('\n'), rawLang))
         continue
       }
       // 未闭合（流式输出中间态）：按普通文本渲染，避免吞掉后续内容
@@ -308,17 +339,29 @@ export function mdToHtml(text) {
       continue
     }
 
+    // 缩进代码块（连续四空格或一个 Tab）
+    if (/^( {4}|\t)/.test(line)) {
+      const buf = []
+      while (i < lines.length && /^( {4}|\t)/.test(lines[i])) {
+        buf.push(lines[i].replace(/^( {4}|\t)/, ''))
+        i++
+      }
+      out.push(renderCodeBlock(buf.join('\n')))
+      continue
+    }
+
     // 表格：当前行为表头且下一行是分隔行
     if (line.includes('|') && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
       const rows = []
       while (i < lines.length && lines[i].trim().startsWith('|')) { rows.push(lines[i]); i++ }
       if (rows.length >= 2) {
+        const alignments = tableAlignments(rows[1])
         let html = '<table><thead><tr>'
-        for (const c of splitTableCells(rows[0])) html += `<th>${renderInline(c)}</th>`
+        for (const [index, c] of splitTableCells(rows[0]).entries()) html += `<th${alignments[index] ? ` style="text-align:${alignments[index]}"` : ''}>${renderInline(c)}</th>`
         html += '</tr></thead><tbody>'
         for (let r = 2; r < rows.length; r++) {
           html += '<tr>'
-          for (const c of splitTableCells(rows[r])) html += `<td>${renderInline(c)}</td>`
+          for (const [index, c] of splitTableCells(rows[r]).entries()) html += `<td${alignments[index] ? ` style="text-align:${alignments[index]}"` : ''}>${renderInline(c)}</td>`
           html += '</tr>'
         }
         html += '</tbody></table>'

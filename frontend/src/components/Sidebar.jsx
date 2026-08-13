@@ -114,7 +114,7 @@ export default function Sidebar({ open, onClose }) {
           <div className={`px-2 py-1.5 flex items-center ${collapsed ? 'justify-center' : ''}`}>
             <div className={`flex-1 min-w-0 ${collapsed ? 'hidden' : 'flex flex-col'}`}>
               <h1 className="font-extrabold tracking-tight"
-                style={{ fontSize: '1.5rem', lineHeight: '1', backgroundImage: 'linear-gradient(135deg, var(--text-primary) 30%, color-mix(in srgb, var(--accent) 65%, var(--text-primary)))', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }}>Atelier-ai</h1>
+                style={{ fontSize: '1.5rem', lineHeight: '1', backgroundImage: 'linear-gradient(135deg, var(--text-primary) 30%, color-mix(in srgb, var(--accent) 65%, var(--text-primary)))', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }}>Atelier AI</h1>
               <span className="text-[10px] leading-none mt-1" style={{ color: 'var(--text-secondary)' }}>你的专属工作台</span>
             </div>
             <button className={`hidden lg:flex p-1 rounded-lg hover:bg-[var(--bg-hover)] ${collapsed ? '' : 'ml-1'}`}

@@ -108,7 +108,7 @@ describe('MainLayout', () => {
 
   it('renders Sidebar component', () => {
     renderLayout()
-    expect(screen.getByText('Atelier-ai')).toBeInTheDocument()
+    expect(screen.getByText('Atelier AI')).toBeInTheDocument()
   })
 
   it('renders mobile topbar with quick nav links', () => {

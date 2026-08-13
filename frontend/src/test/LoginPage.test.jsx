@@ -60,7 +60,7 @@ describe('LoginPage', () => {
   it('renders title and subtitle', async () => {
     renderLogin()
     await waitFor(() => {
-      expect(screen.getByText('Atelier')).toBeInTheDocument()
+      expect(screen.getByText('Atelier AI')).toBeInTheDocument()
     })
     expect(screen.getByText('欢迎回来')).toBeInTheDocument()
     expect(screen.getByText('继续你的创作')).toBeInTheDocument()

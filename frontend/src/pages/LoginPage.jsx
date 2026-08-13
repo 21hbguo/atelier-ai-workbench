@@ -326,7 +326,7 @@ export default function LoginPage() {
       <div className="login-centered-inner">
         {/* 品牌区 */}
         <div className="login-brand-area">
-          <h1 className="login-brand-title">Atelier</h1>
+          <h1 className="login-brand-title">Atelier AI</h1>
           <p className="login-brand-subtitle">AI 工作台</p>
           <p className="login-brand-desc">
             无需复杂配置，一句话或一张图，即刻开启灵感之旅
@@ -521,7 +521,7 @@ export default function LoginPage() {
             )}
           </div>
 
-          <p className="login-footer-text">Atelier · AI 工作台</p>
+          <p className="login-footer-text">Atelier AI · 工作台</p>
         </div>
       </div>
     </div>
