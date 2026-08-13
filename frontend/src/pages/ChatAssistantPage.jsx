@@ -272,9 +272,22 @@ function SessionList({ sessions, activeId, loading, sending, creating, renaming,
 // ============ 思考过程折叠块（默认折叠） ============
 const ThinkingBlock = memo(function ThinkingBlock({ text, isStreaming = false }) {
   const [open, setOpen] = useState(false)
+  const scrollRef = useRef(null)
+  const stickRef = useRef(true)
+  // 展开/思考追加时跟随底部；用户上滚（底部距离 > 40px）暂停跟随，滚回底部恢复
+  useEffect(() => {
+    if (!open) return
+    const el = scrollRef.current
+    if (el && stickRef.current) el.scrollTop = el.scrollHeight
+  }, [open, text])
   if (!text || !text.trim()) return null
   const lines = text.trim().split('\n')
   const firstLine = lines[0] || ''
+  const handleThinkingScroll = () => {
+    const el = scrollRef.current
+    if (!el) return
+    stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 40
+  }
   return (
     <div className="mb-2 rounded-xl border overflow-hidden"
       style={{ borderColor: 'var(--border-color)', background: 'color-mix(in srgb, var(--text-secondary) 4%, transparent)' }}>
@@ -290,7 +303,7 @@ const ThinkingBlock = memo(function ThinkingBlock({ text, isStreaming = false })
         <ChevronDown size={13} className={`flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="thinking-scroll-area px-3 pb-3 text-xs whitespace-pre-wrap break-words max-h-72 overflow-y-auto"
+        <div ref={scrollRef} onScroll={handleThinkingScroll} className="thinking-scroll-area px-3 pb-3 text-xs whitespace-pre-wrap break-words max-h-72 overflow-y-auto"
           style={{ color: 'var(--text-secondary)' }}>{text}</div>
       )}
     </div>
