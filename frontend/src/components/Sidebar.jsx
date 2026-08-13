@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useLocation, Link, useNavigate } from 'react-router-dom'
-import { Sun, Moon, BookOpen, Sparkles, Image, X, Globe, LogOut, User, Shield, Coins, Wallet, Bell, Settings, LayoutGrid, MessageCircle } from 'lucide-react'
+import { Sun, Moon, BookOpen, Sparkles, Image, X, Globe, LogOut, User, Shield, Coins, Wallet, Settings, LayoutGrid, MessageCircle, Bell, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useTheme } from '../ThemeContext'
 import { useLayoutMode } from '../LayoutModeContext'
 import { announcementAPI, authAPI, pointsAPI, notificationAPI } from '../api'
@@ -8,16 +8,20 @@ import { clearUser, readUser } from '../auth'
 import { useAppDialog } from './AppDialogProvider'
 
 const navItems = [
-  { path: '/chat', icon: MessageCircle, label: 'AI 助手' },
-  { path: '/draw', icon: Sparkles, label: 'AI 绘画' },
+  { path: '/chat', icon: MessageCircle, label: 'AI 助手', shortLabel: '助手' },
+  { path: '/draw', icon: Sparkles, label: 'AI 绘画', shortLabel: '绘画' },
+  { path: '/wallet', icon: Wallet, label: '积分', shortLabel: '积分' },
+]
+
+const subNavItems = [
+  { path: '/draw', icon: Sparkles, label: '画图' },
   { path: '/works', icon: Image, label: '我的作品' },
   { path: '/square', icon: Globe, label: '广场' },
   { path: '/prompts', icon: BookOpen, label: '我的提示词' },
-  { path: '/wallet', icon: Wallet, label: '积分' },
   { path: '/notifications', icon: Bell, label: '通知' },
-  // { path: '/shares', icon: Share2, label: '分享管理' },
-  // { path: '/settings', icon: Settings, label: '账号安全' },
 ]
+
+const SUB_NAV_PATHS = ['/draw', '/works', '/square', '/prompts', '/notifications']
 
 export default function Sidebar({ open, onClose }) {
   const dialog = useAppDialog()
@@ -29,8 +33,13 @@ export default function Sidebar({ open, onClose }) {
   const isAdmin = Boolean(user?.is_admin)
   const [points, setPoints] = useState(user?.points ?? 0)
   const [checkedInToday, setCheckedInToday] = useState(false)
-  const [unreadNoticeCount, setUnreadNoticeCount] = useState(0)
   const [rechargePendingCount, setRechargePendingCount] = useState(0)
+  const [unreadNoticeCount, setUnreadNoticeCount] = useState(0)
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('nav-collapsed') === '1')
+
+  useEffect(() => {
+    localStorage.setItem('nav-collapsed', collapsed ? '1' : '0')
+  }, [collapsed])
 
   useEffect(() => {
     pointsAPI.balance().then(res => {
@@ -42,7 +51,7 @@ export default function Sidebar({ open, onClose }) {
     pointsAPI.checkinStatus().then(res => {
       setCheckedInToday(res.data.checked_in_today)
     }).catch(() => {})
-    Promise.allSettled([notificationAPI.unreadCount(),announcementAPI.getUnread()]).then(([noticeRes,annRes])=>setUnreadNoticeCount((noticeRes.status==='fulfilled'?(noticeRes.value.data.count||0):0)+(annRes.status==='fulfilled'?((annRes.value.data.items||[]).length):0))).catch(() => {})
+    Promise.allSettled([notificationAPI.unreadCount(), announcementAPI.getUnread()]).then(([noticeRes, annRes])=>setUnreadNoticeCount((noticeRes.status==='fulfilled'?(noticeRes.value.data.count||0):0)+(annRes.status==='fulfilled'?((annRes.value.data.items||[]).length):0))).catch(() => {})
     if (isAdmin) fetch('/api/admin/recharge-requests?page=1&size=1&status=pending',{ credentials:'include' }).then(r=>r.ok?r.json():null).then(data=>setRechargePendingCount(data?.total||0)).catch(()=>{})
 
     const handleUpdate = () => {
@@ -75,78 +84,111 @@ export default function Sidebar({ open, onClose }) {
     authAPI.logout().catch(() => {}).finally(() => { clearUser(); navigate('/login') })
   }
 
+  const subNavVisible = SUB_NAV_PATHS.includes(location.pathname)
+
   return (
     <>
       {open && <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={onClose} />}
-      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-40 flex flex-col transition-transform duration-200 ease-out ${open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
-        style={{ background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border-color)' }}>
-        <div className="h-11 px-3 border-b flex items-center" style={{ borderColor: 'var(--border-color)' }}>
-          <h1 className="flex-1 truncate" style={{ color: 'var(--text-primary)', fontFamily: "'Alex Brush', cursive", fontSize: '2.5rem', lineHeight: '1' }}>Atelier</h1>
-          <button className="lg:hidden p-1 rounded-lg hover:bg-[var(--bg-hover)]" onClick={onClose}><X size={16} /></button>
-        </div>
-        <nav className="flex-1 px-2 py-2 space-y-0.5 overflow-y-auto">
-          {navItems.map(({ path, icon: Icon, label }) => {
-            const active = location.pathname === path
-            return (
-            <Link key={path} to={path}
-                className={`sidebar-nav-link ${active ? 'bg-accent/10' : 'hover:bg-bg-hover'}`}
-                style={{ color: active ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: active ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined }}
+      <div className={`fixed lg:static inset-y-0 left-0 z-50 flex transition-transform duration-200 ease-out ${open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+        <aside className={`${collapsed ? 'w-16' : 'w-40'} flex flex-col flex-shrink-0 transition-all duration-200 ease-out`}
+          style={{ background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border-color)' }}>
+          <div className={`h-11 px-2 flex items-center ${collapsed ? 'justify-center' : ''}`}>
+            <h1 className={`flex-1 truncate ${collapsed ? 'hidden' : ''}`} style={{ color: 'var(--text-primary)', fontFamily: "'Alex Brush', cursive", fontSize: '2.5rem', lineHeight: '1' }}>Atelier</h1>
+            <button className={`hidden lg:flex p-1 rounded-lg hover:bg-[var(--bg-hover)] ${collapsed ? '' : 'ml-auto'}`}
+              onClick={() => setCollapsed(v => !v)}
+              title={collapsed ? '展开侧边栏' : '折叠侧边栏'}
+              style={{ color: 'var(--text-secondary)' }}>
+              {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+            </button>
+            <button className="lg:hidden p-1 rounded-lg hover:bg-[var(--bg-hover)]" onClick={onClose}><X size={16} /></button>
+          </div>
+          <nav className="flex-1 px-2 py-2 space-y-0.5 overflow-y-auto">
+            {navItems.map(({ path, icon: Icon, label, shortLabel }) => {
+              const active = location.pathname === path
+              const groupActive = path === '/draw' && subNavVisible && !active
+              return (
+                <Link key={path} to={path}
+                  className={`sidebar-nav-link ${collapsed ? 'flex-col items-center !h-auto !gap-0.5 !py-1 text-center' : ''} ${(active || groupActive) ? 'bg-accent/10' : 'hover:bg-bg-hover'}`}
+                  style={{ color: (active || groupActive) ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: (active || groupActive) ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined }}
+                  onClick={() => onClose?.()}>
+                  <Icon size={16} className="sidebar-nav-icon" /><span className={`sidebar-nav-text ${collapsed ? 'text-[10px] leading-none truncate max-w-full' : ''}`}>{collapsed ? shortLabel : label}</span>
+                </Link>
+              )
+            })}
+            {isAdmin && (
+              <Link to="/admin"
+                className={`sidebar-nav-link ${collapsed ? 'flex-col items-center !h-auto !gap-0.5 !py-1 text-center' : ''} ${location.pathname === '/admin' ? 'bg-accent/10' : 'hover:bg-bg-hover'}`}
+                style={{ color: location.pathname === '/admin' ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: location.pathname === '/admin' ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined }}
                 onClick={() => onClose?.()}>
-                <Icon size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">{label}</span>{path==='/notifications'&&unreadNoticeCount>0&&<span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{background:'var(--accent)'}}>{unreadNoticeCount>99?'99+':unreadNoticeCount}</span>}
+                <Shield size={16} className="sidebar-nav-icon" /><span className={`sidebar-nav-text ${collapsed ? 'text-[10px] leading-none truncate max-w-full' : ''}`}>{collapsed ? '后台' : '管理后台'}</span>
               </Link>
-            )
-          })}
-          {isAdmin && (
-            <Link to="/admin"
-              className={`sidebar-nav-link ${location.pathname === '/admin' ? 'bg-accent/10' : 'hover:bg-bg-hover'}`}
-              style={{ color: location.pathname === '/admin' ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: location.pathname === '/admin' ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined }}
-              onClick={() => onClose?.()}>
-              <Shield size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">管理后台</span>
-            </Link>
-          )}
-          {isAdmin && (
-            <Link to="/admin?tab=recharge_review"
-              className={`sidebar-nav-link ${(location.pathname === '/admin' && new URLSearchParams(location.search).get('tab') === 'recharge_review') ? 'bg-accent/10' : 'hover:bg-bg-hover'}`}
-              style={{ color: (location.pathname === '/admin' && new URLSearchParams(location.search).get('tab') === 'recharge_review') ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: (location.pathname === '/admin' && new URLSearchParams(location.search).get('tab') === 'recharge_review') ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined }}
-              onClick={() => onClose?.()}>
-              <Wallet size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">充值审核</span>{rechargePendingCount>0&&<span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{background:'var(--color-error)'}}>{rechargePendingCount>99?'99+':rechargePendingCount}</span>}
-            </Link>
-          )}
-        </nav>
-        <div className="px-2 py-2 border-t space-y-0.5" style={{ borderColor: 'var(--border-color)' }}>
-          {user && (
-            <div className="sidebar-user-row">
-              <User size={16} className="sidebar-nav-icon" style={{ color: 'var(--text-secondary)' }} />
-              <span className="sidebar-nav-text text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{user.nickname || user.account || user.username}</span>
+            )}
+            {isAdmin && (
+              <Link to="/admin?tab=recharge_review"
+                className={`sidebar-nav-link ${collapsed ? 'flex-col items-center !h-auto !gap-0.5 !py-1 text-center' : ''} ${(location.pathname === '/admin' && new URLSearchParams(location.search).get('tab') === 'recharge_review') ? 'bg-accent/10' : 'hover:bg-bg-hover'}`}
+                style={{ color: (location.pathname === '/admin' && new URLSearchParams(location.search).get('tab') === 'recharge_review') ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: (location.pathname === '/admin' && new URLSearchParams(location.search).get('tab') === 'recharge_review') ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined }}
+                onClick={() => onClose?.()}>
+                <Wallet size={16} className="sidebar-nav-icon" /><span className={`sidebar-nav-text ${collapsed ? 'text-[10px] leading-none truncate max-w-full' : ''}`}>{collapsed ? '审核' : '充值审核'}</span>{!collapsed&&rechargePendingCount>0&&<span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{background:'var(--color-error)'}}>{rechargePendingCount>99?'99+':rechargePendingCount}</span>}
+              </Link>
+            )}
+          </nav>
+          <div className={`px-2 py-2 border-t space-y-0.5 ${collapsed ? 'flex flex-col items-center' : ''}`} style={{ borderColor: 'var(--border-color)' }}>
+            {user && (
+              <Link to="/account" title="账户中心" className={`sidebar-user-row hover:bg-bg-hover ${collapsed ? 'flex-col items-center !h-auto !gap-0.5 !py-1 text-center' : ''}`} onClick={() => onClose?.()}>
+                <User size={16} className="sidebar-nav-icon" style={{ color: 'var(--text-secondary)' }} />
+                <span className={`sidebar-nav-text text-sm font-medium truncate ${collapsed ? '!text-[10px] leading-none max-w-full' : ''}`} style={{ color: 'var(--text-primary)' }}>{user.nickname || user.account || user.username}</span>
+              </Link>
+            )}
+            <button onClick={toggle} className={`sidebar-control-btn hover:bg-bg-hover ${collapsed ? 'flex-col items-center !h-auto !gap-0.5 !py-1 text-center' : ''}`}
+              style={{ color: 'var(--text-primary)' }}>
+              {dark ? <Sun size={16} className="sidebar-nav-icon" /> : <Moon size={16} className="sidebar-nav-icon" />}<span className={`sidebar-nav-text ${collapsed ? 'text-[10px] leading-none' : ''}`}>{dark ? '浅色' : '深色'}</span>
+            </button>
+            <button onClick={handleLogout} className={`sidebar-control-btn hover:bg-bg-hover ${collapsed ? 'flex-col items-center !h-auto !gap-0.5 !py-1 text-center' : ''}`}
+              style={{ color: 'var(--text-primary)' }}>
+              <LogOut size={16} className="sidebar-nav-icon" /><span className={`sidebar-nav-text ${collapsed ? 'text-[10px] leading-none' : ''}`}>退出登录</span>
+            </button>
+          </div>
+          {!collapsed && (
+            <div className="px-3 py-2 border-t flex flex-wrap gap-x-1 gap-y-0.5 text-xs opacity-50" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
+              <Link to="/wallet" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>积分</Link>
+              <span>|</span>
+              <Link to="/agreement" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>用户协议</Link>
+              <span>|</span>
+              <Link to="/privacy" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>隐私政策</Link>
+              <span>|</span>
+              <Link to="/refund" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>捐赠说明与积分规则</Link>
             </div>
           )}
-          <button onClick={toggle} className="sidebar-control-btn hover:bg-bg-hover"
-            style={{ color: 'var(--text-primary)' }}>
-            {dark ? <Sun size={16} className="sidebar-nav-icon" /> : <Moon size={16} className="sidebar-nav-icon" />}<span className="sidebar-nav-text">{dark ? '浅色' : '深色'}</span>
-          </button>
-          <button onClick={toggleLayoutMode} className="sidebar-control-btn hover:bg-bg-hover"
-            style={{ color: 'var(--text-primary)' }}>
-            <LayoutGrid size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">{layoutMode === 'masonry' ? '切换为网格' : '切换为瀑布流'}</span>
-          </button>
-          <button onClick={toggleCurrentCols} className="sidebar-control-btn hover:bg-bg-hover"
-            style={{ color: 'var(--text-primary)' }}>
-            <LayoutGrid size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">{currentBreakpointLabel}列数 {currentCols}列</span>
-          </button>
-          <button onClick={handleLogout} className="sidebar-control-btn hover:bg-bg-hover"
-            style={{ color: 'var(--text-primary)' }}>
-            <LogOut size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">退出登录</span>
-          </button>
-        </div>
-        <div className="px-3 py-2 border-t flex flex-wrap gap-x-1 gap-y-0.5 text-xs opacity-50" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
-          <Link to="/wallet" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>积分</Link>
-          <span>|</span>
-          <Link to="/agreement" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>用户协议</Link>
-          <span>|</span>
-          <Link to="/privacy" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>隐私政策</Link>
-          <span>|</span>
-          <Link to="/refund" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>捐赠说明与积分规则</Link>
-        </div>
-      </aside>
+        </aside>
+        {subNavVisible && (
+          <aside className="w-44 flex flex-col flex-shrink-0"
+            style={{ background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border-color)' }}>
+            <div className="flex-1 min-h-0 overflow-y-auto py-2 px-2 space-y-0.5">
+              {subNavItems.map(({ path, icon: Icon, label }) => {
+                const active = location.pathname === path
+                return (
+                  <Link key={path} to={path}
+                    className={`sidebar-nav-link ${active ? 'bg-accent/10' : 'hover:bg-bg-hover'}`}
+                    style={{ color: active ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: active ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined }}
+                    onClick={() => onClose?.()}>
+                    <Icon size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">{label}</span>{path==='/notifications'&&unreadNoticeCount>0&&<span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{background:'var(--accent)'}}>{unreadNoticeCount>99?'99+':unreadNoticeCount}</span>}
+                  </Link>
+                )
+              })}
+            </div>
+            <div className="px-2 py-2 border-t space-y-0.5" style={{ borderColor: 'var(--border-color)' }}>
+              <button onClick={toggleLayoutMode} className="sidebar-control-btn hover:bg-bg-hover"
+                style={{ color: 'var(--text-primary)' }}>
+                <LayoutGrid size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">{layoutMode === 'masonry' ? '切换为网格' : '切换为瀑布流'}</span>
+              </button>
+              <button onClick={toggleCurrentCols} className="sidebar-control-btn hover:bg-bg-hover"
+                style={{ color: 'var(--text-primary)' }}>
+                <LayoutGrid size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">{currentBreakpointLabel}列数 {currentCols}列</span>
+              </button>
+            </div>
+          </aside>
+        )}
+      </div>
     </>
   )
 }

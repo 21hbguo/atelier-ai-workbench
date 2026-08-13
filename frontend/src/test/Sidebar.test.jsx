@@ -98,23 +98,53 @@ beforeEach(() => {
   authLogoutMock.mockResolvedValue({})
   unreadCountMock.mockResolvedValue({ data: { count: 3 } })
   getUnreadMock.mockResolvedValue({ data: { items: [{ id: 1 }] } })
+  localStorage.clear()
   global.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ total: 0 }) }))
 })
 
 describe('Sidebar', () => {
-  it('renders all navigation links', () => {
+  it('renders top-level navigation links', () => {
     renderSidebar()
     expect(screen.getByText('AI 助手')).toBeInTheDocument()
     expect(screen.getByText('AI 绘画')).toBeInTheDocument()
+    expect(screen.getAllByText('积分').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('hides second sidebar on non-draw pages', () => {
+    renderSidebar()
+    expect(screen.queryByText('我的作品')).not.toBeInTheDocument()
+    expect(screen.queryByText('广场')).not.toBeInTheDocument()
+    expect(screen.queryByText('我的提示词')).not.toBeInTheDocument()
+    expect(screen.queryByText('切换为网格')).not.toBeInTheDocument()
+  })
+
+  it('shows second sidebar items on draw-related pages', () => {
+    mockLocation = { pathname: '/draw', search: '' }
+    renderSidebar()
+    expect(screen.getByText('画图')).toBeInTheDocument()
+    expect(screen.getByText('我的作品')).toBeInTheDocument()
     expect(screen.getByText('广场')).toBeInTheDocument()
     expect(screen.getByText('我的提示词')).toBeInTheDocument()
-    expect(screen.getAllByText('积分').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('通知')).toBeInTheDocument()
+    expect(screen.getByText('切换为网格')).toBeInTheDocument()
+    expect(screen.getByText('桌面列数 3列')).toBeInTheDocument()
+  })
+
+  it('collapses nav to short labels, then expands back', () => {
+    renderSidebar()
+    fireEvent.click(screen.getByTitle('折叠侧边栏'))
+    const short = screen.getByText('助手')
+    expect(short.classList.contains('text-[10px]')).toBe(true)
+    expect(screen.queryByText('AI 助手')).not.toBeInTheDocument()
+    expect(screen.getByTitle('展开侧边栏')).toBeInTheDocument()
+    fireEvent.click(screen.getByTitle('展开侧边栏'))
+    expect(screen.getByText('AI 助手')).toBeInTheDocument()
   })
 
   it('displays user nickname', () => {
     renderSidebar()
     expect(screen.getByText('测试员')).toBeInTheDocument()
+    expect(screen.getByText('测试员').closest('a')).toHaveAttribute('href', '/account')
   })
 
   it('falls back to username when nickname is empty', () => {
@@ -140,6 +170,7 @@ describe('Sidebar', () => {
   it('shows notification badge when unread count > 0', async () => {
     unreadCountMock.mockResolvedValue({ data: { count: 5 } })
     getUnreadMock.mockResolvedValue({ data: { items: [] } })
+    mockLocation = { pathname: '/draw', search: '' }
     renderSidebar()
     await waitFor(() => expect(screen.getByText('5')).toBeInTheDocument())
   })
@@ -147,6 +178,7 @@ describe('Sidebar', () => {
   it('hides notification badge when unread count is 0', async () => {
     unreadCountMock.mockResolvedValue({ data: { count: 0 } })
     getUnreadMock.mockResolvedValue({ data: { items: [] } })
+    mockLocation = { pathname: '/draw', search: '' }
     renderSidebar()
     await waitFor(() => {
       const noticeLink = screen.getByText('通知').closest('a')
@@ -157,6 +189,7 @@ describe('Sidebar', () => {
   it('shows 99+ when notification count exceeds 99', async () => {
     unreadCountMock.mockResolvedValue({ data: { count: 60 } })
     getUnreadMock.mockResolvedValue({ data: { items: Array.from({ length: 50 }, (_, i) => ({ id: i })) } })
+    mockLocation = { pathname: '/draw', search: '' }
     renderSidebar()
     await waitFor(() => expect(screen.getByText('99+')).toBeInTheDocument())
   })
@@ -220,12 +253,14 @@ describe('Sidebar', () => {
   })
 
   it('toggles layout mode', () => {
+    mockLocation = { pathname: '/draw', search: '' }
     renderSidebar()
     fireEvent.click(screen.getByText('切换为网格'))
     expect(toggleLayoutModeMock).toHaveBeenCalledTimes(1)
   })
 
   it('toggles column count', () => {
+    mockLocation = { pathname: '/draw', search: '' }
     renderSidebar()
     fireEvent.click(screen.getByText('桌面列数 3列'))
     expect(toggleCurrentColsMock).toHaveBeenCalledTimes(1)

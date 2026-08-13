@@ -119,7 +119,7 @@ describe('MainLayout', () => {
     const menuBtn = document.querySelector('.mobile-topbar-menu')
     fireEvent.click(menuBtn)
     const sidebar = document.querySelector('aside')
-    expect(sidebar.className).toContain('translate-x-0')
+    expect(sidebar.parentElement.className).toContain('translate-x-0')
   })
 
   it('fetches unread counts on mount', async () => {

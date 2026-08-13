@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { MessageCircle, Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, ChevronLeft, Brain, AlertCircle, CheckSquare, Cpu, ChevronDown, Check, Paperclip, FileText, Settings, Globe, Image as ImageIcon } from 'lucide-react'
+import { MessageCircle, Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, PanelLeftClose, PanelLeftOpen, Brain, AlertCircle, CheckSquare, Cpu, ChevronDown, Check, Paperclip, FileText, Settings, Globe, Image as ImageIcon, Sparkles, Wand2, PenLine, Palette, Star } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
 import { useAppDialog } from '../components/AppDialogProvider'
 import { chatAPI, pointsAPI, taskAPI } from '../api'
@@ -94,7 +94,7 @@ async function copyText(text) {
 // ============ 会话列表 ============
 function SessionList({ sessions, activeId, loading, sending, renaming, renamingValue,
   onSelect, onCreate, onDelete, onStartRename, onRenamingChange, onRenamingCommit, onRenamingCancel,
-  batchMode, selectedIds, onEnterBatch, onSelectAll, onToggleSelect, onBatchDelete, onExitBatch }) {
+  batchMode, selectedIds, onEnterBatch, onSelectAll, onToggleSelect, onBatchDelete, onExitBatch, onToggleCollapse }) {
   const renderActions = (s) => (
     <>
       <button onClick={(e) => { e.stopPropagation(); onStartRename(s) }}
@@ -107,9 +107,15 @@ function SessionList({ sessions, activeId, loading, sending, renaming, renamingV
       </button>
     </>
   )
+  // 按最后问答时间倒序（最新在上），无消息时回退到会话更新时间/创建时间
+  const sortedSessions = [...sessions].sort((a, b) => {
+    const ta = parseDate(a.last_message_at || a.updated_at || a.created_at)?.getTime() || 0
+    const tb = parseDate(b.last_message_at || b.updated_at || b.created_at)?.getTime() || 0
+    return tb - ta
+  })
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="p-3 pb-2 border-b flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
+      <div className="p-3 pb-2 flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
         {batchMode ? (
           <div className="flex items-center gap-1.5">
             <span className="flex-1 min-w-0 text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
@@ -143,6 +149,13 @@ function SessionList({ sessions, activeId, loading, sending, renaming, renamingV
               style={{ color: 'var(--text-secondary)', border: '1px solid var(--border-color)' }}>
               <Trash2 size={15} />
             </button>
+            {onToggleCollapse && (
+              <button onClick={onToggleCollapse} title="折叠会话列表"
+                className="flex-shrink-0 w-9 h-9 inline-flex items-center justify-center rounded-xl transition-colors hover:bg-bg-hover"
+                style={{ color: 'var(--text-secondary)', border: '1px solid var(--border-color)' }}>
+                <PanelLeftClose size={15} />
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -153,13 +166,13 @@ function SessionList({ sessions, activeId, loading, sending, renaming, renamingV
             {batchMode ? '没有可删除的会话' : '暂无会话，点击上方新建对话'}
           </div>
         )}
-        {sessions.map(s => {
+        {sortedSessions.map(s => {
           const active = s.id === activeId
           const isRenaming = renaming && renaming.id === s.id
           const checked = selectedIds.includes(s.id)
           return (
             <div key={s.id}
-              className={`group relative rounded-xl px-3 py-2.5 cursor-pointer transition-colors ${active && !batchMode ? '' : 'hover:bg-bg-hover'} ${sending ? 'opacity-60' : ''}`}
+              className={`group relative rounded-xl px-3 py-2 cursor-pointer transition-colors ${active && !batchMode ? '' : 'hover:bg-bg-hover'} ${sending ? 'opacity-60' : ''}`}
               style={{
                 background: (active && !batchMode) ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : (batchMode && checked ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent'),
                 border: `1px solid ${batchMode && checked ? 'color-mix(in srgb, var(--accent) 45%, var(--border-color))' : (active && !batchMode ? 'color-mix(in srgb, var(--accent) 25%, var(--border-color))' : 'transparent')}`,
@@ -192,12 +205,6 @@ function SessionList({ sessions, activeId, loading, sending, renaming, renamingV
                   )}
                   <div className={`text-sm font-medium truncate ${batchMode ? 'pl-6' : 'pr-9'}`} style={{ color: (active && !batchMode) ? 'var(--accent)' : 'var(--text-primary)' }}>
                     {s.title || '新对话'}
-                  </div>
-                  <div className={`text-xs truncate mt-0.5 ${batchMode ? 'pl-6' : ''}`} style={{ color: 'var(--text-secondary)' }}>
-                    {s.last_message || '暂无消息'}
-                  </div>
-                  <div className={`text-[10px] mt-0.5 ${batchMode ? 'pl-6' : ''}`} style={{ color: 'var(--text-secondary)' }}>
-                    {formatTime(s.updated_at || s.created_at)}
                   </div>
                   {!batchMode && (
                     <>
@@ -480,9 +487,12 @@ const IMAGE_POLL_INTERVAL_MS = 8000
 const IMAGE_POLL_MAX = 120 // 约 16 分钟上限（任务要求最长 15 分钟/120 次）
 
 const EXAMPLES = [
-  '帮我写一个提示词：一只在月光下奔跑的银色狐狸，水墨风格',
-  '优化这段提示词：城市夜景，霓虹灯，赛博朋克',
-  '帮我的作品起一个吸引人的标题',
+  { icon: Sparkles, tag: '写提示词', title: '月光下的银色狐狸', desc: '水墨风格，画面富有意境', prompt: '帮我写一个提示词：一只在月光下奔跑的银色狐狸，水墨风格' },
+  { icon: Wand2, tag: '优化提示词', title: '赛博朋克城市夜景', desc: '补充光线、氛围与细节', prompt: '优化这段提示词：城市夜景，霓虹灯，赛博朋克' },
+  { icon: PenLine, tag: '作品起名', title: '给作品一个吸睛标题', desc: '贴合画面，有传播力', prompt: '帮我的作品起一个吸引人的标题' },
+  { icon: Sparkles, tag: '写提示词', title: '山谷中的漂浮岛屿', desc: '梦幻插画风格，清晨薄雾', prompt: '帮我写一个提示词：晨雾笼罩的山谷中漂浮着一座小岛，梦幻插画风格' },
+  { icon: Wand2, tag: '优化提示词', title: '金色沙漠中的旅人', desc: '极简构图，突出孤独感', prompt: '帮我优化提示词：金色沙漠中孤独的旅人，极简风格' },
+  { icon: Star, tag: '灵感脑暴', title: '给猫想一组风格主题', desc: '从写实到动漫一次给全', prompt: '帮我想一组以猫为主题的绘画风格，从写实、油画到动漫各举一例' },
 ]
 
 function EmptyState({ onPick }) {
@@ -494,15 +504,31 @@ function EmptyState({ onPick }) {
       </div>
       <h3 className="text-lg font-semibold mb-1.5" style={{ color: 'var(--text-primary)' }}>和 AI 助手聊聊</h3>
       <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>帮你写提示词、优化描述，让灵感更快落地</p>
-      <div className="flex flex-col gap-2 w-full max-w-sm">
-        {EXAMPLES.map(q => (
-          <button key={q} onClick={() => onPick(q)} title="点击立即发送这个问题"
-            className="text-left text-sm px-4 py-3 rounded-2xl transition-colors hover:bg-bg-hover group flex items-center gap-2"
-            style={{ border: '1px solid var(--border-color)', color: 'var(--text-primary)', background: 'var(--bg-card)' }}>
-            <span className="flex-1 min-w-0">{q}</span>
-            <Send size={13} className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: 'var(--accent)' }} />
-          </button>
-        ))}
+      <div className="grid w-full max-w-2xl gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+        {EXAMPLES.map(ex => {
+          const Icon = ex.icon
+          return (
+            <button key={ex.prompt} onClick={() => onPick(ex.prompt)} title="点击立即发送这个问题"
+              className="group relative overflow-hidden rounded-2xl border p-3.5 text-left transition-all duration-300 hover:-translate-y-1"
+              style={{
+                background: 'var(--bg-card)',
+                borderColor: 'color-mix(in srgb, var(--accent) 16%, var(--border-color))',
+                boxShadow: '0 12px 32px color-mix(in srgb, var(--accent) 8%, transparent)',
+              }}>
+              <div className="flex items-center gap-1.5">
+                <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg"
+                  style={{ background: 'color-mix(in srgb, var(--accent) 14%, transparent)' }}>
+                  <Icon size={13} style={{ color: 'var(--accent)' }} />
+                </span>
+                <span className="text-[10px] font-semibold tracking-[0.16em] uppercase" style={{ color: 'var(--accent)' }}>{ex.tag}</span>
+              </div>
+              <div className="mt-2.5 text-[13px] font-medium leading-snug" style={{ color: 'var(--text-primary)' }}>{ex.title}</div>
+              <div className="mt-1 text-[11px] leading-snug" style={{ color: 'var(--text-secondary)' }}>{ex.desc}</div>
+              <Send size={13} className="absolute right-3 top-3 flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+                style={{ color: 'var(--accent)' }} />
+            </button>
+          )
+        })}
       </div>
     </div>
   )
@@ -848,6 +874,7 @@ export default function ChatAssistantPage() {
   const docStartedRef = useRef(new Set())
   const docAbortRef = useRef(new Map())
   const [sessionListOpen, setSessionListOpen] = useState(false)
+  const [chatListCollapsed, setChatListCollapsed] = useState(() => localStorage.getItem('chat-list-collapsed') === '1')
   const [renaming, setRenaming] = useState(null) // { id, title }
   const [batchMode, setBatchMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState([])
@@ -1720,22 +1747,29 @@ export default function ChatAssistantPage() {
   }
   const cancelRename = () => { renamingRef.current = null; setRenaming(null) }
 
+  useEffect(() => {
+    localStorage.setItem('chat-list-collapsed', chatListCollapsed ? '1' : '0')
+  }, [chatListCollapsed])
+
   return (
     <MainLayout>
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* 桌面端会话列表栏 */}
-        <aside className="hidden lg:flex flex-col flex-shrink-0 w-56 min-h-0"
-          style={{ background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border-color)' }}>
-          <SessionList
-            sessions={sessions} activeId={activeId} loading={sessionsLoading} sending={!!sending}
-            renaming={renaming} renamingValue={renaming?.title || ''}
-            onSelect={handleSelectSession} onCreate={handleCreateSession} onDelete={handleDeleteSession}
-            onStartRename={startRename} onRenamingChange={changeRename}
-            onRenamingCommit={commitRename} onRenamingCancel={cancelRename}
-            batchMode={batchMode} selectedIds={selectedIds}
-            onEnterBatch={handleEnterBatch} onSelectAll={handleSelectAll}
-            onToggleSelect={handleToggleSelect} onBatchDelete={handleBatchDelete}
-            onExitBatch={handleExitBatch} />
+        <aside className={`hidden lg:flex flex-col flex-shrink-0 min-h-0 overflow-hidden transition-all duration-200 ease-out ${chatListCollapsed ? 'w-0' : 'w-56'}`}
+          style={{ background: 'var(--bg-sidebar)', borderRight: chatListCollapsed ? 'none' : '1px solid var(--border-color)' }}>
+          {!chatListCollapsed && (
+            <SessionList
+              sessions={sessions} activeId={activeId} loading={sessionsLoading} sending={!!sending}
+              renaming={renaming} renamingValue={renaming?.title || ''}
+              onSelect={handleSelectSession} onCreate={handleCreateSession} onDelete={handleDeleteSession}
+              onStartRename={startRename} onRenamingChange={changeRename}
+              onRenamingCommit={commitRename} onRenamingCancel={cancelRename}
+              batchMode={batchMode} selectedIds={selectedIds}
+              onEnterBatch={handleEnterBatch} onSelectAll={handleSelectAll}
+              onToggleSelect={handleToggleSelect} onBatchDelete={handleBatchDelete}
+              onExitBatch={handleExitBatch}
+              onToggleCollapse={() => setChatListCollapsed(true)} />
+          )}
         </aside>
 
         {/* 移动端会话列表覆盖层 */}
@@ -1767,20 +1801,14 @@ export default function ChatAssistantPage() {
         )}
 
         {/* 消息区 */}
-        <div className="flex-1 min-w-0 flex flex-col">
-          <div className="mobile-topbar-shell flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
-            <div className="mobile-topbar-inner w-full px-3 lg:px-6">
-              <button onClick={() => setSessionListOpen(true)}
-                className="lg:hidden inline-flex items-center gap-0.5 h-8 px-1.5 -ml-1.5 rounded-xl text-sm font-medium hover:bg-bg-hover"
-                style={{ color: 'var(--text-primary)' }}>
-                <ChevronLeft size={16} /> 会话
-              </button>
-              <h2 className="flex-1 min-w-0 truncate text-sm font-semibold text-center lg:text-left"
-                style={{ color: 'var(--text-primary)' }}>
-                {activeSession?.title || 'AI 助手'}
-              </h2>
-            </div>
-          </div>
+        <div className="flex-1 min-w-0 flex flex-col relative">
+          {chatListCollapsed && (
+            <button onClick={() => setChatListCollapsed(false)} title="展开会话列表"
+              className="absolute top-2 left-2 z-10 p-1.5 rounded-lg hover:bg-bg-hover"
+              style={{ color: 'var(--text-secondary)' }}>
+              <PanelLeftOpen size={16} />
+            </button>
+          )}
 
           <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
             <div className="mx-auto w-full max-w-3xl px-4 py-5 pb-40 lg:pb-8">
