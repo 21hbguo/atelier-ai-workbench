@@ -93,7 +93,7 @@ export default function AccountPage() {
             <QuickCard to="/wallet" icon={Check} label="今日签到" value={checkedInToday === null ? '签到状态加载中' : checkedInToday ? '今日已签到' : '今日未签到'} sub={checkedInToday ? '明天再来签到' : '每日签到可领积分'} tone={checkedInToday ? 'var(--color-success)' : 'var(--accent)'} />
             <QuickCard to="/wallet?tab=invite" icon={Gift} label="邀请好友" value={inviteSummary.invited_register_count ?? 0} sub="已邀请注册好友" />
             <QuickCard icon={ShieldCheck} label="账户状态" value="正常" sub="身份已验证" tone="var(--color-success)" />
-            <QuickCard to="/wallet?tab=subscription" icon={Crown} label="订阅套餐" value={planName} sub={periodEnd ? `周期至 ${formatTime(periodEnd)}` : '查看套餐与用量'} />
+            <QuickCard to="/wallet?tab=subscription" icon={Crown} label="订阅套餐" value={planName} sub={periodEnd ? `周期至 ${formatTime(periodEnd)}` : '查看充值中心'} />
             <QuickCard to="/notifications" icon={Bell} label="通知" value="查看" sub="公告与消息提醒" />
           </div>
 

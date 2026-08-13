@@ -96,7 +96,7 @@ _runtime_config = {
     "wechat_pay_qr_url": os.getenv("WECHAT_PAY_QR_URL", ""),
     "alipay_pay_qr_url": os.getenv("ALIPAY_PAY_QR_URL", ""),
     "donation_contact": os.getenv("DONATION_CONTACT", ""),
-    "manual_recharge_notice": os.getenv("MANUAL_RECHARGE_NOTICE", "支持 Atelier 持续承担模型、图床与服务器成本。你可自愿捐赠支持平台运行，审核通过后按页面公示档位赠送对应感谢积分。请备注账号并上传支付凭证，捐赠完成后不支持退款。"),
+    "manual_recharge_notice": os.getenv("MANUAL_RECHARGE_NOTICE", "支持 Atelier 持续承担模型、图床与服务器成本。你可按需充值支持平台运行，审核通过后按页面公示档位赠送对应积分。请备注账号并上传支付凭证，发放完成后不支持回退。"),
     "recharge_packages": _safe_json_list(os.getenv("RECHARGE_PACKAGES_JSON", ""), [{"amount": 10, "points": 100, "label": "轻量支持"}, {"amount": 30, "points": 300, "label": "常用支持"}, {"amount": 50, "points": 500, "label": "高频支持"}]),
     "recharge_random_discount_min": float(os.getenv("RECHARGE_RANDOM_DISCOUNT_MIN", "0.01")),
     "recharge_random_discount_max": float(os.getenv("RECHARGE_RANDOM_DISCOUNT_MAX", "0.50")),

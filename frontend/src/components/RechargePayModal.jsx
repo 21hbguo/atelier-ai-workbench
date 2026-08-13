@@ -162,7 +162,7 @@ export default function RechargePayModal({ open, onClose, request, payConfig, mo
   }
 
   const isSub = mode === 'subscription'
-  const successTitle = isSub ? '套餐已生效' : '捐赠成功，感谢支持'
+  const successTitle = isSub ? '套餐已生效' : '充值成功，感谢支持'
   const successDesc = isSub
     ? `你的「${planName || '套餐'}」已激活，周期权益与积分已发放`
     : '你的支持已到账，平台会继续努力把体验做好'
@@ -188,7 +188,7 @@ export default function RechargePayModal({ open, onClose, request, payConfig, mo
             <div className="rounded-2xl border px-4 py-3" style={{ background: 'rgba(34,197,94,0.12)', borderColor: 'rgba(34,197,94,0.2)' }}>
               <div className="text-sm font-semibold mb-1" style={{ color: 'var(--color-success)' }}>{successTitle}</div>
               <div className="text-xs leading-6" style={{ color: 'var(--text-primary)' }}>
-                {isSub ? '套餐权益已生效，可直接使用。' : '积分已经到账，本次捐赠处理完成。'}
+                {isSub ? '套餐权益已生效，可直接使用。' : '积分已经到账，本次充值处理完成。'}
               </div>
             </div>
           ) : pollingStatus === 'expired' ? (

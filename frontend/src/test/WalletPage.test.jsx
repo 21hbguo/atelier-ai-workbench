@@ -397,10 +397,10 @@ describe('WalletPage', () => {
       })
     })
 
-    it('switches to donate tab', async () => {
+    it('switches to 充值中心 tab and shows 单次充值 block', async () => {
       render(<WalletPage />)
-      fireEvent.click(screen.getByText('捐赠支持'))
-      expect(screen.getByText(/捐赠说明/)).toBeInTheDocument()
+      fireEvent.click(screen.getByText('充值中心'))
+      expect(screen.getByText('单次充值')).toBeInTheDocument()
     })
 
     it('switches to invite tab', async () => {
@@ -413,9 +413,9 @@ describe('WalletPage', () => {
   })
 
   describe('recharge flow', () => {
-    it('shows recharge packages on donate tab', async () => {
+    it('shows recharge packages on 充值中心 tab', async () => {
       render(<WalletPage />)
-      fireEvent.click(screen.getByText('捐赠支持'))
+      fireEvent.click(screen.getByText('充值中心'))
       expect(screen.getByText('轻量支持')).toBeInTheDocument()
       expect(screen.getByText('常用支持')).toBeInTheDocument()
     })
@@ -428,11 +428,11 @@ describe('WalletPage', () => {
         data: { id: 1, channel: 'alipay', amount: 9.5, points: 100, status: 'pending', user_confirmed: false, created_at: '2026-05-10 00:00:00', remaining_seconds: 600 },
       })
       render(<WalletPage />)
-      fireEvent.click(screen.getByText('捐赠支持'))
+      fireEvent.click(screen.getByText('充值中心'))
       await waitFor(() => {
         expect(screen.getByText('轻量支持')).toBeInTheDocument()
       })
-      const submitBtn = screen.getByRole('button', { name: /提交并获取捐赠二维码/ })
+      const submitBtn = screen.getByRole('button', { name: /提交并获取支付二维码/ })
       fireEvent.click(submitBtn)
       await waitFor(() => {
         expect(createRechargeRequestMock).toHaveBeenCalled()
@@ -448,11 +448,11 @@ describe('WalletPage', () => {
         data: { id: 1, channel: 'alipay', amount: 9.5, points: 100, status: 'expired', user_confirmed: false, created_at: '2026-05-10 00:00:00', remaining_seconds: 0 },
       })
       render(<WalletPage />)
-      fireEvent.click(screen.getByText('捐赠支持'))
+      fireEvent.click(screen.getByText('充值中心'))
       await waitFor(() => {
         expect(screen.getByText('轻量支持')).toBeInTheDocument()
       })
-      fireEvent.click(screen.getByRole('button', { name: /提交并获取捐赠二维码/ }))
+      fireEvent.click(screen.getByRole('button', { name: /提交并获取支付二维码/ }))
       await waitFor(() => {
         expect(screen.getByText('当前支付金额已失效')).toBeInTheDocument()
         expect(screen.getByRole('button', { name: '重新生成金额' })).toBeInTheDocument()
@@ -466,11 +466,11 @@ describe('WalletPage', () => {
         data: { id: 1, channel: 'alipay', amount: 9.5, points: 100, status: 'pending', user_confirmed: false, created_at: '2026-05-10 00:00:00', remaining_seconds: 600 },
       })
       render(<WalletPage />)
-      fireEvent.click(screen.getByText('捐赠支持'))
+      fireEvent.click(screen.getByText('充值中心'))
       await waitFor(() => {
         expect(screen.getByText('轻量支持')).toBeInTheDocument()
       })
-      fireEvent.click(screen.getByRole('button', { name: /提交并获取捐赠二维码/ }))
+      fireEvent.click(screen.getByRole('button', { name: /提交并获取支付二维码/ }))
       await waitFor(() => {
         expect(screen.getByText('10:00')).toBeInTheDocument()
       })
@@ -479,11 +479,11 @@ describe('WalletPage', () => {
     it('shows error on recharge submit failure', async () => {
       createRechargeRequestMock.mockRejectedValue(new Error('提交失败'))
       render(<WalletPage />)
-      fireEvent.click(screen.getByText('捐赠支持'))
+      fireEvent.click(screen.getByText('充值中心'))
       await waitFor(() => {
         expect(screen.getByText('轻量支持')).toBeInTheDocument()
       })
-      const submitBtn = screen.getByRole('button', { name: /提交并获取捐赠二维码/ })
+      const submitBtn = screen.getByRole('button', { name: /提交并获取支付二维码/ })
       fireEvent.click(submitBtn)
       await waitFor(() => {
         expect(screen.getByText('提交失败')).toBeInTheDocument()

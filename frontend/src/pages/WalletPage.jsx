@@ -25,7 +25,7 @@ const typeMap = {
   admin_grant: { label: '管理员调整', color: '#8B7BA8' },
   migration: { label: '历史补偿', color: 'var(--accent)' },
   migration_bonus: { label: '历史补偿', color: 'var(--accent)' },
-  recharge_pending: { label: '捐赠待审核', color: 'var(--color-warning)' },
+  recharge_pending: { label: '充值待审核', color: 'var(--color-warning)' },
   recharge_refund: { label: '回退发放', color: 'var(--color-error)' },
   invite_register_reward: { label: '邀请注册奖励', color: 'var(--color-success)' },
   invite_recharge_bonus: { label: '支持加赠', color: 'var(--color-success)' },
@@ -61,9 +61,8 @@ function getCountdownTone(seconds) {
 }
 
 const tabList = [
-  { key: 'subscription', label: '套餐与用量' },
+  { key: 'subscription', label: '充值中心' },
   { key: 'records', label: '积分记录' },
-  { key: 'donate', label: '捐赠支持' },
   { key: 'invite', label: '邀请中心' },
   { key: 'redeem', label: '兑换码' },
 ]
@@ -222,7 +221,7 @@ export default function WalletPage() {
         wechat_pay_qr_url: data.wechat_pay_qr_url || '',
         alipay_pay_qr_url: data.alipay_pay_qr_url || '',
         donation_contact: data.donation_contact || '',
-        manual_recharge_notice: data.manual_recharge_notice || '支持 Atelier 持续承担模型、图床与服务器成本。你可自愿捐赠支持平台运行，审核通过后按页面公示档位赠送对应感谢积分。请备注账号并上传支付凭证，发放完成后不支持回退。',
+        manual_recharge_notice: data.manual_recharge_notice || '支持 Atelier 持续承担模型、图床与服务器成本。你可按需充值支持平台运行，审核通过后按页面公示档位赠送对应积分。请备注账号并上传支付凭证，发放完成后不支持回退。',
       })
       setInviteConfig({
         invite_enabled: data?.invite_enabled !== false,
@@ -300,7 +299,7 @@ export default function WalletPage() {
     dialog.alert(
       inviteConfig?.invite_enabled === false
         ? '邀请功能暂未开启，请以后再看这里的奖励说明。'
-        : `邀请规则\n捐赠时填写邀请码：好友捐赠通过后，好友额外加赠 ${bonusPercent}% 对应积分，邀请人再得 ${rebatePercent}% 邀请奖励\n邀请码不再用于注册流程\n同IP近30天会拦截相关奖励`
+        : `邀请规则\n充值时填写邀请码：好友充值通过后，好友额外加赠 ${bonusPercent}% 对应积分，邀请人再得 ${rebatePercent}% 邀请奖励\n邀请码不再用于注册流程\n同IP近30天会拦截相关奖励`
     )
     setInviteRuleSeen(true)
   }, [tab, inviteRuleSeen, inviteConfig, inviteConfigLoaded, dialog])
@@ -758,7 +757,7 @@ export default function WalletPage() {
                                 </td>
                                 <td className="px-4 py-2.5 truncate max-w-[220px]" style={{ color: 'var(--text-primary)' }}>
                                   {tx.type === 'redeem_code' && tx.recharge_request_id
-                                    ? `捐赠审核通过，发放 ${formatPoints(tx.amount)} 积分`
+                                    ? `充值审核通过，发放 ${formatPoints(tx.amount)} 积分`
                                     : tx.description || '-'}
                                 </td>
                                 <td
@@ -807,13 +806,6 @@ export default function WalletPage() {
 
           {tab === 'subscription' && (
             <div className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-3">
-                {[
-                  ['本周期扣除', subscriptionUsage?.summary?.charged_points ?? 0],
-                  ['输入 / 输出 Token', `${subscriptionUsage?.summary?.input_tokens ?? 0} / ${subscriptionUsage?.summary?.output_tokens ?? 0}`],
-                  ['用量缺失请求', subscriptionUsage?.summary?.usage_missing_requests ?? 0],
-                ].map(([label, value]) => <div key={label} className="p-4 rounded-2xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>{label}</div><div className="mt-1 text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{value}</div></div>)}
-              </div>
               <div className="flex gap-2 items-center text-xs" style={{ color: 'var(--text-secondary)' }}>
                 <span>支付方式</span>
                 <button onClick={() => setSubscriptionChannel('alipay')} className="px-2 py-1 rounded-full border" style={{ borderColor: subscriptionChannel === 'alipay' ? 'var(--accent)' : 'var(--border-color)', color: subscriptionChannel === 'alipay' ? 'var(--accent)' : 'var(--text-secondary)' }}>支付宝</button>
@@ -826,12 +818,11 @@ export default function WalletPage() {
               </div>
               {payConfig[`${subscriptionChannel}_pay_qr_url`] && <img src={payConfig[`${subscriptionChannel}_pay_qr_url`]} alt="支付二维码" className="w-28 h-28 object-contain rounded-xl border" style={{ borderColor: 'var(--border-color)' }} />}
               <div className="grid gap-3 lg:grid-cols-3">
-                {subscriptionPlans.map(plan => <div key={plan.id} className="p-4 rounded-2xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
+                {subscriptionPlans.map(plan => <div key={plan.id} className="p-4 rounded-2xl border flex flex-col" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
                   <div className="flex items-start justify-between gap-2"><div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{plan.name}</div><div className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>¥{plan.price_rmb}</div></div>
                   <div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{plan.description || '按周期发放积分和功能权益'}</div>
                   <div className="mt-3 text-sm" style={{ color: 'var(--text-primary)' }}>{formatPoints(plan.grant_points)} 积分 / {plan.cycle_days} 天</div>
-                  <div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{plan.features?.web_search ? '联网搜索 ' : ''}{plan.features?.file_upload ? '文件上传 ' : ''}{plan.features?.file_write ? '文件写入' : ''}</div>
-                  {!plan.is_free && <button disabled={subscriptionSubmitting} onClick={() => handleSubscriptionOrder(plan)} className="mt-4 w-full px-3 py-2 rounded-2xl text-sm text-white disabled:opacity-50" style={{ background: 'var(--accent)' }}>{subscriptionSubmitting ? '提交中...' : '购买 / 续费'}</button>}
+                  {!plan.is_free && <button disabled={subscriptionSubmitting} onClick={() => handleSubscriptionOrder(plan)} className="mt-auto pt-4 w-full px-3 py-2 rounded-2xl text-sm text-white disabled:opacity-50" style={{ background: 'var(--accent)' }}>{subscriptionSubmitting ? '提交中...' : '购买 / 续费'}</button>}
                 </div>)}
               </div>
               <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
@@ -839,20 +830,11 @@ export default function WalletPage() {
                 {subscriptionOrders.map(order => <div key={order.id} className="flex items-center justify-between gap-3 px-4 py-3 border-t text-sm" style={{ borderColor: 'var(--border-color)' }}><div><div style={{ color: 'var(--text-primary)' }}>{order.order_no}</div><div className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>¥{order.amount_rmb} · {formatTime(order.created_at)}</div></div><span className="text-xs" style={{ color: order.status === 'approved' ? 'var(--color-success)' : 'var(--color-warning)' }}>{statusMap[order.status]?.label || order.status}</span></div>)}
                 {!subscriptionOrders.length && <div className="px-4 py-8 text-center text-sm" style={{ color: 'var(--text-secondary)' }}>暂无订阅订单</div>}
               </div>
-              <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
-                <div className="px-4 py-3 text-sm font-semibold" style={{ color: 'var(--text-primary)', background: 'var(--bg-card)' }}>模型价格</div>
-                {subscriptionPrices.map(model => <div key={model.model_id} className="flex items-center justify-between gap-3 px-4 py-3 border-t text-xs" style={{ borderColor: 'var(--border-color)' }}><span style={{ color: 'var(--text-primary)' }}>{model.label}</span><span style={{ color: 'var(--text-secondary)' }}>输入 {model.points_per_1k?.input == null ? '-' : formatPoints(model.points_per_1k.input)} / 输出 {model.points_per_1k?.output == null ? '-' : formatPoints(model.points_per_1k.output)} 积分 / 千 Token</span></div>)}
-                {!subscriptionPrices.length && <div className="px-4 py-6 text-center text-xs" style={{ color: 'var(--text-secondary)' }}>暂无已配置的模型价格</div>}
-              </div>
-            </div>
-          )}
-
-          {tab === 'donate' && (
-            <div className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
+              <div className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
               <div className="p-4 rounded-2xl border" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
                 <div className="flex items-center gap-2 mb-3">
                   <Wallet size={16} style={{ color: 'var(--accent)' }} />
-                  <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>捐赠支持</span>
+                  <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>单次充值</span>
                 </div>
                 <p className="text-xs mb-3 leading-6" style={{ color: 'var(--text-secondary)' }}>
                   {payConfig.manual_recharge_notice}
@@ -867,7 +849,7 @@ export default function WalletPage() {
                   <div className="p-3 rounded-2xl border" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
                     <div className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>支持说明</div>
                     <div className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                      轻度使用建议优先签到领积分；短期高频生成可按需捐赠支持
+                      轻度使用建议优先签到领积分；短期高频生成可按需充值支持
                     </div>
                   </div>
                 </div>
@@ -894,7 +876,7 @@ export default function WalletPage() {
                       type="text"
                       value={inviteCode}
                       onChange={e => setInviteCode(e.target.value.toUpperCase())}
-                      placeholder="支持邀请码（未绑定时可选填）"
+                      placeholder="邀请码（未绑定时可选填）"
                       className="w-full px-3 py-2 rounded-2xl text-sm outline-none transition-colors"
                       style={{
                         background: 'var(--bg-primary)',
@@ -906,7 +888,7 @@ export default function WalletPage() {
                 )}
                 {inviteInfo?.inviter_user_id && (
                   <div className="mb-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                    当前捐赠将沿用已绑定邀请码{inviteInfo?.register_invite_code ? `：${inviteInfo.register_invite_code}` : ''}
+                    当前充值将沿用已绑定邀请码{inviteInfo?.register_invite_code ? `：${inviteInfo.register_invite_code}` : ''}
                   </div>
                 )}
                 <div className="mb-2 text-xs" style={{ color: 'var(--color-success)' }}>
@@ -942,8 +924,8 @@ export default function WalletPage() {
                   {submittingRecharge
                     ? '提交中...'
                     : !(rechargeChannel === 'alipay' ? payConfig.alipay_pay_qr_url : payConfig.wechat_pay_qr_url)
-                      ? `${channelLabel[rechargeChannel]}捐赠码未配置`
-                      : `提交并获取捐赠二维码（¥${rechargeAmount} / ${rechargePoints}积分）`}
+                      ? `${channelLabel[rechargeChannel]}收款码未配置`
+                      : `提交并获取支付二维码（¥${rechargeAmount} / ${rechargePoints}积分）`}
                 </button>
                 {rechargeMsg && (
                   <div
@@ -960,7 +942,7 @@ export default function WalletPage() {
                 )}
                 {pollingStatus === 'success' && (
                   <div className="mt-2 px-3 py-2 rounded-2xl text-xs text-[var(--color-success)]" style={{ background: 'rgba(34,197,94,0.1)' }}>
-                    捐赠成功，积分已到账！
+                    充值成功，积分已到账！
                   </div>
                 )}
                 {pollingStatus === 'expired' && (
@@ -977,14 +959,15 @@ export default function WalletPage() {
               <div className="p-4 rounded-2xl border" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
                 <div className="flex items-center gap-2 mb-3">
                   <HeartHandshake size={16} style={{ color: 'var(--accent)' }} />
-                  <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>捐赠说明</span>
+                  <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>支持说明</span>
                 </div>
                 <div className="space-y-3 text-sm leading-6" style={{ color: 'var(--text-secondary)' }}>
-                  <p>你的捐赠是对 Atelier 持续运行的支持，平台会按当前档位赠送对应积分。</p>
+                  <p>你的充值是对 Atelier 持续运行的支持，平台会按当前档位赠送对应积分。</p>
                   <p>积分仅用于站内功能消耗，不可提现、不可转让、不可跨账号转移。</p>
                   <p>AI 生图结果具有随机性，如生成失败、优化失败或审核拦截，系统只会退还对应消耗积分。</p>
-                  <p>捐赠属于个人自愿支持行为，不构成商品购买或预付储值，发放完成后不支持回退，请按需理性支持。</p>
+                  <p>充值属于个人自愿支持行为，不构成商品购买或预付储值，发放完成后不支持回退，请按需理性支持。</p>
                 </div>
+              </div>
               </div>
             </div>
           )}
@@ -995,7 +978,7 @@ export default function WalletPage() {
                 <div className="mb-4">
                   <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>邀请中心</div>
                   <div className="text-xs mt-1 leading-6" style={{ color: 'var(--text-secondary)' }}>
-                    捐赠时可填写邀请码；好友完成捐赠支持后可获得额外加赠积分，你也可获得邀请奖励，同IP近30天会拦截相关奖励
+                    充值时填写邀请码；好友完成充值后可获得额外加赠积分，你也可获得邀请奖励，同IP近30天会拦截相关奖励
                   </div>
                 </div>
                 <div
@@ -1024,7 +1007,7 @@ export default function WalletPage() {
                         </div>
                       )}
                       <div className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>
-                        把这个码发给好友，对方捐赠时填写即可生效
+                        把这个码发给好友，对方充值时填写即可生效
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2 sm:justify-end">
@@ -1069,7 +1052,7 @@ export default function WalletPage() {
                   {[
                     { l: '邀请注册', v: inviteInfo?.summary?.invited_register_count || 0 },
                     { l: '累计邀请奖励', v: inviteInfo?.summary?.total_rebate_points || 0 },
-                    { l: '带来捐赠支持', v: `¥${Number(inviteInfo?.summary?.total_recharge_amount || 0).toFixed(2)}` },
+                    { l: '带来充值支持', v: `¥${Number(inviteInfo?.summary?.total_recharge_amount || 0).toFixed(2)}` },
                     { l: '风险拦截', v: inviteInfo?.summary?.risk_hit_count || 0 },
                   ].map(item => (
                     <div
@@ -1219,7 +1202,7 @@ export default function WalletPage() {
               {pollingStatus === 'success' ? (
                 <div className="rounded-2xl border px-4 py-3" style={{ background: 'rgba(34,197,94,0.12)', borderColor: 'rgba(34,197,94,0.2)' }}>
                   <div className="text-sm font-semibold mb-1" style={{ color: 'var(--color-success)' }}>支付已确认</div>
-                  <div className="text-xs leading-6" style={{ color: 'var(--text-primary)' }}>积分已经到账，本次捐赠处理完成。</div>
+                  <div className="text-xs leading-6" style={{ color: 'var(--text-primary)' }}>积分已经到账，本次充值处理完成。</div>
                 </div>
               ) : pollingStatus === 'expired' ? (
                 <div className="rounded-2xl border px-4 py-3" style={{ background: 'rgba(239,68,68,0.12)', borderColor: 'rgba(239,68,68,0.2)' }}>
@@ -1247,7 +1230,7 @@ export default function WalletPage() {
                 <>
                 <div className="text-4xl mb-3">🎉🎆</div>
                 <div className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
-                  捐赠成功，感谢支持
+                  充值成功，感谢支持
                 </div>
                 <div className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
                   你的支持已到账，平台会继续努力把体验做好
@@ -1260,7 +1243,7 @@ export default function WalletPage() {
                   <div className="text-3xl font-bold leading-none">+{successPayload.points}</div>
                 </div>
                 <div className="text-xs mb-5" style={{ color: 'var(--text-secondary)' }}>
-                  已通过{channelLabel[successPayload.channel] || '当前渠道'}收到 ¥{successPayload.amount.toFixed(2)}，感谢你的捐赠支持 💖
+                  已通过{channelLabel[successPayload.channel] || '当前渠道'}收到 ¥{successPayload.amount.toFixed(2)}，感谢你的支持 💖
                 </div>
                 <button
                   onClick={handleCloseQrModal}
@@ -1335,7 +1318,7 @@ export default function WalletPage() {
                 {(activeRequest.channel === 'alipay' ? payConfig.alipay_pay_qr_url : payConfig.wechat_pay_qr_url) ? (
                   <img
                     src={activeRequest.channel === 'alipay' ? payConfig.alipay_pay_qr_url : payConfig.wechat_pay_qr_url}
-                    alt="捐赠二维码"
+                    alt="支付二维码"
                     className="w-48 h-48 object-contain rounded-2xl mx-auto mb-4"
                   />
                 ) : (
@@ -1343,7 +1326,7 @@ export default function WalletPage() {
                     className="w-48 h-48 flex items-center justify-center rounded-2xl mx-auto mb-4"
                     style={{ background: 'var(--bg-primary)' }}
                   >
-                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>捐赠二维码未配置</span>
+                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>支付二维码未配置</span>
                   </div>
                 )}
                 {pollingStatus === 'timeout' && (
