@@ -130,7 +130,8 @@ export default function AdminPage() {
     points_cost_per_generation: 10,
     points_cost_per_optimize: 10,
     points_cost_per_optimize_refine: 20,
-    points_cost_per_chat: 10,
+    points_cost_per_chat: 1,
+    ai_daily_free_quota: 5,
     points_cost_per_image_extend: 2,
     points_checkin_reward: 10,
     points_register_bonus: 50,
@@ -355,6 +356,7 @@ export default function AdminPage() {
         points_cost_per_optimize: Number(data.points_cost_per_optimize || 10),
         points_cost_per_optimize_refine: Number(data.points_cost_per_optimize_refine || 20),
         points_cost_per_chat: Number(data.points_cost_per_chat || 10),
+        ai_daily_free_quota: Number(data.ai_daily_free_quota ?? 5),
         points_cost_per_image_extend: Number(data.points_cost_per_image_extend || 2),
         points_checkin_reward: Number(data.points_checkin_reward || 10),
         points_register_bonus: Number(data.points_register_bonus || 50),
@@ -507,7 +509,7 @@ export default function AdminPage() {
     const n = [
       'generate_concurrent_limit_per_user', 'home_page_size', 'square_page_size',
       'points_cost_per_generation', 'points_cost_per_optimize', 'points_cost_per_optimize_refine',
-      'points_cost_per_chat', 'chat_context_max_chars',
+      'points_cost_per_chat', 'ai_daily_free_quota', 'chat_context_max_chars',
       'points_cost_per_image_extend', 'points_checkin_reward', 'points_register_bonus',
       'points_migration_amount', 'invite_register_reward_points', 'invite_recharge_rebate_percent',
       'invite_recharge_bonus_percent', 'login_rate_limit_per_minute_per_ip',
@@ -526,6 +528,7 @@ export default function AdminPage() {
       payload.points_cost_per_optimize <= 0 ||
       payload.points_cost_per_optimize_refine <= 0 ||
       payload.points_cost_per_chat <= 0 ||
+      payload.ai_daily_free_quota < 0 ||
       payload.chat_context_max_chars < 1000 ||
       payload.points_cost_per_image_extend <= 0 ||
       payload.login_rate_limit_per_minute_per_ip < 1 ||
@@ -1552,6 +1555,7 @@ export default function AdminPage() {
                   { k: 'points_cost_per_optimize', l: '简单优化扣分', min: 0.0001, step: 0.0001 },
                   { k: 'points_cost_per_optimize_refine', l: '精细优化扣分', min: 0.0001, step: 0.0001 },
                   { k: 'points_cost_per_chat', l: 'AI助手对话扣分', min: 0.0001, step: 0.0001 },
+                  { k: 'ai_daily_free_quota', l: 'AI助手每日免费次数', min: 0 },
                   { k: 'chat_context_max_chars', l: '聊天上下文预算(字符)', min: 1000 },
                   { k: 'points_cost_per_image_extend', l: '图片续期扣分/张', min: 0.0001, step: 0.0001 },
                   { k: 'points_checkin_reward', l: '每日签到奖励', min: 0 },

@@ -106,7 +106,8 @@ _runtime_config = {
     "points_cost_per_generation": float(os.getenv("POINTS_COST_PER_GENERATION", "10")),
     "points_cost_per_optimize": float(os.getenv("POINTS_COST_PER_OPTIMIZE", "10")),
     "points_cost_per_optimize_refine": float(os.getenv("POINTS_COST_PER_OPTIMIZE_REFINE", "20")),
-    "points_cost_per_chat": float(os.getenv("POINTS_COST_PER_CHAT", "10")),
+    "points_cost_per_chat": float(os.getenv("POINTS_COST_PER_CHAT", "1")),
+    "ai_daily_free_quota": int(os.getenv("AI_DAILY_FREE_QUOTA", "5")),
     "chat_max_sessions": int(os.getenv("CHAT_MAX_SESSIONS", "50")),
     "chat_max_messages": int(os.getenv("CHAT_MAX_MESSAGES", "100")),
     "chat_rate_limit_per_minute": int(os.getenv("CHAT_RATE_LIMIT_PER_MINUTE", "10")),
@@ -253,7 +254,7 @@ def get_limit_config():
     cfg = get_config()
     out = {}
     point_cost_keys = {"points_cost_per_generation", "points_cost_per_optimize", "points_cost_per_optimize_refine", "points_cost_per_chat", "points_cost_per_image_extend"}
-    for k in ["generate_concurrent_limit_per_user", "home_page_size", "square_page_size", "points_cost_per_generation", "points_cost_per_optimize", "points_cost_per_optimize_refine", "points_cost_per_chat", "chat_max_sessions", "chat_max_messages", "chat_rate_limit_per_minute", "chat_context_max_chars", "points_cost_per_image_extend", "points_checkin_reward", "points_register_bonus", "points_migration_amount", "invite_register_reward_points", "login_rate_limit_per_minute_per_ip", "register_rate_limit_per_minute_per_ip"]:
+    for k in ["generate_concurrent_limit_per_user", "home_page_size", "square_page_size", "points_cost_per_generation", "points_cost_per_optimize", "points_cost_per_optimize_refine", "points_cost_per_chat", "chat_max_sessions", "chat_max_messages", "chat_rate_limit_per_minute", "chat_context_max_chars", "points_cost_per_image_extend", "points_checkin_reward", "points_register_bonus", "points_migration_amount", "invite_register_reward_points", "login_rate_limit_per_minute_per_ip", "register_rate_limit_per_minute_per_ip", "ai_daily_free_quota"]:
         try:
             v = float(cfg.get(k, _runtime_config_defaults[k])) if k in point_cost_keys else int(cfg.get(k, _runtime_config_defaults[k]))
         except Exception:
@@ -266,6 +267,7 @@ def get_limit_config():
     if out["points_cost_per_optimize"] <= 0: out["points_cost_per_optimize"] = 0.0001
     if out["points_cost_per_optimize_refine"] <= 0: out["points_cost_per_optimize_refine"] = 0.0001
     if out["points_cost_per_chat"] <= 0: out["points_cost_per_chat"] = 0.0001
+    if out["ai_daily_free_quota"] < 1: out["ai_daily_free_quota"] = 1
     if out["chat_max_sessions"] < 1: out["chat_max_sessions"] = 1
     if out["chat_max_messages"] < 1: out["chat_max_messages"] = 1
     if out["chat_rate_limit_per_minute"] < 1: out["chat_rate_limit_per_minute"] = 1

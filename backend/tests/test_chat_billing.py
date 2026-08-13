@@ -68,11 +68,12 @@ def _insert_params(conn):
 
 
 # ---------------------------------------------------------------------------
-# 场景 1: 模型配了单价，token 费用 > 预扣（需要补扣差额）
+# 场景 1: 固定按次计费（新机制）：即使模型配了 token 单价也不补差
 # ---------------------------------------------------------------------------
-def test_record_chat_usage_token_cost_exceeds_precharge():
-    """费用 = (5000*2 + 2000*6 + 1000*1 + 500*1.5)/1000 = 23.75 > 预扣 10
-    → 补扣 13.75，落库 cost_points=23.75、billing_mode='token'。
+def test_record_chat_usage_fixed_per_request_ignores_token_price():
+    """新机制：AI 助手每次对话固定扣 points_cost_per_chat（默认 1）积分，
+    忽略模型 points_per_request 与 token 单价 → 不补差不退款，
+    落库 cost_points=1、billing_mode='per_request'。
     """
     model_cfg = dict(_MODEL_WITH_UNIT_PRICE, points_per_request=10)
     req_id = "req-scenario-1"
@@ -86,30 +87,23 @@ def test_record_chat_usage_token_cost_exceeds_precharge():
             pre_charged=10.0, pre_balance=100.0,
         )
 
-    # 实际费用 23.75，diff = 23.75 - 10 = 13.75 → consume 一次
-    mock_consume.assert_called_once()
-    args, kwargs = mock_consume.call_args
-    assert args[0] == 1                       # user_id
-    assert args[1] == Decimal("13.7500")      # amount = diff
-    assert args[2] == "AI对话按量补差"          # description
-    assert kwargs["tx_type"] == "chat_token_adjust"
-    assert kwargs["request_key"] == f"chat_token_adjust:{req_id}"
+    # 固定按次：不做 token 补差
+    mock_consume.assert_not_called()
     mock_refund.assert_not_called()
-    # consume 返回值作为 final_balance 回传
-    assert final_balance == 76.25
+    # 无补差时回传 pre_balance
+    assert final_balance == 100.0
 
-    # DB INSERT：cost_points=23.75, billing_mode='token'
+    # DB INSERT：cost_points=1（固定值）, billing_mode='per_request'
     params = _insert_params(conn)
-    assert params[11] == Decimal("23.75")     # cost_points
-    assert params[12] == "token"              # billing_mode
+    assert params[11] == Decimal("1")         # cost_points
+    assert params[12] == "per_request"        # billing_mode
 
 
 # ---------------------------------------------------------------------------
-# 场景 2: 模型配了单价，token 费用 < 预扣（需要退差额）
+# 场景 2: 固定按次计费（新机制）：即使 token 费用远低于预扣也不退差额
 # ---------------------------------------------------------------------------
-def test_record_chat_usage_token_cost_below_precharge():
-    """费用 = (500*2 + 100*6)/1000 = 1.6 < 预扣 50
-    → 退还 48.4，落库 cost_points=1.6。
+def test_record_chat_usage_fixed_per_request_no_refund():
+    """新机制：每次对话固定 1 积分，不做按量退差额。
     """
     model_cfg = dict(_MODEL_WITH_UNIT_PRICE, points_per_request=50)
     usage = {"input_tokens": 500, "output_tokens": 100,
@@ -125,30 +119,22 @@ def test_record_chat_usage_token_cost_below_precharge():
             pre_charged=50.0, pre_balance=50.0,
         )
 
-    # 实际费用 1.6，diff = 1.6 - 50 = -48.4 → refund 一次
-    mock_refund.assert_called_once()
-    args, kwargs = mock_refund.call_args
-    assert args[0] == 1                       # user_id
-    assert args[1] == Decimal("48.4000")      # amount = -diff
-    assert args[2] == "AI对话按量退还差额"
-    assert kwargs["request_key"] == f"chat_token_adjust:{req_id}"
     mock_consume.assert_not_called()
-    assert final_balance == 98
+    mock_refund.assert_not_called()
+    assert final_balance == 50.0
 
     params = _insert_params(conn)
-    assert params[11] == Decimal("1.6")       # cost_points
-    assert params[12] == "token"              # billing_mode
+    assert params[11] == Decimal("1")         # cost_points 固定 1
+    assert params[12] == "per_request"        # billing_mode
 
 
 # ---------------------------------------------------------------------------
-# 场景 3: 模型配了单价，token 费用 == 预扣（不补差不退款）
+# 场景 3: 固定按次计费（新机制）：不补差不退款，仍落一条 usage 记录
 # ---------------------------------------------------------------------------
-def test_record_chat_usage_token_cost_equals_precharge():
-    """费用 = 5000*2/1000 = 10 == 预扣 10
-    → 既不 consume 也不 add_points，但仍落一条 usage 记录。
+def test_record_chat_usage_fixed_per_request_records_usage():
+    """固定按次：每次对话固定 1 积分，落一条 usage 记录。
     """
     model_cfg = dict(_MODEL_WITH_UNIT_PRICE, points_per_request=10)
-    # input=5000, 单价 2/1k → cost=10 == pre_charged
     usage = {"input_tokens": 5000, "output_tokens": 0,
              "cache_read_tokens": 0, "cache_creation_tokens": 0}
     req_id = "req-scenario-3"
@@ -164,13 +150,13 @@ def test_record_chat_usage_token_cost_equals_precharge():
 
     mock_consume.assert_not_called()
     mock_refund.assert_not_called()
-    # diff=0 时不调整余额，回传 pre_balance
+    # 固定按次无补差，回传 pre_balance
     assert final_balance == 100.0
     # 仍落一条 usage 记录
     assert conn.execute.call_count == 1
     params = _insert_params(conn)
-    assert params[11] == Decimal("10")        # cost_points
-    assert params[12] == "token"              # billing_mode
+    assert params[11] == Decimal("1")         # cost_points 固定 1
+    assert params[12] == "per_request"        # billing_mode
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +188,7 @@ def test_compute_token_cost_usage_none_falls_back_per_request():
     mock_refund.assert_not_called()
     assert final_balance == 100.0
     params = _insert_params(conn)
-    assert params[11] == Decimal("10")        # cost_points
+    assert params[11] == Decimal("1")         # cost_points 固定按次（忽略模型 points_per_request）
     assert params[12] == "per_request"        # billing_mode
 
 
@@ -237,7 +223,7 @@ def test_compute_token_cost_no_unit_price_falls_back_per_request():
     mock_refund.assert_not_called()
     assert final_balance == 100.0
     params = _insert_params(conn)
-    assert params[11] == Decimal("10")        # cost_points
+    assert params[11] == Decimal("1")         # cost_points 固定按次（忽略模型 points_per_request）
     assert params[12] == "per_request"        # billing_mode
 
 

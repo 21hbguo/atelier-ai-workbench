@@ -9,6 +9,7 @@ from backend.config import get_config, get_recharge_random_discount_range
 from backend.services.points_service import PointsService
 from backend.services.invite_service import InviteService
 from backend.services.notification_service import NotificationService
+from backend.services.subscription_service import get_entitlements
 from backend.database import get_db
 from backend.config import get_recharge_packages
 
@@ -25,6 +26,7 @@ class RechargeCreateRequest(BaseModel):
     amount: float
     points: int
     invite_code: str = ""
+    plan_id: int | None = None
 
 
 def _build_recharge_risk(conn, user_id: int, ip: str, tx_no: str, amount: float):
@@ -69,8 +71,12 @@ def _generate_unique_discount(conn, user_id: int) -> float:
 
 @router.get("/balance")
 async def get_balance(user=Depends(get_current_user)):
-    balance = PointsService.get_balance(user["user_id"])
-    return {"points": balance}
+    user_id = user["user_id"]
+    balance = PointsService.get_balance(user_id)
+    entitlements = get_entitlements(user_id)
+    is_free_user = bool((entitlements.get("plan") or {}).get("is_free"))
+    ai_info = PointsService.get_ai_daily_quota(user_id, is_free_user) if is_free_user else {"total": 0, "remaining": 0}
+    return {"points": balance, "ai_daily_total": ai_info["total"], "ai_daily_remaining": ai_info["remaining"], "is_free_user": is_free_user}
 
 
 @router.get("/checkin/status")
@@ -135,16 +141,27 @@ async def create_recharge_request(body: RechargeCreateRequest, request: Request,
     channel = (body.channel or "").strip().lower()
     if channel not in {"wechat", "alipay"}:
         raise HTTPException(status_code=400, detail="支持方式仅支持 wechat/alipay")
-    if body.amount <= 0:
-        raise HTTPException(status_code=400, detail="捐赠金额必须大于0")
-    if body.points <= 0:
-        raise HTTPException(status_code=400, detail="赠送积分必须大于0")
-    if not any(abs(float(pkg["amount"]) - float(body.amount)) < 1e-6 and int(pkg["points"]) == int(body.points) for pkg in get_recharge_packages()):
-        raise HTTPException(status_code=400, detail="捐赠档位已变更，请刷新页面后重试")
     from datetime import datetime, timedelta
     ip = get_client_ip(request)
     with get_db() as conn:
         _expire_stale_requests(conn, user["user_id"])
+        plan_row = None
+        if body.plan_id:
+            # 套餐购买：金额/积分以套餐为准，不走捐赠档位与随机折扣
+            plan_row = conn.execute("SELECT * FROM subscription_plans WHERE id = %s AND enabled = TRUE", (body.plan_id,)).fetchone()
+            if not plan_row or plan_row.get("is_free"):
+                raise HTTPException(status_code=400, detail="套餐不可购买")
+            amount = float(plan_row["price_rmb"])
+            points = int(plan_row["grant_points"] or 0)
+        else:
+            if body.amount <= 0:
+                raise HTTPException(status_code=400, detail="捐赠金额必须大于0")
+            if body.points <= 0:
+                raise HTTPException(status_code=400, detail="赠送积分必须大于0")
+            if not any(abs(float(pkg["amount"]) - float(body.amount)) < 1e-6 and int(pkg["points"]) == int(body.points) for pkg in get_recharge_packages()):
+                raise HTTPException(status_code=400, detail="捐赠档位已变更，请刷新页面后重试")
+            amount = body.amount
+            points = body.points
         # 查找该用户该渠道所有未过期的 pending 订单，优先复用金额匹配的
         pending_rows = conn.execute(
             "SELECT id, amount, discount, tx_no, created_at FROM recharge_requests WHERE user_id = %s AND channel = %s AND status = 'pending' ORDER BY created_at DESC",
@@ -152,7 +169,7 @@ async def create_recharge_request(body: RechargeCreateRequest, request: Request,
         ).fetchall()
         for req in pending_rows:
             req_base = float(req["amount"]) + float(req["discount"])
-            if abs(req_base - float(body.amount)) < 1e-6:
+            if abs(req_base - float(amount)) < 1e-6:
                 created = req["created_at"]
                 if isinstance(created, str):
                     created = datetime.strptime(created, "%Y-%m-%d %H:%M:%S")
@@ -164,19 +181,19 @@ async def create_recharge_request(body: RechargeCreateRequest, request: Request,
                     "amount": float(req["amount"]),
                     "discount": float(req["discount"]),
                     "remaining_seconds": remaining,
-                    "message": "已有待捐赠请求",
+                    "message": "已有待支付请求",
                 }
-        discount = _generate_unique_discount(conn, user["user_id"])
-        actual_amount = round(body.amount - discount, 2)
+        discount = 0 if plan_row else _generate_unique_discount(conn, user["user_id"])
+        actual_amount = round(amount - discount, 2)
         tx_no = f"RCH{datetime.now().strftime('%Y%m%d%H%M%S')}{user['user_id']}{secrets.token_hex(4).upper()}"
-        invite_snapshot=InviteService.build_recharge_snapshot(conn,user["user_id"],body.amount,body.points,body.invite_code,ip) if InviteService.is_enabled() else {"inviter_user_id":None,"invite_code":"","invite_discount_percent_snapshot":0,"invite_rebate_percent_snapshot":0,"invite_bonus_points":0,"invite_rebate_points":0,"same_ip_hit":False,"same_ip_reason":""}
-        risk_level, risk_flags = _build_recharge_risk(conn, user["user_id"], ip, tx_no, body.amount)
+        invite_snapshot=InviteService.build_recharge_snapshot(conn,user["user_id"],amount,points,body.invite_code,ip) if InviteService.is_enabled() else {"inviter_user_id":None,"invite_code":"","invite_discount_percent_snapshot":0,"invite_rebate_percent_snapshot":0,"invite_bonus_points":0,"invite_rebate_points":0,"same_ip_hit":False,"same_ip_reason":""}
+        risk_level, risk_flags = _build_recharge_risk(conn, user["user_id"], ip, tx_no, amount)
         if invite_snapshot.get("same_ip_hit"):
             risk_flags=list(risk_flags)+[invite_snapshot.get("same_ip_reason") or "same_ip_within_30d"]
             risk_level="high" if risk_level!="high" else risk_level
         cursor = conn.execute(
-            "INSERT INTO recharge_requests (user_id, channel, amount, points, submit_ip, invite_code, inviter_user_id, invite_discount_percent_snapshot, invite_rebate_percent_snapshot, invite_bonus_points, invite_rebate_points, tx_no, status, risk_level, risk_flags, discount) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s, %s) RETURNING id",
-            (user["user_id"], channel, actual_amount, body.points, ip, invite_snapshot["invite_code"], invite_snapshot["inviter_user_id"], invite_snapshot["invite_discount_percent_snapshot"], invite_snapshot["invite_rebate_percent_snapshot"], invite_snapshot["invite_bonus_points"], invite_snapshot["invite_rebate_points"], tx_no, risk_level, json.dumps(risk_flags, ensure_ascii=False), discount),
+            "INSERT INTO recharge_requests (user_id, channel, amount, points, plan_id, submit_ip, invite_code, inviter_user_id, invite_discount_percent_snapshot, invite_rebate_percent_snapshot, invite_bonus_points, invite_rebate_points, tx_no, status, risk_level, risk_flags, discount) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s, %s) RETURNING id",
+            (user["user_id"], channel, actual_amount, points, plan_row["id"] if plan_row else None, ip, invite_snapshot["invite_code"], invite_snapshot["inviter_user_id"], invite_snapshot["invite_discount_percent_snapshot"], invite_snapshot["invite_rebate_percent_snapshot"], invite_snapshot["invite_bonus_points"], invite_snapshot["invite_rebate_points"], tx_no, risk_level, json.dumps(risk_flags, ensure_ascii=False), discount),
         )
         request_id = cursor.fetchone()["id"]
         balance = conn.execute("SELECT points FROM users WHERE id = %s", (user["user_id"],)).fetchone()["points"]
@@ -184,7 +201,7 @@ async def create_recharge_request(body: RechargeCreateRequest, request: Request,
             "INSERT INTO point_transactions (user_id, amount, balance_after, type, description, recharge_request_id) VALUES (%s, %s, %s, %s, %s, %s)",
             (user["user_id"], 0, balance, "recharge_pending", f"待捐赠 (¥{actual_amount})", request_id),
         )
-    logger.info(f"[audit.recharge.request] id={request_id} user={user['user_id']} base={body.amount} discount={discount} actual={actual_amount} points={body.points} risk={risk_level} flags={','.join(risk_flags) if risk_flags else 'none'} ip={ip}")
+    logger.info(f"[audit.recharge.request] id={request_id} user={user['user_id']} base={amount} discount={discount} actual={actual_amount} points={points} plan_id={body.plan_id} risk={risk_level} flags={','.join(risk_flags) if risk_flags else 'none'} ip={ip}")
     return {"id": request_id, "tx_no": tx_no, "amount": actual_amount, "discount": discount, "remaining_seconds": 600, "message": "已创建，请扫码捐赠"}
 
 @router.get("/invite")

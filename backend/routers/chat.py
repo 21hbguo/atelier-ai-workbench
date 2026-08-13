@@ -256,11 +256,7 @@ def _default_title(content: str) -> str:
 
 
 def _chat_cost_per_request(model=None) -> float:
-    """单次聊天扣费：优先模型档案的按次定价（points_per_request），未定价则回退全局配置。"""
-    m = model or get_active_model()
-    price = m.get("points_per_request")
-    if price is not None and price > 0:
-        return float(price)
+    """单次聊天扣费：固定全局按次定价（默认 1 积分/次），忽略模型档案的 points_per_request。"""
     return float(get_limit_config()["points_cost_per_chat"])
 
 
@@ -328,7 +324,7 @@ def _record_chat_usage(*, user_id: int, session_id: int, message_id: int | None,
     返回最终余额供 done 事件回传前端。
     """
     price_snapshot = _chat_price_snapshot(model_cfg)
-    cost_points, billing_mode = BillingService.calculate_cost_points(usage, price_snapshot, Decimal(str(_chat_cost_per_request(model_cfg))))
+    cost_points, billing_mode = Decimal(str(_chat_cost_per_request(model_cfg))), "per_request"
     charged_points = BillingService.charge_points(cost_points)
     model_key = (model_cfg or {}).get("model_id") or ""
     u = usage or {}
@@ -635,6 +631,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
 
     cost_per = BillingService.charge_points(Decimal(str(_chat_cost_per_request(target_model))))
     req_id = str(uuid.uuid4())
+    is_free_user = bool((entitlements["plan"] or {}).get("is_free"))
 
     # per-model 覆盖（agent 自动分支与 chat_stream 内逻辑共用）
     override = _model_override(target_model)
@@ -644,15 +641,17 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
     if body.reasoning_effort not in efforts:
         body.reasoning_effort = target_model.get("default_reasoning_effort") or "auto"
 
-    # 先扣积分
+    # 先扣积分（免费用户优先消耗每日免费次数，用尽或订阅用户扣通用积分）
     try:
-        precharge = PointsService.consume_with_breakdown(
-            user_id, cost_per, f"AI助手对话 x1", tx_type="chat_consume", request_key=f"chat:{req_id}", model_id=target_model_id
+        precharge = PointsService.consume_ai_chat(
+            user_id, cost_per, "AI助手对话 x1", request_key=f"chat:{req_id}", is_free_user=is_free_user, model_id=target_model_id
         )
         balance_after = precharge["balance"]
+        chat_charge_mode = precharge["mode"]
+        chat_free_remaining = precharge["remaining"]
     except ValueError as e:
         _active_chat_requests[user_id] = max(0, _active_chat_requests.get(user_id, 1) - 1)
-        raise HTTPException(status_code=402, detail=str(e))
+        raise HTTPException(status_code=402, detail=f"钱包余额不足")
     except Exception:
         _active_chat_requests[user_id] = max(0, _active_chat_requests.get(user_id, 1) - 1)
         raise
@@ -686,7 +685,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                 conn.execute("UPDATE chat_sessions SET updated_at = NOW() WHERE id = %s", (session_id,))
     except Exception:
         try:
-            PointsService.refund(user_id, cost_per, "AI助手回复失败退还", request_key=f"chat_refund:{req_id}", tx_type="chat_refund", model_id=target_model_id)
+            PointsService.refund_ai_chat(user_id, cost_per, "AI助手回复失败退还", request_key=f"chat_refund:{req_id}", mode=chat_charge_mode, model_id=target_model_id)
         finally:
             _active_chat_requests[user_id] = max(0, _active_chat_requests.get(user_id, 1) - 1)
         raise
@@ -721,7 +720,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
     def _refund_once() -> None:
         # refund 幂等（request_key 唯一），重复调用安全
         try:
-            PointsService.refund(user_id, cost_per, "AI助手回复失败退还", request_key=f"chat_refund:{req_id}", tx_type="chat_refund", model_id=target_model_id)
+            PointsService.refund_ai_chat(user_id, cost_per, "AI助手回复失败退还", request_key=f"chat_refund:{req_id}", mode=chat_charge_mode, model_id=target_model_id)
         except Exception:
             logger.exception("[chat/send] refund failed")
         # 失败退款：标记对应 usage 记录（失败场景通常无 usage 记录，无则不更新任何行）
@@ -789,8 +788,11 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                         # 生图工具使用指南：仅在 image_gen 实际注册给模型时注入（通道一）
                         agent_system += (
                             "\n\n【图片生成】\n"
-                            "用户要求生成图片（画画、设计海报/头像/壁纸/插画/LOGO 等视觉内容）时，"
-                            "应直接调用 image_gen 工具生成，无需引导用户去其他页面。\n"
+                            "仅当用户明确要求生成图片（生成/画/做一张图、设计海报/头像/壁纸/插画/LOGO "
+                            "等视觉成品）时才调用 image_gen 工具，无需引导用户去其他页面。\n"
+                            "重要：用户只是想要提示词文案（如「帮我写个提示词」「帮我优化/润色提示词」"
+                            "「帮我描述一下画面」）而没有要求真正生成图片时，绝对不要调用 image_gen，"
+                            "直接在回复中给出提示词文本即可，不要生成图片、不要扣用户积分。\n"
                             "使用规范：\n"
                             "1. prompt 参数必须详细描述画面：主体、风格、构图、光线、色彩、氛围等，"
                             "描述越具体效果越好，必要时可用中文描述并补充英文风格词；\n"
@@ -880,7 +882,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                                 model_cfg=target_model, usage=event.get("usage"),
                                 req_id=req_id, pre_charged=cost_per, pre_balance=balance_after, pre_allocation=precharge,
                             )
-                            yield f"event: done\ndata: {json.dumps({'text': text, 'thinking': thinking, 'points_balance': float(final_balance), 'message_id': new_msg_id}, ensure_ascii=False)}\n\n"
+                            yield f"event: done\ndata: {json.dumps({'text': text, 'thinking': thinking, 'points_balance': float(final_balance), 'message_id': new_msg_id, 'ai_daily_remaining': chat_free_remaining}, ensure_ascii=False)}\n\n"
                 except LLMError as e:
                     refunded = True
                     _refund_once()
@@ -979,7 +981,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                         model_cfg=target_model, usage=event.get("usage"),
                         req_id=req_id, pre_charged=cost_per, pre_balance=balance_after, pre_allocation=precharge,
                     )
-                    yield f"event: done\ndata: {json.dumps({'text': event['text'], 'thinking': event.get('thinking', ''), 'points_balance': float(final_balance), 'message_id': new_msg_id}, ensure_ascii=False)}\n\n"
+                    yield f"event: done\ndata: {json.dumps({'text': event['text'], 'thinking': event.get('thinking', ''), 'points_balance': float(final_balance), 'message_id': new_msg_id, 'ai_daily_remaining': chat_free_remaining}, ensure_ascii=False)}\n\n"
                 elif event["type"] == "error":
                     refunded = True
                     _refund_once()

@@ -72,6 +72,107 @@ class PointsService:
         return {"balance": balance, **breakdown}
 
     @classmethod
+    def get_ai_daily_quota(cls, user_id: int, is_free_user: bool) -> dict:
+        """AI 助手每日免费次数查询（只读展示，不落库）。
+
+        - 非免费用户：total=0, remaining=0（订阅用户不消耗每日次数）
+        - 免费用户：total=全局 ai_daily_free_quota；ai_daily_quota_date 不是今天（含 NULL）
+          时展示 remaining=total（懒重置，展示用），否则展示字段值。
+        """
+        total = int(get_limit_config()["ai_daily_free_quota"])
+        if not is_free_user:
+            return {"total": 0, "remaining": 0}
+        today = datetime.now().strftime("%Y-%m-%d")
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT ai_daily_quota_remaining, ai_daily_quota_date FROM users WHERE id = %s",
+                (user_id,),
+            ).fetchone()
+        if not row:
+            return {"total": total, "remaining": total}
+        date = row["ai_daily_quota_date"]
+        if date is None or date.strftime("%Y-%m-%d") != today:
+            return {"total": total, "remaining": total}
+        return {"total": total, "remaining": max(0, int(row["ai_daily_quota_remaining"] or 0))}
+
+    @classmethod
+    def consume_ai_chat(cls, user_id: int, amount: float, description: str, request_key: str, is_free_user: bool, model_id: str = "") -> dict:
+        """AI 助手对话预扣：免费用户优先消耗每日免费次数（固定 1 次/对话），
+        次数用尽或订阅用户则扣通用积分（users.points）。
+
+        返回 {"mode": "free"|"paid", "balance": Decimal, "remaining": int}；
+        余额不足时抛 ValueError（由调用方转 402）。
+        """
+        amount = _point_amount(amount)
+        if amount <= 0:
+            return {"mode": "paid", "balance": cls.get_balance(user_id), "remaining": 0}
+        today = datetime.now().strftime("%Y-%m-%d")
+        total = int(get_limit_config()["ai_daily_free_quota"])
+        with get_db() as conn:
+            user = conn.execute("SELECT id FROM users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
+            if not user:
+                raise ValueError("用户不存在")
+            # 幂等：request_key 已有流水（免费标记 amount=0 或普通负流水）→ 返回当前状态，不重复扣
+            if request_key:
+                existing = conn.execute(
+                    "SELECT type FROM point_transactions WHERE request_key = %s", (request_key,),
+                ).fetchone()
+                if existing:
+                    cur = conn.execute("SELECT points, ai_daily_quota_remaining FROM users WHERE id = %s", (user_id,)).fetchone()
+                    mode = "free" if existing["type"] == "ai_daily_free" else "paid"
+                    return {"mode": mode, "balance": _point_amount(cur["points"] or 0), "remaining": int(cur["ai_daily_quota_remaining"] or 0)}
+            if is_free_user:
+                # 懒重置：当天首次使用时把剩余次数重置为 total（仅当日期不是今天时生效）
+                conn.execute(
+                    "UPDATE users SET ai_daily_quota_remaining = %s, ai_daily_quota_date = %s WHERE id = %s AND ai_daily_quota_date IS DISTINCT FROM %s",
+                    (total, today, user_id, today),
+                )
+                row = conn.execute("SELECT ai_daily_quota_remaining FROM users WHERE id = %s", (user_id,)).fetchone()
+                if row["ai_daily_quota_remaining"] is not None and int(row["ai_daily_quota_remaining"]) > 0:
+                    conn.execute("UPDATE users SET ai_daily_quota_remaining = ai_daily_quota_remaining - 1 WHERE id = %s", (user_id,))
+                    cur = conn.execute("SELECT points, ai_daily_quota_remaining FROM users WHERE id = %s", (user_id,)).fetchone()
+                    balance = _point_amount(cur["points"] or 0)
+                    remaining = int(cur["ai_daily_quota_remaining"] or 0)
+                    # amount=0 免费次数扣减标记：仅用于幂等与流水可见性，不动积分
+                    conn.execute(
+                        """INSERT INTO point_transactions (user_id, amount, balance_after, type, description, request_key, model_id)
+                           VALUES (%s, 0, %s, 'ai_daily_free', %s, %s, %s) ON CONFLICT DO NOTHING""",
+                        (user_id, balance, description, request_key, model_id or None),
+                    )
+                    return {"mode": "free", "balance": balance, "remaining": remaining}
+            # 订阅用户或免费次数已用尽 → 扣通用积分（余额不足抛 ValueError）
+            balance = cls._consume_in_conn(conn, user_id, amount, description, tx_type="chat_consume", request_key=request_key, model_id=model_id)
+            return {"mode": "paid", "balance": balance, "remaining": 0}
+
+    @classmethod
+    def refund_ai_chat(cls, user_id: int, amount: float, description: str, request_key: str, mode: str, model_id: str = "") -> Decimal:
+        """AI 助手对话失败退款。
+
+        - mode != "free"：原样委托 cls.refund（普通积分退款，含桶分配回退）
+        - mode == "free"：免费次数 +1（幂等：退款标记流水已存在则直接返回当前余额）
+        """
+        if mode != "free":
+            return cls.refund(user_id, amount, description, request_key=request_key, tx_type="chat_refund", model_id=model_id)
+        with get_db() as conn:
+            user = conn.execute("SELECT id FROM users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
+            if not user:
+                raise ValueError("用户不存在")
+            if request_key:
+                existing = conn.execute(
+                    "SELECT 1 FROM point_transactions WHERE request_key = %s AND amount = 0", (request_key,),
+                ).fetchone()
+                if existing:
+                    return cls._balance_in_conn(conn, user_id)
+            conn.execute("UPDATE users SET ai_daily_quota_remaining = ai_daily_quota_remaining + 1 WHERE id = %s", (user_id,))
+            balance = cls._balance_in_conn(conn, user_id)
+            conn.execute(
+                """INSERT INTO point_transactions (user_id, amount, balance_after, type, description, request_key, model_id)
+                   VALUES (%s, 0, %s, 'ai_daily_free_refund', %s, %s, %s) ON CONFLICT DO NOTHING""",
+                (user_id, balance, description, request_key, model_id or None),
+            )
+            return balance
+
+    @classmethod
     def add_points(cls, user_id: int, amount: float, tx_type: str, description: str = "", conn=None, request_key: str = "", recharge_request_id=None) -> Decimal:
         amount = _point_amount(amount)
         if amount <= 0:
