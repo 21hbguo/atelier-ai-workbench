@@ -37,10 +37,26 @@ SANDBOXED_TOOLS = frozenset({
     "file_ops_delete",
 })
 
-# 全局沙箱并发上限：同时最多运行 MAX_CONCURRENT_SANDBOXES 个受限子进程，
-# 防多用户同时起沙箱压垮服务器（per-user 锁之上再加全局信号量）
-MAX_CONCURRENT_SANDBOXES = 8
-_sem = asyncio.Semaphore(MAX_CONCURRENT_SANDBOXES)
+# 全局沙箱并发上限：同时最多运行 N 个受限子进程，防多用户同时起沙箱压垮服务器
+# （per-user 锁之上再加全局信号量）。可通过环境变量 SANDBOX_MAX_CONCURRENT 配置，默认 8。
+_SANDBOX_DEFAULT_MAX = 8
+_sem = None  # 懒加载：Semaphore 需在事件循环可用后创建，且便于测试覆盖
+
+
+def _max_concurrent_sandboxes() -> int:
+    """读取环境变量 SANDBOX_MAX_CONCURRENT，非法值/未设置回退默认 8。"""
+    try:
+        v = int(os.getenv("SANDBOX_MAX_CONCURRENT", "8"))
+    except (TypeError, ValueError):
+        return _SANDBOX_DEFAULT_MAX
+    return v if v >= 1 else _SANDBOX_DEFAULT_MAX
+
+
+def _sandbox_semaphore() -> asyncio.Semaphore:
+    global _sem
+    if _sem is None:
+        _sem = asyncio.Semaphore(_max_concurrent_sandboxes())
+    return _sem
 
 # prlimit 资源上限
 CPU_SECONDS = 10           # --cpu=10
@@ -173,8 +189,8 @@ async def run_sandboxed(
         _locks[user_id] = lock
     async with lock:
         # 全局并发上限：per-user 锁内、起子进程前获取信号量，
-        # 限制同时运行的沙箱子进程总数（默认 8），防多用户并发压垮服务器
-        async with _sem:
+        # 限制同时运行的沙箱子进程总数（默认 8，环境变量 SANDBOX_MAX_CONCURRENT 可调）
+        async with _sandbox_semaphore():
             return await _run_sandboxed_locked(name, args, ctx, timeout, extra_module)
 
 

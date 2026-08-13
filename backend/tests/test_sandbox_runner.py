@@ -193,3 +193,24 @@ def test_sandbox_nproc_limits_forkbomb(ws):
     assert result, "应返回非空错误文本"
     assert result.startswith("工具执行失败"), result
     assert elapsed < 30, f"fork bomb 未被快速终止（{elapsed:.1f}s）"
+
+
+# ---------- 并发上限可配置 ----------
+
+def test_max_concurrent_default():
+    import backend.services.agent.sandbox as sb
+    assert sb._max_concurrent_sandboxes() == 8
+
+
+def test_max_concurrent_from_env(monkeypatch):
+    import backend.services.agent.sandbox as sb
+    monkeypatch.setenv("SANDBOX_MAX_CONCURRENT", "3")
+    assert sb._max_concurrent_sandboxes() == 3
+
+
+def test_max_concurrent_invalid_env_fallback(monkeypatch):
+    import backend.services.agent.sandbox as sb
+    monkeypatch.setenv("SANDBOX_MAX_CONCURRENT", "0")
+    assert sb._max_concurrent_sandboxes() == 8
+    monkeypatch.setenv("SANDBOX_MAX_CONCURRENT", "abc")
+    assert sb._max_concurrent_sandboxes() == 8
