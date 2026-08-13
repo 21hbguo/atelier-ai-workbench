@@ -142,6 +142,7 @@ def _create_cycle_in_conn(conn, user_id: int, subscription_id: int, plan: dict, 
     days = max(1, int(plan.get("cycle_days") or 30))
     end = start + timedelta(days=days)
     points = max(Decimal(0), _points(plan.get("grant_points")))
+    is_credits = (plan.get("features") or {}).get("package_type") == "credits"
     cycle = conn.execute(
         """INSERT INTO subscription_cycles
            (subscription_id, plan_id, period_start, period_end, granted_points, remaining_points, entitlements_snapshot)
@@ -161,10 +162,17 @@ def _create_cycle_in_conn(conn, user_id: int, subscription_id: int, plan: dict, 
     )
     if points:
         from backend.services.points_service import PointsService
-        PointsService.grant_subscription_points_in_conn(
-            conn, user_id, bucket["id"], cycle_id, points,
-            f"{plan['name']} 周期积分", f"subscription-grant:{cycle_id}",
-        )
+        if is_credits:
+            # 积分包：永久积分直接进永久桶（换套餐/周期过期都不清零），不走订阅桶
+            PointsService.add_points(
+                conn=conn, user_id=user_id, amount=float(points), tx_type="plan_credits_grant",
+                description=f"{plan['name']} 永久积分", request_key=f"credits-plan-grant:{order_id or cycle_id}",
+            )
+        else:
+            PointsService.grant_subscription_points_in_conn(
+                conn, user_id, bucket["id"], cycle_id, points,
+                f"{plan['name']} 周期积分", f"subscription-grant:{cycle_id}",
+            )
         cycle = conn.execute("SELECT * FROM subscription_cycles WHERE id = %s", (cycle_id,)).fetchone()
     return dict(cycle)
 
@@ -317,7 +325,11 @@ def activate_plan_in_conn(conn, user_id: int, plan: dict, order_id=None) -> str:
     current_plan = state["plan"]
     current_cycle = state["cycle"]
     now = datetime.now()
-    if not current_plan.get("is_free") and state["subscription"].get("expires_at") and state["subscription"]["expires_at"] > now:
+    current_credits = (current_plan.get("features") or {}).get("package_type") == "credits"
+    new_credits = (plan.get("features") or {}).get("package_type") == "credits"
+    # 积分包是永久积分购买，任何时候都立即生效；仅会员套餐在有效期内再次购买才排队到下一周期
+    if (not current_plan.get("is_free") and not current_credits and not new_credits
+            and state["subscription"].get("expires_at") and state["subscription"]["expires_at"] > now):
         conn.execute(
             "UPDATE user_subscriptions SET next_plan_id = %s, last_order_id = COALESCE(%s, last_order_id), updated_at = NOW() WHERE id = %s",
             (plan["id"], order_id, state["subscription"]["id"]),
@@ -412,7 +424,7 @@ def list_subscriptions(page: int = 1, size: int = 20, query: str = "") -> dict:
             f"SELECT COUNT(*) AS cnt FROM user_subscriptions s JOIN users u ON u.id = s.user_id {where_sql}", params
         ).fetchone()["cnt"]
         rows = conn.execute(
-            f"""SELECT s.*, u.username, u.nickname, p.name AS plan_name,
+            f"""SELECT s.*, u.username, u.nickname, p.name AS plan_name, p.features->>'package_type' AS plan_package_type,
                        c.period_start, c.period_end, c.granted_points, c.remaining_points
                 FROM user_subscriptions s JOIN users u ON u.id = s.user_id
                 JOIN subscription_plans p ON p.id = s.plan_id

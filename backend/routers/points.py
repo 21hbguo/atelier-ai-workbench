@@ -183,7 +183,7 @@ async def create_recharge_request(body: RechargeCreateRequest, request: Request,
                     "remaining_seconds": remaining,
                     "message": "已有待支付请求",
                 }
-        discount = 0 if plan_row else _generate_unique_discount(conn, user["user_id"])
+        discount = _generate_unique_discount(conn, user["user_id"])
         actual_amount = round(amount - discount, 2)
         tx_no = f"RCH{datetime.now().strftime('%Y%m%d%H%M%S')}{user['user_id']}{secrets.token_hex(4).upper()}"
         invite_snapshot=InviteService.build_recharge_snapshot(conn,user["user_id"],amount,points,body.invite_code,ip) if InviteService.is_enabled() else {"inviter_user_id":None,"invite_code":"","invite_discount_percent_snapshot":0,"invite_rebate_percent_snapshot":0,"invite_bonus_points":0,"invite_rebate_points":0,"same_ip_hit":False,"same_ip_reason":""}

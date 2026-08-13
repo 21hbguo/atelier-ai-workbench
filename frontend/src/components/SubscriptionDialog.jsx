@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, X } from 'lucide-react'
+import { ArrowLeft, X, Check } from 'lucide-react'
 import { configAPI, pointsAPI, subscriptionAPI } from '../api'
 import { readUser } from '../auth'
 import { useAppDialog } from './AppDialogProvider'
@@ -102,7 +102,7 @@ export default function SubscriptionDialog({ open, onClose }) {
       <div className="absolute inset-0 bg-black/50 backdrop-blur-md" />
       <div
         className="relative w-full max-w-4xl max-h-[85vh] overflow-hidden rounded-2xl flex flex-col"
-        style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }}
+        style={{ background: 'linear-gradient(180deg, color-mix(in srgb, var(--accent) 4%, var(--bg-primary)), var(--bg-primary) 180px)', border: '1px solid var(--border-color)' }}
         onClick={e => e.stopPropagation()}
       >
         {/* 头部 */}
@@ -113,7 +113,7 @@ export default function SubscriptionDialog({ open, onClose }) {
               {selectedPlan
                 ? `应付 ¥${selectedPlan.price_rmb} · ${selectedPlan.name}`
                 : hasPlan
-                  ? `当前套餐：${subscription.plan.name}${subscription.cycle?.period_end ? ` · 周期至 ${formatDate(subscription.cycle.period_end)}` : ''}`
+                  ? `当前套餐：${subscription.plan.name}${subscription.plan.features?.package_type !== 'credits' && subscription.cycle?.period_end ? ` · 周期至 ${formatDate(subscription.cycle.period_end)}` : ''}`
                   : '当前为免费套餐，升级解锁更多权益'}
             </p>
           </div>
@@ -132,7 +132,7 @@ export default function SubscriptionDialog({ open, onClose }) {
               >
                 <ArrowLeft size={14} /> 返回套餐
               </button>
-              <div className="mt-3 rounded-2xl border p-5 text-center" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
+              <div className="mt-3 rounded-2xl border p-5 text-center" style={{ background: 'linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, var(--bg-card)), var(--bg-card))', borderColor: 'color-mix(in srgb, var(--accent) 25%, var(--border-color))' }}>
                 <div className="text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>{selectedPlan.name}</div>
                 <div className="text-3xl font-bold leading-none tabular-nums" style={{ color: 'var(--text-primary)' }}>
                   <span className="text-base font-semibold mr-0.5" style={{ color: 'var(--text-secondary)' }}>¥</span>{selectedPlan.price_rmb}
@@ -155,14 +155,6 @@ export default function SubscriptionDialog({ open, onClose }) {
                   )
                 })}
               </div>
-              {payConfig[`${channel}_pay_qr_url`] ? (
-                <div className="mt-4 text-center">
-                  <img src={payConfig[`${channel}_pay_qr_url`]} alt="收款二维码" className="mx-auto w-36 h-36 object-contain rounded-xl border" style={{ borderColor: 'var(--border-color)' }} />
-                  <div className="mt-1.5 text-xs" style={{ color: 'var(--text-secondary)' }}>请使用{channelLabel[channel]}扫码支付 ¥{selectedPlan.price_rmb}</div>
-                </div>
-              ) : (
-                <div className="mt-4 text-center text-xs" style={{ color: 'var(--color-warning)' }}>{channelLabel[channel]}收款码未配置，请切换其他支付方式</div>
-              )}
               <button
                 type="button"
                 disabled={creatingPay}
@@ -186,67 +178,91 @@ export default function SubscriptionDialog({ open, onClose }) {
             <div className="space-y-7">
               {[
                 { id: 'member', eyebrow: 'Membership', title: '会员订阅', subtitle: '按周期付费，每日高额对话 + 完整功能', plans: plans.filter(p => !p.is_free && (p.features?.package_type || 'membership') !== 'credits') },
-                { id: 'credits', eyebrow: 'Credits', title: '积分充值', subtitle: '一次购买，按需使用', plans: plans.filter(p => !p.is_free && p.features?.package_type === 'credits') },
-              ].map(section => section.plans.length > 0 && (
-                <div key={section.id}>
-                  <div className="mb-3 flex flex-wrap items-baseline gap-2">
-                    <span className="text-[10px] font-medium uppercase tracking-[0.2em]" style={{ color: 'var(--text-secondary)' }}>{section.eyebrow}</span>
-                    <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{section.title}</h3>
-                    <span className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>{section.subtitle}</span>
-                  </div>
-                  <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-                    {section.plans.map(plan => {
-                      const isCurrent = hasPlan && plan.id === subscription.plan.id
-                      const orig = Number(plan.features?.original_price_rmb)
-                      const price = Number(plan.price_rmb)
-                      const showOrig = Number.isFinite(orig) && orig > price
-                      const discount = showOrig ? `${((price / orig) * 10).toFixed(1).replace(/\.0$/, '')}折` : null
-                      const isCredit = plan.features?.package_type === 'credits'
-                      return (
-                        <div key={plan.id} className="flex flex-col p-4 rounded-2xl border" style={{ borderColor: isCurrent ? 'var(--accent)' : 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
-                          <div className="flex items-start justify-between gap-2">
-                            <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{plan.name}</span>
-                            {discount && <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: 'color-mix(in srgb, var(--accent) 12%, transparent)', color: 'var(--accent)' }}>{discount}</span>}
-                          </div>
-                          <div className="mt-1 text-xs leading-5" style={{ color: 'var(--text-secondary)' }}>{plan.description || '按周期发放积分和功能权益'}</div>
-                          <div className="mt-2 flex flex-wrap items-baseline gap-1.5">
-                            {plan.is_free ? (
-                              <span className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>免费</span>
-                            ) : (
-                              <>
-                                <span className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>¥</span>
-                                <span className="text-xl font-bold leading-none tabular-nums" style={{ color: 'var(--text-primary)' }}>{price}</span>
-                                {showOrig && <span className="text-[10px] tabular-nums line-through" style={{ color: 'var(--text-secondary)' }}>¥{orig}</span>}
-                              </>
+                { id: 'credits', eyebrow: 'Credits', title: '积分充值', subtitle: '一次购买，永久有效', plans: plans.filter(p => !p.is_free && p.features?.package_type === 'credits') },
+              ].map(section => {
+                if (section.plans.length === 0) return null
+                const bestId = section.plans.filter(p => !p.is_free).reduce((acc, p) => {
+                  const unit = p.features?.package_type === 'credits' ? Number(p.grant_points) : Number(p.cycle_days)
+                  const v = unit > 0 ? Number(p.price_rmb) / unit : Infinity
+                  return v < acc.v ? { id: p.id, v } : acc
+                }, { id: null, v: Infinity }).id
+                return (
+                  <div key={section.id}>
+                    <div className="mb-3 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--accent)' }}>{section.eyebrow}</span>
+                      <span className="h-3 w-px" style={{ background: 'var(--border-color)' }} />
+                      <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{section.title}</h3>
+                      <span className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>{section.subtitle}</span>
+                    </div>
+                    <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+                      {section.plans.map(plan => {
+                        const isCurrent = hasPlan && plan.id === subscription.plan.id
+                        const orig = Number(plan.features?.original_price_rmb)
+                        const price = Number(plan.price_rmb)
+                        const showOrig = Number.isFinite(orig) && orig > price
+                        const discount = showOrig ? `${((price / orig) * 10).toFixed(1).replace(/\.0$/, '')}折` : null
+                        const isCredit = plan.features?.package_type === 'credits'
+                        const isBest = !plan.is_free && plan.id === bestId
+                        const cycleText = isCredit ? '永久有效' : (plan.cycle_days >= 36500 ? '长期有效' : `${plan.cycle_days} 天有效`)
+                        const rows = isCredit
+                          ? [`${formatPoints(plan.grant_points)} 积分`, cycleText]
+                          : [`每日对话 ${plan.features?.daily_quota == null ? '不限' : `${Number(plan.features.daily_quota).toLocaleString()} 次`}`, cycleText, ...(Number(plan.grant_points) > 0 ? [`开通赠 ${formatPoints(plan.grant_points)} 积分`] : [])]
+                        return (
+                          <div
+                            key={plan.id}
+                            className={`relative flex flex-col rounded-2xl border p-4 transition-all duration-200 ${isCurrent ? '' : 'hover:-translate-y-0.5'}`}
+                            style={{
+                              borderColor: isCurrent ? 'var(--accent)' : 'color-mix(in srgb, var(--accent) 18%, var(--border-color))',
+                              background: 'linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, var(--bg-card)), var(--bg-card) 60%)',
+                              boxShadow: isCurrent ? '0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent), var(--shadow-md)' : 'var(--shadow-sm)',
+                            }}
+                          >
+                            {isBest && (
+                              <span className="absolute -top-2.5 left-3 rounded-full px-2 py-0.5 text-[10px] font-semibold text-white" style={{ background: 'linear-gradient(135deg, var(--accent), var(--accent-hover))', boxShadow: '0 4px 10px color-mix(in srgb, var(--accent) 35%, transparent)' }}>
+                                最划算
+                              </span>
                             )}
-                          </div>
-                          {!plan.is_free && (
-                            <div className="mt-2 text-[11px] leading-5" style={{ color: 'var(--text-primary)' }}>
-                              {isCredit ? (
-                                <span><span className="tabular-nums font-semibold">{formatPoints(plan.grant_points)}</span> 积分</span>
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{plan.name}</span>
+                              {discount && <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: 'color-mix(in srgb, var(--accent) 12%, transparent)', color: 'var(--accent)' }}>{discount}</span>}
+                            </div>
+                            <div className="mt-1 text-xs leading-5" style={{ color: 'var(--text-secondary)' }}>{plan.description || '按周期发放积分和功能权益'}</div>
+                            <div className="mt-3 flex items-baseline gap-1.5">
+                              {plan.is_free ? (
+                                <span className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>免费</span>
                               ) : (
                                 <>
-                                  <span>每日对话 <span className="tabular-nums font-semibold">{plan.features?.daily_quota == null ? '不限' : `${Number(plan.features.daily_quota).toLocaleString()} 次`}</span></span>
-                                  <span className="mx-1.5" style={{ color: 'var(--text-secondary)' }}>·</span>
-                                  <span>{plan.cycle_days >= 36500 ? '长期有效' : `${plan.cycle_days} 天有效`}</span>
+                                  <span className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>¥</span>
+                                  <span className="text-2xl font-bold leading-none tabular-nums" style={{ color: 'var(--text-primary)' }}>{price}</span>
+                                  {showOrig && <span className="text-[10px] tabular-nums line-through" style={{ color: 'var(--text-secondary)' }}>¥{orig}</span>}
                                 </>
                               )}
                             </div>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => startPay(plan)}
-                            className={`mt-auto pt-4 w-full flex items-center justify-center px-3 py-2 rounded-2xl text-sm font-medium transition-all ${isCurrent ? 'opacity-60' : 'text-white'}`}
-                            style={isCurrent ? { border: '1px solid var(--border-color)', color: 'var(--text-secondary)', background: 'transparent' } : { background: 'var(--accent)' }}
-                          >
-                            {plan.is_free ? '免费使用' : isCurrent ? '当前套餐' : '购买 / 续费'}
-                          </button>
-                        </div>
-                      )
-                    })}
+                            <div className="mt-3 flex-1 space-y-1.5">
+                              {rows.map(r => (
+                                <div key={r} className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-primary)' }}>
+                                  <Check size={12} strokeWidth={3} className="shrink-0" style={{ color: 'var(--accent)' }} />
+                                  <span>{r}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => startPay(plan)}
+                              className={`mt-4 flex h-10 w-full items-center justify-center rounded-xl text-sm font-medium transition-all duration-150 active:scale-[0.98] ${isCurrent ? '' : 'hover:brightness-105'}`}
+                              style={isCurrent
+                                ? { border: '1px solid color-mix(in srgb, var(--accent) 35%, var(--border-color))', color: 'var(--accent)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)' }
+                                : { background: 'linear-gradient(135deg, var(--accent), var(--accent-hover))', color: '#fff', boxShadow: '0 6px 16px color-mix(in srgb, var(--accent) 25%, transparent)' }}
+                            >
+                              {plan.is_free ? '免费使用' : isCurrent ? '当前套餐' : '购买 / 续费'}
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>

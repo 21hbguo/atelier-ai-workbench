@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   Coins, ArrowUpCircle, ArrowDownCircle, RefreshCw, User, Mail,
-  Gift, Wallet, KeyRound, HeartHandshake, X, CheckCircle
+  Gift, Wallet, KeyRound, HeartHandshake, X, CheckCircle, Check
 } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
 import Pagination from '../components/Pagination'
@@ -61,9 +61,9 @@ function getCountdownTone(seconds) {
 }
 
 const tabList = [
-  { key: 'subscription', label: '充值中心' },
+  // { key: 'subscription', label: '充值中心' }, // 暂不显示（临时隐藏，恢复时取消注释）
   { key: 'records', label: '积分记录' },
-  { key: 'invite', label: '邀请中心' },
+  // { key: 'invite', label: '邀请中心' }, // 暂不显示（临时隐藏，恢复时取消注释）
   { key: 'redeem', label: '兑换码' },
 ]
 
@@ -150,6 +150,8 @@ export default function WalletPage() {
   const [subscriptionPrices, setSubscriptionPrices] = useState([])
   const [subscriptionChannel, setSubscriptionChannel] = useState('alipay')
   const [subscriptionSubmitting, setSubscriptionSubmitting] = useState(false)
+  const [subscriptionPayOpen, setSubscriptionPayOpen] = useState(false)
+  const [subscriptionPayOrder, setSubscriptionPayOrder] = useState(null)
   const [subscriptionPayerName, setSubscriptionPayerName] = useState('')
   const [subscriptionTxNo, setSubscriptionTxNo] = useState('')
   const [subscriptionProofUrl, setSubscriptionProofUrl] = useState('')
@@ -200,11 +202,17 @@ export default function WalletPage() {
   useEffect(() => { fetchSubscription() }, [])
 
   const handleSubscriptionOrder = async plan => {
+    const qrUrl = payConfig[`${subscriptionChannel}_pay_qr_url`]
+    if (!qrUrl) {
+      dialog.alert('当前支付方式未配置收款码，请切换支付方式或联系管理员。')
+      return
+    }
     setSubscriptionSubmitting(true)
     try {
-      await subscriptionAPI.createOrder({ plan_id: plan.id, channel: subscriptionChannel, payer_name: subscriptionPayerName, tx_no: subscriptionTxNo, proof_url: subscriptionProofUrl })
+      const { data } = await subscriptionAPI.createOrder({ plan_id: plan.id, channel: subscriptionChannel, payer_name: subscriptionPayerName, tx_no: subscriptionTxNo, proof_url: subscriptionProofUrl })
       await fetchSubscription()
-      dialog.alert('订阅订单已创建，请按所选方式完成支付并上传凭证。')
+      setSubscriptionPayOrder(data || null)
+      setSubscriptionPayOpen(true)
     } catch (e) {
       dialog.alert(e.message || '创建订阅订单失败')
     } finally {
@@ -659,9 +667,8 @@ export default function WalletPage() {
               <div className="flex items-center justify-between gap-3 mb-3">
                 <div>
                   <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{subscription.plan?.name || '免费套餐'}</div>
-                  <div className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>当前周期至 {formatTime(subscription.cycle?.period_end)}</div>
+                  <div className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>{subscription.plan?.features?.package_type === 'credits' ? '永久有效' : `当前周期至 ${formatTime(subscription.cycle?.period_end)}`}</div>
                 </div>
-                <button onClick={() => selectTab('subscription')} className="px-3 py-1.5 rounded-2xl text-xs text-white" style={{ background: 'var(--accent)' }}>管理套餐</button>
               </div>
               <div className="grid grid-cols-3 gap-3 text-center">
                 <div><div className="text-lg font-semibold" style={{ color: 'var(--accent)' }}>{formatPoints(subscription.cycle?.remaining_points ?? 0)}</div><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>周期积分</div></div>
@@ -816,14 +823,40 @@ export default function WalletPage() {
                 <input value={subscriptionTxNo} onChange={e => setSubscriptionTxNo(e.target.value)} placeholder="交易号（可选）" className="px-3 py-2 rounded-2xl text-xs border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 <input value={subscriptionProofUrl} onChange={e => setSubscriptionProofUrl(e.target.value)} placeholder="支付凭证链接（可选）" className="px-3 py-2 rounded-2xl text-xs border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
-              {payConfig[`${subscriptionChannel}_pay_qr_url`] && <img src={payConfig[`${subscriptionChannel}_pay_qr_url`]} alt="支付二维码" className="w-28 h-28 object-contain rounded-xl border" style={{ borderColor: 'var(--border-color)' }} />}
               <div className="grid gap-3 lg:grid-cols-3">
-                {subscriptionPlans.map(plan => <div key={plan.id} className="p-4 rounded-2xl border flex flex-col" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
-                  <div className="flex items-start justify-between gap-2"><div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{plan.name}</div><div className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>¥{plan.price_rmb}</div></div>
-                  <div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{plan.description || '按周期发放积分和功能权益'}</div>
-                  <div className="mt-3 text-sm" style={{ color: 'var(--text-primary)' }}>{formatPoints(plan.grant_points)} 积分 / {plan.cycle_days} 天</div>
-                  {!plan.is_free && <button disabled={subscriptionSubmitting} onClick={() => handleSubscriptionOrder(plan)} className="mt-auto pt-4 w-full px-3 py-2 rounded-2xl text-sm text-white disabled:opacity-50" style={{ background: 'var(--accent)' }}>{subscriptionSubmitting ? '提交中...' : '购买 / 续费'}</button>}
-                </div>)}
+                {subscriptionPlans.map(plan => {
+                  const orig = Number(plan.features?.original_price_rmb)
+                  const price = Number(plan.price_rmb)
+                  const showOrig = Number.isFinite(orig) && orig > price
+                  const cycleText = plan.features?.package_type === 'credits' ? '永久有效' : (plan.cycle_days >= 36500 ? '长期有效' : `${plan.cycle_days} 天有效`)
+                  return (
+                    <div key={plan.id} className="flex flex-col rounded-2xl border p-4 transition-all duration-200 hover:-translate-y-0.5" style={{ borderColor: 'color-mix(in srgb, var(--accent) 18%, var(--border-color))', background: 'linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, var(--bg-card)), var(--bg-card) 60%)', boxShadow: 'var(--shadow-sm)' }}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{plan.name}</div>
+                        <div className="shrink-0 text-right">
+                          <div className="text-lg font-bold leading-none tabular-nums" style={{ color: 'var(--accent)' }}>¥{plan.price_rmb}</div>
+                          {showOrig && <div className="mt-0.5 text-[10px] tabular-nums line-through" style={{ color: 'var(--text-secondary)' }}>¥{orig}</div>}
+                        </div>
+                      </div>
+                      <div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>{plan.description || '按周期发放积分和功能权益'}</div>
+                      <div className="mt-3 flex-1 space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-primary)' }}>
+                          <Check size={12} strokeWidth={3} className="shrink-0" style={{ color: 'var(--accent)' }} />
+                          <span>{formatPoints(plan.grant_points)} 积分</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-primary)' }}>
+                          <Check size={12} strokeWidth={3} className="shrink-0" style={{ color: 'var(--accent)' }} />
+                          <span>{cycleText}</span>
+                        </div>
+                      </div>
+                      {!plan.is_free && (
+                        <button disabled={subscriptionSubmitting} onClick={() => handleSubscriptionOrder(plan)} className="mt-4 flex h-10 w-full items-center justify-center rounded-xl text-sm font-medium text-white transition-all duration-150 hover:brightness-105 active:scale-[0.98] disabled:opacity-50" style={{ background: 'linear-gradient(135deg, var(--accent), var(--accent-hover))', boxShadow: '0 6px 16px color-mix(in srgb, var(--accent) 25%, transparent)' }}>
+                          {subscriptionSubmitting ? '提交中...' : '购买 / 续费'}
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
               <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
                 <div className="px-4 py-3 text-sm font-semibold" style={{ color: 'var(--text-primary)', background: 'var(--bg-card)' }}>订阅订单</div>
@@ -969,6 +1002,63 @@ export default function WalletPage() {
                 </div>
               </div>
               </div>
+            {subscriptionPayOpen && subscriptionPayOrder && (
+              <div
+                className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+                onClick={() => setSubscriptionPayOpen(false)}
+              >
+                <div
+                  className="relative w-full max-w-sm rounded-2xl text-center max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col"
+                  style={{ background: 'var(--bg-card)' }}
+                  onClick={e => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setSubscriptionPayOpen(false)}
+                    className="absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center"
+                    style={{ background: 'var(--bg-primary)', color: 'var(--text-secondary)' }}
+                  >
+                    <X size={16} />
+                  </button>
+                  <div className="shrink-0 border-b px-6 pt-6 pb-4 text-left" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+                    <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{subscriptionPayOrder.plan_snapshot?.name || '订阅套餐'}</div>
+                    <div className="text-2xl font-bold mt-1 tabular-nums" style={{ color: 'var(--accent)' }}>¥{subscriptionPayOrder.amount_rmb}</div>
+                    <div className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>{channelLabel[subscriptionPayOrder.channel] || '扫码'}支付</div>
+                  </div>
+                  <div className="flex-1 overflow-y-auto px-6 pb-6 pt-4">
+                    {subscriptionPayOrder.order_no && (
+                      <div className="text-xs mb-3 font-mono" style={{ color: 'var(--text-secondary)' }}>订单号：{subscriptionPayOrder.order_no}</div>
+                    )}
+                    {payConfig[`${subscriptionPayOrder.channel}_pay_qr_url`] ? (
+                      <img
+                        src={payConfig[`${subscriptionPayOrder.channel}_pay_qr_url`]}
+                        alt="支付二维码"
+                        className="w-48 h-48 object-contain rounded-2xl mx-auto mb-4"
+                      />
+                    ) : (
+                      <div
+                        className="w-48 h-48 flex items-center justify-center rounded-2xl mx-auto mb-4"
+                        style={{ background: 'var(--bg-primary)' }}
+                      >
+                        <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>支付二维码未配置</span>
+                      </div>
+                    )}
+                    <p className="text-sm font-semibold mt-2" style={{ color: 'var(--text-primary)' }}>请扫码完成支付</p>
+                    <p className="text-xs mt-2 leading-5" style={{ color: 'var(--text-secondary)' }}>
+                      支付完成后，请返回页面填写付款人姓名 / 交易号 / 支付凭证链接并提交，人工审核通过后套餐自动生效。
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setSubscriptionPayOpen(false)}
+                      className="mt-4 w-full px-4 py-2.5 rounded-2xl text-sm font-medium text-white"
+                      style={{ background: 'var(--accent)' }}
+                    >
+                      关闭
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
             </div>
           )}
 

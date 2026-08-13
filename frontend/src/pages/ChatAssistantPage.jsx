@@ -475,7 +475,6 @@ function PendingQueueBubbles({ items }) {
 // memo：sending 引用变化（流式 flush/状态更新）时才重渲染；text 稳定后（停止/完成）不再被父组件其他状态变化波及
 const StreamBubble = memo(function StreamBubble({ sending, onStop, onRetry }) {
   const hasText = sending.text.length > 0
-  const mdHtml = useMemo(() => mdToHtml(sending.text), [sending.text])
   return (
     <div className="flex justify-start mb-4 animate-fade-in-up">
       <div className="max-w-[85%] sm:max-w-[78%] rounded-2xl px-4 py-3" style={{ background: 'var(--bg-ai-bubble)', boxShadow: 'var(--shadow-md)' }}>
@@ -514,8 +513,9 @@ const StreamBubble = memo(function StreamBubble({ sending, onStop, onRetry }) {
           </div>
         )}
         {hasText ? (
-          <div className="md-body text-sm" style={{ color: 'var(--text-primary)' }}
-            dangerouslySetInnerHTML={{ __html: mdHtml }} />
+          <div className="md-body text-sm" style={{ color: 'var(--text-primary)', whiteSpace: 'pre-wrap' }}>
+            {sending.text}
+          </div>
         ) : (
           <div className="flex items-center gap-1.5 py-1">
             <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--text-secondary)' }} />
@@ -554,6 +554,7 @@ const StreamBubble = memo(function StreamBubble({ sending, onStop, onRetry }) {
 // 后台图片任务轮询参数（SSE image_task 事件触发，见 ChatAssistantPage 内轮询逻辑）
 const IMAGE_POLL_INTERVAL_MS = 8000
 const IMAGE_POLL_MAX = 120 // 约 16 分钟上限（任务要求最长 15 分钟/120 次）
+const STREAM_RENDER_INTERVAL_MS = 100
 
 // 建议提示：综合主题（参考临时/frontend 版 family-meta.ts 的 starters 写法，非仅提示词相关）
 const EXAMPLES = [
@@ -1169,10 +1170,10 @@ export default function ChatAssistantPage() {
   const skipMessagesLoadRef = useRef(null)
   const effortRef = useRef(reasoningEffort)
   const modelIdRef = useRef(chatModelId)
-  // 流式渲染节流：chunk/thinking 高频到达时按帧合并 setState，
-  // 避免 mdToHtml 全量重渲染导致 UI 卡顿（感知为「卡顿后一次性出大量文本」）
+  // 流式输出先以纯文本渐进展示，完成后再做完整 Markdown 渲染；
+  // 高频 chunk/thinking 每 100ms 合并一次，避免持续占用主线程。
   const streamBufRef = useRef({ streamId: null, text: '', thinking: '' })
-  const streamRafRef = useRef(null)
+  const streamRenderTimerRef = useRef(null)
   // 本次流的引用来源累积（SSE citations 事件；按 url 去重，streamId 绑定防旧流迟到污染）
   const citationsRef = useRef({ streamId: null, items: [] })
   // 本次流的 widget 累积（SSE widget 事件；streamId 绑定防旧流迟到污染，模式同 citationsRef）
@@ -1180,9 +1181,12 @@ export default function ChatAssistantPage() {
   // 本次流的文件累积（SSE file 事件；streamId 绑定防旧流迟到污染，模式同 widgetsRef）
   const filesRef = useRef({ streamId: null, items: [] })
   const flushStreamBuf = useCallback(() => {
-    streamRafRef.current = null
+    streamRenderTimerRef.current = null
     const { streamId: sid, text, thinking } = streamBufRef.current
     setSending(prev => (prev && prev.streamId === sid) ? { ...prev, text, thinking } : prev)
+  }, [])
+  useEffect(() => () => {
+    if (streamRenderTimerRef.current) clearTimeout(streamRenderTimerRef.current)
   }, [])
   const [pendingQueue, setPendingQueue] = useState([])
 
@@ -1634,7 +1638,7 @@ export default function ChatAssistantPage() {
     filesRef.current = { streamId, items: [] }
     // 本次流开始：重置链接抓取状态（避免上一流的 url_status 残留）
     clearLinkTimer(); setLinkStatus(null)
-    if (streamRafRef.current) { cancelAnimationFrame(streamRafRef.current); streamRafRef.current = null }
+    if (streamRenderTimerRef.current) { clearTimeout(streamRenderTimerRef.current); streamRenderTimerRef.current = null }
     chatAPI.sendStream(sessionId, content, {
       signal: controller.signal,
       reasoning_effort: reasoningEffort,
@@ -1651,13 +1655,13 @@ export default function ChatAssistantPage() {
         const buf = streamBufRef.current
         if (buf.streamId !== streamId) return
         buf.text += String(data.text || '')
-        if (!streamRafRef.current) streamRafRef.current = requestAnimationFrame(flushStreamBuf)
+        if (!streamRenderTimerRef.current) streamRenderTimerRef.current = setTimeout(flushStreamBuf, STREAM_RENDER_INTERVAL_MS)
       },
       onThinking: data => {
         const buf = streamBufRef.current
         if (buf.streamId !== streamId) return
         buf.thinking += String(data.text || '')
-        if (!streamRafRef.current) streamRafRef.current = requestAnimationFrame(flushStreamBuf)
+        if (!streamRenderTimerRef.current) streamRenderTimerRef.current = setTimeout(flushStreamBuf, STREAM_RENDER_INTERVAL_MS)
       },
       onToolStatus: data => setSending(prev =>
         (prev && prev.streamId === streamId)

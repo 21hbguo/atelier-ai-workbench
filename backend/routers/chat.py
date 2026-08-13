@@ -79,18 +79,6 @@ def _owns_session(conn, session_id: int, user_id: int):
     return row
 
 
-# agent 模式默认启用的工具（rag_memory.store 为占位实现，不注册给模型）
-_AGENT_TOOLS = [
-    "rag_memory_search",
-    "document_summary_list",
-    "document_summary_summarize",
-    "web_search",
-    "fetch_url",
-    "file_ops_write_text",
-    "image_gen",
-]
-
-
 def _model_override(model: dict | None) -> dict:
     """模型档案 per-model 覆盖（与 ChatService.chat_stream 内部逻辑一致）。"""
     override = {}
@@ -729,7 +717,6 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
             tools_names.extend(["web_search", "fetch_url"])
         if entitlements["features"].get("file_write"):
             tools_names.extend([
-                "file_ops_write_text",
                 "file_ops_read", "file_ops_write", "file_ops_edit",
                 "file_ops_list", "file_ops_glob", "file_ops_grep",
                 "send_file",

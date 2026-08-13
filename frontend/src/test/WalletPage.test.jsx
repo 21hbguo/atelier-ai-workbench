@@ -195,10 +195,12 @@ describe('WalletPage', () => {
     await waitFor(() => expect(screen.getByText('输入已发放的兑换码，领取对应积分。')).toBeInTheDocument())
   })
 
-  it('opens the wallet tab specified by an invite deep link', async () => {
+  it('falls back to records tab for a hidden invite deep link', async () => {
     searchParamsMock.mockReturnValue([new URLSearchParams('tab=invite'), vi.fn()])
     render(<WalletPage />)
-    await waitFor(() => expect(screen.getAllByText('邀请中心').length).toBeGreaterThan(1))
+    await waitFor(() => {
+      expect(screen.queryByText('你的邀请码')).not.toBeInTheDocument()
+    })
   })
 
   describe('balance display', () => {
@@ -397,96 +399,17 @@ describe('WalletPage', () => {
       })
     })
 
-    it('switches to 充值中心 tab and shows 单次充值 block', async () => {
+    it('does not render the hidden 充值中心 tab', async () => {
       render(<WalletPage />)
-      fireEvent.click(screen.getByText('充值中心'))
-      expect(screen.getByText('单次充值')).toBeInTheDocument()
-    })
-
-    it('switches to invite tab', async () => {
-      render(<WalletPage />)
-      fireEvent.click(screen.getByText('邀请中心'))
       await waitFor(() => {
-        expect(screen.getByText('你的邀请码')).toBeInTheDocument()
-      })
-    })
-  })
-
-  describe('recharge flow', () => {
-    it('shows recharge packages on 充值中心 tab', async () => {
-      render(<WalletPage />)
-      fireEvent.click(screen.getByText('充值中心'))
-      expect(screen.getByText('轻量支持')).toBeInTheDocument()
-      expect(screen.getByText('常用支持')).toBeInTheDocument()
-    })
-
-    it('submits recharge request and shows QR modal', async () => {
-      createRechargeRequestMock.mockResolvedValue({
-        data: { id: 1, amount: 9.5, discount: 0.5, tx_no: 'TX001', remaining_seconds: 600 },
-      })
-      getRechargeRequestMock.mockResolvedValue({
-        data: { id: 1, channel: 'alipay', amount: 9.5, points: 100, status: 'pending', user_confirmed: false, created_at: '2026-05-10 00:00:00', remaining_seconds: 600 },
-      })
-      render(<WalletPage />)
-      fireEvent.click(screen.getByText('充值中心'))
-      await waitFor(() => {
-        expect(screen.getByText('轻量支持')).toBeInTheDocument()
-      })
-      const submitBtn = screen.getByRole('button', { name: /提交并获取支付二维码/ })
-      fireEvent.click(submitBtn)
-      await waitFor(() => {
-        expect(createRechargeRequestMock).toHaveBeenCalled()
-        expect(screen.getByText('10:00')).toBeInTheDocument()
+        expect(screen.queryByText('充值中心')).not.toBeInTheDocument()
       })
     })
 
-    it('shows expired state and renew button when request is expired', async () => {
-      createRechargeRequestMock.mockResolvedValue({
-        data: { id: 1, amount: 9.5, discount: 0.5, tx_no: 'TX001', remaining_seconds: 600 },
-      })
-      getRechargeRequestMock.mockResolvedValueOnce({
-        data: { id: 1, channel: 'alipay', amount: 9.5, points: 100, status: 'expired', user_confirmed: false, created_at: '2026-05-10 00:00:00', remaining_seconds: 0 },
-      })
+    it('does not render the hidden invite tab', async () => {
       render(<WalletPage />)
-      fireEvent.click(screen.getByText('充值中心'))
       await waitFor(() => {
-        expect(screen.getByText('轻量支持')).toBeInTheDocument()
-      })
-      fireEvent.click(screen.getByRole('button', { name: /提交并获取支付二维码/ }))
-      await waitFor(() => {
-        expect(screen.getByText('当前支付金额已失效')).toBeInTheDocument()
-        expect(screen.getByRole('button', { name: '重新生成金额' })).toBeInTheDocument()
-      })
-    })
-    it('shows countdown in modal header when request is active', async () => {
-      createRechargeRequestMock.mockResolvedValue({
-        data: { id: 1, amount: 9.5, discount: 0.5, tx_no: 'TX001', remaining_seconds: 600 },
-      })
-      getRechargeRequestMock.mockResolvedValueOnce({
-        data: { id: 1, channel: 'alipay', amount: 9.5, points: 100, status: 'pending', user_confirmed: false, created_at: '2026-05-10 00:00:00', remaining_seconds: 600 },
-      })
-      render(<WalletPage />)
-      fireEvent.click(screen.getByText('充值中心'))
-      await waitFor(() => {
-        expect(screen.getByText('轻量支持')).toBeInTheDocument()
-      })
-      fireEvent.click(screen.getByRole('button', { name: /提交并获取支付二维码/ }))
-      await waitFor(() => {
-        expect(screen.getByText('10:00')).toBeInTheDocument()
-      })
-    })
-
-    it('shows error on recharge submit failure', async () => {
-      createRechargeRequestMock.mockRejectedValue(new Error('提交失败'))
-      render(<WalletPage />)
-      fireEvent.click(screen.getByText('充值中心'))
-      await waitFor(() => {
-        expect(screen.getByText('轻量支持')).toBeInTheDocument()
-      })
-      const submitBtn = screen.getByRole('button', { name: /提交并获取支付二维码/ })
-      fireEvent.click(submitBtn)
-      await waitFor(() => {
-        expect(screen.getByText('提交失败')).toBeInTheDocument()
+        expect(screen.queryByText('邀请中心')).not.toBeInTheDocument()
       })
     })
   })
@@ -530,66 +453,6 @@ describe('WalletPage', () => {
       fireEvent.change(screen.getByPlaceholderText(/新密码/), { target: { value: '123' } })
       const btn = screen.getByText('确认修改')
       expect(btn).toBeDisabled()
-    })
-  })
-
-  describe('invite center', () => {
-    it('shows invite code when available', async () => {
-      render(<WalletPage />)
-      fireEvent.click(screen.getByText('邀请中心'))
-      await waitFor(() => {
-        expect(screen.getByText('ABC123')).toBeInTheDocument()
-      })
-    })
-
-    it('shows generate button when no invite code', async () => {
-      inviteInfoMock.mockResolvedValue({
-        data: { invite_code: '', summary: {} },
-      })
-      render(<WalletPage />)
-      fireEvent.click(screen.getByText('邀请中心'))
-      await waitFor(() => {
-        expect(screen.getByText('立即生成邀请码')).toBeInTheDocument()
-      })
-    })
-
-    it('generates invite code on button click', async () => {
-      generateInviteCodeMock.mockResolvedValue({
-        data: { invite_code: 'NEW123' },
-      })
-      inviteInfoMock.mockResolvedValue({
-        data: { invite_code: '', summary: {} },
-      })
-      render(<WalletPage />)
-      fireEvent.click(screen.getByText('邀请中心'))
-      await waitFor(() => {
-        expect(screen.getByText('立即生成邀请码')).toBeInTheDocument()
-      })
-      fireEvent.click(screen.getByText('立即生成邀请码'))
-      await waitFor(() => {
-        expect(generateInviteCodeMock).toHaveBeenCalled()
-      })
-    })
-
-    it('shows invite summary stats', async () => {
-      inviteInfoMock.mockResolvedValue({
-        data: {
-          invite_code: 'ABC',
-          summary: {
-            invited_register_count: 5,
-            total_rebate_points: 100,
-            total_recharge_amount: 50,
-            risk_hit_count: 0,
-          },
-        },
-      })
-      render(<WalletPage />)
-      fireEvent.click(screen.getByText('邀请中心'))
-      await waitFor(() => {
-        expect(screen.getByText('邀请注册')).toBeInTheDocument()
-        expect(screen.getByText('累计邀请奖励')).toBeInTheDocument()
-        expect(screen.getByText('风险拦截')).toBeInTheDocument()
-      })
     })
   })
 
