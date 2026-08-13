@@ -30,3 +30,4 @@ local_backup/
 .last_*_package
 app_v1*/
 临时/
+data/*.bak
