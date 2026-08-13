@@ -733,8 +733,8 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
           {isFreeUser && dailyTotal > 0 && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium"
               style={{ color: 'var(--text-secondary)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)', border: '1px solid var(--border-color)' }}
-              title="今日剩余免费 AI 助手对话次数（用完后将扣除积分）">
-              今日 AI 助手剩余 {dailyRemaining}/{dailyTotal} 次
+              title="今日 AI 助手已用次数/免费总次数（用完后将扣除积分）">
+              今日已用 {Math.max(0, dailyTotal - dailyRemaining)}/{dailyTotal} 次
             </span>
           )}
           <span className="ml-auto hidden sm:inline text-[11px]" style={{ color: 'var(--text-secondary)' }}>思考强度越高，回复越深入，耗时越长</span>

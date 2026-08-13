@@ -43,6 +43,7 @@ export default function Sidebar({ open, onClose }) {
   const [points, setPoints] = useState(user?.points ?? 0)
   const [dailyRemaining, setDailyRemaining] = useState(0)
   const [dailyTotal, setDailyTotal] = useState(0)
+  const [isFreeUser, setIsFreeUser] = useState(false)
   const [checkedInToday, setCheckedInToday] = useState(false)
   const [rechargePendingCount, setRechargePendingCount] = useState(0)
   const [unreadNoticeCount, setUnreadNoticeCount] = useState(0)
@@ -59,6 +60,7 @@ export default function Sidebar({ open, onClose }) {
       setPoints(res.data.points)
       setDailyRemaining(Number(res.data?.ai_daily_remaining || 0))
       setDailyTotal(Number(res.data?.ai_daily_total || 0))
+      setIsFreeUser(!!res.data?.is_free_user)
       const u = readUser()
       if (u) { u.points = res.data.points; localStorage.setItem('user', JSON.stringify(u)) }
     }).catch(() => {})
@@ -73,7 +75,7 @@ export default function Sidebar({ open, onClose }) {
     const handleUpdate = () => {
       const u = readUser()
       if (u) setPoints(u.points ?? 0)
-      pointsAPI.balance().then(res => { setDailyRemaining(Number(res.data?.ai_daily_remaining || 0)); setDailyTotal(Number(res.data?.ai_daily_total || 0)) }).catch(() => {})
+      pointsAPI.balance().then(res => { setDailyRemaining(Number(res.data?.ai_daily_remaining || 0)); setDailyTotal(Number(res.data?.ai_daily_total || 0)); setIsFreeUser(!!res.data?.is_free_user) }).catch(() => {})
     }
     const handleSubscriptionUpdate = () => subscriptionAPI.me().then(res => setSubscription(res.data)).catch(() => {})
     const handleNoticeUpdate = () => Promise.allSettled([notificationAPI.unreadCount(),announcementAPI.getUnread()]).then(([noticeRes,annRes])=>setUnreadNoticeCount((noticeRes.status==='fulfilled'?(noticeRes.value.data.count||0):0)+(annRes.status==='fulfilled'?((annRes.value.data.items||[]).length):0))).catch(() => {})
@@ -202,9 +204,13 @@ export default function Sidebar({ open, onClose }) {
                   <User size={14} />
                 </span>
                 {!collapsed && (
-                  <span className="ml-auto shrink-0 text-right text-[10px] leading-tight" style={{ color: 'var(--text-secondary)' }}>
-                    <span className="block">{dailyRemaining}/{dailyTotal} 次</span>
-                    <span className="block">{points} 积分</span>
+                  <span className="ml-1 min-w-0 flex-1 text-left leading-tight">
+                    <span className="block truncate text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{user.nickname || user.username}</span>
+                    {isFreeUser && dailyTotal > 0 ? (
+                      <span className="block text-[10px]" title="今日 AI 助手已用次数/免费总次数（用完后将扣除积分）">今日已用 {Math.max(0, dailyTotal - dailyRemaining)}/{dailyTotal} 次 · {points} 积分</span>
+                    ) : (
+                      <span className="block text-[10px]">{points} 积分</span>
+                    )}
                   </span>
                 )}
               </Link>
