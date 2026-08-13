@@ -1236,14 +1236,8 @@ export default function ChatAssistantPage() {
     chatAPI.sessions().then(res => {
       const items = res.data?.items || []
       setSessions(items)
-      // 刷新/重新进入页面时恢复上次查看的会话（localStorage 记忆 activeId）：
-      // 会话仍有效则直接进入并加载消息，无记忆或会话已被删除则显示引导页。
-      // 用户已手动选择/新建过会话（activeIdRef 已更新）时不覆盖，防竞态。
-      if (activeIdRef.current) return
-      let savedId = null
-      try { savedId = localStorage.getItem('chat_active_session_id') } catch {}
-      const target = savedId ? items.find(s => String(s.id) === savedId) : null
-      if (target) setActiveId(target.id)
+      // 进入页面不自动恢复上次会话：始终显示欢迎页，方便用户直接开新会话或自行选择历史会话。
+      // 会话选择/新建由用户操作触发（handleSelectSession/handleCreateSession）。
     }).catch(() => {}).finally(() => setSessionsLoading(false))
     const handlePoints = () => { const u = readUser(); if (u) setPoints(u.points ?? 0) }
     window.addEventListener('points-updated', handlePoints)

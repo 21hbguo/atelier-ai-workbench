@@ -125,15 +125,19 @@ beforeEach(() => {
 })
 
 describe('ChatAssistantPage 会话恢复与生成中切换', () => {
-  it('刷新后从 localStorage 恢复最近会话并加载其消息', async () => {
+  it('进入页面不恢复最近会话：即使有 localStorage 记忆也显示欢迎页', async () => {
     localStorage.setItem('chat_active_session_id', '2')
     sessionsMock.mockResolvedValue(ok({ items: [{ id: 1 }, { id: 2 }, { id: 3 }] }))
 
     render(<ChatAssistantPage />)
 
-    // 会话 2 被恢复：组件应调用 messages(2) 加载该会话的消息
-    await waitFor(() => expect(messagesMock).toHaveBeenCalledWith(2))
-    expect(sessionsMock).toHaveBeenCalledTimes(1)
+    // 会话列表加载完成（3 个会话项渲染出来），但 activeId 保持 null：
+    // 不加载任何会话消息，显示欢迎页引导用户新建/自选
+    await waitFor(() => expect(sessionsMock).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getAllByText('新对话').length).toBe(3))
+    expect(screen.getByText('和 AI 助手聊聊')).toBeInTheDocument()
+
+    expect(messagesMock).not.toHaveBeenCalled()
   })
 
   it('无会话记忆时显示引导页：有会话列表也不恢复、不加载消息', async () => {
@@ -154,13 +158,15 @@ describe('ChatAssistantPage 会话恢复与生成中切换', () => {
   })
 
   it('生成中可切换会话：abort 旧流并加载新会话消息', async () => {
-    localStorage.setItem('chat_active_session_id', '1')
     sessionsMock.mockResolvedValue(ok({
       items: [{ id: 1, title: '会话一' }, { id: 2, title: '会话二' }],
     }))
 
     render(<ChatAssistantPage />)
-    // 先等会话 1 恢复完成，确保发送落在已有会话上（activeIdRef=1）
+    // 进入页面为欢迎页，用户手动选择会话一
+    await waitFor(() => expect(screen.getByText('会话一')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('会话一'))
+    // 等会话 1 加载完成，确保发送落在已有会话上（activeIdRef=1）
     await waitFor(() => expect(messagesMock).toHaveBeenCalledWith(1))
 
     // 输入消息并回车发送 → sendStream 返回 pending promise，组件进入 sending 状态

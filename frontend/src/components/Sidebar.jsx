@@ -274,7 +274,7 @@ export default function Sidebar({ open, onClose }) {
 function ChatSessionNav({ onClose }) {
   const [sessions, setSessions] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [activeId, setActiveId] = useState(() => localStorage.getItem('chat_active_session_id'))
+  const [activeId, setActiveId] = useState(null) // 不再从 localStorage 恢复：进入页面始终欢迎页，无残留高亮
 
   const load = () => {
     setLoading(true)
