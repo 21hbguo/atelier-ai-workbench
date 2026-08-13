@@ -26,6 +26,15 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_TOOL_CALLS = 10
 DEFAULT_MAX_TOKENS = 2000
 
+# 工具结果回填封顶（防 agent 循环内 tool 消息无界累积撑爆上下文窗口）：
+# 单条工具结果上限 / 当轮工具结果总累积上限（参照 smolagents truncate_content 保留头尾）
+MAX_TOOL_RESULT_CHARS = 20_000
+MAX_TOOL_RESULTS_TOTAL_CHARS = 60_000
+# 当轮累积已超限时，后续工具结果压缩到这个更小的上限并提示模型收敛
+_OVER_BUDGET_TOOL_RESULT_CHARS = 2_000
+_TOOL_RESULT_TRUNC_MSG = "\n…（结果过大已截断，如需完整内容请缩小范围或分页获取）…\n"
+
+
 # 工具不存在 / 执行出错时的回填文本
 _NOT_FOUND_MSG = "Function {name} not found. Available tools: {available}."
 _NOT_ALLOWED_MSG = "Function {name} is not available in the current session. Available tools: {available}."
@@ -41,6 +50,15 @@ _EXEC_ERROR_MSG = (
     "请修正后重试，不要重复相同的错误；若多次失败请换一种方式或向用户说明。"
 )
 _EMPTY_FINAL_MSG = "抱歉，我暂时无法完成这个任务，请换个说法再试一次。"
+
+
+def _truncate_tool_result(text: str, limit: int) -> str:
+    """工具结果截断：保留头尾各半 + 截断标记（参照 smolagents truncate_content）。"""
+    text = "" if text is None else str(text)
+    if len(text) <= limit:
+        return text
+    half = max(0, (limit - len(_TOOL_RESULT_TRUNC_MSG)) // 2)
+    return text[:half] + _TOOL_RESULT_TRUNC_MSG + text[-half:]
 
 # usage 统一 schema 的各分项键（与 llm_client._extract_usage 对齐）
 _USAGE_KEYS = ("input_tokens", "output_tokens", "cache_read_tokens",
@@ -121,6 +139,7 @@ async def run_agent_stream(
         {"type": "heartbeat"}：工具执行超过 10s 未完成时的保活事件（上层可转 SSE 注释行）
         {"type": "citations", "citations": [{"url", "title"}, ...]}：工具执行后新增的来源引用（仅增量）
         {"type": "widget", "widget": {"kind", "title", "code"}}：工具执行后新增的画图 widget（仅增量）
+        {"type": "file", "file": {"filename", "url", "size", "description"}}：工具执行后新增的可下载文件（仅增量）
         {"type": "done", "text": 最终文本回复, "thinking": 各轮思考过程合并}：最终回复
 
     Raises:
@@ -140,6 +159,20 @@ async def run_agent_stream(
     executed_calls = 0  # 已执行的工具调用累计数
     sent_citations = 0  # 已推送的来源引用条数（citations 事件只发增量）
     sent_widgets = 0  # 已推送的画图 widget 条数（widget 事件只发增量）
+    sent_files = 0  # 已推送的可下载文件条数（file 事件只发增量）
+    tool_results_total = 0  # 当轮已回填工具结果总字符数（封顶防上下文撑爆）
+
+    def _append_tool_result(call_id: str, result: str) -> None:
+        """回填 role=tool 消息：单条与当轮累积双重封顶，超限截断保留头尾并提示模型。"""
+        nonlocal tool_results_total
+        limit = (
+            _OVER_BUDGET_TOOL_RESULT_CHARS
+            if tool_results_total >= MAX_TOOL_RESULTS_TOTAL_CHARS
+            else MAX_TOOL_RESULT_CHARS
+        )
+        content = _truncate_tool_result(result, limit)
+        tool_results_total += len(content)
+        work.append({"role": "tool", "tool_call_id": call_id, "content": content})
     # 最多 max_tool_calls + 1 轮 LLM 调用：最后一轮不带 tools
     for _round in range(max_tool_calls + 1):
         send_tools = get_tools_schema(tools_names) if executed_calls < max_tool_calls else []
@@ -256,7 +289,7 @@ async def run_agent_stream(
                     yield {"type": "tool_status", "name": name, "status": "done", "result_len": len(result)}
                     # 校验失败的调用同样要回填 role=tool 消息（与正常路径一致），
                     # 让模型在下一轮看到错误并修正参数；continue 跳过 handler 执行
-                    work.append({"role": "tool", "tool_call_id": call_id, "content": result})
+                    _append_tool_result(call_id, result)
                     continue
                 started = time.monotonic()
                 try:
@@ -310,7 +343,11 @@ async def run_agent_stream(
             while len(ctx.widgets) > sent_widgets:
                 yield {"type": "widget", "widget": ctx.widgets[sent_widgets]}
                 sent_widgets += 1
-            work.append({"role": "tool", "tool_call_id": call_id, "content": result})
+            # file 上报：工具执行后若 ctx 新增了可下载文件，逐个推送 file 增量事件
+            while len(ctx.files) > sent_files:
+                yield {"type": "file", "file": ctx.files[sent_files]}
+                sent_files += 1
+            _append_tool_result(call_id, result)
         executed_calls += len(calls)
 
     # 理论上已由「最后一轮不带 tools」保证返回；此处防御兜底

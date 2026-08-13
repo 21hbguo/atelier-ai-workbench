@@ -30,6 +30,11 @@ async def _tool_validation_boom(args: dict, ctx) -> str:
     raise ValueError("boom internal error")
 
 
+@agent_tool(name="test.validation_huge", description="测试工具（返回超长结果）", parameters=TOOL_PARAMS)
+async def _tool_validation_huge(args: dict, ctx) -> str:
+    return "H" * int(args.get("limit") or 30000)
+
+
 def _run(coro):
     return asyncio.run(coro)
 
@@ -44,9 +49,11 @@ def _test_tools():
     """确保两个测试工具在注册表中（装饰器只注册一次，测试间清理后需重建）。"""
     _REGISTRY.setdefault("test.validation_ok", _entry("test.validation_ok", _tool_validation_ok))
     _REGISTRY.setdefault("test.validation_boom", _entry("test.validation_boom", _tool_validation_boom))
+    _REGISTRY.setdefault("test.validation_huge", _entry("test.validation_huge", _tool_validation_huge))
     yield
     _REGISTRY.pop("test.validation_ok", None)
     _REGISTRY.pop("test.validation_boom", None)
+    _REGISTRY.pop("test.validation_huge", None)
 
 
 def _ctx():
@@ -258,3 +265,53 @@ def test_exec_exception_message_contains_context(monkeypatch):
     assert "ValueError" in content          # 异常类型
     assert "boom internal error" in content  # 异常消息
     assert "请修正后重试" in content          # 引导文案
+
+
+# ---------- 工具结果长度封顶（单条 + 当轮累积） ----------
+
+def test_truncate_tool_result_helper():
+    from backend.services.agent.loop import _truncate_tool_result
+
+    assert _truncate_tool_result("short", 100) == "short"
+    long_text = "A" * 10000 + "B" * 10000
+    truncated = _truncate_tool_result(long_text, 5000)
+    assert len(truncated) <= 5000
+    assert "结果过大已截断" in truncated
+    assert truncated.startswith("A") and truncated.endswith("B")  # 保留头尾
+
+
+def test_tool_result_single_truncated(monkeypatch):
+    """单条工具结果超 20K 字符时截断回填（保留头尾 + 标记），不撑爆上下文。"""
+    from backend.services.llm_client import LLMClient
+
+    rounds = [
+        [_done("", [_call("call_1", "test.validation_huge", {"path": "x", "limit": 30000})])],
+        [_done("完成", [])],
+    ]
+    fake = _FakeStreamTools(rounds)
+    monkeypatch.setattr(LLMClient, "stream_tools", fake)
+    _run(_collect(rounds, ["test.validation_huge"]))
+    tool_msgs = [m for m in fake.seen_messages[1] if m.get("role") == "tool"]
+    assert tool_msgs
+    content = tool_msgs[0]["content"]
+    assert len(content) < 30000  # 已被截断
+    assert "结果过大已截断" in content
+    assert content.endswith("H")  # 保留尾部
+
+
+def test_tool_result_total_budget_shrinks(monkeypatch):
+    """当轮工具结果总累积超过 60K 后，后续结果压缩到 2K 并提示模型收敛。"""
+    from backend.services.llm_client import LLMClient
+
+    rounds = [
+        [_done("", [_call(f"call_{i}", "test.validation_huge", {"path": "x", "limit": 30000})])]
+        for i in range(1, 5)
+    ] + [[_done("完成", [])]]
+    fake = _FakeStreamTools(rounds)
+    monkeypatch.setattr(LLMClient, "stream_tools", fake)
+    _run(_collect(rounds, ["test.validation_huge"]))
+    # 第 4 轮请求里应看到第 3 轮回填（累积已达 ~60K → 压缩到 2K）
+    tool_msgs = [m for m in fake.seen_messages[3] if m.get("role") == "tool"]
+    assert tool_msgs
+    last_content = tool_msgs[-1]["content"]
+    assert len(last_content) <= 2000 + len("…（结果过大已截断，如需完整内容请缩小范围或分页获取）…\n")
