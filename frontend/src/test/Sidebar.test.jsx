@@ -15,6 +15,8 @@ const {
   readUserMock,
   clearUserMock,
   subscriptionMeMock,
+  chatSessionsMock,
+  chatCreateSessionMock,
 } = vi.hoisted(() => ({
   alertMock: vi.fn(),
   pointsBalanceMock: vi.fn(),
@@ -29,6 +31,8 @@ const {
   readUserMock: vi.fn(),
   clearUserMock: vi.fn(),
   subscriptionMeMock: vi.fn(),
+  chatSessionsMock: vi.fn(),
+  chatCreateSessionMock: vi.fn(),
 }))
 
 vi.mock('../components/AppDialogProvider', () => ({
@@ -56,6 +60,10 @@ vi.mock('../auth', () => ({
 }))
 
 vi.mock('../api', () => ({
+  chatAPI: {
+    sessions: chatSessionsMock,
+    createSession: chatCreateSessionMock,
+  },
   pointsAPI: {
     balance: pointsBalanceMock,
     checkinStatus: pointsCheckinStatusMock,
@@ -102,6 +110,7 @@ beforeEach(() => {
   unreadCountMock.mockResolvedValue({ data: { count: 3 } })
   getUnreadMock.mockResolvedValue({ data: { items: [{ id: 1 }] } })
   subscriptionMeMock.mockResolvedValue({ data: { plan: null } })
+  chatSessionsMock.mockResolvedValue({ data: { items: [{ id: 's1', title: '会话一' }, { id: 's2', title: '会话二' }] } })
   localStorage.clear()
   global.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ total: 0 }) }))
 })
@@ -317,5 +326,37 @@ describe('Sidebar', () => {
       expect.stringContaining('recharge-requests'),
       expect.any(Object)
     )
+  })
+
+  it('shows chat session list in sub-nav on /chat page', async () => {
+    mockLocation = { pathname: '/chat', search: '' }
+    renderSidebar()
+    await waitFor(() => expect(screen.getByText('会话一')).toBeInTheDocument())
+    expect(screen.getByText('会话二')).toBeInTheDocument()
+    expect(screen.getByText('新建会话')).toBeInTheDocument()
+  })
+
+  it('selecting a session writes localStorage and dispatches chat-session-selected', async () => {
+    mockLocation = { pathname: '/chat', search: '' }
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent')
+    const onClose = vi.fn()
+    renderSidebar({ onClose })
+    await waitFor(() => expect(screen.getByText('会话一')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('会话一'))
+    expect(localStorage.getItem('chat_active_session_id')).toBe('s1')
+    expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'chat-session-selected' }))
+    expect(onClose).toHaveBeenCalled()
+    dispatchSpy.mockRestore()
+  })
+
+  it('new session button dispatches chat-session-created', async () => {
+    mockLocation = { pathname: '/chat', search: '' }
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent')
+    renderSidebar()
+    await waitFor(() => expect(screen.getByText('新建会话')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('新建会话'))
+    expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: 'chat-session-created' }))
+    expect(chatCreateSessionMock).not.toHaveBeenCalled()
+    dispatchSpy.mockRestore()
   })
 })

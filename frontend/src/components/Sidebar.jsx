@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useLocation, Link, useNavigate } from 'react-router-dom'
-import { Sun, Moon, BookOpen, Sparkles, Image, X, Globe, LogOut, User, Shield, Crown, Wallet, Settings, LayoutGrid, MessageCircle, Bell, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Sun, Moon, BookOpen, Sparkles, Image, X, Globe, LogOut, User, Shield, Crown, Wallet, Settings, LayoutGrid, MessageCircle, Bell, PanelLeftClose, PanelLeftOpen, MessageSquare, Plus } from 'lucide-react'
 import { useTheme } from '../ThemeContext'
 import { useLayoutMode } from '../LayoutModeContext'
-import { announcementAPI, authAPI, pointsAPI, notificationAPI, subscriptionAPI } from '../api'
+import { announcementAPI, authAPI, chatAPI, pointsAPI, notificationAPI, subscriptionAPI } from '../api'
 import { clearUser, readUser } from '../auth'
 import { useAppDialog } from './AppDialogProvider'
 import SubscriptionDialog from './SubscriptionDialog'
@@ -102,7 +102,8 @@ export default function Sidebar({ open, onClose }) {
     authAPI.logout().catch(() => {}).finally(() => { clearUser(); navigate('/login') })
   }
 
-  const subNavVisible = SUB_NAV_PATHS.includes(location.pathname)
+  const subNavVisible = SUB_NAV_PATHS.includes(location.pathname) || location.pathname === '/chat'
+  const isChatPage = location.pathname === '/chat'
 
   return (
     <>
@@ -223,8 +224,12 @@ export default function Sidebar({ open, onClose }) {
           </div>
         </aside>
         {subNavVisible && (
-          <aside className="w-44 flex flex-col flex-shrink-0"
+          <aside className={`w-44 flex flex-col flex-shrink-0 ${isChatPage ? 'lg:hidden' : ''}`}
             style={{ background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border-color)' }}>
+            {isChatPage ? (
+              <ChatSessionNav onClose={onClose} />
+            ) : (
+            <>
             <div className="flex-1 min-h-0 overflow-y-auto py-2 px-2 space-y-0.5">
               {subNavItems.filter(item => item.path !== '/notifications' || isAdmin).map(({ path, icon: Icon, label }) => {
                 const active = location.pathname === path
@@ -254,10 +259,81 @@ export default function Sidebar({ open, onClose }) {
                 <LayoutGrid size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">{currentBreakpointLabel}列数 {currentCols}列</span>
               </button>
             </div>
+            </>
+            )}
           </aside>
         )}
       </div>
       <SubscriptionDialog open={subOpen} onClose={() => setSubOpen(false)} />
+    </>
+  )
+}
+
+// 移动端侧边栏的会话列表子导航（/chat 页面显示；桌面端聊天页有独立会话栏，故用 lg:hidden 隐藏）
+function ChatSessionNav({ onClose }) {
+  const [sessions, setSessions] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [activeId, setActiveId] = useState(() => localStorage.getItem('chat_active_session_id'))
+
+  const load = () => {
+    setLoading(true)
+    chatAPI.sessions().then(({ data }) => setSessions(data?.items || [])).catch(() => setSessions([])).finally(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, [])
+
+  // 聊天页新建/删除/切换会话后同步高亮
+  useEffect(() => {
+    const handler = () => setActiveId(localStorage.getItem('chat_active_session_id'))
+    window.addEventListener('chat-session-selected', handler)
+    window.addEventListener('chat-session-created', handler)
+    window.addEventListener('chat-sessions-updated', load)
+    return () => {
+      window.removeEventListener('chat-session-selected', handler)
+      window.removeEventListener('chat-session-created', handler)
+      window.removeEventListener('chat-sessions-updated', load)
+    }
+  }, [])
+
+  const selectSession = id => {
+    localStorage.setItem('chat_active_session_id', id)
+    setActiveId(id)
+    window.dispatchEvent(new Event('chat-session-selected'))
+    onClose?.()
+  }
+
+  const createSession = () => {
+    // 不在此调 API：由 ChatAssistantPage 监听 chat-session-created 统一创建（避免重复建会话）
+    window.dispatchEvent(new Event('chat-session-created'))
+    onClose?.()
+  }
+
+  return (
+    <>
+      <div className="flex-1 min-h-0 overflow-y-auto py-2 px-2 space-y-0.5">
+        <div className="px-2 py-1.5 text-[10px] font-medium" style={{ color: 'var(--text-secondary)' }}>会话列表</div>
+        {loading ? (
+          <div className="px-2 py-2 text-xs" style={{ color: 'var(--text-secondary)' }}>加载中…</div>
+        ) : !sessions || sessions.length === 0 ? (
+          <div className="px-2 py-2 text-xs" style={{ color: 'var(--text-secondary)' }}>暂无会话</div>
+        ) : (
+          sessions.map(s => {
+            const active = s.id === activeId
+            const linkClass = `sidebar-nav-link ${active ? 'bg-accent/10' : 'hover:bg-bg-hover'}`
+            const linkStyle = { color: active ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: active ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined }
+            return (
+              <button key={s.id} onClick={() => selectSession(s.id)} className={`${linkClass} w-full text-left`} style={linkStyle}>
+                <MessageSquare size={16} className="sidebar-nav-icon flex-shrink-0" /><span className="sidebar-nav-text truncate">{s.title}</span>
+              </button>
+            )
+          })
+        )}
+      </div>
+      <div className="px-2 py-2 space-y-0.5" style={{ borderColor: 'var(--border-color)' }}>
+        <button onClick={createSession} className="sidebar-control-btn hover:bg-bg-hover" style={{ color: 'var(--text-primary)' }}>
+          <Plus size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">新建会话</span>
+        </button>
+      </div>
     </>
   )
 }

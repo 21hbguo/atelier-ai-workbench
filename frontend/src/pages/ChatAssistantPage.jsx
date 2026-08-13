@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { MessageCircle, Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, PanelLeftClose, PanelLeftOpen, Brain, AlertCircle, CheckSquare, Cpu, ChevronDown, Check, Paperclip, FileText, Settings, Globe, Image as ImageIcon, Search } from 'lucide-react'
+import { Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, PanelLeftClose, PanelLeftOpen, Brain, AlertCircle, CheckSquare, Cpu, ChevronDown, Check, Paperclip, FileText, Settings, Globe, Image as ImageIcon, Search } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
 import { useAppDialog } from '../components/AppDialogProvider'
 import { chatAPI, pointsAPI, taskAPI } from '../api'
@@ -520,10 +520,6 @@ const BRAND_CARDS = [
 function EmptyState({ onPick, models = [], modelId = '', onSelectModel }) {
   return (
     <div className="flex flex-col items-center text-center pt-14 pb-10 px-4">
-      <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
-        style={{ background: 'color-mix(in srgb, var(--accent) 12%, transparent)' }}>
-        <MessageCircle size={26} style={{ color: 'var(--accent)' }} />
-      </div>
       {/* 指导性文字：参考临时/frontend 版 ChatWelcome 的大号渐变标题 + tagline */}
       <h3 className="text-3xl sm:text-4xl font-extrabold leading-none tracking-tight mb-2"
         style={{
@@ -906,7 +902,7 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
                                     value={modelQuery}
                                     onChange={e => setModelQuery(e.target.value)}
                                     placeholder="搜索模型..."
-                                    autoFocus
+                                    autoFocus={window.innerWidth >= 640}
                                     className="w-full bg-transparent text-xs outline-none"
                                     style={{ color: 'var(--text-primary)' }} />
                                 </div>
@@ -1249,7 +1245,10 @@ export default function ChatAssistantPage() {
   }, [messages, messagesLoading, sending?.text, sending?.stopped, pendingQueue])
 
   const refreshSessions = useCallback(() => {
-    chatAPI.sessions().then(res => setSessions(res.data?.items || [])).catch(() => {})
+    chatAPI.sessions().then(res => {
+      setSessions(res.data?.items || [])
+      window.dispatchEvent(new Event('chat-sessions-updated'))
+    }).catch(() => {})
   }, [])
 
   // 发送锁：防止 createSession 等异步间隙出现并发发送（占位 sessionId=null，startStream 会覆盖）
@@ -1837,6 +1836,21 @@ export default function ChatAssistantPage() {
       setCreatingSession(false)
     }
   }
+
+  // 移动端侧边栏会话子导航事件：切换会话 / 新建会话
+  useEffect(() => {
+    const onSelectSession = () => {
+      const id = localStorage.getItem('chat_active_session_id')
+      if (id && id !== activeIdRef.current) handleSelectSession(id)
+    }
+    const onCreateSession = () => { handleCreateSession() }
+    window.addEventListener('chat-session-selected', onSelectSession)
+    window.addEventListener('chat-session-created', onCreateSession)
+    return () => {
+      window.removeEventListener('chat-session-selected', onSelectSession)
+      window.removeEventListener('chat-session-created', onCreateSession)
+    }
+  }, [handleSelectSession, handleCreateSession])
 
   const handleDeleteSession = async (id) => {
     const ok = await dialog.confirm('确定删除该会话吗？删除后聊天记录将无法恢复。')
