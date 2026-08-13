@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Coins, ArrowUpCircle, ArrowDownCircle, RefreshCw, User, Mail,
   Gift, Wallet, KeyRound, HeartHandshake, X, CheckCircle
@@ -82,6 +83,7 @@ const formatPoints = value => {
 
 export default function WalletPage() {
   const dialog = useAppDialog()
+  const [searchParams, setSearchParams] = useSearchParams()
   const user = readUser()
   const [tab, setTab] = useState('records')
   const [points, setPoints] = useState(user?.points ?? 0)
@@ -152,6 +154,16 @@ export default function WalletPage() {
   const [subscriptionPayerName, setSubscriptionPayerName] = useState('')
   const [subscriptionTxNo, setSubscriptionTxNo] = useState('')
   const [subscriptionProofUrl, setSubscriptionProofUrl] = useState('')
+
+  useEffect(() => {
+    const requestedTab = searchParams.get('tab')
+    if (tabList.some(item => item.key === requestedTab)) setTab(requestedTab)
+  }, [searchParams])
+
+  const selectTab = key => {
+    setTab(key)
+    setSearchParams(key === 'records' ? {} : { tab: key })
+  }
 
   const fetchSubscription = async () => {
     try {
@@ -650,7 +662,7 @@ export default function WalletPage() {
                   <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{subscription.plan?.name || '免费套餐'}</div>
                   <div className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>当前周期至 {formatTime(subscription.cycle?.period_end)}</div>
                 </div>
-                <button onClick={() => setTab('subscription')} className="px-3 py-1.5 rounded-2xl text-xs text-white" style={{ background: 'var(--accent)' }}>管理套餐</button>
+                <button onClick={() => selectTab('subscription')} className="px-3 py-1.5 rounded-2xl text-xs text-white" style={{ background: 'var(--accent)' }}>管理套餐</button>
               </div>
               <div className="grid grid-cols-3 gap-3 text-center">
                 <div><div className="text-lg font-semibold" style={{ color: 'var(--accent)' }}>{formatPoints(subscription.cycle?.remaining_points ?? 0)}</div><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>周期积分</div></div>
@@ -664,7 +676,7 @@ export default function WalletPage() {
             {tabList.map(item => (
               <button
                 key={item.key}
-                onClick={() => setTab(item.key)}
+                onClick={() => selectTab(item.key)}
                 className={`px-4 py-2 rounded-2xl text-sm font-medium border ${tab === item.key ? 'text-white' : ''}`}
                 style={
                   tab === item.key

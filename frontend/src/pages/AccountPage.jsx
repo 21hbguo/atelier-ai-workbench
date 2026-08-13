@@ -1,76 +1,132 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Bell, ChevronRight, Coins, FileText, HeartHandshake, KeyRound, LockKeyhole, MessageCircle, ShieldCheck, UserRound } from 'lucide-react'
+import { Bell, Check, Coins, Crown, Gift, KeyRound, ShieldCheck, Sparkles, WalletCards } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
+import { pointsAPI, subscriptionAPI } from '../api'
 import { readUser } from '../auth'
 
-const entryGroups = [
-  {
-    title: '账户与安全',
-    items: [
-      { to: '/settings', icon: KeyRound, title: '密码与登录安全', description: '修改密码、查看最近登录会话' },
-      { to: '/notifications', icon: Bell, title: '通知中心', description: '查看平台公告与服务消息' },
-    ],
-  },
-  {
-    title: '服务与规则',
-    items: [
-      { to: '/wallet', icon: Coins, title: '套餐与积分', description: '查看套餐、积分记录与邀请奖励' },
-      { to: '/agreement', icon: FileText, title: '用户协议', description: '了解服务使用规范与账号规则' },
-      { to: '/privacy', icon: ShieldCheck, title: '隐私政策', description: '了解个人信息的收集与保护方式' },
-      { to: '/refund', icon: HeartHandshake, title: '积分规则', description: '查看捐赠支持与积分发放说明' },
-    ],
-  },
-]
+const transactionLabels = {
+  daily_checkin: '每日签到',
+  generate_consume: '图像生成',
+  prompt_optimize: '提示词优化',
+  redeem_code: '兑换积分',
+  invite_register_reward: '邀请注册奖励',
+  invite_recharge_rebate: '邀请奖励',
+  generate_refund: '生成退还',
+}
+
+const formatPoints = value => {
+  const amount = Number(value)
+  return Number.isFinite(amount) ? amount.toFixed(4).replace(/\.?(0+)$/, '') : '0'
+}
+
+const formatTime = value => {
+  if (!value) return '刚刚'
+  const normalized = String(value).includes('T') ? String(value) : String(value).replace(' ', 'T')
+  const date = new Date(normalized.includes('+') || normalized.endsWith('Z') ? normalized : `${normalized}+08:00`)
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
 
 export default function AccountPage() {
   const user = readUser()
+  const [points, setPoints] = useState(user?.points ?? 0)
+  const [checkedInToday, setCheckedInToday] = useState(null)
+  const [inviteSummary, setInviteSummary] = useState({ invited_register_count: 0 })
+  const [transactions, setTransactions] = useState([])
+  const [subscription, setSubscription] = useState(null)
   const displayName = user?.nickname || user?.account || user?.username || '用户'
   const account = user?.account || user?.username || '-'
+  const initial = displayName.slice(0, 1).toUpperCase()
+  const planName = subscription?.plan?.name || '免费套餐'
+  const periodEnd = subscription?.cycle?.period_end
+
+  useEffect(() => {
+    let mounted = true
+    Promise.allSettled([
+      pointsAPI.balance(),
+      pointsAPI.checkinStatus(),
+      pointsAPI.inviteInfo(),
+      pointsAPI.transactions(1, 3),
+      subscriptionAPI?.me?.() ?? Promise.resolve({ data: null }),
+    ]).then(([balance, checkin, invite, records, sub]) => {
+      if (!mounted) return
+      if (balance.status === 'fulfilled') setPoints(balance.value.data?.points ?? 0)
+      if (checkin.status === 'fulfilled') setCheckedInToday(Boolean(checkin.value.data?.checked_in_today))
+      if (invite.status === 'fulfilled') setInviteSummary(invite.value.data?.summary || {})
+      if (records.status === 'fulfilled') setTransactions(records.value.data?.items || [])
+      if (sub.status === 'fulfilled') setSubscription(sub.value.data || null)
+    })
+    return () => { mounted = false }
+  }, [])
+
+  const actions = [
+    { to: '/wallet', icon: WalletCards, title: '积分与套餐', description: '查看余额、订阅与消费记录' },
+    { to: '/wallet?tab=redeem', icon: Coins, title: '兑换码', description: '兑换活动或邀请积分' },
+    { to: '/wallet?tab=invite', icon: Gift, title: '邀请中心', description: '分享专属链接，获取奖励' },
+    { to: '/settings', icon: KeyRound, title: '安全设置', description: '更新密码与查看登录会话' },
+  ]
 
   return (
     <MainLayout>
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-        <div className="max-w-4xl mx-auto space-y-4">
-          <section className="rounded-2xl border p-4 sm:p-5" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl flex items-center justify-center" style={{ background: 'color-mix(in srgb, var(--accent) 12%, transparent)', color: 'var(--accent)' }}>
-                <UserRound size={22} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <h1 className="text-base font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{displayName}</h1>
-                <p className="mt-0.5 text-xs truncate" style={{ color: 'var(--text-secondary)' }}>账号：{account}</p>
-              </div>
-              <Link to="/settings" className="hidden sm:inline-flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-medium hover:opacity-80" style={{ background: 'var(--bg-primary)', color: 'var(--accent)' }}>
-                <LockKeyhole size={14} />安全设置
-              </Link>
-            </div>
-          </section>
+      <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-7" style={{ background: 'var(--bg-primary)' }}>
+        <div className="mx-auto max-w-5xl">
+          <header className="mb-5 flex items-start justify-between gap-4">
+            <div><p className="mb-1 text-xs" style={{ color: 'var(--text-secondary)' }}>账户与偏好</p><h1 className="text-xl font-semibold tracking-tight" style={{ color: 'var(--text-primary)' }}>账户概览</h1></div>
+            <div className="hidden items-center gap-2 rounded-full border px-3 py-2 text-xs sm:inline-flex" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)', color: 'var(--text-secondary)' }}><i className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--color-success)' }} />账户状态正常</div>
+          </header>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {entryGroups.map(group => (
-              <section key={group.title} className="rounded-2xl border p-3" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
-                <h2 className="px-1 pb-2 text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{group.title}</h2>
-                <div className="space-y-1">
-                  {group.items.map(({ to, icon: Icon, title, description }) => (
-                    <Link key={to} to={to} className="flex items-center gap-3 rounded-xl p-2.5 hover:bg-bg-hover transition-colors">
-                      <Icon size={17} style={{ color: 'var(--accent)' }} />
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm" style={{ color: 'var(--text-primary)' }}>{title}</div>
-                        <div className="mt-0.5 text-xs truncate" style={{ color: 'var(--text-secondary)' }}>{description}</div>
-                      </div>
-                      <ChevronRight size={16} style={{ color: 'var(--text-secondary)' }} />
-                    </Link>
-                  ))}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <section className="relative overflow-hidden rounded-2xl border p-4 sm:col-span-2" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
+              <div className="absolute -right-12 -top-20 h-52 w-52 rounded-full border-[28px]" style={{ borderColor: 'color-mix(in srgb, var(--accent) 6%, transparent)' }} />
+              <div className="relative flex items-center gap-3">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-base font-bold text-white" style={{ background: 'var(--accent)' }}>{initial}</div>
+                <div className="min-w-0">
+                  <h2 className="truncate text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{displayName}</h2>
+                  <p className="mt-0.5 truncate text-xs" style={{ color: 'var(--text-secondary)' }}>{account}</p>
+                  <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold" style={{ color: 'var(--accent)' }}><Check size={12} className="rounded-full text-white" style={{ background: 'var(--accent)' }} />账户已验证</span>
                 </div>
-              </section>
-            ))}
+              </div>
+              <div className="relative mt-4 flex gap-2"><Link to="/settings" className="rounded-lg px-3 py-2 text-xs font-semibold text-white" style={{ background: 'var(--accent)' }}>编辑资料</Link><Link to="/settings" className="rounded-lg border px-3 py-2 text-xs font-semibold" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>账户安全</Link></div>
+            </section>
+
+            <QuickCard to="/wallet" icon={Coins} label="当前积分" value={formatPoints(points)} sub="可用于生成与对话" />
+            <QuickCard to="/wallet" icon={Check} label="今日签到" value={checkedInToday === null ? '签到状态加载中' : checkedInToday ? '今日已签到' : '今日未签到'} sub={checkedInToday ? '明天再来签到' : '每日签到可领积分'} tone={checkedInToday ? 'var(--color-success)' : 'var(--accent)'} />
+            <QuickCard to="/wallet?tab=invite" icon={Gift} label="邀请好友" value={inviteSummary.invited_register_count ?? 0} sub="已邀请注册好友" />
+            <QuickCard icon={ShieldCheck} label="账户状态" value="正常" sub="身份已验证" tone="var(--color-success)" />
+            <QuickCard to="/wallet?tab=subscription" icon={Crown} label="订阅套餐" value={planName} sub={periodEnd ? `周期至 ${formatTime(periodEnd)}` : '查看套餐与用量'} />
+            <QuickCard to="/notifications" icon={Bell} label="通知" value="查看" sub="公告与消息提醒" />
           </div>
 
-          <Link to="/chat" className="flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm hover:bg-bg-hover transition-colors" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
-            <MessageCircle size={16} />返回 AI 助手
-          </Link>
+          <div className="mt-5 mb-2 flex items-center justify-between"><h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>常用功能</h2><span className="text-xs" style={{ color: 'var(--text-secondary)' }}>快捷进入对应页面</span></div>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{actions.map(({ to, icon: Icon, title, description }) => <Link key={to} to={to} className="rounded-2xl border p-4 transition-transform hover:-translate-y-0.5" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}><span className="grid h-7 w-7 place-items-center rounded-lg" style={{ background: 'color-mix(in srgb, var(--accent) 10%, transparent)', color: 'var(--accent)' }}><Icon size={15} /></span><h3 className="mt-3 text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h3><p className="mt-1 text-[10px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{description}</p></Link>)}</div>
+
+          <section className="mt-5 rounded-2xl border p-4 sm:p-5" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
+            <div className="flex items-center justify-between"><h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>近期动态</h2><Link to="/wallet" className="text-xs font-semibold" style={{ color: 'var(--accent)' }}>查看全部</Link></div>
+            <div className="mt-4 grid gap-3 md:grid-cols-3">{transactions.length ? transactions.map(item => <Activity key={item.id} item={item} />) : <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>暂无积分流水</p>}</div>
+          </section>
         </div>
-      </div>
+      </main>
     </MainLayout>
   )
+}
+
+function QuickCard({ to, icon: Icon, label, value, sub, tone }) {
+  const inner = (
+    <div className="flex h-full flex-col rounded-2xl border p-4 transition-transform hover:-translate-y-0.5" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg" style={{ background: tone ? `color-mix(in srgb, ${tone} 10%, transparent)` : 'color-mix(in srgb, var(--accent) 10%, transparent)', color: tone || 'var(--accent)' }}><Icon size={15} /></span>
+        <span className="truncate text-[10px] font-medium" style={{ color: 'var(--text-secondary)' }}>{label}</span>
+      </div>
+      <div className="mt-auto pt-3">
+        <strong className="block truncate text-lg font-semibold tracking-tight" style={{ color: 'var(--text-primary)' }}>{value}</strong>
+        {sub && <span className="mt-1 block truncate text-[10px]" style={{ color: 'var(--text-secondary)' }}>{sub}</span>}
+      </div>
+    </div>
+  )
+  return to ? <Link to={to} className="block">{inner}</Link> : inner
+}
+
+function Activity({ item }) {
+  const positive = Number(item.amount) >= 0
+  return <div className="flex min-w-0 items-center gap-2 md:border-r md:pr-3 last:border-0"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full" style={{ background: positive ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'color-mix(in srgb, var(--color-error) 10%, transparent)', color: positive ? 'var(--accent)' : 'var(--color-error)' }}>{positive ? <Gift size={13} /> : <Sparkles size={13} />}</span><div className="min-w-0"><strong className="block truncate text-xs" style={{ color: 'var(--text-primary)' }}>{item.description || transactionLabels[item.type] || '积分变动'}</strong><span className="block truncate text-[10px]" style={{ color: 'var(--text-secondary)' }}>{formatTime(item.created_at)} · {positive ? '+' : ''}{formatPoints(item.amount)} 积分</span></div></div>
 }

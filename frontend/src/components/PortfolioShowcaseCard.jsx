@@ -92,7 +92,7 @@ export default function PortfolioShowcaseCard({onUsePrompt}){
               <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold tracking-[0.24em] uppercase" style={{background:'color-mix(in srgb,var(--accent) 12%,transparent)',color:'var(--accent)'}}>
                 <Sparkles size={12} />作品集
               </div>
-              <h2 className="mt-3 text-[2rem] leading-none sm:text-[2.6rem]" style={{color:'var(--text-primary)',fontFamily:'"Cormorant Garamond","STSong","Noto Serif SC",serif',fontWeight:600,letterSpacing:'-.03em'}}>
+              <h2 className="mt-3 text-[2rem] leading-none sm:text-[2.6rem] font-extrabold tracking-tight" style={{backgroundImage:'linear-gradient(135deg,var(--text-primary) 30%,color-mix(in srgb,var(--accent) 65%,var(--text-primary)))',WebkitBackgroundClip:'text',backgroundClip:'text',color:'transparent'}}>
                 没有作品时，先从提示词库里最受欢迎的作品开始
               </h2>
               <p className="mt-3 max-w-xl text-sm sm:text-[15px]" style={{color:'var(--text-secondary)'}}>

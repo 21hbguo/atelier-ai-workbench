@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Coins, MessageCircle } from 'lucide-react'
 import ChatInput from '../components/ChatInput'
 import MainLayout from '../components/MainLayout'
 import PortfolioShowcaseCard from '../components/PortfolioShowcaseCard'
@@ -102,26 +101,6 @@ export default function ChatPage(){
         )}
         <div className="flex-1 min-h-0 overflow-y-auto">
           <div className="w-full pb-28 lg:pb-6">
-            <div className="mobile-topbar-shell" style={{borderColor:'var(--border-color)'}}>
-              <div className="mobile-topbar-inner w-full justify-start gap-1.5 px-4 lg:px-6">
-                <div className="flex shrink-0 items-center gap-1.5">
-                  <button onClick={() => navigate('/chat')} title="AI 助手对话"
-                    className="inline-flex h-7 items-center gap-1 rounded-xl border px-2 text-[11px] font-medium transition-colors"
-                    style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)', borderColor: 'var(--border-color)' }}>
-                    <MessageCircle size={13} />
-                    <span>会话</span>
-                  </button>
-                  <button onClick={handleCheckIn} disabled={checkedInToday||checkinLoading} className="inline-flex h-7 items-center justify-center rounded-xl border px-2 text-[11px] font-medium transition-colors disabled:opacity-60" style={{background:checkedInToday?'color-mix(in srgb,var(--color-success) 14%,transparent)':'var(--bg-primary)',color:checkedInToday?'var(--color-success)':'var(--text-primary)',borderColor:'var(--border-color)'}}>
-                    {checkinLoading?'签到中':checkedInToday?'已签':'签到'}
-                  </button>
-                  <button onClick={()=>navigate('/wallet')} className="inline-flex h-7 items-center gap-1 rounded-2xl px-2.5 transition-colors" style={{background:'var(--accent)',color:'#fff'}}>
-                    <Coins size={14}/>
-                    <span className="text-xs font-semibold leading-none tabular-nums">{points}</span>
-                    <span className="text-[11px] leading-none opacity-90">积分</span>
-                  </button>
-                </div>
-              </div>
-            </div>
             <div className="mx-auto flex w-full max-w-6xl justify-center px-4 pt-6 sm:pt-10 lg:px-6">
               <PortfolioShowcaseCard onUsePrompt={handleUsePrompt} />
             </div>
