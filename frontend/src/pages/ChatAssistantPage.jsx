@@ -983,10 +983,12 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
                                     <ModelLogo provider={m.provider} className="shrink-0" size={20} />
                                     <span className="min-w-0 flex-1 text-left leading-snug line-clamp-3">{m.label || m.model_id}</span>
                                     <span className="flex shrink-0 items-center gap-1">
-                                      <span className="rounded px-1.5 py-0.5 text-[10px] font-medium"
-                                        style={{ background: 'color-mix(in srgb, var(--accent) 10%, transparent)', color: 'var(--accent)' }}>
-                                        1 积分/次
-                                      </span>
+                                      {(m.capabilities || []).slice(0, 3).map(t => (
+                                        <span key={t} className="rounded px-1.5 py-0.5 text-[10px] font-medium"
+                                          style={{ background: 'color-mix(in srgb, var(--text-secondary) 10%, transparent)', color: 'var(--text-secondary)' }}>
+                                          {t}
+                                        </span>
+                                      ))}
                                       {m.model_id === chatModelId && <Check size={14} />}
                                     </span>
                                   </button>
