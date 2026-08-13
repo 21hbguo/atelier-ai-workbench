@@ -14,6 +14,7 @@ const {
   toggleCurrentColsMock,
   readUserMock,
   clearUserMock,
+  subscriptionMeMock,
 } = vi.hoisted(() => ({
   alertMock: vi.fn(),
   pointsBalanceMock: vi.fn(),
@@ -27,6 +28,7 @@ const {
   toggleCurrentColsMock: vi.fn(),
   readUserMock: vi.fn(),
   clearUserMock: vi.fn(),
+  subscriptionMeMock: vi.fn(),
 }))
 
 vi.mock('../components/AppDialogProvider', () => ({
@@ -62,6 +64,7 @@ vi.mock('../api', () => ({
   authAPI: { logout: authLogoutMock },
   notificationAPI: { unreadCount: unreadCountMock },
   announcementAPI: { getUnread: getUnreadMock },
+  subscriptionAPI: { me: subscriptionMeMock },
 }))
 
 let mockNavigate = vi.fn()
@@ -98,6 +101,7 @@ beforeEach(() => {
   authLogoutMock.mockResolvedValue({})
   unreadCountMock.mockResolvedValue({ data: { count: 3 } })
   getUnreadMock.mockResolvedValue({ data: { items: [{ id: 1 }] } })
+  subscriptionMeMock.mockResolvedValue({ data: { plan: null } })
   localStorage.clear()
   global.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ total: 0 }) }))
 })
@@ -238,7 +242,7 @@ describe('Sidebar', () => {
 
   it('calls logout and navigates to login', async () => {
     renderSidebar()
-    fireEvent.click(screen.getByText('退出登录'))
+    fireEvent.click(screen.getByRole('button', { name: '退出登录' }))
     await waitFor(() => {
       expect(authLogoutMock).toHaveBeenCalled()
       expect(clearUserMock).toHaveBeenCalled()
@@ -248,7 +252,7 @@ describe('Sidebar', () => {
 
   it('toggles theme when theme button is clicked', () => {
     renderSidebar()
-    fireEvent.click(screen.getByText('深色'))
+    fireEvent.click(screen.getByRole('button', { name: '切换主题' }))
     expect(toggleThemeMock).toHaveBeenCalledTimes(1)
   })
 
@@ -266,11 +270,11 @@ describe('Sidebar', () => {
     expect(toggleCurrentColsMock).toHaveBeenCalledTimes(1)
   })
 
-  it('renders footer links', () => {
+  it('does not render footer links', () => {
     renderSidebar()
-    expect(screen.getByText('用户协议')).toBeInTheDocument()
-    expect(screen.getByText('隐私政策')).toBeInTheDocument()
-    expect(screen.getByText('捐赠说明与积分规则')).toBeInTheDocument()
+    expect(screen.queryByText('用户协议')).not.toBeInTheDocument()
+    expect(screen.queryByText('隐私政策')).not.toBeInTheDocument()
+    expect(screen.queryByText('捐赠说明与积分规则')).not.toBeInTheDocument()
   })
 
   it('fetches recharge pending count for admin', async () => {

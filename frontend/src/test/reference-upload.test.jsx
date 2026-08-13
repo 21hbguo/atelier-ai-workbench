@@ -105,6 +105,9 @@ vi.mock('../api', () => {
       checkinStatus: vi.fn(async () => ok({ checked_in_today: false })),
       checkin: vi.fn(async () => ok({ points: 110, message: 'ok' })),
     },
+    subscriptionAPI: {
+      me: vi.fn(async () => ok({ plan: { name: '免费套餐', is_free: true } })),
+    },
     configAPI: {
       get: vi.fn(async () =>
         ok({

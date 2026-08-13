@@ -20,6 +20,7 @@ const {
   apiGetMock,
   dialogAlertMock,
   dialogConfirmMock,
+  searchParamsMock,
 } = vi.hoisted(() => ({
   readUserMock: vi.fn(),
   balanceMock: vi.fn(),
@@ -39,7 +40,13 @@ const {
   apiGetMock: vi.fn(),
   dialogAlertMock: vi.fn(),
   dialogConfirmMock: vi.fn(),
+  searchParamsMock: vi.fn(),
 }))
+
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual('react-router-dom')
+  return { ...actual, useSearchParams: () => searchParamsMock() }
+})
 
 vi.mock('../auth', () => ({
   readUser: readUserMock,
@@ -172,6 +179,7 @@ beforeEach(() => {
   cleanup()
   vi.clearAllMocks()
   setupDefaultMocks()
+  searchParamsMock.mockReturnValue([new URLSearchParams(), vi.fn()])
   localStorage.clear()
   localStorage.setItem('user', JSON.stringify(mockUser))
 })
@@ -181,6 +189,18 @@ afterEach(() => {
 })
 
 describe('WalletPage', () => {
+  it('opens the wallet tab specified by a redeem deep link', async () => {
+    searchParamsMock.mockReturnValue([new URLSearchParams('tab=redeem'), vi.fn()])
+    render(<WalletPage />)
+    await waitFor(() => expect(screen.getByText('输入已发放的兑换码，领取对应积分。')).toBeInTheDocument())
+  })
+
+  it('opens the wallet tab specified by an invite deep link', async () => {
+    searchParamsMock.mockReturnValue([new URLSearchParams('tab=invite'), vi.fn()])
+    render(<WalletPage />)
+    await waitFor(() => expect(screen.getAllByText('邀请中心').length).toBeGreaterThan(1))
+  })
+
   describe('balance display', () => {
     it('shows current points from user data', async () => {
       render(<WalletPage />)

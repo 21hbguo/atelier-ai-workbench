@@ -12,6 +12,7 @@ const {
   toggleLayoutModeMock,
   toggleCurrentColsMock,
   clearUserMock,
+  subscriptionMeMock,
 } = vi.hoisted(() => ({
   unreadCountMock: vi.fn(),
   getUnreadMock: vi.fn(),
@@ -23,6 +24,7 @@ const {
   toggleLayoutModeMock: vi.fn(),
   toggleCurrentColsMock: vi.fn(),
   clearUserMock: vi.fn(),
+  subscriptionMeMock: vi.fn(),
 }))
 
 vi.mock('../components/AppDialogProvider', () => ({
@@ -58,6 +60,7 @@ vi.mock('../api', () => ({
   authAPI: { logout: authLogoutMock },
   notificationAPI: { unreadCount: unreadCountMock },
   announcementAPI: { getUnread: getUnreadMock },
+  subscriptionAPI: { me: subscriptionMeMock },
 }))
 
 let mockLocation = { pathname: '/', search: '' }
@@ -93,6 +96,7 @@ beforeEach(() => {
   authLogoutMock.mockResolvedValue({})
   unreadCountMock.mockResolvedValue({ data: { count: 0 } })
   getUnreadMock.mockResolvedValue({ data: { items: [] } })
+  subscriptionMeMock.mockResolvedValue({ data: { plan: null } })
   global.fetch = vi.fn(async () => ({ ok: true, json: async () => ({}) }))
 })
 
@@ -104,7 +108,7 @@ describe('MainLayout', () => {
 
   it('renders Sidebar component', () => {
     renderLayout()
-    expect(screen.getByText('Atelier')).toBeInTheDocument()
+    expect(screen.getByText('Atelier-ai')).toBeInTheDocument()
   })
 
   it('renders mobile topbar with quick nav links', () => {
