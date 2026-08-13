@@ -59,14 +59,9 @@ describe('SettingsPage', () => {
     expect(screen.getByText('确认修改')).toBeInTheDocument()
   })
 
-  it('hides recent login sessions section but still fetches sessions for risk warning', async () => {
-    mockSessions([
-      { id: 's1', ip: '1.2.3.4', user_agent: 'Chrome/120', risk_level: 'low', is_current: true, created_at: '2025-01-01T12:00:00+08:00' },
-    ])
+  it('hides session history section but still fetches sessions (feature flag off)', async () => {
     renderPage()
     expect(screen.queryByText('最近登录会话')).not.toBeInTheDocument()
-    expect(screen.queryByText('1.2.3.4')).not.toBeInTheDocument()
-    expect(screen.queryByText('暂无记录')).not.toBeInTheDocument()
     await waitFor(() => expect(sessionsMock).toHaveBeenCalled())
   })
 
@@ -110,12 +105,26 @@ describe('SettingsPage', () => {
     await waitFor(() => expect(alertMock).toHaveBeenCalledWith('旧密码错误'))
   })
 
-  it('shows risk warning when a session has high risk', async () => {
+  it('does not show session loading/empty/items UI while hidden', async () => {
+    mockSessions([
+      { id: 's1', ip: '1.2.3.4', user_agent: 'Chrome/120', risk_level: 'low', is_current: true, created_at: '2025-01-01T12:00:00+08:00' },
+    ])
+    renderPage()
+    expect(screen.queryByText('加载中...')).not.toBeInTheDocument()
+    expect(screen.queryByText('暂无记录')).not.toBeInTheDocument()
+    expect(screen.queryByText('1.2.3.4')).not.toBeInTheDocument()
+    expect(screen.queryByText('未知IP')).not.toBeInTheDocument()
+    expect(screen.queryByText('当前')).not.toBeInTheDocument()
+    await waitFor(() => expect(sessionsMock).toHaveBeenCalled())
+  })
+
+  it('does not show risk warning even with high-risk sessions while hidden', async () => {
     mockSessions([
       { id: 's1', ip: '1.2.3.4', user_agent: 'Chrome', risk_level: 'high', is_current: false, created_at: '2025-01-01T12:00:00+08:00' },
     ])
     renderPage()
-    await waitFor(() => expect(screen.getByText(/检测到近24小时存在多IP/)).toBeInTheDocument())
+    await waitFor(() => expect(sessionsMock).toHaveBeenCalled())
+    expect(screen.queryByText(/检测到近24小时存在多IP/)).not.toBeInTheDocument()
   })
 
   it('does not show risk warning when all sessions are low risk', async () => {
@@ -127,4 +136,9 @@ describe('SettingsPage', () => {
     expect(screen.queryByText(/检测到近24小时/)).not.toBeInTheDocument()
   })
 
+  it('shows alert on session fetch failure', async () => {
+    sessionsMock.mockRejectedValue(new Error('网络错误'))
+    renderPage()
+    await waitFor(() => expect(alertMock).toHaveBeenCalledWith('网络错误'))
+  })
 })
