@@ -849,6 +849,48 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
     # 历史消息不在此处加载：由 ChatService.prepare_session_messages 带压缩状态（id > summary_until）
     # 统一组装，保证三区块结构（区块2 文档块固定前缀 + 区块3 纯追加历史）逐轮稳定。
     attached_docs = [{"original_name": r["original_name"], "page_content": r["page_content"]} for r in file_rows]
+    assistant_msg_id = None
+
+    def _append_assistant_delta(text: str = "", thinking: str = ""):
+        nonlocal assistant_msg_id
+        if not text and not thinking:
+            return assistant_msg_id
+        with get_db() as conn:
+            if assistant_msg_id is None:
+                row = conn.execute(
+                    "INSERT INTO chat_messages (session_id, role, content, thinking) VALUES (%s, 'assistant', %s, %s) RETURNING id",
+                    (session_id, text, thinking or None),
+                ).fetchone()
+                assistant_msg_id = row["id"] if row else None
+            else:
+                conn.execute(
+                    "UPDATE chat_messages SET content = content || %s, thinking = COALESCE(thinking, '') || %s WHERE id = %s",
+                    (text, thinking, assistant_msg_id),
+                )
+        return assistant_msg_id
+
+    def _save_assistant_message(text: str, thinking: str = "", citations=None, widgets=None, files=None):
+        nonlocal assistant_msg_id
+        with get_db() as conn:
+            if assistant_msg_id is None:
+                row = conn.execute(
+                    "INSERT INTO chat_messages (session_id, role, content, thinking, citations, widgets, files) VALUES (%s, 'assistant', %s, %s, %s::jsonb, %s::jsonb, %s::jsonb) RETURNING id",
+                    (session_id, text, thinking or None,
+                     json.dumps(citations, ensure_ascii=False) if citations else None,
+                     json.dumps(widgets, ensure_ascii=False) if widgets else None,
+                     json.dumps(files, ensure_ascii=False) if files else None),
+                ).fetchone()
+                assistant_msg_id = row["id"] if row else None
+            else:
+                conn.execute(
+                    "UPDATE chat_messages SET content = %s, thinking = %s, citations = %s::jsonb, widgets = %s::jsonb, files = %s::jsonb WHERE id = %s",
+                    (text, thinking or None,
+                     json.dumps(citations, ensure_ascii=False) if citations else None,
+                     json.dumps(widgets, ensure_ascii=False) if widgets else None,
+                     json.dumps(files, ensure_ascii=False) if files else None,
+                     assistant_msg_id),
+                )
+        return assistant_msg_id
 
     # 自动模式：纯对话也启用 agent 工具链路（始终注册 image_gen，由 LLM 判断何时生图）；
     # 会话有已解析文件 → 追加文档检索/总结等工具；用户显式开启联网搜索（web_search=true）→ 追加搜索工具。
@@ -1050,9 +1092,11 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                         etype = event["type"]
                         if etype == "chunk":
                             # 实时透传文本增量，前端 StreamBubble 逐字展示
+                            _append_assistant_delta(text=str(event["text"] or ""))
                             yield f"event: chunk\ndata: {json.dumps({'text': event['text']}, ensure_ascii=False)}\n\n"
                         elif etype == "thinking":
                             # 实时透传思考增量（多轮合并展示由前端累积）
+                            _append_assistant_delta(thinking=str(event["text"] or ""))
                             yield f"event: thinking\ndata: {json.dumps({'text': event['text']}, ensure_ascii=False)}\n\n"
                         elif etype == "tool_status":
                             data = {"type": "tool_status", "name": event["name"], "status": event["status"]}
@@ -1079,16 +1123,10 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                         elif etype == "done":
                             text = str(event.get("text") or "")
                             thinking = str(event.get("thinking") or "").strip()
-                            with get_db() as conn:
-                                new_row = conn.execute(
-                                    "INSERT INTO chat_messages (session_id, role, content, thinking, citations, widgets, files) VALUES (%s, 'assistant', %s, %s, %s::jsonb, %s::jsonb, %s::jsonb) RETURNING id",
-                                    (session_id, text, thinking or None,
-                                     json.dumps(ctx.citations, ensure_ascii=False) if ctx.citations else None,
-                                     json.dumps(ctx.widgets, ensure_ascii=False) if ctx.widgets else None,
-                                     json.dumps(ctx.files, ensure_ascii=False) if ctx.files else None),
-                                ).fetchone()
+                            new_msg_id = _save_assistant_message(
+                                text, thinking, ctx.citations, ctx.widgets, ctx.files,
+                            )
                             finished = True
-                            new_msg_id = new_row["id"] if new_row else None
                             final_balance = _record_chat_usage(
                                 user_id=user_id, session_id=session_id, message_id=new_msg_id,
                                 model_cfg=target_model, usage=event.get("usage"),
@@ -1176,18 +1214,16 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                     messages.insert(inject_idx, {"role": "user", "content": web_inject})
             async for event in ChatService.chat_stream([], body.reasoning_effort, model=target_model, attached_docs=attached_docs, prebuilt_messages=messages):
                 if event["type"] == "chunk":
+                    _append_assistant_delta(text=str(event["text"] or ""))
                     yield f"event: chunk\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
                 elif event["type"] == "thinking":
+                    _append_assistant_delta(thinking=str(event["text"] or ""))
                     yield f"event: thinking\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
                 elif event["type"] == "done":
-                    with get_db() as conn:
-                        new_row = conn.execute(
-                            "INSERT INTO chat_messages (session_id, role, content, thinking, citations) VALUES (%s, 'assistant', %s, %s, %s::jsonb) RETURNING id",
-                            (session_id, event["text"], event.get("thinking", "") or None,
-                             json.dumps(citations, ensure_ascii=False) if citations else None),
-                        ).fetchone()
+                    new_msg_id = _save_assistant_message(
+                        event["text"], event.get("thinking", "") or "", citations,
+                    )
                     finished = True
-                    new_msg_id = new_row["id"] if new_row else None
                     final_balance = _record_chat_usage(
                         user_id=user_id, session_id=session_id, message_id=new_msg_id,
                         model_cfg=target_model, usage=event.get("usage"),
