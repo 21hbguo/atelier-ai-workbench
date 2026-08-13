@@ -631,7 +631,8 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
 
     cost_per = BillingService.charge_points(Decimal(str(_chat_cost_per_request(target_model))))
     req_id = str(uuid.uuid4())
-    is_free_user = bool((entitlements["plan"] or {}).get("is_free"))
+    # AI 助手每日次数总额：免费=全局配置；会员套餐=features.daily_quota（None=不限）；credits 包=0
+    daily_total = PointsService.chat_daily_total(entitlements)
 
     # per-model 覆盖（agent 自动分支与 chat_stream 内逻辑共用）
     override = _model_override(target_model)
@@ -644,7 +645,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
     # 先扣积分（免费用户优先消耗每日免费次数，用尽或订阅用户扣通用积分）
     try:
         precharge = PointsService.consume_ai_chat(
-            user_id, cost_per, "AI助手对话 x1", request_key=f"chat:{req_id}", is_free_user=is_free_user, model_id=target_model_id
+            user_id, cost_per, "AI助手对话 x1", request_key=f"chat:{req_id}", daily_total=daily_total, model_id=target_model_id
         )
         balance_after = precharge["balance"]
         chat_charge_mode = precharge["mode"]
@@ -685,7 +686,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                 conn.execute("UPDATE chat_sessions SET updated_at = NOW() WHERE id = %s", (session_id,))
     except Exception:
         try:
-            PointsService.refund_ai_chat(user_id, cost_per, "AI助手回复失败退还", request_key=f"chat_refund:{req_id}", mode=chat_charge_mode, model_id=target_model_id)
+            PointsService.refund_ai_chat(user_id, cost_per, "AI助手回复失败退还", request_key=f"chat_refund:{req_id}", mode=chat_charge_mode, daily_total=daily_total, model_id=target_model_id)
         finally:
             _active_chat_requests[user_id] = max(0, _active_chat_requests.get(user_id, 1) - 1)
         raise
@@ -720,7 +721,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
     def _refund_once() -> None:
         # refund 幂等（request_key 唯一），重复调用安全
         try:
-            PointsService.refund_ai_chat(user_id, cost_per, "AI助手回复失败退还", request_key=f"chat_refund:{req_id}", mode=chat_charge_mode, model_id=target_model_id)
+            PointsService.refund_ai_chat(user_id, cost_per, "AI助手回复失败退还", request_key=f"chat_refund:{req_id}", mode=chat_charge_mode, daily_total=daily_total, model_id=target_model_id)
         except Exception:
             logger.exception("[chat/send] refund failed")
         # 失败退款：标记对应 usage 记录（失败场景通常无 usage 记录，无则不更新任何行）

@@ -654,7 +654,7 @@ const MODEL_FAMILIES = [
 ]
 const familyKeyOf = (m) => String(m.provider || '').trim().toLowerCase()
 
-function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, dailyTotal, dailyRemaining, isFreeUser, reasoningEffort, onReasoningEffort, efforts, modelLabel, modelProvider, pendingQueue, onEditPending, onRemovePending, models, chatModelId, onSelectModel, onUploadClick, docs, onRemoveDoc, uploadingCount, uploadNote, webSearch, onWebSearch, linkStatus, dragActive, dragHandlers }) {
+function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, dailyTotal, dailyRemaining, reasoningEffort, onReasoningEffort, efforts, modelLabel, modelProvider, pendingQueue, onEditPending, onRemovePending, models, chatModelId, onSelectModel, onUploadClick, docs, onRemoveDoc, uploadingCount, uploadNote, webSearch, onWebSearch, linkStatus, dragActive, dragHandlers }) {
   const [effortOpen, setEffortOpen] = useState(false)
   const [modelOpen, setModelOpen] = useState(false)
   const [modelQuery, setModelQuery] = useState('')
@@ -730,11 +730,11 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
               </div>
             )}
           </div>
-          {isFreeUser && dailyTotal > 0 && (
+          {(dailyTotal === null || dailyTotal > 0) && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium"
               style={{ color: 'var(--text-secondary)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)', border: '1px solid var(--border-color)' }}
               title="今日 AI 助手已用次数/免费总次数（用完后将扣除积分）">
-              今日已用 {Math.max(0, dailyTotal - dailyRemaining)}/{dailyTotal} 次
+              {dailyTotal === null ? '今日不限次' : `今日已用 ${Math.max(0, dailyTotal - dailyRemaining)}/${dailyTotal} 次`}
             </span>
           )}
           <span className="ml-auto hidden sm:inline text-[11px]" style={{ color: 'var(--text-secondary)' }}>思考强度越高，回复越深入，耗时越长</span>
@@ -1041,7 +1041,6 @@ export default function ChatAssistantPage() {
   const [points, setPoints] = useState(() => readUser()?.points ?? 0)
   const [dailyTotal, setDailyTotal] = useState(0)
   const [dailyRemaining, setDailyRemaining] = useState(0)
-  const [isFreeUser, setIsFreeUser] = useState(false)
   const [reasoningEffort, setReasoningEffort] = useState(() => localStorage.getItem('chat_reasoning_effort') || 'auto')
   const [modelInfo, setModelInfo] = useState(null) // { label, reasoning_efforts, ... }（激活模型档案）
   const [models, setModels] = useState([]) // 全部启用的模型档案
@@ -1093,6 +1092,7 @@ export default function ChatAssistantPage() {
   const manualStopRef = useRef(false)
   const pointsRef = useRef(points)
   const dailyRemainingRef = useRef(dailyRemaining)
+  const dailyTotalRef = useRef(dailyTotal)
   const activeIdRef = useRef(activeId)
   // 新建会话后本地消息已就绪（handleSend/sendQueuedNext 已 setMessages），
   // 跳过 useEffect([activeId]) 的异步加载，避免「空列表覆盖本地用户消息」的竞态丢消息
@@ -1129,6 +1129,7 @@ export default function ChatAssistantPage() {
   useEffect(() => {
     pointsRef.current = points
     dailyRemainingRef.current = dailyRemaining
+    dailyTotalRef.current = dailyTotal
     activeIdRef.current = activeId
     effortRef.current = reasoningEffort
     modelIdRef.current = chatModelId
@@ -1153,9 +1154,8 @@ export default function ChatAssistantPage() {
     }).catch(() => {})
     pointsAPI.balance().then(res => {
       setPoints(Number(res.data?.points || 0))
-      setDailyTotal(Number(res.data?.ai_daily_total || 0))
-      setDailyRemaining(Number(res.data?.ai_daily_remaining || 0))
-      setIsFreeUser(!!res.data?.is_free_user)
+      setDailyTotal(res.data?.ai_daily_total === null ? null : Number(res.data?.ai_daily_total || 0))
+      setDailyRemaining(res.data?.ai_daily_remaining === null ? null : Number(res.data?.ai_daily_remaining || 0))
     }).catch(() => {})
     chatAPI.sessions().then(res => {
       const items = res.data?.items || []
@@ -1630,9 +1630,8 @@ export default function ChatAssistantPage() {
           dialog.alert(errMsg)
           pointsAPI.balance().then(res => {
             setPoints(Number(res.data?.points || 0))
-            setDailyTotal(Number(res.data?.ai_daily_total || 0))
-            setDailyRemaining(Number(res.data?.ai_daily_remaining || 0))
-            setIsFreeUser(!!res.data?.is_free_user)
+            setDailyTotal(res.data?.ai_daily_total === null ? null : Number(res.data?.ai_daily_total || 0))
+            setDailyRemaining(res.data?.ai_daily_remaining === null ? null : Number(res.data?.ai_daily_remaining || 0))
           }).catch(() => {})
         }
       },
@@ -1702,7 +1701,7 @@ export default function ChatAssistantPage() {
     }
     // 空闲（或上一条已停止/失败）：获取发送锁后直接发送
     if (!acquireSendLock(text)) return
-    if (cost > 0 && !(isFreeUser && (dailyRemainingRef?.current || 0) > 0) && pointsRef.current < cost) {
+    if (cost > 0 && !((dailyTotalRef?.current === null) || (dailyRemainingRef?.current || 0) > 0) && pointsRef.current < cost) {
       releaseSendLock()
       dialog.alert(`钱包余额不足，当前仅剩 ${pointsRef.current} 积分，本次对话需要 ${cost} 积分。`)
       return
@@ -1742,7 +1741,7 @@ export default function ChatAssistantPage() {
     }
     pendingQueueRef.current = pendingQueueRef.current.slice(1)
     setPendingQueue(pendingQueueRef.current)
-    if (cost > 0 && !(isFreeUser && (dailyRemainingRef?.current || 0) > 0) && pointsRef.current < cost) {
+    if (cost > 0 && !((dailyTotalRef?.current === null) || (dailyRemainingRef?.current || 0) > 0) && pointsRef.current < cost) {
       releaseSendLock()
       dialog.alert(`钱包余额不足，当前仅剩 ${pointsRef.current} 积分，本次对话需要 ${cost} 积分。排队消息已取消，请补充钱包余额后重新发送。`)
       clearPending()
@@ -1768,7 +1767,7 @@ export default function ChatAssistantPage() {
     const userLocalId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     setMessages(prev => [...prev, { id: userLocalId, role: 'user', content: item.text, files: item.files || [], created_at: new Date().toISOString() }])
     startStream(sid, item.text, effortRef.current, null, userLocalId)
-  }, [dialog, cost, isFreeUser, startStream, acquireSendLock, releaseSendLock, clearPending])
+  }, [dialog, cost, startStream, acquireSendLock, releaseSendLock, clearPending])
 
   // sending 变为空闲时自动发送排队中的下一条
   useEffect(() => {
@@ -2060,7 +2059,7 @@ export default function ChatAssistantPage() {
             onChange={handleFilesSelected} />
           <ChatInputBar inputRef={inputRef} value={input} onChange={setInput}
             onSend={handleSend} onStop={handleStop} sending={!!sending && !sending?.stopped} cost={cost} points={points}
-            dailyTotal={dailyTotal} dailyRemaining={dailyRemaining} isFreeUser={isFreeUser}
+            dailyTotal={dailyTotal} dailyRemaining={dailyRemaining}
             reasoningEffort={reasoningEffort} onReasoningEffort={handleReasoningEffort}
             efforts={chatModel?.reasoning_efforts} modelLabel={chatModel?.label || modelInfo?.label || modelInfo?.model_id}
             modelProvider={chatModel?.provider || modelInfo?.provider || ''}

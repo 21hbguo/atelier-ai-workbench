@@ -814,6 +814,8 @@ def init_db():
                 conn.execute("ALTER TABLE users ADD COLUMN ai_daily_quota_remaining INTEGER DEFAULT 0")
             if not _column_exists(conn, "users", "ai_daily_quota_date"):
                 conn.execute("ALTER TABLE users ADD COLUMN ai_daily_quota_date DATE")
+            if not _column_exists(conn, "users", "ai_daily_quota_total"):
+                conn.execute("ALTER TABLE users ADD COLUMN ai_daily_quota_total INTEGER")
             if not _column_exists(conn, "recharge_requests", "invite_code"):
                 conn.execute("ALTER TABLE recharge_requests ADD COLUMN invite_code VARCHAR(32) DEFAULT ''")
             if not _column_exists(conn, "recharge_requests", "plan_id"):

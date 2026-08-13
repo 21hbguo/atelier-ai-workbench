@@ -72,42 +72,59 @@ class PointsService:
         return {"balance": balance, **breakdown}
 
     @classmethod
-    def get_ai_daily_quota(cls, user_id: int, is_free_user: bool) -> dict:
-        """AI 助手每日免费次数查询（只读展示，不落库）。
+    def chat_daily_total(cls, entitlements: dict) -> int | None:
+        """AI 助手每日次数总额：免费用户=全局 ai_daily_free_quota；会员套餐=features.daily_quota
+        （None=不限）；画图积分包等其它套餐=0（无每日次数，直接扣积分）。"""
+        if bool((entitlements.get("plan") or {}).get("is_free")):
+            return int(get_limit_config()["ai_daily_free_quota"])
+        features = entitlements.get("features") or {}
+        if features.get("package_type") == "membership":
+            dq = features.get("daily_quota")
+            return None if dq is None else int(dq)
+        return 0
 
-        - 非免费用户：total=0, remaining=0（订阅用户不消耗每日次数）
-        - 免费用户：total=全局 ai_daily_free_quota；ai_daily_quota_date 不是今天（含 NULL）
-          时展示 remaining=total（懒重置，展示用），否则展示字段值。
+    @classmethod
+    def get_ai_daily_quota(cls, user_id: int, entitlements: dict) -> dict:
+        """AI 助手每日次数查询（只读展示，不落库）。
+
+        - 免费用户：total=ai_daily_free_quota（默认 5）
+        - 会员套餐：total=features.daily_quota（None 表示不限次数）
+        - 画图积分包等：total=0（无每日次数）
+        - 有限额度时 remaining 按懒重置语义展示：日期或总额（套餐档位）变化 → 展示 total。
         """
-        total = int(get_limit_config()["ai_daily_free_quota"])
-        if not is_free_user:
+        total = cls.chat_daily_total(entitlements)
+        if total is None:
+            return {"total": None, "remaining": None}
+        if total <= 0:
             return {"total": 0, "remaining": 0}
         today = datetime.now().strftime("%Y-%m-%d")
         with get_db() as conn:
             row = conn.execute(
-                "SELECT ai_daily_quota_remaining, ai_daily_quota_date FROM users WHERE id = %s",
+                "SELECT ai_daily_quota_remaining, ai_daily_quota_date, ai_daily_quota_total FROM users WHERE id = %s",
                 (user_id,),
             ).fetchone()
         if not row:
             return {"total": total, "remaining": total}
         date = row["ai_daily_quota_date"]
-        if date is None or date.strftime("%Y-%m-%d") != today:
+        stored_total = row["ai_daily_quota_total"]
+        if date is None or date.strftime("%Y-%m-%d") != today or stored_total is None or int(stored_total) != total:
             return {"total": total, "remaining": total}
         return {"total": total, "remaining": max(0, int(row["ai_daily_quota_remaining"] or 0))}
 
     @classmethod
-    def consume_ai_chat(cls, user_id: int, amount: float, description: str, request_key: str, is_free_user: bool, model_id: str = "") -> dict:
-        """AI 助手对话预扣：免费用户优先消耗每日免费次数（固定 1 次/对话），
-        次数用尽或订阅用户则扣通用积分（users.points）。
+    def consume_ai_chat(cls, user_id: int, amount: float, description: str, request_key: str, daily_total: int | None, model_id: str = "") -> dict:
+        """AI 助手对话预扣（每次对话固定 1 次/1 积分）。
 
-        返回 {"mode": "free"|"paid", "balance": Decimal, "remaining": int}；
-        余额不足时抛 ValueError（由调用方转 402）。
+        daily_total: 每日次数总额——None=不限（会员永久卡，不扣次数不扣积分）；0=无每日次数
+        （画图积分包，直接扣积分）；>0=有限额度（免费 5 次 / 会员日卡 60 等），先扣次数、用尽扣积分。
+
+        返回 {"mode": "free"|"paid"|"unlimited", "balance": Decimal, "remaining": int|None}；
+        扣积分余额不足时抛 ValueError（由调用方转 402）。
         """
         amount = _point_amount(amount)
         if amount <= 0:
             return {"mode": "paid", "balance": cls.get_balance(user_id), "remaining": 0}
         today = datetime.now().strftime("%Y-%m-%d")
-        total = int(get_limit_config()["ai_daily_free_quota"])
         with get_db() as conn:
             user = conn.execute("SELECT id FROM users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
             if not user:
@@ -121,11 +138,16 @@ class PointsService:
                     cur = conn.execute("SELECT points, ai_daily_quota_remaining FROM users WHERE id = %s", (user_id,)).fetchone()
                     mode = "free" if existing["type"] == "ai_daily_free" else "paid"
                     return {"mode": mode, "balance": _point_amount(cur["points"] or 0), "remaining": int(cur["ai_daily_quota_remaining"] or 0)}
-            if is_free_user:
-                # 懒重置：当天首次使用时把剩余次数重置为 total（仅当日期不是今天时生效）
+            if daily_total is None:
+                # 不限次数（会员永久卡）：不扣次数、不扣积分
+                cur = conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()
+                return {"mode": "unlimited", "balance": _point_amount(cur["points"] or 0), "remaining": None}
+            if daily_total > 0:
+                # 懒重置：日期变化或总额（套餐档位）变化时重置剩余次数
                 conn.execute(
-                    "UPDATE users SET ai_daily_quota_remaining = %s, ai_daily_quota_date = %s WHERE id = %s AND ai_daily_quota_date IS DISTINCT FROM %s",
-                    (total, today, user_id, today),
+                    "UPDATE users SET ai_daily_quota_remaining = %s, ai_daily_quota_date = %s, ai_daily_quota_total = %s "
+                    "WHERE id = %s AND (ai_daily_quota_date IS DISTINCT FROM %s OR ai_daily_quota_total IS DISTINCT FROM %s)",
+                    (daily_total, today, daily_total, user_id, today, daily_total),
                 )
                 row = conn.execute("SELECT ai_daily_quota_remaining FROM users WHERE id = %s", (user_id,)).fetchone()
                 if row["ai_daily_quota_remaining"] is not None and int(row["ai_daily_quota_remaining"]) > 0:
@@ -140,19 +162,22 @@ class PointsService:
                         (user_id, balance, description, request_key, model_id or None),
                     )
                     return {"mode": "free", "balance": balance, "remaining": remaining}
-            # 订阅用户或免费次数已用尽 → 扣通用积分（余额不足抛 ValueError）
+            # 无每日次数或次数已用尽 → 扣通用积分（余额不足抛 ValueError）
             balance = cls._consume_in_conn(conn, user_id, amount, description, tx_type="chat_consume", request_key=request_key, model_id=model_id)
             return {"mode": "paid", "balance": balance, "remaining": 0}
 
     @classmethod
-    def refund_ai_chat(cls, user_id: int, amount: float, description: str, request_key: str, mode: str, model_id: str = "") -> Decimal:
+    def refund_ai_chat(cls, user_id: int, amount: float, description: str, request_key: str, mode: str, daily_total: int | None = None, model_id: str = "") -> Decimal:
         """AI 助手对话失败退款。
 
-        - mode != "free"：原样委托 cls.refund（普通积分退款，含桶分配回退）
-        - mode == "free"：免费次数 +1（幂等：退款标记流水已存在则直接返回当前余额）
+        - mode == "paid"：原样委托 cls.refund（普通积分退款，含桶分配回退）
+        - mode == "unlimited"：未扣任何次数/积分，直接返回当前余额
+        - mode == "free"：免费次数 +1（幂等：退款标记流水已存在则直接返回当前余额；封顶 daily_total）
         """
-        if mode != "free":
+        if mode == "paid":
             return cls.refund(user_id, amount, description, request_key=request_key, tx_type="chat_refund", model_id=model_id)
+        if mode == "unlimited":
+            return cls.get_balance(user_id)
         with get_db() as conn:
             user = conn.execute("SELECT id FROM users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
             if not user:
@@ -164,11 +189,11 @@ class PointsService:
                 ).fetchone()
                 if existing:
                     return cls._balance_in_conn(conn, user_id)
-            # 免费次数 +1，封顶到每日总额（防止跨天退款把今日重置后的次数顶到 total+1）
-            total = int(get_limit_config()["ai_daily_free_quota"])
+            # 免费次数 +1，封顶到每日总额（防止跨天/跨档位退款把次数顶到 total+1）
+            cap = int(daily_total) if daily_total else 0
             conn.execute(
                 "UPDATE users SET ai_daily_quota_remaining = LEAST(COALESCE(ai_daily_quota_remaining, 0) + 1, %s) WHERE id = %s",
-                (total, user_id),
+                (cap, user_id),
             )
             balance = cls._balance_in_conn(conn, user_id)
             conn.execute(

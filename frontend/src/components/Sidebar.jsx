@@ -43,7 +43,6 @@ export default function Sidebar({ open, onClose }) {
   const [points, setPoints] = useState(user?.points ?? 0)
   const [dailyRemaining, setDailyRemaining] = useState(0)
   const [dailyTotal, setDailyTotal] = useState(0)
-  const [isFreeUser, setIsFreeUser] = useState(false)
   const [checkedInToday, setCheckedInToday] = useState(false)
   const [rechargePendingCount, setRechargePendingCount] = useState(0)
   const [unreadNoticeCount, setUnreadNoticeCount] = useState(0)
@@ -58,9 +57,8 @@ export default function Sidebar({ open, onClose }) {
   useEffect(() => {
     pointsAPI.balance().then(res => {
       setPoints(res.data.points)
-      setDailyRemaining(Number(res.data?.ai_daily_remaining || 0))
-      setDailyTotal(Number(res.data?.ai_daily_total || 0))
-      setIsFreeUser(!!res.data?.is_free_user)
+      setDailyRemaining(res.data?.ai_daily_remaining === null ? null : Number(res.data?.ai_daily_remaining || 0))
+      setDailyTotal(res.data?.ai_daily_total === null ? null : Number(res.data?.ai_daily_total || 0))
       const u = readUser()
       if (u) { u.points = res.data.points; localStorage.setItem('user', JSON.stringify(u)) }
     }).catch(() => {})
@@ -75,7 +73,7 @@ export default function Sidebar({ open, onClose }) {
     const handleUpdate = () => {
       const u = readUser()
       if (u) setPoints(u.points ?? 0)
-      pointsAPI.balance().then(res => { setDailyRemaining(Number(res.data?.ai_daily_remaining || 0)); setDailyTotal(Number(res.data?.ai_daily_total || 0)); setIsFreeUser(!!res.data?.is_free_user) }).catch(() => {})
+      pointsAPI.balance().then(res => { setDailyRemaining(res.data?.ai_daily_remaining === null ? null : Number(res.data?.ai_daily_remaining || 0)); setDailyTotal(res.data?.ai_daily_total === null ? null : Number(res.data?.ai_daily_total || 0)) }).catch(() => {})
     }
     const handleSubscriptionUpdate = () => subscriptionAPI.me().then(res => setSubscription(res.data)).catch(() => {})
     const handleNoticeUpdate = () => Promise.allSettled([notificationAPI.unreadCount(),announcementAPI.getUnread()]).then(([noticeRes,annRes])=>setUnreadNoticeCount((noticeRes.status==='fulfilled'?(noticeRes.value.data.count||0):0)+(annRes.status==='fulfilled'?((annRes.value.data.items||[]).length):0))).catch(() => {})
@@ -205,8 +203,10 @@ export default function Sidebar({ open, onClose }) {
                 </span>
                 {!collapsed && (
                   <span className="ml-1 min-w-0 flex-1 text-left leading-tight">
-                    {isFreeUser && dailyTotal > 0 ? (
-                      <span className="block text-[10px]" title="今日 AI 助手已用次数/免费总次数（用完后将扣除积分）">今日已用 {Math.max(0, dailyTotal - dailyRemaining)}/{dailyTotal} 次 · {points} 积分</span>
+                    {dailyTotal === null ? (
+                      <span className="block text-[10px]" title="AI 助手不限次数">不限次 · {points} 积分</span>
+                    ) : dailyTotal > 0 ? (
+                      <span className="block text-[10px]" title="今日 AI 助手已用次数/总次数（用完后将扣除积分）">今日已用 {Math.max(0, dailyTotal - dailyRemaining)}/{dailyTotal} 次 · {points} 积分</span>
                     ) : (
                       <span className="block text-[10px]">{points} 积分</span>
                     )}

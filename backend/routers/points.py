@@ -75,7 +75,7 @@ async def get_balance(user=Depends(get_current_user)):
     balance = PointsService.get_balance(user_id)
     entitlements = get_entitlements(user_id)
     is_free_user = bool((entitlements.get("plan") or {}).get("is_free"))
-    ai_info = PointsService.get_ai_daily_quota(user_id, is_free_user) if is_free_user else {"total": 0, "remaining": 0}
+    ai_info = PointsService.get_ai_daily_quota(user_id, entitlements)
     return {"points": balance, "ai_daily_total": ai_info["total"], "ai_daily_remaining": ai_info["remaining"], "is_free_user": is_free_user}
 
 
