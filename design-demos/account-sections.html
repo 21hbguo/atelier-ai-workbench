@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>账户与安全 · Atelier</title>
+  <style>
+    :root { --bg-primary:#F2F7F4; --bg-sidebar:#EBF2EE; --bg-card:#FAFAF7; --bg-input:#F4F2ED; --bg-hover:#E8F0EB; --bg-active:#D8E8DE; --text-primary:#2D4A3E; --text-secondary:#7A8B82; --border-color:#D9E3DE; --accent:#3D7A5F; --accent-hover:#2E6B4E; --success:#5B9A6F; --warning:#C4956A; --shadow:0 10px 28px rgba(45,74,62,.07); }
+    * { box-sizing:border-box; }
+    body { margin:0; min-width:320px; background:var(--bg-primary); color:var(--text-primary); font-family:"Inter","Noto Sans SC",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; font-weight:400; letter-spacing:.01em; }
+    button { font:inherit; cursor:pointer; }
+    .shell { min-height:100vh; display:grid; grid-template-columns:220px minmax(0,1fr); }
+    .side { padding:24px 14px; background:var(--bg-sidebar); border-right:1px solid var(--border-color); display:flex; flex-direction:column; }
+    .brand { padding:0 12px 31px; font-family:"Alex Brush","Brush Script MT",cursive; font-size:43px; line-height:.9; color:var(--text-primary); }
+    .nav-label { padding:0 12px 8px; color:var(--text-secondary); font-size:11px; font-weight:600; letter-spacing:.12em; }
+    .nav-item { width:100%; display:flex; align-items:center; gap:10px; border:0; background:transparent; color:var(--text-primary); padding:11px 12px; border-radius:12px; text-align:left; font-size:14px; transition:.18s ease; }
+    .nav-item:hover { background:var(--bg-hover); }
+    .nav-item.active { color:var(--accent); background:rgba(61,122,95,.1); font-weight:600; }
+    .nav-icon { width:18px; height:18px; display:grid; place-items:center; color:currentColor; }
+    .side-foot { margin-top:auto; padding:16px 12px 0; border-top:1px solid var(--border-color); color:var(--text-secondary); font-size:12px; line-height:1.6; }
+    main { min-width:0; padding:42px clamp(20px,5vw,76px) 64px; }
+    .content { width:min(100%,820px); margin:0 auto; }
+    .crumb { display:flex; align-items:center; gap:7px; margin-bottom:15px; color:var(--text-secondary); font-size:13px; }
+    .crumb b { color:var(--accent); font-weight:600; }
+    h1 { margin:0; font-size:clamp(27px,3vw,36px); letter-spacing:-.045em; line-height:1.15; font-weight:650; }
+    .intro { max-width:590px; margin:12px 0 31px; color:var(--text-secondary); font-size:14px; line-height:1.75; }
+    .assurance { display:grid; grid-template-columns:auto 1fr; gap:13px; align-items:center; padding:15px 17px; margin-bottom:30px; border:1px solid rgba(91,154,111,.28); border-radius:16px; background:linear-gradient(90deg,rgba(91,154,111,.1),rgba(250,250,247,.72)); }
+    .seal { width:38px; height:38px; display:grid; place-items:center; border-radius:50%; background:var(--accent); color:white; box-shadow:0 4px 12px rgba(61,122,95,.22); }
+    .assurance strong { display:block; font-size:14px; font-weight:650; }
+    .assurance span { display:block; margin-top:3px; color:var(--text-secondary); font-size:12px; }
+    .section { margin-top:34px; }
+    .section-heading { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+    .step { width:25px; height:25px; border:1px solid var(--border-color); border-radius:50%; display:grid; place-items:center; color:var(--accent); background:var(--bg-card); font-size:12px; font-weight:700; }
+    h2 { margin:0; font-size:16px; font-weight:650; letter-spacing:-.01em; }
+    .section-copy { margin:0 0 13px 35px; color:var(--text-secondary); font-size:13px; line-height:1.6; }
+    .cards { display:grid; gap:10px; }
+    .account-card { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:15px; padding:17px 18px; border:1px solid var(--border-color); border-radius:16px; background:var(--bg-card); box-shadow:0 1px 4px rgba(45,74,62,.025); transition:border-color .18s,transform .18s,box-shadow .18s; }
+    .account-card:hover { border-color:rgba(61,122,95,.42); transform:translateY(-1px); box-shadow:var(--shadow); }
+    .card-icon { width:40px; height:40px; display:grid; place-items:center; border-radius:13px; background:var(--bg-active); color:var(--accent); }
+    .card-icon.warm { background:#F5F0E8; color:#A07149; }
+    .card-icon.cool { background:#E8F1F4; color:#5B8FA8; }
+    .card-main { min-width:0; }
+    .card-title-row { display:flex; align-items:center; gap:8px; }
+    .card-title { margin:0; font-size:14px; font-weight:650; }
+    .tag { padding:3px 7px; border-radius:999px; background:rgba(91,154,111,.13); color:var(--success); font-size:11px; font-weight:600; white-space:nowrap; }
+    .card-detail { margin:5px 0 0; color:var(--text-secondary); font-size:12px; line-height:1.45; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .text-action { padding:8px 0 8px 12px; border:0; background:transparent; color:var(--accent); font-size:13px; font-weight:600; white-space:nowrap; }
+    .text-action:hover { color:var(--accent-hover); text-decoration:underline; text-underline-offset:3px; }
+    .chev { margin-left:3px; font-size:18px; font-weight:300; line-height:0; }
+    .session-card { display:grid; grid-template-columns:10px 1fr auto; gap:13px; align-items:center; padding:14px 18px; border:1px solid var(--border-color); border-radius:16px; background:var(--bg-card); }
+    .session-dot { width:8px; height:8px; border-radius:50%; background:var(--success); box-shadow:0 0 0 4px rgba(91,154,111,.13); }
+    .session-title { font-size:13px; font-weight:650; }
+    .session-detail { margin-top:4px; color:var(--text-secondary); font-size:12px; }
+    .current { color:var(--success); font-size:12px; font-weight:600; }
+    .quiet { margin-top:31px; padding:17px 19px; border-top:1px solid var(--border-color); color:var(--text-secondary); font-size:12px; line-height:1.7; }
+    .quiet a { color:var(--accent); text-underline-offset:3px; }
+    .toast { position:fixed; left:50%; bottom:28px; z-index:5; transform:translate(-50%,16px); padding:11px 15px; border-radius:11px; background:var(--text-primary); color:#fff; font-size:13px; box-shadow:0 8px 24px rgba(45,74,62,.22); opacity:0; pointer-events:none; transition:.22s ease; }
+    .toast.show { transform:translate(-50%,0); opacity:1; }
+    @media (max-width:720px) { .shell { display:block; } .side { display:none; } main { padding:28px 18px 48px; } .account-card { grid-template-columns:auto minmax(0,1fr); } .text-action { grid-column:2; justify-self:start; padding:0; } .card-detail { white-space:normal; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="side">
+      <div class="brand">Atelier</div>
+      <div class="nav-label">个人中心</div>
+      <button class="nav-item"><span class="nav-icon">◈</span>个人资料</button>
+      <button class="nav-item active"><span class="nav-icon">◇</span>账户与安全</button>
+      <button class="nav-item"><span class="nav-icon">◌</span>通知设置</button>
+      <div class="side-foot">账户安全中心<br />保护每一次创作与访问</div>
+    </aside>
+    <main>
+      <div class="content">
+        <div class="crumb"><span>个人中心</span><span>›</span><b>账户与安全</b></div>
+        <h1>让账户始终在你手中</h1>
+        <p class="intro">从登录方式到设备访问，逐项确认你的账户状态。我们将重要信息集中呈现，方便你安心地完成每一次设置。</p>
+        <div class="assurance">
+          <div class="seal">✓</div>
+          <div><strong>账户保护正常</strong><span>登录密码已设置，当前设备正在安全使用中</span></div>
+        </div>
+
+        <section class="section">
+          <div class="section-heading"><div class="step">1</div><h2>登录与验证</h2></div>
+          <p class="section-copy">保持可恢复的登录方式，是保护账户的第一步。</p>
+          <div class="cards">
+            <article class="account-card">
+              <div class="card-icon">⌁</div>
+              <div class="card-main"><div class="card-title-row"><p class="card-title">登录密码</p><span class="tag">已设置</span></div><p class="card-detail">建议定期更新，并避免与其他网站重复使用</p></div>
+              <button class="text-action" data-message="已打开修改密码流程">修改<span class="chev">›</span></button>
+            </article>
+            <article class="account-card">
+              <div class="card-icon cool">@</div>
+              <div class="card-main"><div class="card-title-row"><p class="card-title">邮箱验证</p><span class="tag">已验证</span></div><p class="card-detail">lin•••@atelier.com · 可用于找回账户和接收安全提醒</p></div>
+              <button class="text-action" data-message="已打开邮箱管理">管理<span class="chev">›</span></button>
+            </article>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-heading"><div class="step">2</div><h2>设备与访问</h2></div>
+          <p class="section-copy">查看近期访问记录，及时发现不是你本人的登录。</p>
+          <div class="cards">
+            <article class="session-card"><span class="session-dot"></span><div><div class="session-title">当前设备 · Chrome on macOS</div><div class="session-detail">上海 · 刚刚活跃</div></div><span class="current">当前设备</span></article>
+            <article class="account-card">
+              <div class="card-icon warm">◫</div>
+              <div class="card-main"><div class="card-title-row"><p class="card-title">登录会话</p></div><p class="card-detail">共 2 台设备已登录；陌生设备可随时退出</p></div>
+              <button class="text-action" data-message="已打开登录会话">查看<span class="chev">›</span></button>
+            </article>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-heading"><div class="step">3</div><h2>隐私与数据</h2></div>
+          <p class="section-copy">清楚了解数据如何服务于你的创作体验。</p>
+          <div class="cards">
+            <article class="account-card">
+              <div class="card-icon">◒</div>
+              <div class="card-main"><div class="card-title-row"><p class="card-title">隐私偏好</p></div><p class="card-detail">管理创作记录、个性化推荐与数据导出请求</p></div>
+              <button class="text-action" data-message="已打开隐私偏好">前往<span class="chev">›</span></button>
+            </article>
+          </div>
+        </section>
+        <div class="quiet">遇到异常登录或无法完成操作？请先确认设备与邮箱状态，也可以联系<a href="#support" data-message="已为你准备安全支持入口">安全支持</a>。</div>
+      </div>
+    </main>
+  </div>
+  <div class="toast" aria-live="polite"></div>
+  <script>
+    const toast = document.querySelector('.toast')
+    let timer
+    document.querySelectorAll('[data-message]').forEach(button => button.addEventListener('click', () => {
+      toast.textContent = button.dataset.message
+      toast.classList.add('show')
+      clearTimeout(timer)
+      timer = setTimeout(() => toast.classList.remove('show'), 2200)
+    }))
+  </script>
+</body>
+</html>

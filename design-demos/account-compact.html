@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Atelier · 账户概览</title>
+  <style>
+    :root {
+      --bg-primary: #f2f7f4;
+      --bg-sidebar: #ebf2ee;
+      --bg-card: #f8f6f1;
+      --bg-input: #f4f2ed;
+      --bg-hover: #e8f0eb;
+      --bg-active: #d8e8de;
+      --text-primary: #2d4a3e;
+      --text-secondary: #7a8b82;
+      --border-color: #d9e3de;
+      --accent: #3d7a5f;
+      --accent-hover: #2e6b4e;
+      --success: #5b9a6f;
+      --warning: #c4956a;
+      --shadow-sm: 0 1px 4px rgba(45, 74, 62, .04);
+      --shadow-md: 0 8px 24px rgba(45, 74, 62, .07);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--text-primary);
+      background: var(--bg-primary);
+      font-family: Inter, "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+      letter-spacing: .01em;
+    }
+    button, a { font: inherit; }
+    a { color: inherit; text-decoration: none; }
+
+    .shell { min-height: 100vh; display: grid; grid-template-columns: 220px minmax(0, 1fr); }
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      padding: 22px 12px 16px;
+      background: var(--bg-sidebar);
+      border-right: 1px solid var(--border-color);
+    }
+    .brand { display: flex; align-items: center; gap: 9px; padding: 0 9px 23px; }
+    .brand-mark {
+      display: grid;
+      width: 29px;
+      height: 29px;
+      place-items: center;
+      color: white;
+      border-radius: 10px 10px 10px 3px;
+      background: var(--accent);
+      font-size: 15px;
+      font-weight: 700;
+      box-shadow: 0 5px 12px rgba(61, 122, 95, .18);
+    }
+    .brand-name { font-size: 16px; font-weight: 700; letter-spacing: -.02em; }
+    .nav-label { margin: 0 9px 8px; color: var(--text-secondary); font-size: 11px; font-weight: 600; letter-spacing: .1em; }
+    .nav { display: grid; gap: 3px; }
+    .nav a { display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 10px; border-radius: 11px; color: var(--text-secondary); font-size: 13px; font-weight: 500; }
+    .nav a:hover { color: var(--text-primary); background: var(--bg-hover); }
+    .nav a.active { color: var(--accent); background: var(--bg-active); }
+    .nav-icon { width: 17px; text-align: center; font-size: 16px; font-weight: 500; }
+    .sidebar-bottom { margin-top: auto; }
+    .mini-user { display: flex; align-items: center; gap: 9px; padding: 11px 9px 0; border-top: 1px solid var(--border-color); }
+    .avatar { display: grid; flex: 0 0 auto; width: 30px; height: 30px; place-items: center; border-radius: 50%; color: #fff; background: #789b8b; font-size: 12px; font-weight: 700; }
+    .mini-user strong { display: block; font-size: 12px; font-weight: 600; }
+    .mini-user span { display: block; margin-top: 2px; color: var(--text-secondary); font-size: 10px; }
+
+    main { min-width: 0; padding: 28px clamp(22px, 4vw, 58px) 36px; }
+    .topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; max-width: 1080px; margin: 0 auto 20px; }
+    .eyebrow { margin: 0 0 4px; color: var(--text-secondary); font-size: 12px; }
+    h1 { margin: 0; font-size: 23px; line-height: 1.25; letter-spacing: -.04em; }
+    .topbar-note { display: inline-flex; align-items: center; gap: 7px; padding: 8px 10px; color: var(--text-secondary); border: 1px solid var(--border-color); border-radius: 999px; background: rgba(248, 246, 241, .72); font-size: 11px; }
+    .topbar-note i { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
+
+    .overview { max-width: 1080px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1.07fr) minmax(340px, .93fr); gap: 16px; }
+    .card { border: 1px solid var(--border-color); border-radius: 17px; background: var(--bg-card); box-shadow: var(--shadow-sm); }
+    .profile-card { min-height: 236px; padding: 20px; position: relative; overflow: hidden; }
+    .profile-card::after { position: absolute; right: -43px; top: -78px; width: 220px; height: 220px; border: 32px solid rgba(61, 122, 95, .05); border-radius: 50%; content: ""; }
+    .profile-head { position: relative; z-index: 1; display: flex; align-items: center; gap: 12px; }
+    .profile-head .avatar { width: 46px; height: 46px; background: linear-gradient(145deg, #6e9a86, #3d7a5f); font-size: 16px; }
+    .profile-name { margin: 0; font-size: 16px; font-weight: 700; }
+    .profile-email { margin: 4px 0 0; color: var(--text-secondary); font-size: 12px; }
+    .verified { display: inline-flex; align-items: center; gap: 4px; margin-top: 5px; color: var(--accent); font-size: 10px; font-weight: 600; }
+    .verified b { display: grid; width: 13px; height: 13px; place-items: center; border-radius: 50%; color: #fff; background: var(--accent); font-size: 9px; }
+    .profile-stats { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-top: 24px; }
+    .profile-stat { padding: 10px 11px; border-radius: 11px; background: rgba(255,255,255,.46); border: 1px solid rgba(217,227,222,.85); }
+    .profile-stat span { display: block; color: var(--text-secondary); font-size: 10px; }
+    .profile-stat strong { display: block; margin-top: 4px; font-size: 15px; line-height: 1; }
+    .profile-actions { position: relative; z-index: 1; display: flex; gap: 9px; margin-top: 18px; }
+    .button { display: inline-flex; align-items: center; justify-content: center; height: 31px; padding: 0 12px; border: 1px solid transparent; border-radius: 9px; cursor: pointer; font-size: 11px; font-weight: 600; transition: .18s ease; }
+    .button.primary { color: #fff; background: var(--accent); }
+    .button.primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
+    .button.quiet { color: var(--text-primary); border-color: var(--border-color); background: rgba(255,255,255,.45); }
+    .button.quiet:hover { background: white; }
+
+    .balance-card { min-height: 236px; padding: 20px; display: flex; flex-direction: column; background: #f4f1e9; }
+    .card-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .card-heading h2 { margin: 0; font-size: 13px; font-weight: 700; }
+    .muted-link { color: var(--accent); font-size: 11px; font-weight: 600; }
+    .points-row { display: flex; align-items: baseline; gap: 7px; margin-top: 23px; }
+    .points { font-size: 38px; line-height: .95; letter-spacing: -.06em; }
+    .points-unit { color: var(--text-secondary); font-size: 12px; }
+    .usage { display: flex; justify-content: space-between; gap: 12px; margin-top: 13px; color: var(--text-secondary); font-size: 11px; }
+    .progress { height: 6px; overflow: hidden; margin-top: 8px; border-radius: 999px; background: #e1e5dd; }
+    .progress i { display: block; width: 64%; height: 100%; border-radius: inherit; background: var(--accent); }
+    .balance-bottom { display: flex; align-items: center; gap: 9px; margin-top: auto; padding-top: 17px; }
+    .checkin { flex: 1; display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--accent); font-size: 11px; font-weight: 600; }
+    .checkin span { display: grid; width: 23px; height: 23px; place-items: center; border-radius: 8px; background: rgba(61, 122, 95, .1); font-size: 14px; }
+
+    .section-title { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+    .section-title h2 { margin: 0; font-size: 14px; letter-spacing: -.02em; }
+    .section-title span { color: var(--text-secondary); font-size: 11px; }
+    .action-grid { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    .action { min-height: 106px; padding: 14px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-card); box-shadow: var(--shadow-sm); transition: .18s ease; }
+    .action:hover { border-color: rgba(61,122,95,.44); box-shadow: var(--shadow-md); transform: translateY(-2px); }
+    .action-icon { display: grid; width: 27px; height: 27px; place-items: center; border-radius: 9px; color: var(--accent); background: rgba(61,122,95,.1); font-size: 14px; }
+    .action h3 { margin: 12px 0 3px; font-size: 12px; font-weight: 700; }
+    .action p { margin: 0; color: var(--text-secondary); font-size: 10px; line-height: 1.55; }
+
+    .activity { grid-column: 1 / -1; padding: 16px 18px; }
+    .activity-list { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 12px; }
+    .activity-item { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0 13px; border-right: 1px solid var(--border-color); }
+    .activity-item:first-child { padding-left: 0; }
+    .activity-item:last-child { border-right: 0; }
+    .activity-icon { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; border-radius: 50%; color: var(--accent); background: var(--bg-active); font-size: 11px; }
+    .activity-text { min-width: 0; }
+    .activity-text strong, .activity-text span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .activity-text strong { font-size: 11px; font-weight: 600; }
+    .activity-text span { margin-top: 2px; color: var(--text-secondary); font-size: 10px; }
+    .toast { position: fixed; right: 22px; bottom: 22px; z-index: 3; padding: 10px 13px; color: #fff; border-radius: 10px; background: var(--text-primary); box-shadow: var(--shadow-md); font-size: 12px; opacity: 0; transform: translateY(8px); pointer-events: none; transition: .2s ease; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+
+    @media (max-width: 920px) {
+      .shell { grid-template-columns: 64px minmax(0, 1fr); }
+      .sidebar { padding-inline: 8px; }
+      .brand { justify-content: center; padding-inline: 0; }
+      .brand-name, .nav-label, .nav a span:not(.nav-icon), .mini-user > div { display: none; }
+      .nav a { justify-content: center; padding: 0; }
+      .mini-user { justify-content: center; padding-inline: 0; }
+      .overview { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+      .shell { display: block; }
+      .sidebar { display: none; }
+      main { padding: 22px 16px 28px; }
+      .topbar-note { display: none; }
+      .profile-stats { gap: 5px; }
+      .profile-stat { padding: 9px; }
+      .action-grid { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 9px; }
+      .activity-list { grid-template-columns: 1fr; gap: 11px; }
+      .activity-item { padding: 0; border: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">A</span><span class="brand-name">Atelier</span></div>
+      <p class="nav-label">工作台</p>
+      <nav class="nav">
+        <a href="/chat"><span class="nav-icon">⌁</span><span>助手</span></a>
+        <a href="/draw"><span class="nav-icon">◈</span><span>绘画</span></a>
+        <a href="/works"><span class="nav-icon">▣</span><span>作品</span></a>
+        <a href="/square"><span class="nav-icon">◌</span><span>广场</span></a>
+        <a class="active" href="/wallet"><span class="nav-icon">◎</span><span>账户</span></a>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="mini-user"><span class="avatar">林</span><div><strong>林晓</strong><span>标准用户</span></div></div>
+      </div>
+    </aside>
+    <main>
+      <header class="topbar">
+        <div><p class="eyebrow">账户与偏好</p><h1>账户概览</h1></div>
+        <div class="topbar-note"><i></i>账户状态正常</div>
+      </header>
+      <section class="overview">
+        <article class="card profile-card">
+          <div class="profile-head">
+            <span class="avatar">林</span>
+            <div><p class="profile-name">林晓</p><p class="profile-email">linxiao@atelier.ai</p><div class="verified"><b>✓</b>邮箱已验证</div></div>
+          </div>
+          <div class="profile-stats">
+            <div class="profile-stat"><span>加入时间</span><strong>26 天</strong></div>
+            <div class="profile-stat"><span>累计创作</span><strong>48 次</strong></div>
+            <div class="profile-stat"><span>邀请好友</span><strong>3 人</strong></div>
+          </div>
+          <div class="profile-actions"><a class="button primary" href="/settings">编辑资料</a><a class="button quiet" href="/settings">账户安全</a></div>
+        </article>
+        <article class="card balance-card">
+          <div class="card-heading"><h2>我的积分</h2><a class="muted-link" href="/wallet">积分记录 →</a></div>
+          <div class="points-row"><strong class="points">248</strong><span class="points-unit">积分</span></div>
+          <div class="usage"><span>本月已使用 452 积分</span><span>64%</span></div>
+          <div class="progress"><i></i></div>
+          <div class="balance-bottom"><div class="checkin"><span>✓</span>今日已签到</div><a class="button primary" href="/wallet">获取积分</a></div>
+        </article>
+        <div class="section-title"><h2>常用功能</h2><span>快捷进入对应页面</span></div>
+        <div class="action-grid">
+          <a class="action" href="/wallet"><span class="action-icon">◎</span><h3>积分与套餐</h3><p>查看余额、订阅与消费记录</p></a>
+          <a class="action" href="/wallet#redeem"><span class="action-icon">⌘</span><h3>兑换码</h3><p>兑换邀请或活动积分</p></a>
+          <a class="action" href="/wallet#invite"><span class="action-icon">↗</span><h3>邀请中心</h3><p>分享专属链接，获取奖励</p></a>
+          <a class="action" href="/settings"><span class="action-icon">⚙</span><h3>安全设置</h3><p>更新密码与查看登录会话</p></a>
+        </div>
+        <article class="card activity">
+          <div class="card-heading"><h2>近期动态</h2><a class="muted-link" href="/wallet">查看全部</a></div>
+          <div class="activity-list">
+            <div class="activity-item"><span class="activity-icon">+</span><div class="activity-text"><strong>每日签到</strong><span>今天 09:12 · 获得 10 积分</span></div></div>
+            <div class="activity-item"><span class="activity-icon">◈</span><div class="activity-text"><strong>图像生成</strong><span>昨天 21:36 · 消耗 24 积分</span></div></div>
+            <div class="activity-item"><span class="activity-icon">✓</span><div class="activity-text"><strong>订阅续期成功</strong><span>8 月 1 日 · 标准套餐</span></div></div>
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
+  <div class="toast" id="toast">正在前往功能页面</div>
+  <script>
+    const toast = document.getElementById('toast')
+    document.querySelectorAll('a').forEach(link => link.addEventListener('click', event => {
+      const href = link.getAttribute('href')
+      if (href.startsWith('#')) return
+      event.preventDefault()
+      toast.classList.add('show')
+      window.setTimeout(() => { toast.classList.remove('show') }, 1400)
+    }))
+  </script>
+</body>
+</html>

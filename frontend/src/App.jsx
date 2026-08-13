@@ -22,6 +22,7 @@ const PrivacyPage = lazy(() => import('./pages/PrivacyPage'))
 const RefundPage = lazy(() => import('./pages/RefundPage'))
 const RedeemPage = lazy(() => import('./pages/RedeemPage'))
 const WalletPage = lazy(() => import('./pages/WalletPage'))
+const AccountPage = lazy(() => import('./pages/AccountPage'))
 const ChatAssistantPage = lazy(() => import('./pages/ChatAssistantPage'))
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
 const SharesPage = lazy(() => import('./pages/SharesPage'))
@@ -134,6 +135,8 @@ function AppContent() {
           <Route path="/refund" element={<RefundPage />} />
           <Route path="/redeem" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><RedeemPage /></ProtectedRoute>} />
           <Route path="/wallet" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><WalletPage /></ProtectedRoute>} />
+          <Route path="/account" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><AccountPage /></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><SettingsPage /></ProtectedRoute>} />
           <Route path="/chat" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><ChatAssistantPage /></ProtectedRoute>} />
           <Route path="/notifications" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><NotificationsPage /></ProtectedRoute>} />
           <Route path="/announcements" element={<Navigate to="/notifications" replace />} />
@@ -148,7 +151,6 @@ function AppContent() {
           <Route path="/prompts" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><PromptsPage /></ProtectedRoute>} />
           <Route path="/favorites" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><Navigate to="/square" state={{ tab: 'favorites' }} replace /></ProtectedRoute>} />
           {/* <Route path="/shares" element={<ProtectedRoute authReady={authReady} user={user}><SharesPage /></ProtectedRoute>} /> */}
-          {/* <Route path="/settings" element={<ProtectedRoute authReady={authReady} user={user}><SettingsPage /></ProtectedRoute>} /> */}
           <Route path="/admin" element={<AdminRoute authReady={authReady} user={user} fallback={routeFallback}><AdminPage /></AdminRoute>} />
         </Routes></Suspense>
       </BrowserRouter>

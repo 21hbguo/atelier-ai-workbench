@@ -26,3 +26,4 @@ data/app_db_backup.dump
 local_backup/
 .last_*_package
 app_v1*/
+临时/
