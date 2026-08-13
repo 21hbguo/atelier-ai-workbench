@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useLocation, Link, useNavigate } from 'react-router-dom'
-import { Sun, Moon, BookOpen, Sparkles, Image, X, Globe, LogOut, User, Shield, Crown, Wallet, Settings, LayoutGrid, MessageCircle, Bell, PanelLeftClose, PanelLeftOpen, MessageSquare, Plus } from 'lucide-react'
+import { Sun, Moon, BookOpen, Sparkles, Image, X, Globe, LogOut, Shield, Crown, Wallet, Settings, LayoutGrid, MessageCircle, Bell, PanelLeftClose, PanelLeftOpen, MessageSquare, Plus } from 'lucide-react'
 import { useTheme } from '../ThemeContext'
 import { useLayoutMode } from '../LayoutModeContext'
 import { announcementAPI, authAPI, chatAPI, pointsAPI, notificationAPI, subscriptionAPI } from '../api'
@@ -176,7 +176,7 @@ export default function Sidebar({ open, onClose }) {
                   </div>
                   {!collapsed && (
                     <div className="text-[10px] leading-snug mt-1" style={{ color: 'var(--text-secondary)' }}>
-                      <div className="truncate">{dailyTotal === null ? '不限次' : dailyTotal > 0 ? `今日已用 ${Math.max(0, dailyTotal - dailyRemaining)}/${dailyTotal} 次` : (hasPlan ? `周期至 ${formatDate(subscription.cycle?.period_end)}` : '解锁更多模型')}</div>
+                      <div className="truncate">{dailyTotal === null ? '不限次' : dailyTotal > 0 ? `今日已用 ${Math.max(0, dailyTotal - dailyRemaining)}/${dailyTotal} 次` : (hasPlan ? (subscription.plan.features?.package_type === 'credits' ? '永久积分' : `周期至 ${formatDate(subscription.cycle?.period_end)}`) : '解锁更多模型')}</div>
                       <div className="truncate">{points} 积分</div>
                     </div>
                   )}
@@ -191,8 +191,8 @@ export default function Sidebar({ open, onClose }) {
                 className={`flex items-center gap-2 min-w-0 rounded-lg hover:bg-bg-hover ${collapsed ? 'justify-center py-1' : 'px-1.5 py-1'}`}
                 onClick={() => onClose?.()}
               >
-                <span className="flex size-7 items-center justify-center rounded-full shrink-0" style={{ background: 'color-mix(in srgb, var(--accent) 10%, transparent)', color: 'var(--accent)' }}>
-                  <User size={14} />
+                <span className="flex size-7 items-center justify-center rounded-full shrink-0 text-xs font-semibold" style={{ background: 'color-mix(in srgb, var(--accent) 10%, transparent)', color: 'var(--accent)' }}>
+                  {[...(String(user.nickname || user.account || user.username || '').trim())][0]?.toUpperCase() || '?'}
                 </span>
                 {!collapsed && (
                   <span className="ml-1 min-w-0 flex-1 text-left">

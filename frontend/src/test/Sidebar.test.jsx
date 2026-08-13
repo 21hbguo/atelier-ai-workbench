@@ -162,6 +162,26 @@ describe('Sidebar', () => {
     expect(screen.queryByText('今日已用')).not.toBeInTheDocument()
   })
 
+  it('shows first char of display name in avatar circle', () => {
+    readUserMock.mockReturnValue({ id: 1, username: 'tester', nickname: '测试员', points: 0, is_admin: false })
+    renderSidebar()
+    // 中文昵称取首字
+    expect(screen.getByText('测')).toBeInTheDocument()
+  })
+
+  it('shows uppercase first letter of latin display name in avatar circle', () => {
+    readUserMock.mockReturnValue({ id: 1, username: 'tester', nickname: 'alice', points: 0, is_admin: false })
+    renderSidebar()
+    // 英文昵称取首字母并大写
+    expect(screen.getByText('A')).toBeInTheDocument()
+  })
+
+  it('falls back to question mark when no display name', () => {
+    readUserMock.mockReturnValue({ id: 1, username: '', nickname: '', points: 0, is_admin: false })
+    renderSidebar()
+    expect(screen.getByText('?')).toBeInTheDocument()
+  })
+
   it('keeps account link even without nickname', () => {
     readUserMock.mockReturnValue({ id: 1, username: 'tester', nickname: '', points: 0, is_admin: false })
     renderSidebar()
