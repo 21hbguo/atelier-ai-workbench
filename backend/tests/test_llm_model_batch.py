@@ -28,3 +28,18 @@ def test_add_many_rejects_existing_models_without_partial_write(tmp_path, monkey
         ])
 
     assert [item["model_id"] for item in service.get_all()] == ["existing"]
+
+
+def test_update_many_changes_only_requested_fields(tmp_path, monkeypatch):
+    monkeypatch.setattr(service, "CSV_PATH", Path(tmp_path) / "llm_models.csv")
+    service.add_many([
+        {"model_id": "model-a", "label": "Model A", "provider": "old", "base_url": "https://old.example.com", "reasoning_efforts": ["auto"]},
+        {"model_id": "model-b", "label": "Model B", "provider": "old", "base_url": "https://old.example.com", "reasoning_efforts": ["auto"]},
+    ])
+
+    service.update_many(["model-a", "model-b"], {"base_url": "https://new.example.com", "api_key": "env:NEW_KEY"})
+
+    assert [(item["model_id"], item["label"], item["provider"], item["base_url"], item["api_key"]) for item in service.get_all()] == [
+        ("model-a", "Model A", "old", "https://new.example.com", "env:NEW_KEY"),
+        ("model-b", "Model B", "old", "https://new.example.com", "env:NEW_KEY"),
+    ]

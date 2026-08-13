@@ -1802,6 +1802,16 @@ async def admin_add_llm_models(body: dict, admin=Depends(require_admin)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.patch("/llm-models/batch")
+async def admin_update_llm_models(body: dict, admin=Depends(require_admin)):
+    from backend.services.llm_model_service import update_many
+    try:
+        items = update_many(body.get("model_ids"), body.get("data") or {})
+        return {"items": items, "count": len(items)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.patch("/llm-models/{model_id}")
 async def admin_update_llm_model(model_id: str, body: dict, admin=Depends(require_admin)):
     from backend.services.llm_model_service import upsert

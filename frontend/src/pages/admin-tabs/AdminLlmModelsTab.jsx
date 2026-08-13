@@ -40,17 +40,20 @@ const COLUMNS = [
   { header: '操作', key: null, sortable: false },
 ]
 
-export default function AdminLlmModelsTab({ items, loading, globalModelId = '', onRefresh, onSave, onDelete, onTest, dialog }) {
+export default function AdminLlmModelsTab({ items, loading, globalModelId = '', onRefresh, onSave, onBatchSave, onBatchUpdate, onDelete, onTest, dialog }) {
   const [editing, setEditing] = useState(null) // null | { isNew, draft }
   const [batchDraft, setBatchDraft] = useState(null)
+  const [batchEditing, setBatchEditing] = useState(null)
   const [saving, setSaving] = useState(false)
   const [batchSaving, setBatchSaving] = useState(false)
+  const [batchUpdating, setBatchUpdating] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState(null) // null | { ok, text, error, latency_ms }
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState('model_id')
   const [sortDir, setSortDir] = useState('asc') // 'asc' | 'desc'
   const [collapsedGroups, setCollapsedGroups] = useState({ disabled: true }) // 未启用组默认折叠
+  const [selectedIds, setSelectedIds] = useState([])
 
   const openNew = () => { setEditing({ isNew: true, draft: { ...EMPTY_DRAFT } }); setTestResult(null) }
   const openBatch = () => setBatchDraft({
@@ -59,6 +62,11 @@ export default function AdminLlmModelsTab({ items, loading, globalModelId = '', 
     reasoning_efforts_text: 'auto,low,medium,high,xhigh,max', default_reasoning_effort: 'auto',
     thinking_default: 'enabled', context_budget_chars: 256000,
     capabilities_text: '', enabled: true,
+  })
+  const openBatchEdit = () => setBatchEditing({
+    apply: {}, provider: '', protocol: 'openai', base_url: '', api_key: '',
+    max_input_tokens: '', max_output_tokens: '', reasoning_efforts_text: '', default_reasoning_effort: 'auto',
+    thinking_default: 'enabled', context_budget_chars: '', capabilities_text: '', enabled: true,
   })
   const openEdit = (m) => { setEditing({
     isNew: false,
@@ -136,6 +144,40 @@ export default function AdminLlmModelsTab({ items, loading, globalModelId = '', 
     } catch (e) { dialog.alert(e.message || '批量添加失败') } finally { setBatchSaving(false) }
   }
 
+  const toggleSelected = (modelId) => setSelectedIds(prev => prev.includes(modelId) ? prev.filter(id => id !== modelId) : [...prev, modelId])
+  const toggleRowsSelected = (rows) => {
+    const ids = rows.map(row => row.model_id)
+    setSelectedIds(prev => ids.every(id => prev.includes(id)) ? prev.filter(id => !ids.includes(id)) : [...new Set([...prev, ...ids])])
+  }
+  const handleBatchUpdate = async () => {
+    const d = batchEditing
+    const data = {}
+    const fields = ['provider', 'protocol', 'base_url', 'api_key', 'max_input_tokens', 'max_output_tokens', 'reasoning_efforts', 'default_reasoning_effort', 'thinking_default', 'context_budget_chars', 'capabilities', 'enabled']
+    for (const field of fields) {
+      if (!d.apply[field]) continue
+      if (field === 'reasoning_efforts') {
+        const efforts = d.reasoning_efforts_text.split(/[,，\s]+/).map(item => item.trim()).filter(Boolean)
+        if (!efforts.length) { dialog.alert('思考档位至少填一个'); return }
+        data[field] = efforts
+      } else if (field === 'capabilities') {
+        data[field] = d.capabilities_text.split(/[,，;；\s]+/).map(item => item.trim()).filter(Boolean)
+      } else if (field === 'max_input_tokens' || field === 'max_output_tokens' || field === 'context_budget_chars') {
+        const value = Number(d[field])
+        if (!value) { dialog.alert('数值字段必须大于 0'); return }
+        data[field] = value
+      } else {
+        data[field] = d[field]
+      }
+    }
+    if (!Object.keys(data).length) { dialog.alert('请勾选至少一个要更新的字段'); return }
+    setBatchUpdating(true)
+    try {
+      await onBatchUpdate(selectedIds, data)
+      setSelectedIds([])
+      setBatchEditing(null)
+    } catch (e) { dialog.alert(e.message || '批量编辑失败') } finally { setBatchUpdating(false) }
+  }
+
   // 测试连接：用表单当前值（可未保存）调后端最小请求，验证配置可用性并捕捉错误
   const handleTest = async () => {
     const d = editing.draft
@@ -200,6 +242,9 @@ export default function AdminLlmModelsTab({ items, loading, globalModelId = '', 
       <table className="w-full text-xs">
         <thead>
           <tr style={{ background: 'var(--bg-card)' }}>
+            <th className="px-3 py-2.5">
+              <input type="checkbox" checked={rows.length > 0 && rows.every(row => selectedIds.includes(row.model_id))} onChange={() => toggleRowsSelected(rows)} aria-label="选择当前分组全部模型" className="w-3.5 h-3.5 accent-[var(--accent)]" />
+            </th>
             {COLUMNS.map(col => {
               const isActive = col.sortable && sortKey === col.key
               return (
@@ -227,6 +272,7 @@ export default function AdminLlmModelsTab({ items, loading, globalModelId = '', 
         <tbody>
           {rows.map(m => (
             <tr key={m.model_id} className="border-t" style={{ borderColor: 'var(--border-color)' }}>
+              <td className="px-3 py-2.5"><input type="checkbox" checked={selectedIds.includes(m.model_id)} onChange={() => toggleSelected(m.model_id)} aria-label={`选择 ${m.model_id}`} className="w-3.5 h-3.5 accent-[var(--accent)]" /></td>
               <td className="px-3 py-2.5 font-mono whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>{m.model_id}</td>
               <td className="px-3 py-2.5 whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>{m.label}</td>
               <td className="px-3 py-2.5 whitespace-nowrap">{m.provider || '—'}</td>
@@ -332,6 +378,9 @@ export default function AdminLlmModelsTab({ items, loading, globalModelId = '', 
           <button onClick={openBatch} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium border transition-colors" style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
             <Plus size={13} /> 批量添加
           </button>
+          {selectedIds.length > 0 && <button onClick={openBatchEdit} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium text-white transition-colors" style={{ background: 'var(--accent)' }}>
+            <Pencil size={13} /> 批量编辑（{selectedIds.length}）
+          </button>}
         </div>
         <div className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
           已启用：已填 API Key 或 Base URL，或为全局激活模型（走全局配置）且开启 · 未启用：未填 Key/Base URL 且非激活模型，或已停用 · 点击表头排序 · 点击分组标题折叠/展开
@@ -576,6 +625,51 @@ export default function AdminLlmModelsTab({ items, loading, globalModelId = '', 
             <div className="flex gap-2 px-4 py-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
               <button onClick={() => setBatchDraft(null)} disabled={batchSaving} className="flex-1 py-2 rounded-2xl text-xs font-medium border transition-colors" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>取消</button>
               <button onClick={handleBatchSave} disabled={batchSaving} className="flex-1 py-2 rounded-2xl text-xs font-medium text-white transition-colors disabled:opacity-40" style={{ background: 'var(--accent)' }}>{batchSaving ? '添加中...' : '批量添加'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {batchEditing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setBatchEditing(null)}>
+          <div className="absolute inset-0 bg-black/50" />
+          <div className="relative w-full max-w-2xl rounded-2xl overflow-hidden" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }} onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>批量编辑 {selectedIds.length} 个模型</h3>
+              <button onClick={() => setBatchEditing(null)} className="p-1.5 rounded-lg hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}><X size={15} /></button>
+            </div>
+            <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[65vh] overflow-y-auto">
+              {[
+                ['provider', '供应商', '如 openai / deepseek'], ['base_url', 'API 地址', '留空可清空现有地址'], ['api_key', 'API Key', '留空可清空现有 Key'],
+                ['max_input_tokens', '最大输入', ''], ['max_output_tokens', '最大输出', ''], ['reasoning_efforts', '思考档位', 'auto,low,medium,high'],
+                ['context_budget_chars', '上下文预算', ''], ['capabilities', '能力标签', 'reasoning,vision,function_calling'],
+              ].map(([field, label, placeholder]) => {
+                const key = field === 'reasoning_efforts' ? 'reasoning_efforts_text' : field === 'capabilities' ? 'capabilities_text' : field
+                const numeric = ['max_input_tokens', 'max_output_tokens', 'context_budget_chars'].includes(field)
+                return <div key={field}>
+                  <label className="flex items-center gap-2 text-xs mb-1.5 cursor-pointer" style={{ color: 'var(--text-secondary)' }}><input type="checkbox" checked={!!batchEditing.apply[field]} onChange={e => setBatchEditing(prev => ({ ...prev, apply: { ...prev.apply, [field]: e.target.checked } }))} className="w-3.5 h-3.5 accent-[var(--accent)]" /> {label}</label>
+                  <input type={numeric ? 'number' : field === 'api_key' ? 'password' : 'text'} disabled={!batchEditing.apply[field]} value={batchEditing[key]} onChange={e => setBatchEditing(prev => ({ ...prev, [key]: e.target.value }))} placeholder={placeholder} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none disabled:opacity-40 font-mono" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
+                </div>
+              })}
+              <div>
+                <label className="flex items-center gap-2 text-xs mb-1.5 cursor-pointer" style={{ color: 'var(--text-secondary)' }}><input type="checkbox" checked={!!batchEditing.apply.protocol} onChange={e => setBatchEditing(prev => ({ ...prev, apply: { ...prev.apply, protocol: e.target.checked } }))} className="w-3.5 h-3.5 accent-[var(--accent)]" /> 协议</label>
+                <select disabled={!batchEditing.apply.protocol} value={batchEditing.protocol} onChange={e => setBatchEditing(prev => ({ ...prev, protocol: e.target.value }))} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none disabled:opacity-40" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}><option value="openai">openai</option><option value="anthropic">anthropic</option></select>
+              </div>
+              <div>
+                <label className="flex items-center gap-2 text-xs mb-1.5 cursor-pointer" style={{ color: 'var(--text-secondary)' }}><input type="checkbox" checked={!!batchEditing.apply.default_reasoning_effort} onChange={e => setBatchEditing(prev => ({ ...prev, apply: { ...prev.apply, default_reasoning_effort: e.target.checked } }))} className="w-3.5 h-3.5 accent-[var(--accent)]" /> 默认思考档位</label>
+                <select disabled={!batchEditing.apply.default_reasoning_effort} value={batchEditing.default_reasoning_effort} onChange={e => setBatchEditing(prev => ({ ...prev, default_reasoning_effort: e.target.value }))} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none disabled:opacity-40" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}><option value="auto">自动</option><option value="low">低</option><option value="medium">中</option><option value="high">高</option><option value="max">最高</option><option value="xhigh">超高</option></select>
+              </div>
+              <div>
+                <label className="flex items-center gap-2 text-xs mb-1.5 cursor-pointer" style={{ color: 'var(--text-secondary)' }}><input type="checkbox" checked={!!batchEditing.apply.thinking_default} onChange={e => setBatchEditing(prev => ({ ...prev, apply: { ...prev.apply, thinking_default: e.target.checked } }))} className="w-3.5 h-3.5 accent-[var(--accent)]" /> 思考模式</label>
+                <select disabled={!batchEditing.apply.thinking_default} value={batchEditing.thinking_default} onChange={e => setBatchEditing(prev => ({ ...prev, thinking_default: e.target.value }))} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none disabled:opacity-40" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}><option value="enabled">默认思考</option><option value="disabled">默认不思考</option><option value="always">始终思考</option></select>
+              </div>
+              <div>
+                <label className="flex items-center gap-2 text-xs mb-1.5 cursor-pointer" style={{ color: 'var(--text-secondary)' }}><input type="checkbox" checked={!!batchEditing.apply.enabled} onChange={e => setBatchEditing(prev => ({ ...prev, apply: { ...prev.apply, enabled: e.target.checked } }))} className="w-3.5 h-3.5 accent-[var(--accent)]" /> 启用状态</label>
+                <label className={`flex items-center gap-2 h-9 text-sm ${batchEditing.apply.enabled ? 'cursor-pointer' : 'opacity-40'}`} style={{ color: 'var(--text-primary)' }}><input type="checkbox" disabled={!batchEditing.apply.enabled} checked={batchEditing.enabled} onChange={e => setBatchEditing(prev => ({ ...prev, enabled: e.target.checked }))} className="w-4 h-4 accent-[var(--accent)]" /> 启用选中模型</label>
+              </div>
+            </div>
+            <div className="flex gap-2 px-4 py-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
+              <button onClick={() => setBatchEditing(null)} disabled={batchUpdating} className="flex-1 py-2 rounded-2xl text-xs font-medium border transition-colors" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>取消</button>
+              <button onClick={handleBatchUpdate} disabled={batchUpdating} className="flex-1 py-2 rounded-2xl text-xs font-medium text-white transition-colors disabled:opacity-40" style={{ background: 'var(--accent)' }}>{batchUpdating ? '保存中...' : '应用到选中模型'}</button>
             </div>
           </div>
         </div>

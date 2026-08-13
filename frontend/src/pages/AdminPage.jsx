@@ -943,6 +943,11 @@ export default function AdminPage() {
     fetchLlmModels()
   }
 
+  const updateLlmModels = async (modelIds, data) => {
+    await chatFetch('/api/admin/llm-models/batch', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model_ids: modelIds, data }) })
+    fetchLlmModels()
+  }
+
   const deleteLlmModel = async (modelId) => {
     await chatFetch(`/api/admin/llm-models/${encodeURIComponent(modelId)}`, { method: 'DELETE' })
     fetchLlmModels()
@@ -1916,7 +1921,7 @@ export default function AdminPage() {
           </div>
         ) : tab === 'llm_models' ? (
           <AdminLlmModelsTab items={llmModels} loading={llmModelsLoading} globalModelId={globalModelId} onRefresh={fetchLlmModels}
-            onSave={saveLlmModel} onBatchSave={addLlmModels} onDelete={deleteLlmModel} onTest={testLlmModel} dialog={dialog} />
+            onSave={saveLlmModel} onBatchSave={addLlmModels} onBatchUpdate={updateLlmModels} onDelete={deleteLlmModel} onTest={testLlmModel} dialog={dialog} />
         ) : tab === 'history' ? (
           <AdminHistoryTab historyTotal={historyTotal} historyQuery={historyQuery} setHistoryQuery={setHistoryQuery} historySummary={historySummary} loading={loading} history={history} modelLabelMap={modelLabelMap} handleDeleteHistory={handleDeleteHistory} historyPage={historyPage} setHistoryPage={setHistoryPage} />
         ) : (

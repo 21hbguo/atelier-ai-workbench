@@ -298,6 +298,28 @@ def add_many(items: list[dict]) -> list[dict]:
     return [dict(row) for row in new_rows]
 
 
+def update_many(model_ids: list[str], data: dict) -> list[dict]:
+    """批量部分更新模型档案，全部校验通过后一次写入。"""
+    if not isinstance(model_ids, list) or not model_ids:
+        raise ValueError("model_ids 至少需要一个模型")
+    if len(model_ids) > 100:
+        raise ValueError("单次最多更新 100 个模型")
+    model_ids = [str(model_id or "").strip() for model_id in model_ids]
+    if not all(model_ids):
+        raise ValueError("模型 ID 不能为空")
+    if len(set(model_ids)) != len(model_ids):
+        raise ValueError("model_ids 存在重复项")
+    with _write_lock:
+        rows = _read_all()
+        existing = {row["model_id"]: row for row in rows}
+        missing = [model_id for model_id in model_ids if model_id not in existing]
+        if missing:
+            raise ValueError(f"模型档案不存在：{', '.join(missing)}")
+        new_rows = {model_id: _build_row({**data, "model_id": model_id}, existing[model_id]) for model_id in model_ids}
+        _write_all([new_rows.get(row["model_id"], row) for row in rows])
+    return [dict(new_rows[model_id]) for model_id in model_ids]
+
+
 def delete(model_id: str) -> bool:
     with _write_lock:
         rows = _read_all()
