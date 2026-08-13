@@ -1,11 +1,12 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { MessageCircle, Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, PanelLeftClose, PanelLeftOpen, Brain, AlertCircle, CheckSquare, Cpu, ChevronDown, Check, Paperclip, FileText, Settings, Globe, Image as ImageIcon, Sparkles, Wand2, PenLine, Palette, Star } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { MessageCircle, Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, PanelLeftClose, PanelLeftOpen, Brain, AlertCircle, CheckSquare, Cpu, ChevronDown, Check, Paperclip, FileText, Settings, Globe, Image as ImageIcon, Search } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
 import { useAppDialog } from '../components/AppDialogProvider'
 import { chatAPI, pointsAPI, taskAPI } from '../api'
 import { readUser } from '../auth'
 import { mdToHtml } from '../utils/markdown'
 import WidgetViewer from '../components/WidgetViewer'
+import { ModelLogo } from '../components/modelIcons'
 
 // markdown 渲染结果（.md-body）的样式，沿用全站 CSS 变量体系
 const MD_STYLES = `
@@ -92,7 +93,7 @@ async function copyText(text) {
 }
 
 // ============ 会话列表 ============
-function SessionList({ sessions, activeId, loading, sending, renaming, renamingValue,
+function SessionList({ sessions, activeId, loading, sending, creating, renaming, renamingValue,
   onSelect, onCreate, onDelete, onStartRename, onRenamingChange, onRenamingCommit, onRenamingCancel,
   batchMode, selectedIds, onEnterBatch, onSelectAll, onToggleSelect, onBatchDelete, onExitBatch, onToggleCollapse }) {
   const renderActions = (s) => (
@@ -139,10 +140,10 @@ function SessionList({ sessions, activeId, loading, sending, renaming, renamingV
           </div>
         ) : (
           <div className="flex items-center gap-1.5">
-            <button onClick={onCreate} disabled={sending}
+            <button onClick={onCreate} disabled={sending || creating}
               className="flex-1 inline-flex items-center justify-center gap-1.5 h-9 rounded-xl text-sm font-medium text-white disabled:opacity-50 transition-colors"
               style={{ background: 'var(--accent)' }}>
-              <Plus size={16} /> 新建对话
+              <Plus size={16} /> {creating ? '创建中…' : '新建对话'}
             </button>
             <button onClick={onEnterBatch} title="批量删除"
               className="flex-shrink-0 w-9 h-9 inline-flex items-center justify-center rounded-xl transition-colors hover:bg-bg-hover"
@@ -486,49 +487,143 @@ function StreamBubble({ sending, onStop, onRetry }) {
 const IMAGE_POLL_INTERVAL_MS = 8000
 const IMAGE_POLL_MAX = 120 // 约 16 分钟上限（任务要求最长 15 分钟/120 次）
 
+// 建议提示：综合主题（参考临时/frontend 版 family-meta.ts 的 starters 写法，非仅提示词相关）
 const EXAMPLES = [
-  { icon: Sparkles, tag: '写提示词', title: '月光下的银色狐狸', desc: '水墨风格，画面富有意境', prompt: '帮我写一个提示词：一只在月光下奔跑的银色狐狸，水墨风格' },
-  { icon: Wand2, tag: '优化提示词', title: '赛博朋克城市夜景', desc: '补充光线、氛围与细节', prompt: '优化这段提示词：城市夜景，霓虹灯，赛博朋克' },
-  { icon: PenLine, tag: '作品起名', title: '给作品一个吸睛标题', desc: '贴合画面，有传播力', prompt: '帮我的作品起一个吸引人的标题' },
-  { icon: Sparkles, tag: '写提示词', title: '山谷中的漂浮岛屿', desc: '梦幻插画风格，清晨薄雾', prompt: '帮我写一个提示词：晨雾笼罩的山谷中漂浮着一座小岛，梦幻插画风格' },
-  { icon: Wand2, tag: '优化提示词', title: '金色沙漠中的旅人', desc: '极简构图，突出孤独感', prompt: '帮我优化提示词：金色沙漠中孤独的旅人，极简风格' },
-  { icon: Star, tag: '灵感脑暴', title: '给猫想一组风格主题', desc: '从写实到动漫一次给全', prompt: '帮我想一组以猫为主题的绘画风格，从写实、油画到动漫各举一例' },
+  { label: '商业策划', prompt: '我准备推出一款面向 25-35 岁都市白领的轻食外卖品牌，请帮我从定位、差异化卖点、首月获客节奏、内容种草渠道四个维度给出可执行的上市方案。' },
+  { label: '代码评审', prompt: '请帮我评审下面这段代码的可读性、性能与潜在 bug，并给出重构建议：\n\n```\n\n```' },
+  { label: '产品文案', prompt: '帮我为一款主打通勤场景的降噪耳机写一组小红书种草笔记文案：标题要带 emoji 和话题标签，正文口语化、有场景感，突出「通勤路上瞬间安静」的体验，结尾加互动引导，3 条备选。' },
+  { label: '中文写作', prompt: '请帮我写一篇 800 字以内的公众号短文，主题「普通人如何在 AI 时代保持稀缺性」，要求：开头不能套话、语言生动有画面感、结尾有钩子让读者评论。' },
+  { label: '写提示词', prompt: '帮我写一个图片生成提示词：一只在月光下奔跑的银色狐狸，水墨风格，画面富有意境' },
+  { label: '优化提示词', prompt: '优化这段提示词：城市夜景，霓虹灯，赛博朋克，补充光线、氛围与细节' },
 ]
 
-function EmptyState({ onPick }) {
+// 品牌墙：始终展示的模型品牌（即使尚未接入；已接入的点击可选中对应模型）
+const BRAND_CARDS = [
+  { provider: 'gemini', label: 'Gemini' },
+  { provider: 'openai', label: 'ChatGPT' },
+  { provider: 'anthropic', label: 'Claude' },
+  { provider: 'zhipu', label: 'GLM' },
+  { provider: 'moonshot', label: 'Kimi' },
+  { provider: 'meta', label: 'Llama' },
+  { provider: 'mimo', label: 'MiMo' },
+  { provider: 'minimax', label: 'MiniMax' },
+  { provider: 'gemma', label: 'Gemma' },
+  { provider: 'xai', label: 'Grok' },
+  { provider: 'deepseek', label: 'DeepSeek' },
+  { provider: 'qwen', label: 'Qwen' },
+  { provider: 'doubao', label: '豆包' },
+]
+
+function EmptyState({ onPick, models = [], modelId = '', onSelectModel }) {
   return (
     <div className="flex flex-col items-center text-center pt-14 pb-10 px-4">
       <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
         style={{ background: 'color-mix(in srgb, var(--accent) 12%, transparent)' }}>
         <MessageCircle size={26} style={{ color: 'var(--accent)' }} />
       </div>
-      <h3 className="text-lg font-semibold mb-1.5" style={{ color: 'var(--text-primary)' }}>和 AI 助手聊聊</h3>
-      <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>帮你写提示词、优化描述，让灵感更快落地</p>
-      <div className="grid w-full max-w-2xl gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-        {EXAMPLES.map(ex => {
-          const Icon = ex.icon
-          return (
-            <button key={ex.prompt} onClick={() => onPick(ex.prompt)} title="点击立即发送这个问题"
-              className="group relative overflow-hidden rounded-2xl border p-3.5 text-left transition-all duration-300 hover:-translate-y-1"
-              style={{
-                background: 'var(--bg-card)',
-                borderColor: 'color-mix(in srgb, var(--accent) 16%, var(--border-color))',
-                boxShadow: '0 12px 32px color-mix(in srgb, var(--accent) 8%, transparent)',
-              }}>
-              <div className="flex items-center gap-1.5">
-                <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg"
-                  style={{ background: 'color-mix(in srgb, var(--accent) 14%, transparent)' }}>
-                  <Icon size={13} style={{ color: 'var(--accent)' }} />
+      {/* 指导性文字：参考临时/frontend 版 ChatWelcome 的大号渐变标题 + tagline */}
+      <h3 className="text-3xl sm:text-4xl font-extrabold leading-none tracking-tight mb-2"
+        style={{
+          backgroundImage: 'linear-gradient(135deg, var(--text-primary) 30%, color-mix(in srgb, var(--accent) 65%, var(--text-primary)))',
+          WebkitBackgroundClip: 'text',
+          backgroundClip: 'text',
+          color: 'transparent',
+        }}>
+        和 AI 助手聊聊
+      </h3>
+      <h3 className="text-3xl sm:text-4xl font-extrabold leading-none tracking-tight mb-2"
+        style={{
+          backgroundImage: 'linear-gradient(135deg, var(--text-primary) 30%, color-mix(in srgb, var(--accent) 65%, var(--text-primary)))',
+          WebkitBackgroundClip: 'text',
+          backgroundClip: 'text',
+          color: 'transparent',
+        }}>
+        顶尖模型·一站聚合
+      </h3>
+      <p className="text-xs sm:text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>写提示词、写代码、做分析，万事可问</p>
+      {/* 模型选择：品牌墙，始终展示（未接入的品牌置灰不可点） */}
+      <div className="w-full max-w-2xl text-left">
+        <div className="mb-2.5 flex items-center gap-3 px-1">
+          <div className="h-px flex-1" style={{ background: 'linear-gradient(to left, color-mix(in srgb, var(--border-color) 90%, transparent), transparent)' }} />
+          <h4 className="text-[10px] font-semibold uppercase tracking-[0.22em] flex-shrink-0"
+            style={{ color: 'var(--text-secondary)' }}>
+            模型
+          </h4>
+          <div className="h-px flex-1" style={{ background: 'linear-gradient(to right, color-mix(in srgb, var(--border-color) 90%, transparent), transparent)' }} />
+        </div>
+        <div className="flex flex-wrap justify-center gap-1.5 sm:gap-2">
+          {BRAND_CARDS.map(({ provider, label }) => {
+            const m = models.find(x => { const k = familyKeyOf(x); return k === provider || k.startsWith(provider) })
+            return (
+              <button
+                key={provider}
+                type="button"
+                title={m ? label : `${label}（尚未接入）`}
+                disabled
+                onClick={() => m && onSelectModel && onSelectModel(m.model_id)}
+                className="relative flex w-[68px] shrink-0 flex-col items-center gap-1 overflow-hidden rounded-xl border px-2 py-2.5 text-center transition-colors sm:w-[84px] sm:gap-1.5 sm:px-3 sm:py-3 disabled:cursor-not-allowed"
+                style={{
+                  borderColor: 'color-mix(in srgb, var(--border-color) 60%, transparent)',
+                  background: 'color-mix(in srgb, var(--bg-card) 45%, transparent)',
+                }}>
+                <ModelLogo provider={provider} className="size-6 sm:size-7" />
+                <span className="line-clamp-1 text-[10px] font-medium sm:text-[11px]"
+                  style={{ color: 'var(--text-secondary)' }}>
+                  {label}
                 </span>
-                <span className="text-[10px] font-semibold tracking-[0.16em] uppercase" style={{ color: 'var(--accent)' }}>{ex.tag}</span>
-              </div>
-              <div className="mt-2.5 text-[13px] font-medium leading-snug" style={{ color: 'var(--text-primary)' }}>{ex.title}</div>
-              <div className="mt-1 text-[11px] leading-snug" style={{ color: 'var(--text-secondary)' }}>{ex.desc}</div>
-              <Send size={13} className="absolute right-3 top-3 flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-                style={{ color: 'var(--accent)' }} />
-            </button>
-          )
-        })}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+      {/* 建议提示：参考临时/frontend 版 ChatWelcome 的竖排列表（序号 + 标题 + 描述 + hover 竖条/箭头） */}
+      <div className="w-full max-w-2xl mt-6 text-left">
+        <div className="mb-1 flex items-center gap-3 px-1">
+          <h4 className="text-[10px] font-semibold uppercase tracking-[0.22em] flex-shrink-0"
+            style={{ color: 'var(--text-secondary)' }}>
+            建议提示
+          </h4>
+          <div className="h-px flex-1" style={{ background: 'linear-gradient(to right, color-mix(in srgb, var(--border-color) 90%, transparent), transparent)' }} />
+          <span className="font-mono text-[10px] tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>
+            {String(EXAMPLES.length).padStart(2, '0')}
+          </span>
+        </div>
+        <ul className="flex flex-col">
+          {EXAMPLES.map((ex, i) => (
+            <li key={ex.prompt}>
+              <button
+                type="button"
+                onClick={() => onPick(ex.prompt)}
+                title="点击立即发送这个问题"
+                className="group relative flex w-full items-start gap-3 border-b px-1 py-3.5 text-left transition-colors duration-200 last:border-b-0 sm:gap-4 sm:py-4"
+                style={{ borderColor: 'color-mix(in srgb, var(--border-color) 55%, transparent)' }}>
+                <span
+                  aria-hidden="true"
+                  className="absolute left-0 top-1/2 h-0 w-[2px] -translate-y-1/2 rounded-full transition-[height] duration-200 group-hover:h-[calc(100%-1.5rem)]"
+                  style={{ background: 'var(--accent)' }} />
+                <span className="mt-px flex-shrink-0 font-mono text-[11px] font-medium tabular-nums transition-colors duration-200 group-hover:text-[var(--accent)]"
+                  style={{ color: 'color-mix(in srgb, var(--text-secondary) 60%, transparent)' }}>
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="truncate text-sm font-semibold tracking-tight transition-colors duration-200 group-hover:text-[var(--accent)]"
+                      style={{ color: 'var(--text-primary)' }}>
+                      {ex.label}
+                    </span>
+                    <Send size={13}
+                      className="flex-shrink-0 transition-all duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+                      style={{ color: 'color-mix(in srgb, var(--text-secondary) 45%, transparent)' }} />
+                  </div>
+                  <p className="line-clamp-2 text-[13px] leading-relaxed transition-colors duration-200 group-hover:text-[color-mix(in_srgb,var(--text-primary)_75%,transparent)]"
+                    style={{ color: 'var(--text-secondary)' }}>
+                    {ex.prompt.replace(/\s+/g, ' ').trim().slice(0, 140)}
+                  </p>
+                </div>
+              </button>
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   )
@@ -538,10 +633,32 @@ function EmptyState({ onPick }) {
 const EFFORT_LABELS = { auto: '自动', low: '低', medium: '中', high: '高', max: '最高', xhigh: '超高' }
 // 思考强度固定顺序（auto 最左、max 最右）：UI 展示不依赖模型档案/CSV 的原始顺序
 const EFFORT_ORDER = ['auto', 'low', 'medium', 'high', 'xhigh', 'max']
+// 模型族（provider → 展示名）：双列弹窗左侧栏分组
+const MODEL_FAMILIES = [
+  { key: 'anthropic', label: 'Claude' },
+  { key: 'deepseek', label: 'DeepSeek' },
+  { key: 'openai', label: 'OpenAI' },
+  { key: 'moonshot', label: 'Kimi' },
+  { key: 'qwen', label: '通义千问' },
+  { key: 'minimax', label: 'MiniMax' },
+  { key: 'xai', label: 'Grok' },
+  { key: 'zhipu', label: '智谱 GLM' },
+  { key: 'doubao', label: '豆包' },
+  { key: 'hunyuan', label: '混元' },
+  { key: 'google', label: 'Gemini' },
+  { key: 'yi', label: '零一万物' },
+  { key: 'mistral', label: 'Mistral' },
+  { key: 'meta', label: 'Meta' },
+  { key: 'stepfun', label: '阶跃星辰' },
+  { key: 'spark', label: '讯飞星火' },
+]
+const familyKeyOf = (m) => String(m.provider || '').trim().toLowerCase()
 
-function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, reasoningEffort, onReasoningEffort, efforts, modelLabel, pendingQueue, onEditPending, onRemovePending, models, chatModelId, onSelectModel, onUploadClick, docs, onRemoveDoc, uploadingCount, uploadNote, webSearch, onWebSearch, linkStatus, dragActive, dragHandlers }) {
+function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, dailyTotal, dailyRemaining, isFreeUser, reasoningEffort, onReasoningEffort, efforts, modelLabel, modelProvider, pendingQueue, onEditPending, onRemovePending, models, chatModelId, onSelectModel, onUploadClick, docs, onRemoveDoc, uploadingCount, uploadNote, webSearch, onWebSearch, linkStatus, dragActive, dragHandlers }) {
   const [effortOpen, setEffortOpen] = useState(false)
   const [modelOpen, setModelOpen] = useState(false)
+  const [modelQuery, setModelQuery] = useState('')
+  const [modelFamily, setModelFamily] = useState('')
   const EFFORT_OPTIONS = (Array.isArray(efforts) && efforts.length ? efforts : ['auto', 'low', 'medium', 'high', 'xhigh', 'max'])
     .map(v => ({ value: v, label: EFFORT_LABELS[v] || v }))
     .sort((a, b) => {
@@ -550,8 +667,28 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
       return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib)  // 未知档位排最后
     })
   const activeModel = models.find(m => m.model_id === chatModelId) || null
+  // 族列表（按 provider 分组，含计数）：用于双列弹窗左侧栏
+  const families = useMemo(() => {
+    const map = new Map()
+    for (const m of models) {
+      const k = familyKeyOf(m)
+      if (!k) continue
+      if (!map.has(k)) map.set(k, MODEL_FAMILIES.find(f => f.key === k) || { key: k, label: k })
+    }
+    return [...map.values()]
+  }, [models])
+  const countOf = (key) => models.filter(m => familyKeyOf(m) === key).length
+  const filteredModels = useMemo(() => {
+    let l = modelFamily ? models.filter(m => familyKeyOf(m) === modelFamily) : models
+    const q = modelQuery.trim().toLowerCase()
+    if (q) l = l.filter(m => `${m.label || ''} ${m.model_id || ''} ${m.provider || ''}`.toLowerCase().includes(q))
+    return l
+  }, [models, modelFamily, modelQuery])
   useEffect(() => {
-    if (!value && inputRef.current) inputRef.current.style.height = 'auto'
+    const textarea = inputRef.current
+    if (!textarea) return
+    textarea.style.height = 'auto'
+    if (value) textarea.style.height = Math.min(textarea.scrollHeight, 160) + 'px'
   }, [value, inputRef])
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -593,6 +730,13 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
               </div>
             )}
           </div>
+          {isFreeUser && dailyTotal > 0 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium"
+              style={{ color: 'var(--text-secondary)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)', border: '1px solid var(--border-color)' }}
+              title="今日剩余免费 AI 助手对话次数（用完后将扣除积分）">
+              今日 AI 助手剩余 {dailyRemaining}/{dailyTotal} 次
+            </span>
+          )}
           <span className="ml-auto hidden sm:inline text-[11px]" style={{ color: 'var(--text-secondary)' }}>思考强度越高，回复越深入，耗时越长</span>
         </div>
         {/* 排队中的待发送消息 */}
@@ -688,45 +832,106 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
                 onChange(e.target.value)
                 const t = e.target
                 t.style.height = 'auto'
-                t.style.height = Math.min(t.scrollHeight, 80) + 'px'
+                t.style.height = Math.min(t.scrollHeight, 160) + 'px'
               }}
               onKeyDown={handleKeyDown}
               className="block w-full resize-none bg-transparent outline-none py-2"
-              style={{ color: 'var(--text-primary)', minHeight: '40px', maxHeight: '80px', fontSize: '15px', paddingLeft: '10px' }} />
+              style={{ color: 'var(--text-primary)', minHeight: '56px', maxHeight: '160px', overflowY: 'auto', fontSize: '15px', paddingLeft: '10px' }} />
             {/* 粘贴链接轻提示：输入含 http(s):// 时实时显示 */}
             {/https?:\/\//i.test(value) && (
               <div className="px-2.5 pb-1 text-[11px]" style={{ color: 'var(--text-secondary)' }}>发送后将自动访问该链接内容</div>
             )}
             <div className="mt-2 flex items-center justify-between gap-3">
               <div className="flex items-center flex-shrink-0 whitespace-nowrap gap-0.5">
-                {/* 模型选择（与上传/联网搜索并排，样式统一） */}
+                {/* 模型选择（弹窗双列：左侧族列表 + 右侧搜索模型列表，与上传/联网搜索并排） */}
                 {models.length > 0 ? (
-                  <div className="relative">
-                    <button type="button" onClick={() => setModelOpen(v => !v)} title="选择模型"
+                  <div className="relative flex items-center">
+                    <button type="button" onClick={() => { setModelQuery(''); setModelOpen(v => !v) }} title="选择模型"
                       className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors"
                       style={{ color: activeModel ? 'var(--accent)' : 'var(--text-secondary)' }}>
-                      <Cpu size={15} />
+                      <ModelLogo provider={activeModel?.provider || modelProvider} size={15} />
                       <span className="text-[11px] leading-none max-w-[8.5rem] truncate">{activeModel?.label || modelLabel || '模型'}</span>
                       <ChevronDown size={11} className={modelOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
                     </button>
                     {modelOpen && (
-                      <div className="absolute left-0 bottom-full mb-1.5 z-50 w-72 max-h-[45dvh] overflow-y-auto rounded-xl p-1 model-dropdown-scroll"
-                        style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-md)' }}>
-                        {models.map(m => (
-                          <button key={m.model_id} onClick={() => { onSelectModel(m.model_id); setModelOpen(false) }}
-                            className="w-full text-left flex items-center gap-2 px-2.5 py-2 rounded-lg hover:bg-bg-hover transition-colors"
-                            style={{ background: m.model_id === chatModelId ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent' }}>
-                            <span className="flex-1 min-w-0">
-                              <span className="block text-xs font-medium truncate" style={{ color: m.model_id === chatModelId ? 'var(--accent)' : 'var(--text-primary)' }}>
-                                {m.label || m.model_id}
-                              </span>
-                              <span className="block text-[10px] truncate" style={{ color: 'var(--text-secondary)' }}>
-                                {m.model_id}{m.points_per_request != null && m.points_per_request > 0 ? ` · ${m.points_per_request} 积分/次` : ''}
-                              </span>
-                            </span>
-                            {m.model_id === chatModelId && <Check size={13} style={{ color: 'var(--accent)' }} />}
+                      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4" onClick={() => setModelOpen(false)}>
+                        <div className="absolute inset-0 bg-black/50" />
+                        <div
+                          role="dialog"
+                          aria-label="模型选择器"
+                          className="relative flex h-[min(70dvh,520px)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl"
+                          style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-lg)' }}
+                          onClick={e => e.stopPropagation()}>
+                          <button type="button" aria-label="关闭" title="关闭"
+                            className="absolute right-2 top-2 z-10 rounded-lg p-1.5 transition-colors hover:bg-bg-hover"
+                            style={{ color: 'var(--text-secondary)' }}
+                            onClick={() => setModelOpen(false)}>
+                            <X size={16} />
                           </button>
-                        ))}
+                          <div className="flex min-h-0 flex-1" style={{ paddingTop: 40 }}>
+                            {/* 左侧族栏 */}
+                            <aside className="flex w-fit min-w-32 max-w-38 shrink-0 flex-col"
+                              style={{ borderRight: '1px solid var(--border-color)' }}>
+                              <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2 model-dropdown-scroll">
+                                <button type="button" onClick={() => setModelFamily('')}
+                                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors"
+                                  style={{ background: !modelFamily ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent', color: !modelFamily ? 'var(--accent)' : 'var(--text-primary)' }}>
+                                  <span className="truncate">全部模型</span>
+                                  <span className="ml-auto shrink-0 text-xs" style={{ color: 'var(--text-secondary)' }}>{models.length}</span>
+                                </button>
+                                {families.map(f => {
+                                  const active = modelFamily === f.key
+                                  return (
+                                    <button key={f.key} type="button" onClick={() => setModelFamily(f.key)}
+                                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors"
+                                      style={{ background: active ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent', color: active ? 'var(--accent)' : 'var(--text-primary)' }}>
+                                      <ModelLogo provider={f.key} className="shrink-0" size={18} />
+                                      <span className="truncate">{f.label}</span>
+                                      <span className="ml-auto shrink-0 text-xs" style={{ color: 'var(--text-secondary)' }}>{countOf(f.key)}</span>
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            </aside>
+                            {/* 右侧模型列表 */}
+                            <div className="flex min-w-0 flex-1 flex-col">
+                              <div className="px-2 pt-2">
+                                <div className="flex h-8 items-center gap-1.5 rounded-lg border px-2.5"
+                                  style={{ borderColor: 'var(--border-color)', background: 'color-mix(in srgb, var(--bg-input) 50%, transparent)' }}>
+                                  <Search size={14} className="shrink-0" style={{ color: 'var(--text-secondary)' }} />
+                                  <input
+                                    value={modelQuery}
+                                    onChange={e => setModelQuery(e.target.value)}
+                                    placeholder="搜索模型..."
+                                    autoFocus
+                                    className="w-full bg-transparent text-xs outline-none"
+                                    style={{ color: 'var(--text-primary)' }} />
+                                </div>
+                              </div>
+                              <div className="min-h-0 flex-1 overflow-y-auto p-2 model-dropdown-scroll">
+                                {filteredModels.length === 0 && (
+                                  <p className="px-2 py-6 text-center text-xs" style={{ color: 'var(--text-secondary)' }}>未找到模型</p>
+                                )}
+                                {filteredModels.map(m => (
+                                  <button key={m.model_id} type="button"
+                                    onClick={() => { onSelectModel(m.model_id); setModelOpen(false) }}
+                                    className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors hover:bg-bg-hover"
+                                    style={{ background: m.model_id === chatModelId ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent', color: m.model_id === chatModelId ? 'var(--accent)' : 'var(--text-primary)' }}>
+                                    <ModelLogo provider={m.provider} className="shrink-0" size={20} />
+                                    <span className="min-w-0 flex-1 text-left leading-snug line-clamp-3">{m.label || m.model_id}</span>
+                                    <span className="flex shrink-0 items-center gap-1">
+                                      <span className="rounded px-1.5 py-0.5 text-[10px] font-medium"
+                                        style={{ background: 'color-mix(in srgb, var(--accent) 10%, transparent)', color: 'var(--accent)' }}>
+                                        1 积分/次
+                                      </span>
+                                      {m.model_id === chatModelId && <Check size={14} />}
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -747,7 +952,7 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
                     background: webSearch ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
                   }}>
                   <Globe size={15} />
-                  <span className="text-[11px] leading-none">搜索</span>
+                  <span className="text-[11px] leading-none">联网</span>
                 </button>
                 <button type="button" onClick={onUploadClick}
                   title="上传文档/代码（txt/md/csv/pdf/docx/xlsx/pptx/py/js/ts/go/yaml 等 50+ 格式；一次最多 5 个，会话累计最多 20 个）"
@@ -780,10 +985,6 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
         {uploadNote && (
           <div className="px-1 pt-1 text-[11px] truncate" style={{ color: 'var(--color-error)' }} title={uploadNote}>{uploadNote}</div>
         )}
-        <div className="px-1 pt-1 flex items-center justify-between text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-          <span>本次消耗 {cost} 积分</span>
-          <span>当前积分：{points}</span>
-        </div>
       </div>
     </div>
   )
@@ -838,6 +1039,9 @@ export default function ChatAssistantPage() {
   useEffect(() => () => clearLinkTimer(), [clearLinkTimer])
   const [cost, setCost] = useState(0)
   const [points, setPoints] = useState(() => readUser()?.points ?? 0)
+  const [dailyTotal, setDailyTotal] = useState(0)
+  const [dailyRemaining, setDailyRemaining] = useState(0)
+  const [isFreeUser, setIsFreeUser] = useState(false)
   const [reasoningEffort, setReasoningEffort] = useState(() => localStorage.getItem('chat_reasoning_effort') || 'auto')
   const [modelInfo, setModelInfo] = useState(null) // { label, reasoning_efforts, ... }（激活模型档案）
   const [models, setModels] = useState([]) // 全部启用的模型档案
@@ -883,9 +1087,12 @@ export default function ChatAssistantPage() {
   const scrollRef = useRef(null)
   const inputRef = useRef(null)
   const sendingRef = useRef(null) // 与 sending 同步，供事件/回调读取最新状态（也兼作发送锁）
+  const creatingRef = useRef(false) // 新建会话锁：createSession 异步期间拦截重复点击，保证只创建一个
+  const [creatingSession, setCreatingSession] = useState(false)
   const pendingQueueRef = useRef([]) // 与 pendingQueue 同步
   const manualStopRef = useRef(false)
   const pointsRef = useRef(points)
+  const dailyRemainingRef = useRef(dailyRemaining)
   const activeIdRef = useRef(activeId)
   // 新建会话后本地消息已就绪（handleSend/sendQueuedNext 已 setMessages），
   // 跳过 useEffect([activeId]) 的异步加载，避免「空列表覆盖本地用户消息」的竞态丢消息
@@ -921,6 +1128,7 @@ export default function ChatAssistantPage() {
   // latest-ref：每次渲染后同步，让异步回调能读到最新值
   useEffect(() => {
     pointsRef.current = points
+    dailyRemainingRef.current = dailyRemaining
     activeIdRef.current = activeId
     effortRef.current = reasoningEffort
     modelIdRef.current = chatModelId
@@ -943,7 +1151,12 @@ export default function ChatAssistantPage() {
         try { localStorage.removeItem('chat_model_id') } catch {}
       }
     }).catch(() => {})
-    pointsAPI.balance().then(res => setPoints(Number(res.data?.points || 0))).catch(() => {})
+    pointsAPI.balance().then(res => {
+      setPoints(Number(res.data?.points || 0))
+      setDailyTotal(Number(res.data?.ai_daily_total || 0))
+      setDailyRemaining(Number(res.data?.ai_daily_remaining || 0))
+      setIsFreeUser(!!res.data?.is_free_user)
+    }).catch(() => {})
     chatAPI.sessions().then(res => {
       const items = res.data?.items || []
       setSessions(items)
@@ -1384,6 +1597,11 @@ export default function ChatAssistantPage() {
           if (u) { u.points = num; localStorage.setItem('user', JSON.stringify(u)) }
           window.dispatchEvent(new Event('points-updated'))
         }
+        if (data.ai_daily_remaining != null) {
+          const dailyLeft = Number(data.ai_daily_remaining)
+          setDailyRemaining(dailyLeft)
+          dailyRemainingRef.current = dailyLeft
+        }
         refreshSessions()
       },
       onError: msg => {
@@ -1410,7 +1628,12 @@ export default function ChatAssistantPage() {
         }
         if (/积分不足|余额不足/.test(errMsg)) {
           dialog.alert(errMsg)
-          pointsAPI.balance().then(res => setPoints(Number(res.data?.points || 0))).catch(() => {})
+          pointsAPI.balance().then(res => {
+            setPoints(Number(res.data?.points || 0))
+            setDailyTotal(Number(res.data?.ai_daily_total || 0))
+            setDailyRemaining(Number(res.data?.ai_daily_remaining || 0))
+            setIsFreeUser(!!res.data?.is_free_user)
+          }).catch(() => {})
         }
       },
     }).finally(() => { if (abortRef.current === controller) abortRef.current = null })
@@ -1479,9 +1702,9 @@ export default function ChatAssistantPage() {
     }
     // 空闲（或上一条已停止/失败）：获取发送锁后直接发送
     if (!acquireSendLock(text)) return
-    if (cost > 0 && pointsRef.current < cost) {
+    if (cost > 0 && !(isFreeUser && (dailyRemainingRef?.current || 0) > 0) && pointsRef.current < cost) {
       releaseSendLock()
-      dialog.alert(`积分不足，当前仅剩 ${pointsRef.current} 积分，本次对话需要 ${cost} 积分。`)
+      dialog.alert(`钱包余额不足，当前仅剩 ${pointsRef.current} 积分，本次对话需要 ${cost} 积分。`)
       return
     }
     setInput('')
@@ -1519,9 +1742,9 @@ export default function ChatAssistantPage() {
     }
     pendingQueueRef.current = pendingQueueRef.current.slice(1)
     setPendingQueue(pendingQueueRef.current)
-    if (cost > 0 && pointsRef.current < cost) {
+    if (cost > 0 && !(isFreeUser && (dailyRemainingRef?.current || 0) > 0) && pointsRef.current < cost) {
       releaseSendLock()
-      dialog.alert(`积分不足，当前仅剩 ${pointsRef.current} 积分，本次对话需要 ${cost} 积分。排队消息已取消，请补充积分后重新发送。`)
+      dialog.alert(`钱包余额不足，当前仅剩 ${pointsRef.current} 积分，本次对话需要 ${cost} 积分。排队消息已取消，请补充钱包余额后重新发送。`)
       clearPending()
       return
     }
@@ -1545,7 +1768,7 @@ export default function ChatAssistantPage() {
     const userLocalId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     setMessages(prev => [...prev, { id: userLocalId, role: 'user', content: item.text, files: item.files || [], created_at: new Date().toISOString() }])
     startStream(sid, item.text, effortRef.current, null, userLocalId)
-  }, [dialog, cost, startStream, acquireSendLock, releaseSendLock, clearPending])
+  }, [dialog, cost, isFreeUser, startStream, acquireSendLock, releaseSendLock, clearPending])
 
   // sending 变为空闲时自动发送排队中的下一条
   useEffect(() => {
@@ -1568,6 +1791,9 @@ export default function ChatAssistantPage() {
 
   const handleCreateSession = async () => {
     if (sending) { dialog.alert('请先停止当前生成，再新建对话'); return }
+    if (creatingRef.current) return // 创建中：拦截重复点击，避免连续点击产生多个空会话
+    creatingRef.current = true
+    setCreatingSession(true)
     manualStopRef.current = true
     abortRef.current?.abort()
     sendingRef.current = null
@@ -1584,6 +1810,9 @@ export default function ChatAssistantPage() {
       setSessionListOpen(false)
     } catch (err) {
       dialog.alert(err.message || '创建会话失败')
+    } finally {
+      creatingRef.current = false
+      setCreatingSession(false)
     }
   }
 
@@ -1759,7 +1988,7 @@ export default function ChatAssistantPage() {
           style={{ background: 'var(--bg-sidebar)', borderRight: chatListCollapsed ? 'none' : '1px solid var(--border-color)' }}>
           {!chatListCollapsed && (
             <SessionList
-              sessions={sessions} activeId={activeId} loading={sessionsLoading} sending={!!sending}
+              sessions={sessions} activeId={activeId} loading={sessionsLoading} sending={!!sending} creating={creatingSession}
               renaming={renaming} renamingValue={renaming?.title || ''}
               onSelect={handleSelectSession} onCreate={handleCreateSession} onDelete={handleDeleteSession}
               onStartRename={startRename} onRenamingChange={changeRename}
@@ -1786,7 +2015,7 @@ export default function ChatAssistantPage() {
               </div>
               <div className="flex-1 min-h-0">
                 <SessionList
-                  sessions={sessions} activeId={activeId} loading={sessionsLoading} sending={!!sending}
+                  sessions={sessions} activeId={activeId} loading={sessionsLoading} sending={!!sending} creating={creatingSession}
                   renaming={renaming} renamingValue={renaming?.title || ''}
                   onSelect={handleSelectSession} onCreate={handleCreateSession} onDelete={handleDeleteSession}
                   onStartRename={startRename} onRenamingChange={changeRename}
@@ -1815,13 +2044,7 @@ export default function ChatAssistantPage() {
               {messagesLoading ? (
                 <div className="text-center text-xs py-10" style={{ color: 'var(--text-secondary)' }}>加载中…</div>
               ) : messages.length === 0 && !sending ? (
-                activeId ? (
-                  <div className="text-center text-sm py-16" style={{ color: 'var(--text-secondary)' }}>
-                    发送第一条消息，开始新的对话
-                  </div>
-                ) : (
-                  <EmptyState onPick={handleSend} />
-                )
+                <EmptyState onPick={t => { setInput(t); focusInput() }} models={selectableModels} modelId={chatModelId} onSelectModel={handleSelectModel} />
               ) : (
                 <>
                   {messages.map(msg => <MessageItem key={msg.id} msg={msg} onCopy={handleCopy} onRegenerate={handleRegenerate} />)}
@@ -1837,8 +2060,10 @@ export default function ChatAssistantPage() {
             onChange={handleFilesSelected} />
           <ChatInputBar inputRef={inputRef} value={input} onChange={setInput}
             onSend={handleSend} onStop={handleStop} sending={!!sending && !sending?.stopped} cost={cost} points={points}
+            dailyTotal={dailyTotal} dailyRemaining={dailyRemaining} isFreeUser={isFreeUser}
             reasoningEffort={reasoningEffort} onReasoningEffort={handleReasoningEffort}
             efforts={chatModel?.reasoning_efforts} modelLabel={chatModel?.label || modelInfo?.label || modelInfo?.model_id}
+            modelProvider={chatModel?.provider || modelInfo?.provider || ''}
             pendingQueue={pendingQueue} onEditPending={editPending} onRemovePending={removePending}
             models={selectableModels} chatModelId={chatModelId} onSelectModel={handleSelectModel}
             onUploadClick={openFilePicker} docs={docs} onRemoveDoc={removeDoc}
