@@ -981,16 +981,22 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
                                     className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors hover:bg-bg-hover"
                                     style={{ background: m.model_id === chatModelId ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent', color: m.model_id === chatModelId ? 'var(--accent)' : 'var(--text-primary)' }}>
                                     <ModelLogo provider={m.provider} className="shrink-0" size={20} />
-                                    <span className="min-w-0 flex-1 text-left leading-snug line-clamp-3">{m.label || m.model_id}</span>
-                                    <span className="flex shrink-0 items-center gap-1">
-                                      {(m.capabilities || []).slice(0, 3).map(t => (
-                                        <span key={t} className="rounded px-1.5 py-0.5 text-[10px] font-medium"
-                                          style={{ background: 'color-mix(in srgb, var(--text-secondary) 10%, transparent)', color: 'var(--text-secondary)' }}>
-                                          {t}
+                                    {/* 两行布局：模型名独占一行（truncate），能力标签换行到第二行，
+                                        避免手机窄屏下标签把模型名挤没 */}
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block truncate leading-snug">{m.label || m.model_id}</span>
+                                      {(m.capabilities || []).length > 0 && (
+                                        <span className="mt-1 flex flex-wrap items-center gap-1">
+                                          {(m.capabilities || []).slice(0, 3).map(t => (
+                                            <span key={t} className="rounded px-1.5 py-0.5 text-[10px] font-medium"
+                                              style={{ background: 'color-mix(in srgb, var(--text-secondary) 10%, transparent)', color: 'var(--text-secondary)' }}>
+                                              {t}
+                                            </span>
+                                          ))}
                                         </span>
-                                      ))}
-                                      {m.model_id === chatModelId && <Check size={14} />}
+                                      )}
                                     </span>
+                                    {m.model_id === chatModelId && <Check size={14} className="shrink-0" />}
                                   </button>
                                 ))}
                               </div>
