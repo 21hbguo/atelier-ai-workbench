@@ -34,6 +34,49 @@ MAX_PPTX_SLIDES = 50
 MAX_PPTX_BULLETS_PER_SLIDE = 20
 MAX_PPTX_BULLET_CHARS = 500
 
+# ---- 默认美观模板：THEMES 主题驱动（参考 Claude office skills 样式规范）----
+# 每套主题字段：primary 主色（表头/标题/封面背景）、secondary 辅助色、accent 强调色、
+# text 正文色、stripe 斑马纹浅色、border 边框色；正文中文字体统一微软雅黑。
+THEMES = {
+    # 默认主题：Midnight Executive（深藏青 + 冰蓝 + 珊瑚）
+    "executive": {
+        "primary": "1E2761",
+        "secondary": "CADCFC",
+        "accent": "F96167",
+        "text": "333333",
+        "stripe": "F2F6FC",
+        "border": "D9D9D9",
+    },
+    # Charcoal Minimal（炭黑 + 浅灰）
+    "minimal": {
+        "primary": "36454F",
+        "secondary": "F2F2F2",
+        "accent": "212121",
+        "text": "333333",
+        "stripe": "F5F5F5",
+        "border": "D0D0D0",
+    },
+    # Teal Trust（青绿清新）
+    "fresh": {
+        "primary": "028090",
+        "secondary": "00A896",
+        "accent": "02C39A",
+        "text": "333333",
+        "stripe": "E8F6F6",
+        "border": "CCE3E6",
+    },
+}
+DEFAULT_THEME = "executive"
+BODY_FONT = "微软雅黑"
+
+
+def _validate_theme(args: dict) -> str | None:
+    """theme 必须是 THEMES 三套之一；不传则用默认主题 executive。"""
+    theme = args.get("theme")
+    if theme is not None and theme not in THEMES:
+        return "theme 必须是 executive/minimal/fresh 之一"
+    return None
+
 
 def _has_file_write(ctx) -> bool:
     extra = getattr(ctx, "extra", None) or {}
@@ -73,8 +116,9 @@ async def _run_make(ctx, args, *, tool_label: str, ext: str, validate, build, de
     if err:
         return err
     path.parent.mkdir(parents=True, exist_ok=True)
+    theme = args.get("theme") or DEFAULT_THEME
     try:
-        build(path, args)  # 生成（同名文件直接覆盖）
+        build(path, args, theme)  # 生成（同名文件直接覆盖）
     except Exception as exc:
         logger.exception("[make_office] %s 生成失败", tool_label)
         _cleanup(path)  # 清掉可能写了一半的文件
@@ -106,6 +150,9 @@ async def _run_make(ctx, args, *, tool_label: str, ext: str, validate, build, de
 
 def _validate_xlsx_args(args: dict) -> str | None:
     """参数校验：结构 + 上限（sheets≤10、每表 rows≤5000、列≤50、总单元格≤100000）。"""
+    err = _validate_theme(args)
+    if err:
+        return err
     sheets = args.get("sheets")
     if not isinstance(sheets, list) or not sheets:
         return "make_xlsx 参数错误：sheets 不能为空，请提供 1-10 个工作表。"
@@ -134,11 +181,57 @@ def _validate_xlsx_args(args: dict) -> str | None:
     return None
 
 
-def _build_xlsx(path: Path, args: dict) -> None:
-    """openpyxl 生成工作簿：header 加粗 + 冻结首行，rows 逐行写入，可选列宽。"""
+def _infer_number_format(header: list, col_idx: int, value) -> str | None:
+    """按单元格值类型推断数字格式；拿不准时只对 int/float 应用千分位。
+
+    int → 千分位（零显示 -）；float → 千分位两位小数（零显示 -）；
+    百分比列（header 含 % 或“率”，值为 float）→ 0.0%（值按分数存，如 0.12）；
+    货币列（header 含 价格/金额/费用/收入/成本/¥/$/元）→ ¥#,##0.00；
+    日期字符串等其他类型不动。
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if isinstance(value, int):
+        return "#,##0;-#,##0;-"
+    col_name = str(header[col_idx - 1]) if col_idx - 1 < len(header) else ""
+    if "%" in col_name or "率" in col_name:
+        return "0.0%"
+    if any(k in col_name for k in ("价格", "金额", "费用", "收入", "成本", "¥", "$", "元")):
+        return "¥#,##0.00"
+    return "#,##0.00;-#,##0.00;-"
+
+
+def _estimate_column_width(values: list) -> float:
+    """按内容估算列宽：str 长度按中文字符×2 计，取最宽值 + 2，上限 40。"""
+    max_width = 8.0
+    for v in values:
+        if v is None:
+            continue
+        if isinstance(v, bool):
+            width = 5.0
+        elif isinstance(v, (int, float)):
+            width = float(len(str(v)))
+        else:
+            width = float(sum(2 if ord(ch) > 127 else 1 for ch in str(v)))
+        max_width = max(max_width, width)
+    return min(max_width + 2, 40)
+
+
+def _build_xlsx(path: Path, args: dict, theme: str = DEFAULT_THEME) -> None:
+    """openpyxl 生成工作簿：主题表头（primary 填充 + 白色加粗居中）+ 全表细边框 +
+    偶数行斑马纹 + 数字格式推断 + 冻结首行 + 列宽（column_widths 优先，否则按内容估算）。"""
     from openpyxl import Workbook
-    from openpyxl.styles import Font
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
+
+    t = THEMES[theme]
+    header_font = Font(name=BODY_FONT, size=11, bold=True, color="FFFFFF")
+    data_font = Font(name=BODY_FONT, size=11, color=t["text"])
+    header_fill = PatternFill("solid", fgColor=t["primary"])
+    stripe_fill = PatternFill("solid", fgColor=t["stripe"])
+    header_align = Alignment(horizontal="center", vertical="center")
+    thin_side = Side(style="thin", color=t["border"])
+    thin_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
 
     wb = Workbook()
     wb.remove(wb.active)  # 移除默认空 sheet，统一按参数创建
@@ -158,13 +251,40 @@ def _build_xlsx(path: Path, args: dict) -> None:
         if header:
             ws.append(list(header))
             for cell in ws[1]:
-                cell.font = Font(bold=True)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = header_align
+                cell.border = thin_border
             ws.freeze_panes = "A2"  # 冻结首行
-        for row in rows:
+        for r_idx, row in enumerate(rows, start=2):  # 数据从第 2 行起
             ws.append(list(row))  # 数值保持数字类型，字符串原样写入
+            stripe = r_idx % 2 == 0  # 偶数行斑马纹（浅色填充，不影响数字格式）
+            for c_idx, value in enumerate(row, start=1):
+                cell = ws.cell(row=r_idx, column=c_idx)
+                cell.font = data_font
+                cell.border = thin_border
+                if stripe:
+                    cell.fill = stripe_fill
+                fmt = _infer_number_format(header, c_idx, value)
+                if fmt is not None:
+                    cell.number_format = fmt
+        # 列宽：column_widths 优先，否则按内容估算（中文字符×2，上限 40）
         column_widths = sheet.get("column_widths") or []
-        for col_idx, width in enumerate(column_widths, start=1):
-            ws.column_dimensions[get_column_letter(col_idx)].width = float(width)
+        if column_widths:
+            for col_idx, width in enumerate(column_widths, start=1):
+                ws.column_dimensions[get_column_letter(col_idx)].width = float(width)
+        else:
+            ncols = len(header)
+            for row in rows:
+                ncols = max(ncols, len(row))
+            for col_idx in range(1, ncols + 1):
+                values = []
+                if col_idx - 1 < len(header):
+                    values.append(header[col_idx - 1])
+                for row in rows:
+                    if col_idx - 1 < len(row):
+                        values.append(row[col_idx - 1])
+                ws.column_dimensions[get_column_letter(col_idx)].width = _estimate_column_width(values)
     wb.save(path)
 
 
@@ -180,6 +300,9 @@ def _xlsx_description(args: dict) -> str:
 
 def _validate_docx_args(args: dict) -> str | None:
     """参数校验：结构 + 上限（sections≤50、全部文本总字符≤200000）。"""
+    err = _validate_theme(args)
+    if err:
+        return err
     sections = args.get("sections")
     if not isinstance(sections, list) or not sections:
         return "make_docx 参数错误：sections 不能为空，请提供至少一个章节。"
@@ -216,22 +339,69 @@ def _validate_docx_args(args: dict) -> str | None:
     return None
 
 
-def _build_docx(path: Path, args: dict) -> None:
-    """python-docx 生成文档：title 用 Heading 0，章节 heading 用 Heading 1，支持段落/要点/表格。"""
-    from docx import Document
+def _set_run_style(run, *, size: float = 11, bold: bool = False, color: str = "333333") -> None:
+    """统一设置 run 样式：微软雅黑（含 w:eastAsia 中文字体）+ 字号/加粗/颜色。"""
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Pt, RGBColor
 
+    run.font.name = BODY_FONT  # 设置 w:ascii / w:hAnsi
+    run.font.size = Pt(size)
+    run.font.bold = bold
+    run.font.color.rgb = RGBColor.from_string(color)
+    r_pr = run._element.get_or_add_rPr()
+    r_fonts = r_pr.find(qn("w:rFonts"))
+    if r_fonts is None:
+        r_fonts = OxmlElement("w:rFonts")
+        r_pr.append(r_fonts)
+    r_fonts.set(qn("w:eastAsia"), BODY_FONT)  # 中文字体
+
+
+def _shade_cell(cell, fill_hex: str) -> None:
+    """给表格单元格加主题色底纹（w:shd fill）。"""
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    tc_pr = cell._tc.get_or_add_tcPr()
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"), fill_hex)
+    tc_pr.append(shd)
+
+
+def _build_docx(path: Path, args: dict, theme: str = DEFAULT_THEME) -> None:
+    """python-docx 生成文档：title 用 Heading 0（primary 20pt bold）、章节 heading 用
+    Heading 1（primary 16pt bold）、正文深灰 11pt 行距 1.3 段后 6pt、要点同正文、
+    表格保留 Table Grid 边框且表头加 primary 底纹 + 白色加粗文字。"""
+    from docx import Document
+    from docx.shared import Pt
+
+    t = THEMES[theme]
     doc = Document()
     title = str(args.get("title") or "").strip()
     if title:
-        doc.add_heading(title, level=0)
+        p = doc.add_heading(title, level=0)
+        for run in p.runs:
+            _set_run_style(run, size=20, bold=True, color=t["primary"])
     for sec in args.get("sections") or []:
         heading = str(sec.get("heading") or "").strip()
         if heading:
-            doc.add_heading(heading, level=1)
+            p = doc.add_heading(heading, level=1)
+            for run in p.runs:
+                _set_run_style(run, size=16, bold=True, color=t["primary"])
         for para in sec.get("paragraphs") or []:
-            doc.add_paragraph(str(para))
+            p = doc.add_paragraph(str(para))
+            for run in p.runs:
+                _set_run_style(run, size=11, bold=False, color=t["text"])
+            pf = p.paragraph_format
+            pf.line_spacing = 1.3
+            pf.space_after = Pt(6)
         for bullet in sec.get("bullets") or []:
-            doc.add_paragraph(str(bullet), style="List Bullet")
+            p = doc.add_paragraph(str(bullet), style="List Bullet")
+            for run in p.runs:
+                _set_run_style(run, size=11, bold=False, color=t["text"])
+            p.paragraph_format.line_spacing = 1.3
         table = sec.get("table")
         if table:
             header = table.get("header") or []
@@ -240,13 +410,20 @@ def _build_docx(path: Path, args: dict) -> None:
             for row in rows:
                 ncols = max(ncols, len(row))
             if ncols:
-                t = doc.add_table(rows=1 + len(rows), cols=ncols)
-                t.style = "Table Grid"
+                tbl = doc.add_table(rows=1 + len(rows), cols=ncols)
+                tbl.style = "Table Grid"  # 保留边框
                 for j, h in enumerate(header):
-                    t.rows[0].cells[j].text = str(h)
+                    cell = tbl.rows[0].cells[j]
+                    cell.text = str(h)
+                    _shade_cell(cell, t["primary"])
+                    for run in cell.paragraphs[0].runs:
+                        _set_run_style(run, size=11, bold=True, color="FFFFFF")
                 for i, row in enumerate(rows, start=1):
-                    for j, cell in enumerate(row[:ncols]):
-                        t.rows[i].cells[j].text = str(cell)
+                    for j, cell_val in enumerate(row[:ncols]):
+                        cell = tbl.rows[i].cells[j]
+                        cell.text = str(cell_val)
+                        for run in cell.paragraphs[0].runs:
+                            _set_run_style(run, size=11, bold=False, color=t["text"])
     doc.save(path)
 
 
@@ -259,6 +436,9 @@ def _docx_description(args: dict) -> str:
 
 def _validate_pptx_args(args: dict) -> str | None:
     """参数校验：结构 + 上限（slides≤50、每页 bullets≤20、每条≤500 字符）。"""
+    err = _validate_theme(args)
+    if err:
+        return err
     slides = args.get("slides")
     if not isinstance(slides, list) or not slides:
         return "make_pptx 参数错误：slides 不能为空，请提供至少一页幻灯片。"
@@ -281,31 +461,75 @@ def _validate_pptx_args(args: dict) -> str | None:
     return None
 
 
-def _build_pptx(path: Path, args: dict) -> None:
-    """python-pptx 生成演示文稿：title 版式用 layout 0，title_content 用 layout 1。"""
-    from pptx import Presentation
+def _set_pptx_text(tf, *, size: float, bold: bool, color: str, align) -> None:
+    """设置 text frame 全部 run：微软雅黑 + 字号/加粗/颜色/对齐。"""
+    from pptx.dml.color import RGBColor
+    from pptx.util import Pt
 
+    for para in tf.paragraphs:
+        para.alignment = align
+        for run in para.runs:
+            run.font.name = BODY_FONT
+            run.font.size = Pt(size)
+            run.font.bold = bold
+            run.font.color.rgb = RGBColor.from_string(color)
+
+
+def _build_pptx(path: Path, args: dict, theme: str = DEFAULT_THEME) -> None:
+    """python-pptx 生成演示文稿：封面页（layout=title）primary 全页背景矩形置于底层 +
+    白色 36pt 大标题居中；内容页（title_content）白底 + primary 32pt bold 左对齐标题 +
+    14pt 深灰要点（首条 accent 色加粗）；不画装饰条、标题下不加线；notes 原样保留。"""
+    from pptx import Presentation
+    from pptx.dml.color import RGBColor
+    from pptx.enum.shapes import MSO_SHAPE
+    from pptx.enum.text import PP_ALIGN
+    from pptx.util import Pt
+
+    t = THEMES[theme]
     prs = Presentation()
+    slide_w, slide_h = prs.slide_width, prs.slide_height
     for slide_spec in args.get("slides") or []:
         layout_name = str(slide_spec.get("layout") or "title_content")
         layout = prs.slide_layouts[0 if layout_name == "title" else 1]
         slide = prs.slides.add_slide(layout)
         title = str(slide_spec.get("title") or "").strip()
-        if title and slide.shapes.title is not None:
-            slide.shapes.title.text = title
-        bullets = slide_spec.get("bullets") or []
-        if bullets and layout_name != "title":
-            body = None
-            for ph in slide.placeholders:
-                if ph.placeholder_format.idx == 1:  # 内容占位符
-                    body = ph
-                    break
-            if body is not None:
-                tf = body.text_frame
-                tf.text = ""
-                for i, b in enumerate(bullets):
-                    para = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-                    para.text = str(b)
+        if layout_name == "title":
+            # 封面：覆盖全页的 primary 背景矩形（无边框、无阴影），置于底层
+            bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, slide_w, slide_h)
+            bg.fill.solid()
+            bg.fill.fore_color.rgb = RGBColor.from_string(t["primary"])
+            bg.line.fill.background()
+            bg.shadow.inherit = False
+            sp_tree = slide.shapes._spTree
+            sp_tree.remove(bg._element)
+            sp_tree.insert(2, bg._element)  # grpSpPr 之后第一个 shape，即最底层
+            if title and slide.shapes.title is not None:
+                slide.shapes.title.text = title
+                _set_pptx_text(slide.shapes.title.text_frame, size=36, bold=True, color="FFFFFF", align=PP_ALIGN.CENTER)
+        else:
+            if title and slide.shapes.title is not None:
+                slide.shapes.title.text = title
+                _set_pptx_text(slide.shapes.title.text_frame, size=32, bold=True, color=t["primary"], align=PP_ALIGN.LEFT)
+            bullets = slide_spec.get("bullets") or []
+            if bullets:
+                body = None
+                for ph in slide.placeholders:
+                    if ph.placeholder_format.idx == 1:  # 内容占位符
+                        body = ph
+                        break
+                if body is not None:
+                    tf = body.text_frame
+                    tf.text = ""
+                    for i, b in enumerate(bullets):
+                        para = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+                        para.text = str(b)
+                    for i, para in enumerate(tf.paragraphs):
+                        para.alignment = PP_ALIGN.LEFT
+                        for run in para.runs:
+                            run.font.name = BODY_FONT
+                            run.font.size = Pt(14)
+                            run.font.bold = i == 0  # 首条要点 accent 加粗
+                            run.font.color.rgb = RGBColor.from_string(t["accent"] if i == 0 else t["text"])
         notes = str(slide_spec.get("notes") or "").strip()
         if notes:
             slide.notes_slide.notes_text_frame.text = notes
@@ -338,6 +562,8 @@ def _pptx_description(args: dict) -> str:
         "超长自动截断）、header（可选，表头行，加粗并冻结首行）、rows（可选，数据行，rows 必须是"
         "数组的数组，每行是字符串或数字的单元格数组；单表最多 5000 行、50 列）、column_widths"
         "（可选，各列宽度）。\n"
+        "3. theme（可选）：主题风格，不传即默认专业主题（executive 深藏青）；用户要求简约风格可传 "
+        "minimal（炭黑），清新风格可传 fresh（青绿）。\n"
         "注意：整个工作簿单元格总数（header+rows）上限 100000，超限工具会报错，请精简数据规模；"
         "生成后工具会自动发送文件卡片，回复附一句说明即可，不要回显全部内容。"
     ),
@@ -377,6 +603,11 @@ def _pptx_description(args: dict) -> str:
                     "required": ["name"],
                 },
             },
+            "theme": {
+                "type": "string",
+                "enum": ["executive", "minimal", "fresh"],
+                "description": "可选，主题风格：不传即默认专业主题（executive）；用户要求简约/清新风格时可传 minimal/fresh",
+            },
         },
         "required": ["filename", "sheets"],
     },
@@ -402,6 +633,8 @@ async def make_xlsx(args: dict, ctx: AgentContext) -> str:
         "3. sections（必填）：章节列表（1-50 个），每章是对象：heading（可选，章节标题）、"
         "paragraphs（可选，段落数组）、bullets（可选，要点数组）、table（可选，表格：header 表头"
         "数组 + rows 数据行数组）。\n"
+        "4. theme（可选）：主题风格，不传即默认专业主题（executive 深藏青）；用户要求简约风格传 "
+        "minimal，清新风格传 fresh。\n"
         "注意：全文档文本总字符上限 200000，超限工具会报错，请精简内容；生成后工具会自动发送"
         "文件卡片，回复附一句说明即可，不要回显全部内容。"
     ),
@@ -446,6 +679,11 @@ async def make_xlsx(args: dict, ctx: AgentContext) -> str:
                     "required": [],
                 },
             },
+            "theme": {
+                "type": "string",
+                "enum": ["executive", "minimal", "fresh"],
+                "description": "可选，主题风格：不传即默认专业主题（executive）；用户要求简约/清新风格时可传 minimal/fresh",
+            },
         },
         "required": ["filename", "sections"],
     },
@@ -470,6 +708,8 @@ async def make_docx(args: dict, ctx: AgentContext) -> str:
         "2. slides（必填）：幻灯片列表（1-50 页），每页是对象：title（可选，标题）、layout（可选，"
         "title 仅标题版式 / title_content 标题+内容版式，默认 title_content）、bullets（可选，要点"
         "数组，最多 20 条、每条最多 500 字符，写入内容占位符）、notes（可选，演讲者备注）。\n"
+        "3. theme（可选）：主题风格，不传即默认专业主题（executive 深藏青）；用户要求简约风格传 "
+        "minimal，清新风格传 fresh。\n"
         "注意：生成后工具会自动发送文件卡片，回复附一句说明即可，不要回显全部内容。"
     ),
     parameters={
@@ -500,6 +740,11 @@ async def make_docx(args: dict, ctx: AgentContext) -> str:
                     },
                     "required": [],
                 },
+            },
+            "theme": {
+                "type": "string",
+                "enum": ["executive", "minimal", "fresh"],
+                "description": "可选，主题风格：不传即默认专业主题（executive）；用户要求简约/清新风格时可传 minimal/fresh",
             },
         },
         "required": ["filename", "slides"],

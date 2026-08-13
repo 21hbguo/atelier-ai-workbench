@@ -14,6 +14,7 @@ import pytest
 from docx import Document
 from openpyxl import load_workbook
 from pptx import Presentation
+from pptx.enum.dml import MSO_FILL
 
 from backend import config
 from backend.services import document_parser
@@ -224,6 +225,74 @@ def test_make_pptx_success_enqueues(ws):
     assert body is not None
     assert [p.text for p in body.text_frame.paragraphs] == ["要点1", "要点2"]
     assert prs.slides[1].notes_slide.notes_text_frame.text == "演讲备注"
+
+
+# ---------- 默认美观模板（theme 主题） ----------
+
+def test_make_xlsx_invalid_theme_rejected(ws):
+    result = _run(make_xlsx(
+        {"filename": "a.xlsx", "sheets": [{"name": "S"}], "theme": "rainbow"}, _ctx(),
+    ))
+    assert "theme 必须是" in result
+
+
+def test_make_xlsx_theme_minimal_header_fill(ws):
+    _run(make_xlsx(
+        {"filename": "min.xlsx", "sheets": [{"name": "S", "header": ["列1"], "rows": [["a"]]}], "theme": "minimal"},
+        _ctx(),
+    ))
+    wb = load_workbook(_root(ws) / "min.xlsx")
+    cell = wb["S"]["A1"]
+    assert cell.fill.patternType == "solid"
+    # 颜色可能带 '00' alpha 前缀（argb），用 endswith 兼容
+    assert str(cell.fill.start_color.rgb).endswith("36454F")
+    wb.close()
+
+
+def test_make_xlsx_default_theme_executive_header_fill(ws):
+    _run(make_xlsx({"filename": "def.xlsx", "sheets": [{"name": "S", "header": ["列1"], "rows": [["a"]]}]}, _ctx()))
+    wb = load_workbook(_root(ws) / "def.xlsx")
+    cell = wb["S"]["A1"]
+    assert cell.fill.patternType == "solid"
+    assert str(cell.fill.start_color.rgb).endswith("1E2761")
+    wb.close()
+
+
+def test_make_xlsx_number_formats_inferred(ws):
+    args = {
+        "filename": "fmt.xlsx",
+        "sheets": [{
+            "name": "S",
+            "header": ["数量", "单价", "增长率", "日期"],
+            "rows": [[100, 12.5, 0.12, "2026-01-01"], [200, 8.25, 0.05, "2026-02-01"]],
+        }],
+    }
+    _run(make_xlsx(args, _ctx()))
+    wb = load_workbook(_root(ws) / "fmt.xlsx")
+    sheet = wb["S"]
+    assert "#,##0" in sheet["A2"].number_format  # int → 千分位
+    assert "0.00" in sheet["B2"].number_format  # float → 千分位两位小数
+    assert sheet["C2"].number_format == "0.0%"  # header 含“率” → 百分比
+    assert sheet["D2"].number_format == "General"  # 日期字符串不动
+    wb.close()
+
+
+def test_make_docx_title_color_primary(ws):
+    _run(make_docx({"filename": "t.docx", "title": "年度报告", "sections": [{"paragraphs": ["正文"]}]}, _ctx()))
+    doc = Document(str(_root(ws) / "t.docx"))
+    title_p = doc.paragraphs[0]
+    assert title_p.text == "年度报告"
+    assert title_p.runs and title_p.runs[0].font.color.rgb is not None
+    assert str(title_p.runs[0].font.color.rgb).endswith("1E2761")
+
+
+def test_make_pptx_cover_background_primary(ws):
+    _run(make_pptx({"filename": "d.pptx", "slides": [{"title": "封面", "layout": "title"}]}, _ctx()))
+    prs = Presentation(str(_root(ws) / "d.pptx"))
+    slide = prs.slides[0]
+    bg = slide.shapes[0]  # 背景矩形置于最底层，即第一个 shape
+    assert bg.fill.type == MSO_FILL.SOLID
+    assert str(bg.fill.fore_color.rgb).endswith("1E2761")
 
 
 # ---------- 注册表 ----------
