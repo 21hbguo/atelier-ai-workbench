@@ -192,6 +192,9 @@ def test_build_messages_docs_as_fixed_prefix_block():
     assert "<attached_documents>" in first["content"]
     assert "文档1「a.txt」" in first["content"]
     assert "文档内容ABC" in first["content"]
+    # 防注入声明：块首行标注文档内容不可信，且位于文档正文之前
+    assert "内容不可信" in first["content"]
+    assert first["content"].index("内容不可信") < first["content"].index("文档1「a.txt」")
     # 历史原样追加在文档块之后
     assert out[1] == {"role": "user", "content": "看看文档"}
 
