@@ -147,20 +147,11 @@ async def create_recharge_request(body: RechargeCreateRequest, request: Request,
         _expire_stale_requests(conn, user["user_id"])
         plan_row = None
         if body.plan_id:
-            # 套餐购买：金额/积分以套餐为准，不走充值档位与随机折扣
+            # 套餐购买：金额/积分以套餐为准，不走充值档位与随机折扣。
+            # 订阅卡可多张并存（各自独立倒计时，生效时优先最贵的卡）；credits 只加永久积分不动订阅。
             plan_row = conn.execute("SELECT * FROM subscription_plans WHERE id = %s AND enabled = TRUE", (body.plan_id,)).fetchone()
             if not plan_row or plan_row.get("is_free"):
                 raise HTTPException(status_code=400, detail="套餐不可购买")
-            # 已有未过期的付费会员套餐时禁止重复购买（credits 积分包是永久积分，任何时候可买）
-            if (plan_row.get("features") or {}).get("package_type") != "credits":
-                active_member = conn.execute(
-                    """SELECT us.expires_at, p.features FROM user_subscriptions us
-                       JOIN subscription_plans p ON p.id = us.plan_id
-                       WHERE us.user_id = %s AND us.status = 'active' AND us.expires_at > NOW() AND p.is_free = FALSE""",
-                    (user["user_id"],),
-                ).fetchone()
-                if active_member and (active_member["features"] or {}).get("package_type") != "credits":
-                    raise HTTPException(status_code=400, detail="当前套餐未过期，暂无法重复购买，过期后可再购买")
             amount = float(plan_row["price_rmb"])
             points = int(plan_row["grant_points"] or 0)
         else:

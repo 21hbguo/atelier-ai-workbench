@@ -51,12 +51,6 @@ export default function SubscriptionDialog({ open, onClose }) {
   if (!open) return null
 
   const hasPlan = subscription?.plan && !subscription.plan.is_free
-  // 当前是否有未过期的付费会员套餐（credits 积分包除外，永久积分任何时候可买）
-  const memberActive =
-    hasPlan &&
-    subscription.plan.features?.package_type !== 'credits' &&
-    !!subscription.cycle?.period_end &&
-    new Date(subscription.cycle.period_end) > Date.now()
 
   const refreshMe = () => subscriptionAPI.me().then(res => setSubscription(res.data)).catch(() => {})
 
@@ -70,10 +64,6 @@ export default function SubscriptionDialog({ open, onClose }) {
     if (plan.is_free) {
       dialog.alert('当前已在使用免费套餐，无需购买。')
       onClose()
-      return
-    }
-    if (memberActive && plan.features?.package_type !== 'credits') {
-      dialog.alert(`当前套餐「${subscription.plan.name}」未过期（至 ${formatDate(subscription.cycle.period_end)}），过期后才可购买新套餐。`)
       return
     }
     // 默认选中已配置收款码的渠道
@@ -260,13 +250,12 @@ export default function SubscriptionDialog({ open, onClose }) {
                             <button
                               type="button"
                               onClick={() => startPay(plan)}
-                              disabled={memberActive && !isCredit}
-                              className={`mt-4 flex h-10 w-full items-center justify-center rounded-xl text-sm font-medium transition-all duration-150 active:scale-[0.98] ${isCurrent ? '' : 'hover:brightness-105'} disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100`}
+                              className={`mt-4 flex h-10 w-full items-center justify-center rounded-xl text-sm font-medium transition-all duration-150 active:scale-[0.98] ${isCurrent ? '' : 'hover:brightness-105'}`}
                               style={isCurrent
                                 ? { border: '1px solid color-mix(in srgb, var(--accent) 35%, var(--border-color))', color: 'var(--accent)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)' }
                                 : { background: 'linear-gradient(135deg, var(--accent), var(--accent-hover))', color: '#fff', boxShadow: '0 6px 16px color-mix(in srgb, var(--accent) 25%, transparent)' }}
                             >
-                              {plan.is_free ? '免费使用' : isCurrent ? '当前套餐' : memberActive && !isCredit ? '已订购，到期后可购买' : '购买'}
+                              {plan.is_free ? '免费使用' : isCurrent ? '当前套餐' : '购买'}
                             </button>
                           </div>
                         )

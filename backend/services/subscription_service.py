@@ -187,39 +187,61 @@ def ensure_current_cycle_in_conn(conn, user_id: int, now: datetime | None = None
            VALUES (%s, 'permanent', %s, %s) ON CONFLICT (user_id) WHERE bucket_type = 'permanent' DO NOTHING""",
         (user_id, _points(user["points"]), _points(user["points"])),
     )
-    sub_row = conn.execute("SELECT * FROM user_subscriptions WHERE user_id = %s FOR UPDATE", (user_id,)).fetchone()
+    # 多订阅卡并存：从所有未过期的付费会员卡中选价格最高的一张（贵的优先；同价先购优先）。
+    # 每张卡独立倒计时（各自 started_at/expires_at），卡到期后自动切换下一张有效卡。
+    # 积分包（credits）是纯积分购买，不产生订阅卡，天然排除。
+    while True:
+        row = conn.execute(
+            """SELECT us.*, p.price_rmb FROM user_subscriptions us
+               JOIN subscription_plans p ON p.id = us.plan_id
+               WHERE us.user_id = %s AND us.status = 'active'
+                 AND p.is_free = FALSE
+                 AND (p.features->>'package_type') IS DISTINCT FROM 'credits'
+                 AND us.expires_at > %s
+               ORDER BY p.price_rmb DESC, us.started_at ASC
+               LIMIT 1 FOR UPDATE OF us""",
+            (user_id, now),
+        ).fetchone()
+        if not row:
+            break
+        sub = dict(row)
+        cycle_row = conn.execute(
+            "SELECT * FROM subscription_cycles WHERE id = %s FOR UPDATE", (sub.get("current_cycle_id"),)
+        ).fetchone() if sub.get("current_cycle_id") else None
+        if cycle_row and cycle_row["status"] == "active" and cycle_row["period_end"] > now:
+            plan = _cycle_plan(dict(cycle_row))
+            return {"subscription": sub, "cycle": dict(cycle_row), "plan": plan}
+        # 该卡周期已耗尽：过期其周期并标记卡失效，继续找下一张有效卡
+        if cycle_row and cycle_row["status"] == "active":
+            _expire_cycle_in_conn(conn, dict(cycle_row), user_id, now)
+        conn.execute("UPDATE user_subscriptions SET status = 'expired' WHERE id = %s", (sub["id"],))
+
+    # 无有效付费卡 → 免费套餐兜底（复用/创建 free 订阅行）
+    free = _get_plan(conn, code="free", for_update=True)
+    if not free:
+        raise ValueError("免费套餐未初始化")
+    sub_row = conn.execute(
+        "SELECT * FROM user_subscriptions WHERE user_id = %s AND plan_id = %s ORDER BY id LIMIT 1 FOR UPDATE",
+        (user_id, free["id"]),
+    ).fetchone()
     if not sub_row:
-        free = _get_plan(conn, code="free", for_update=True)
-        if not free:
-            raise ValueError("免费套餐未初始化")
         sub = conn.execute(
             "INSERT INTO user_subscriptions (user_id, plan_id, status, started_at, expires_at) VALUES (%s, %s, 'active', %s, %s) RETURNING *",
             (user_id, free["id"], now, now),
         ).fetchone()
         cycle = _create_cycle_in_conn(conn, user_id, sub["id"], free, now)
         return {"subscription": dict(sub), "cycle": cycle, "plan": free}
-
     sub = dict(sub_row)
     cycle_row = conn.execute(
         "SELECT * FROM subscription_cycles WHERE id = %s FOR UPDATE", (sub.get("current_cycle_id"),)
     ).fetchone() if sub.get("current_cycle_id") else None
-    if cycle_row and sub.get("status") != "active":
-        plan = _cycle_plan(dict(cycle_row))
-        return {"subscription": sub, "cycle": dict(cycle_row), "plan": plan}
     if cycle_row and cycle_row["status"] == "active" and cycle_row["period_end"] > now:
-        plan = _cycle_plan(dict(cycle_row))
-        return {"subscription": sub, "cycle": dict(cycle_row), "plan": plan or {}}
-
+        return {"subscription": sub, "cycle": dict(cycle_row), "plan": _cycle_plan(dict(cycle_row))}
     if cycle_row and cycle_row["status"] == "active":
         _expire_cycle_in_conn(conn, dict(cycle_row), user_id, now)
-    next_plan_id = sub.get("next_plan_id")
-    next_plan = _get_plan(conn, plan_id=next_plan_id) if next_plan_id else None
-    if not next_plan:
-        next_plan = _get_plan(conn, code="free", for_update=True)
-    conn.execute("UPDATE user_subscriptions SET next_plan_id = NULL WHERE id = %s", (sub["id"],))
-    cycle = _create_cycle_in_conn(conn, user_id, sub["id"], next_plan, now)
-    sub = dict(conn.execute("SELECT * FROM user_subscriptions WHERE id = %s", (sub["id"],)).fetchone())
-    return {"subscription": sub, "cycle": cycle, "plan": next_plan}
+    conn.execute("UPDATE user_subscriptions SET next_plan_id = NULL, status = 'active' WHERE id = %s", (sub["id"],))
+    cycle = _create_cycle_in_conn(conn, user_id, sub["id"], free, now)
+    return {"subscription": dict(conn.execute("SELECT * FROM user_subscriptions WHERE id = %s", (sub["id"],)).fetchone()), "cycle": cycle, "plan": free}
 
 
 def ensure_current_cycle(user_id: int):
@@ -304,16 +326,7 @@ def create_order(user_id: int, plan_id: int, channel: str, submit_ip: str, payer
         plan = _get_plan(conn, plan_id=plan_id, for_update=True)
         if not plan or not plan.get("enabled") or plan.get("is_free"):
             raise ValueError("套餐不可购买")
-        # 已有未过期的付费会员套餐时禁止重复购买（credits 积分包是永久积分，任何时候可买）
-        if (plan.get("features") or {}).get("package_type") != "credits":
-            active_member = conn.execute(
-                """SELECT us.expires_at, p.features FROM user_subscriptions us
-                   JOIN subscription_plans p ON p.id = us.plan_id
-                   WHERE us.user_id = %s AND us.status = 'active' AND us.expires_at > NOW() AND p.is_free = FALSE""",
-                (user_id,),
-            ).fetchone()
-            if active_member and (active_member["features"] or {}).get("package_type") != "credits":
-                raise ValueError("当前套餐未过期，暂无法重复购买，过期后可再购买")
+        # 订阅卡可多张并存（各自独立倒计时，生效时优先最贵的卡）；credits 只加永久积分不动订阅
         order_no = f"SUB{datetime.now().strftime('%Y%m%d%H%M%S')}{user_id}{secrets.token_hex(4).upper()}"
         row = conn.execute(
             """INSERT INTO subscription_orders
@@ -330,25 +343,34 @@ def get_plan_in_conn(conn, plan_id: int) -> dict | None:
 
 
 def activate_plan_in_conn(conn, user_id: int, plan: dict, order_id=None) -> str:
-    """激活/续期订阅：供订阅订单审核与充值审核（套餐）共用，返回激活方式"""
-    state = ensure_current_cycle_in_conn(conn, user_id)
-    current_plan = state["plan"]
-    current_cycle = state["cycle"]
+    """激活订阅/积分包：供订阅订单审核与充值审核（套餐）共用，返回激活方式。
+
+    - "credits": 积分包——单次购买积分，只加永久积分，完全不动订阅（不建周期、不切换套餐）
+    - "current_cycle": 会员卡——新增一张独立计时的订阅卡（每张卡各自倒计时；
+      生效时自动优先使用价格最高、未过期的卡）
+    """
     now = datetime.now()
-    current_credits = (current_plan.get("features") or {}).get("package_type") == "credits"
     new_credits = (plan.get("features") or {}).get("package_type") == "credits"
-    # 积分包是永久积分购买，任何时候都立即生效；仅会员套餐在有效期内再次购买才排队到下一周期
-    if (not current_plan.get("is_free") and not current_credits and not new_credits
-            and state["subscription"].get("expires_at") and state["subscription"]["expires_at"] > now):
-        conn.execute(
-            "UPDATE user_subscriptions SET next_plan_id = %s, last_order_id = COALESCE(%s, last_order_id), updated_at = NOW() WHERE id = %s",
-            (plan["id"], order_id, state["subscription"]["id"]),
-        )
-        return "next_cycle"
-    if current_cycle.get("status") == "active":
-        _expire_cycle_in_conn(conn, current_cycle, user_id, now)
-    conn.execute("UPDATE user_subscriptions SET next_plan_id = NULL WHERE id = %s", (state["subscription"]["id"],))
-    _create_cycle_in_conn(conn, user_id, state["subscription"]["id"], plan, now, order_id)
+    if new_credits:
+        # 积分包：永久积分直接进永久桶（订阅到期/换卡都不清零），不碰 user_subscriptions/subscription_cycles
+        points = max(Decimal(0), _points(plan.get("grant_points")))
+        if points > 0:
+            from backend.services.points_service import PointsService
+            PointsService.add_points(
+                conn=conn, user_id=user_id, amount=float(points), tx_type="plan_credits_grant",
+                description=f"{plan['name']} 永久积分",
+                request_key=f"credits-plan-grant:{order_id or int(now.timestamp() * 1000)}",
+            )
+        return "credits"
+    # 会员卡：新增一行订阅（独立倒计时，不影响其他卡）
+    days = max(1, int(plan.get("cycle_days") or 30))
+    end = now + timedelta(days=days)
+    sub = conn.execute(
+        """INSERT INTO user_subscriptions (user_id, plan_id, status, started_at, expires_at, last_order_id)
+           VALUES (%s, %s, 'active', %s, %s, %s) RETURNING *""",
+        (user_id, plan["id"], now, end, order_id),
+    ).fetchone()
+    _create_cycle_in_conn(conn, user_id, sub["id"], plan, now, order_id)
     return "current_cycle"
 
 

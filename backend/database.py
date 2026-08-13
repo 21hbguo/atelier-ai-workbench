@@ -945,6 +945,22 @@ def init_db():
                    WHERE c.plan_id = p.id AND p.is_free = TRUE AND c.status = 'active'
                      AND c.entitlements_snapshot->'features' IS DISTINCT FROM p.features"""
             )
+            # 多订阅卡支持：去掉 user_subscriptions.user_id 唯一约束（一行 = 一张订阅卡，
+            # 各自独立倒计时；生效时优先价格最高的卡）。历史数据每用户 1 行保持原样。
+            sub_uniq = conn.execute(
+                """SELECT conname FROM pg_constraint
+                   WHERE conrelid = 'user_subscriptions'::regclass AND contype = 'u'
+                     AND conkey = ARRAY[(SELECT attnum FROM pg_attribute
+                                         WHERE attrelid = 'user_subscriptions'::regclass AND attname = 'user_id')]"""
+            ).fetchone()
+            if sub_uniq:
+                conn.execute(f'ALTER TABLE user_subscriptions DROP CONSTRAINT {sub_uniq["conname"]}')
+            # 历史积分包产生的订阅卡行：过期处理（积分早已进永久桶，卡行不再参与权益选择）
+            conn.execute(
+                """UPDATE user_subscriptions SET status = 'expired', expires_at = NOW()
+                   WHERE status = 'active'
+                     AND plan_id IN (SELECT id FROM subscription_plans WHERE features->>'package_type' = 'credits')"""
+            )
 
         # 初始化默认分类
             count = conn.execute("SELECT COUNT(*) AS cnt FROM categories").fetchone()["cnt"]

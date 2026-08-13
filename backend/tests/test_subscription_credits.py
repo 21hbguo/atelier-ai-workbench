@@ -74,66 +74,105 @@ def test_create_cycle_membership_uses_subscription_bucket():
     mock_add.assert_not_called()
 
 
+
 # ---------------------------------------------------------------------------
-# activate_plan_in_conn：激活/排队策略
+# activate_plan_in_conn：新语义（积分包只加积分不动订阅；会员卡新增独立计时卡）
 # ---------------------------------------------------------------------------
-def test_activate_member_immediate_when_credits_active():
-    """已有 credits 积分包时购买会员：立即生效（current_cycle），不排队。"""
+def test_activate_credits_only_adds_points_keeps_subscription():
+    """积分包激活：只加永久积分，不建周期、不动订阅（不 expire 当前会员周期、不切换套餐）。"""
     conn = MagicMock(name="db_conn")
-    state = _state(_plan("credits"), datetime.now() + timedelta(days=36500))
-    with patch.object(ss, "ensure_current_cycle_in_conn", return_value=state), \
+    with patch.object(PointsService, "add_points") as mock_add, \
+         patch.object(ss, "ensure_current_cycle_in_conn") as mock_ensure, \
          patch.object(ss, "_expire_cycle_in_conn") as mock_expire, \
          patch.object(ss, "_create_cycle_in_conn") as mock_create:
-        result = ss.activate_plan_in_conn(conn, 1, _plan("membership", code="member-month",
-                                                         grant_points=0, cycle_days=30))
+        result = ss.activate_plan_in_conn(conn, 1, _plan("credits", grant_points=500))
 
-    assert result == "current_cycle"
-    mock_expire.assert_called_once()
-    mock_create.assert_called_once()
-
-
-def test_activate_credits_immediate_when_member_active():
-    """会员有效期内购买积分包：立即生效（current_cycle），不排队。"""
-    conn = MagicMock(name="db_conn")
-    state = _state(_plan("membership", code="member-month", grant_points=0, cycle_days=30),
-                   datetime.now() + timedelta(days=10))
-    with patch.object(ss, "ensure_current_cycle_in_conn", return_value=state), \
-         patch.object(ss, "_expire_cycle_in_conn") as mock_expire, \
-         patch.object(ss, "_create_cycle_in_conn") as mock_create:
-        result = ss.activate_plan_in_conn(conn, 1, _plan("credits"))
-
-    assert result == "current_cycle"
-    mock_expire.assert_called_once()
-    mock_create.assert_called_once()
-
-
-def test_activate_credits_immediate_when_credits_active():
-    """再买一个积分包：立即生效，积分叠加（不排队）。"""
-    conn = MagicMock(name="db_conn")
-    state = _state(_plan("credits", code="credits-500"), datetime.now() + timedelta(days=36500))
-    with patch.object(ss, "ensure_current_cycle_in_conn", return_value=state), \
-         patch.object(ss, "_expire_cycle_in_conn") as mock_expire, \
-         patch.object(ss, "_create_cycle_in_conn") as mock_create:
-        result = ss.activate_plan_in_conn(conn, 1, _plan("credits", code="credits-1000",
-                                                         grant_points=1000))
-
-    assert result == "current_cycle"
-    mock_expire.assert_called_once()
-    mock_create.assert_called_once()
-
-
-def test_activate_membership_queues_when_active():
-    """会员有效期内再买会员：仍排队到下一周期（next_cycle，回归保护）。"""
-    conn = MagicMock(name="db_conn")
-    state = _state(_plan("membership", code="member-month", grant_points=0, cycle_days=30),
-                   datetime.now() + timedelta(days=10))
-    with patch.object(ss, "ensure_current_cycle_in_conn", return_value=state), \
-         patch.object(ss, "_create_cycle_in_conn") as mock_create:
-        result = ss.activate_plan_in_conn(conn, 1, _plan("membership", code="member-year",
-                                                         grant_points=0, cycle_days=365))
-
-    assert result == "next_cycle"
+    assert result == "credits"
+    mock_add.assert_called_once()
+    assert mock_add.call_args.kwargs["amount"] == 500.0
+    mock_ensure.assert_not_called()
+    mock_expire.assert_not_called()
     mock_create.assert_not_called()
-    # UPDATE user_subscriptions SET next_plan_id ...
-    conn.execute.assert_called_once()
-    assert conn.execute.call_args.args[0].startswith("UPDATE user_subscriptions SET next_plan_id")
+    # 未对 user_subscriptions / subscription_cycles 做任何写入
+    for call in conn.execute.call_args_list:
+        sql = str(call.args[0])
+        assert "user_subscriptions" not in sql and "subscription_cycles" not in sql
+
+
+def test_activate_credits_zero_points_noop():
+    """积分包 grant_points=0：仍返回 credits，不写任何东西。"""
+    conn = MagicMock(name="db_conn")
+    with patch.object(PointsService, "add_points") as mock_add:
+        result = ss.activate_plan_in_conn(conn, 1, _plan("credits", grant_points=0))
+    assert result == "credits"
+    mock_add.assert_not_called()
+
+
+def test_activate_member_creates_new_independent_card():
+    """会员卡激活：INSERT 新订阅行（独立计时）+ 建新周期；不 expire 现有卡。"""
+    conn = MagicMock(name="db_conn")
+    conn.execute.return_value.fetchone.return_value = {"id": 99, "plan_id": 7}
+    with patch.object(ss, "_expire_cycle_in_conn") as mock_expire, \
+         patch.object(ss, "_create_cycle_in_conn") as mock_create:
+        result = ss.activate_plan_in_conn(conn, 1, _plan("membership", code="member-day",
+                                                         grant_points=0, cycle_days=1))
+    assert result == "current_cycle"
+    mock_create.assert_called_once()
+    mock_expire.assert_not_called()
+    insert_calls = [c for c in conn.execute.call_args_list if "INSERT INTO user_subscriptions" in str(c.args[0])]
+    assert len(insert_calls) == 1
+    user_id, plan_id = insert_calls[0].args[1][0], insert_calls[0].args[1][1]
+    assert user_id == 1 and plan_id == 7
+
+
+# ---------------------------------------------------------------------------
+# ensure_current_cycle_in_conn：多卡并存选最贵
+# ---------------------------------------------------------------------------
+def test_ensure_picks_most_expensive_active_card():
+    """多张会员卡并存：选价格最高、未过期的一张作为当前权益（贵的优先）。"""
+    conn = MagicMock(name="db_conn")
+    now = datetime.now()
+    conn.execute.side_effect = [
+        MagicMock(fetchone=MagicMock(return_value={"id": 1, "points": 0})),  # SELECT users FOR UPDATE
+        MagicMock(),                                                          # INSERT point_buckets
+        MagicMock(fetchone=MagicMock(return_value={                           # 选卡查询（最贵=月卡89.9）
+            "id": 5, "user_id": 1, "plan_id": 7, "status": "active",
+            "current_cycle_id": 10, "expires_at": now + timedelta(days=30),
+            "price_rmb": 89.9,
+        })),
+        MagicMock(fetchone=MagicMock(return_value={                           # SELECT cycle FOR UPDATE
+            "id": 10, "plan_id": 7, "status": "active",
+            "period_end": now + timedelta(days=30),
+            "entitlements_snapshot": {"id": 7, "code": "member-month", "name": "月卡",
+                                      "is_free": False, "features": {"package_type": "membership"},
+                                      "allowed_models": [], "max_concurrent_requests": 1},
+        })),
+    ]
+    state = ss.ensure_current_cycle_in_conn(conn, 1, now)
+    assert state["subscription"]["id"] == 5
+    assert state["plan"]["code"] == "member-month"
+
+
+def test_ensure_falls_back_to_free_when_no_active_paid_card():
+    """无有效付费卡：回退免费套餐（复用已有 free 行）。"""
+    conn = MagicMock(name="db_conn")
+    now = datetime.now()
+    free_plan = {"id": 1, "code": "free", "is_free": True, "features": {},
+                 "allowed_models": [], "max_concurrent_requests": 1}
+    conn.execute.side_effect = [
+        MagicMock(fetchone=MagicMock(return_value={"id": 1, "points": 0})),   # users
+        MagicMock(),                                                           # point_buckets
+        MagicMock(fetchone=MagicMock(return_value=None)),                      # 选卡查询无结果
+        MagicMock(fetchone=MagicMock(return_value={                            # free 行查询
+            "id": 2, "user_id": 1, "plan_id": 1, "status": "active",
+            "current_cycle_id": 3, "expires_at": now + timedelta(days=30),
+        })),
+        MagicMock(fetchone=MagicMock(return_value={                            # free cycle
+            "id": 3, "plan_id": 1, "status": "active", "period_end": now + timedelta(days=30),
+            "entitlements_snapshot": {"id": 1, "code": "free", "is_free": True,
+                                      "features": {}, "allowed_models": [], "max_concurrent_requests": 1},
+        })),
+    ]
+    with patch.object(ss, "_get_plan", return_value=free_plan):
+        state = ss.ensure_current_cycle_in_conn(conn, 1, now)
+    assert state["plan"]["code"] == "free"
