@@ -873,7 +873,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                 "file_ops_read", "file_ops_write", "file_ops_edit",
                 "file_ops_list", "file_ops_glob", "file_ops_grep",
                 "send_file",
-                "make_xlsx", "make_docx", "make_pptx",
+                "make_xlsx", "make_docx", "make_pptx", "make_deck",
             ])
         tools_names.append("image_gen")
         tools_names.append("show_widget")
@@ -1010,6 +1010,20 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                             "2. 参数按工具规范填写并控制规模（sheets≤10、sections≤50、slides≤50），"
                             "超出限制工具会返回错误；\n"
                             "3. 生成后工具会自动发送文件卡片，回复附一句说明即可，不要回显文件全部内容。"
+                        )
+                    if "make_deck" in tools_names:
+                        # 高级演示文稿工具使用指南：仅在 make_deck 实际注册给模型时注入（通道一）
+                        agent_system += (
+                            "\n\n【演示文稿（高级）】\n"
+                            "用户需要更精美、结构化的演示文稿（封面、章节分隔页、双栏对比、引用页、"
+                            "数据大字页、结束页等版式，或希望同时拿到网页版预览与可编辑 PPT）时，"
+                            "调用 make_deck 工具：\n"
+                            "1. slides 为幻灯片列表（1-30 页），每页可含 layout/title/subtitle/bullets/"
+                            "right_bullets/quote/author/stat/stat_label/notes，layout 可选 cover/section/"
+                            "title_content/two_column/quote/data_callout/ending（默认 title_content）；\n"
+                            "2. 工具会生成同名 .pptx（可编辑交付）与 .html（网页版预览）两份文件并"
+                            "自动发送文件卡片，回复附一句说明即可；\n"
+                            "3. 简单 PPT（普通标题+要点页）用 make_pptx 即可，无需使用本工具。"
                         )
                     # 当天日期：动态内容追加到 system 最末尾，固定指南保持前缀稳定可命中缓存
                     if body.web_search and not attached_docs:
