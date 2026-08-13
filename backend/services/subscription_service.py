@@ -252,6 +252,17 @@ def get_current_state(user_id: int) -> dict:
 def get_entitlements_in_conn(conn, user_id: int) -> dict:
     state = ensure_current_cycle_in_conn(conn, user_id)
     plan = _cycle_plan(state["cycle"])
+    # 老周期快照兜底：套餐体系上线前的 free 周期快照缺 is_free/package_type，
+    # 会被误判为非免费用户（无每日次数、直接扣积分）。按 cycle.plan_id 查当前套餐定义补齐。
+    if not plan.get("is_free"):
+        db_plan = _get_plan(conn, plan_id=state["cycle"].get("plan_id"))
+        if db_plan:
+            if db_plan.get("is_free"):
+                plan["is_free"] = True
+            db_feats = _json(db_plan.get("features"), {})
+            plan_feats = plan.get("features") or {}
+            if db_feats.get("package_type") and not plan_feats.get("package_type"):
+                plan["features"] = {**plan_feats, "package_type": db_feats["package_type"], "daily_quota": db_feats.get("daily_quota")}
     features = {**FEATURE_DEFAULTS, **(plan.get("features") or {})}
     return {
         "active": state["subscription"].get("status") == "active" and state["cycle"].get("status") == "active",
