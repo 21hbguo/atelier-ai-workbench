@@ -273,7 +273,8 @@ def test_html_provider_fallback_chain():
     assert "https://ddg-fallback.example.com/x" in result
     assert "DDG 兜底结果" in result
     assert ctx.citations == [{"url": "https://ddg-fallback.example.com/x",
-                              "title": "DDG 兜底结果"}]
+                              "title": "DDG 兜底结果",
+                              "snippet": "兜底描述"}]
 
 
 def test_html_provider_both_fail():
