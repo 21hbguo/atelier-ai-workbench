@@ -810,8 +810,14 @@ def init_db():
                 conn.execute("ALTER TABLE users ADD COLUMN register_invite_code VARCHAR(32) DEFAULT ''")
             if not _column_exists(conn, "users", "invited_at"):
                 conn.execute("ALTER TABLE users ADD COLUMN invited_at TIMESTAMP")
+            if not _column_exists(conn, "users", "ai_daily_quota_remaining"):
+                conn.execute("ALTER TABLE users ADD COLUMN ai_daily_quota_remaining INTEGER DEFAULT 0")
+            if not _column_exists(conn, "users", "ai_daily_quota_date"):
+                conn.execute("ALTER TABLE users ADD COLUMN ai_daily_quota_date DATE")
             if not _column_exists(conn, "recharge_requests", "invite_code"):
                 conn.execute("ALTER TABLE recharge_requests ADD COLUMN invite_code VARCHAR(32) DEFAULT ''")
+            if not _column_exists(conn, "recharge_requests", "plan_id"):
+                conn.execute("ALTER TABLE recharge_requests ADD COLUMN plan_id INTEGER REFERENCES subscription_plans(id)")
             if not _column_exists(conn, "recharge_requests", "submit_ip"):
                 conn.execute("ALTER TABLE recharge_requests ADD COLUMN submit_ip VARCHAR(45) DEFAULT ''")
             if not _column_exists(conn, "recharge_requests", "inviter_user_id"):
@@ -855,6 +861,36 @@ def init_db():
                            '{"web_search": true, "file_upload": true, "file_write": true, "max_tool_calls": 10, "max_chat_sessions": 100, "max_chat_files": 20}'::jsonb,
                            '[]'::jsonb, TRUE, 0)
                    ON CONFLICT (code) DO NOTHING"""
+            )
+            # 参考套餐：会员订阅 + 画图积分包（features.package_type 区分类型，前端分组展示）
+            conn.execute(
+                """INSERT INTO subscription_plans
+                   (code, name, description, price_rmb, cycle_days, grant_points, features, allowed_models, is_free, sort_order)
+                   VALUES
+                   ('member-day', '日卡', '助手专用，当天高额对话。', 9.9, 1, 0,
+                    '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "membership", "daily_quota": 60, "original_price_rmb": "9.9"}'::jsonb, '[]'::jsonb, FALSE, 1),
+                   ('member-month', '月卡', '助手专用，30 天每日高额对话。', 89.9, 30, 0,
+                    '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "membership", "daily_quota": 100, "original_price_rmb": "99.9"}'::jsonb, '[]'::jsonb, FALSE, 2),
+                   ('member-year', '年卡', '助手专用，365 天畅享，抢先体验新模型。', 199, 365, 0,
+                    '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "membership", "daily_quota": 200, "original_price_rmb": "399"}'::jsonb, '[]'::jsonb, FALSE, 3),
+                   ('member-permanent', '永久卡', '助手专用，一次购买长期使用，抢先体验新模型。', 299, 36500, 50,
+                    '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "membership", "daily_quota": null, "original_price_rmb": "599"}'::jsonb, '[]'::jsonb, FALSE, 4),
+                   ('credits-50', '画图积分体验包', '画图专用，50 积分。', 9.9, 30, 50,
+                    '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "credits", "original_price_rmb": "19.9"}'::jsonb, '[]'::jsonb, FALSE, 5),
+                   ('credits-500', '画图积分基础包', '画图专用，500 积分。', 88, 30, 500,
+                    '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "credits", "original_price_rmb": "99"}'::jsonb, '[]'::jsonb, FALSE, 6),
+                   ('credits-1000', '画图积分标准包', '画图专用，1000 积分。', 168, 30, 1000,
+                    '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "credits", "original_price_rmb": "199"}'::jsonb, '[]'::jsonb, FALSE, 7),
+                   ('credits-3000', '画图积分豪华包', '画图专用，3000 积分。', 468, 30, 3000,
+                    '{"web_search": true, "file_upload": true, "file_write": true, "package_type": "credits", "original_price_rmb": "599"}'::jsonb, '[]'::jsonb, FALSE, 8)
+                   ON CONFLICT (code) DO NOTHING"""
+            )
+            # 文案统一：去掉「PPT 专用」，聊天→助手（幂等刷新已有行）
+            conn.execute(
+                """UPDATE subscription_plans
+                   SET description = REPLACE(description, '聊天、PPT 专用', '助手专用'),
+                       updated_at = NOW()
+                   WHERE description LIKE '%聊天、PPT 专用%'"""
             )
             # free 权益与付费对齐（功能全开：联网搜索/文件上传/文件写入/工具调用），
             # 仅保留未来做模型限制与积分限制的余地；幂等刷新已有库

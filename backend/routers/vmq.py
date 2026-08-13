@@ -10,6 +10,7 @@ from backend.database import get_db
 from backend.services.invite_service import InviteService
 from backend.services.notification_service import NotificationService
 from backend.services.points_service import PointsService
+from backend.services.subscription_service import activate_plan_in_conn, get_plan_in_conn
 
 router = APIRouter(prefix="/api/vmq", tags=["vmq"])
 logger = logging.getLogger(__name__)
@@ -67,6 +68,24 @@ async def vmq_notify(
         base_points = int(item["points"])
         bonus_points = int(item.get("invite_bonus_points") or 0)
         points = base_points + bonus_points
+
+        if item.get("plan_id"):
+            # 套餐支付自动到账：激活订阅（周期积分由订阅周期发放）
+            plan = get_plan_in_conn(conn, item["plan_id"])
+            if not plan or not plan.get("enabled") or plan.get("is_free"):
+                raise HTTPException(status_code=400, detail="套餐不可用")
+            activation = activate_plan_in_conn(conn, user_id, plan)
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            conn.execute(
+                "UPDATE recharge_requests SET status = 'approved', review_note = %s, reviewed_at = %s WHERE id = %s",
+                (f"VMQ自动审核 trade_no={trade_no}，已激活「{plan['name']}」", now, request_id),
+            )
+            try:
+                NotificationService.create(user_id, "subscription_approved", "套餐已生效", f"你的「{plan['name']}」套餐已自动激活，周期积分已发放", str(request_id))
+            except Exception:
+                pass
+            logger.info(f"[vmq.notify] 套餐自动审核通过 request={request_id} user={user_id} plan={plan['name']} activation={activation}")
+            return {"status": "ok"}
 
         while True:
             code = secrets.token_urlsafe(8).upper()

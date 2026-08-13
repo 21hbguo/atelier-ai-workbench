@@ -10,6 +10,7 @@ from backend.services.task_manager import TaskManager
 from backend.services.banned_words import BannedWordsService
 from backend.services.image_mapping import ImageUrlMapping
 from backend.services.points_service import PointsService
+from backend.services.subscription_service import activate_plan_in_conn, get_plan_in_conn
 from backend.services.invite_service import InviteService
 from backend.services.notification_service import NotificationService
 from backend.services.image_expiry import refresh_permanent_flags_by_filenames
@@ -915,6 +916,23 @@ async def approve_recharge_request(request_id: int, body: dict, admin=Depends(re
         if points <= 0:
             raise HTTPException(status_code=400, detail="发放积分必须大于0")
         user_id = item["user_id"]
+        if item.get("plan_id"):
+            # 套餐审核：激活订阅（周期积分由订阅周期发放，不走捐赠积分/兑换码）
+            plan = get_plan_in_conn(conn, item["plan_id"])
+            if not plan or not plan.get("enabled") or plan.get("is_free"):
+                raise HTTPException(status_code=400, detail="套餐不可用")
+            activation = activate_plan_in_conn(conn, user_id, plan)
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            conn.execute(
+                "UPDATE recharge_requests SET status = 'approved', review_note = %s, reviewed_at = %s, reviewed_by = %s WHERE id = %s",
+                (review_note or f"套餐审核通过，已激活「{plan['name']}」", now, admin["user_id"], request_id),
+            )
+            try:
+                NotificationService.create(user_id, "subscription_approved", "套餐已生效", f"你的「{plan['name']}」套餐已激活，周期积分已发放", str(request_id))
+            except Exception:
+                pass
+            logger.info(f"[audit.recharge.approve] request={request_id} admin={admin['user_id']} user={user_id} plan={plan['name']} activation={activation}")
+            return {"message": "审核通过，套餐已生效", "plan": plan["name"], "activation": activation}
         while True:
             code = secrets.token_urlsafe(8).upper()
             if not conn.execute("SELECT id FROM redemption_codes WHERE code = %s", (code,)).fetchone():

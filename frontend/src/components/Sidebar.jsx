@@ -1,11 +1,20 @@
 import { useState, useEffect } from 'react'
 import { useLocation, Link, useNavigate } from 'react-router-dom'
-import { Sun, Moon, BookOpen, Sparkles, Image, X, Globe, LogOut, User, Shield, Coins, Wallet, Settings, LayoutGrid, MessageCircle, Bell, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Sun, Moon, BookOpen, Sparkles, Image, X, Globe, LogOut, User, Shield, Coins, Crown, Wallet, Settings, LayoutGrid, MessageCircle, Bell, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useTheme } from '../ThemeContext'
 import { useLayoutMode } from '../LayoutModeContext'
-import { announcementAPI, authAPI, pointsAPI, notificationAPI } from '../api'
+import { announcementAPI, authAPI, pointsAPI, notificationAPI, subscriptionAPI } from '../api'
 import { clearUser, readUser } from '../auth'
 import { useAppDialog } from './AppDialogProvider'
+import SubscriptionDialog from './SubscriptionDialog'
+
+const formatDate = ts => {
+  if (!ts) return ''
+  const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
 
 const navItems = [
   { path: '/chat', icon: MessageCircle, label: 'AI 助手', shortLabel: '助手' },
@@ -36,6 +45,8 @@ export default function Sidebar({ open, onClose }) {
   const [rechargePendingCount, setRechargePendingCount] = useState(0)
   const [unreadNoticeCount, setUnreadNoticeCount] = useState(0)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('nav-collapsed') === '1')
+  const [subscription, setSubscription] = useState(null)
+  const [subOpen, setSubOpen] = useState(false)
 
   useEffect(() => {
     localStorage.setItem('nav-collapsed', collapsed ? '1' : '0')
@@ -53,17 +64,20 @@ export default function Sidebar({ open, onClose }) {
     }).catch(() => {})
     Promise.allSettled([notificationAPI.unreadCount(), announcementAPI.getUnread()]).then(([noticeRes, annRes])=>setUnreadNoticeCount((noticeRes.status==='fulfilled'?(noticeRes.value.data.count||0):0)+(annRes.status==='fulfilled'?((annRes.value.data.items||[]).length):0))).catch(() => {})
     if (isAdmin) fetch('/api/admin/recharge-requests?page=1&size=1&status=pending',{ credentials:'include' }).then(r=>r.ok?r.json():null).then(data=>setRechargePendingCount(data?.total||0)).catch(()=>{})
+    subscriptionAPI.me().then(res => setSubscription(res.data)).catch(() => {})
 
     const handleUpdate = () => {
       const u = readUser()
       if (u) setPoints(u.points ?? 0)
     }
+    const handleSubscriptionUpdate = () => subscriptionAPI.me().then(res => setSubscription(res.data)).catch(() => {})
     const handleNoticeUpdate = () => Promise.allSettled([notificationAPI.unreadCount(),announcementAPI.getUnread()]).then(([noticeRes,annRes])=>setUnreadNoticeCount((noticeRes.status==='fulfilled'?(noticeRes.value.data.count||0):0)+(annRes.status==='fulfilled'?((annRes.value.data.items||[]).length):0))).catch(() => {})
     const handleRechargeUpdate = e => setRechargePendingCount(Number(e?.detail?.pending)||0)
     window.addEventListener('points-updated', handleUpdate)
+    window.addEventListener('subscriptions-updated', handleSubscriptionUpdate)
     window.addEventListener('notifications-updated', handleNoticeUpdate)
     window.addEventListener('admin-recharge-updated', handleRechargeUpdate)
-    return () => { window.removeEventListener('points-updated', handleUpdate); window.removeEventListener('notifications-updated', handleNoticeUpdate); window.removeEventListener('admin-recharge-updated', handleRechargeUpdate) }
+    return () => { window.removeEventListener('points-updated', handleUpdate); window.removeEventListener('subscriptions-updated', handleSubscriptionUpdate); window.removeEventListener('notifications-updated', handleNoticeUpdate); window.removeEventListener('admin-recharge-updated', handleRechargeUpdate) }
   }, [isAdmin])
 
   const handleCheckIn = async () => {
@@ -92,9 +106,13 @@ export default function Sidebar({ open, onClose }) {
       <div className={`fixed lg:static inset-y-0 left-0 z-50 flex transition-transform duration-200 ease-out ${open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
         <aside className={`${collapsed ? 'w-16' : 'w-40'} flex flex-col flex-shrink-0 transition-all duration-200 ease-out`}
           style={{ background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border-color)' }}>
-          <div className={`h-11 px-2 flex items-center ${collapsed ? 'justify-center' : ''}`}>
-            <h1 className={`flex-1 truncate ${collapsed ? 'hidden' : ''}`} style={{ color: 'var(--text-primary)', fontFamily: "'Alex Brush', cursive", fontSize: '2.5rem', lineHeight: '1' }}>Atelier</h1>
-            <button className={`hidden lg:flex p-1 rounded-lg hover:bg-[var(--bg-hover)] ${collapsed ? '' : 'ml-auto'}`}
+          <div className={`px-2 py-1.5 flex items-center ${collapsed ? 'justify-center' : ''}`}>
+            <div className={`flex-1 min-w-0 ${collapsed ? 'hidden' : 'flex flex-col'}`}>
+              <h1 className="font-extrabold tracking-tight"
+                style={{ fontSize: '1.5rem', lineHeight: '1', backgroundImage: 'linear-gradient(135deg, var(--text-primary) 30%, color-mix(in srgb, var(--accent) 65%, var(--text-primary)))', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }}>Atelier-ai</h1>
+              <span className="text-[10px] leading-none mt-1" style={{ color: 'var(--text-secondary)' }}>你的专属工作台</span>
+            </div>
+            <button className={`hidden lg:flex p-1 rounded-lg hover:bg-[var(--bg-hover)] ${collapsed ? '' : 'ml-1'}`}
               onClick={() => setCollapsed(v => !v)}
               title={collapsed ? '展开侧边栏' : '折叠侧边栏'}
               style={{ color: 'var(--text-secondary)' }}>
@@ -132,33 +150,79 @@ export default function Sidebar({ open, onClose }) {
               </Link>
             )}
           </nav>
-          <div className={`px-2 py-2 border-t space-y-0.5 ${collapsed ? 'flex flex-col items-center' : ''}`} style={{ borderColor: 'var(--border-color)' }}>
+          <div className={`px-2 pt-2 pb-1 border-t space-y-2 ${collapsed ? 'flex flex-col items-center' : ''}`} style={{ borderColor: 'var(--border-color)' }}>
+            {/* 套餐入口卡片：参考 app-sidebar 底部「开通套餐」卡（登录与否均显示） */}
+            {(() => {
+              const hasPlan = subscription?.plan && !subscription.plan.is_free
+              return (
+                <button
+                  type="button"
+                  title={hasPlan ? `${subscription.plan.name} · 点击管理套餐` : '开通套餐'}
+                  className={`group flex flex-col w-full rounded-xl border transition-all hover:bg-bg-hover cursor-pointer ${collapsed ? 'items-center justify-center py-2' : 'px-2 py-2'}`}
+                  style={{ borderColor: 'color-mix(in srgb, var(--accent) 25%, transparent)' }}
+                  onClick={() => setSubOpen(true)}
+                >
+                  <div className="flex items-center gap-1.5">
+                    {hasPlan ? (
+                      <Crown size={12} className="shrink-0" style={{ color: 'var(--accent)' }} />
+                    ) : (
+                      <Coins size={12} className="shrink-0" style={{ color: 'var(--accent)' }} />
+                    )}
+                    {!collapsed && (
+                      <>
+                        <span className="text-[11px] font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                          {hasPlan ? subscription.plan.name : '开通套餐'}
+                        </span>
+                        <span className="ml-auto text-[9px] font-semibold opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: 'var(--accent)' }}>查看 →</span>
+                      </>
+                    )}
+                  </div>
+                  {!collapsed && (
+                    <div className="text-[10px] truncate" style={{ color: 'var(--text-secondary)' }}>
+                      {hasPlan ? `周期至 ${formatDate(subscription.cycle?.period_end)}` : '解锁更多模型 · 不限次数'}
+                    </div>
+                  )}
+                </button>
+              )
+            })()}
+            {/* 用户行：圆形头像 + 昵称 */}
             {user && (
-              <Link to="/account" title="账户中心" className={`sidebar-user-row hover:bg-bg-hover ${collapsed ? 'flex-col items-center !h-auto !gap-0.5 !py-1 text-center' : ''}`} onClick={() => onClose?.()}>
-                <User size={16} className="sidebar-nav-icon" style={{ color: 'var(--text-secondary)' }} />
-                <span className={`sidebar-nav-text text-sm font-medium truncate ${collapsed ? '!text-[10px] leading-none max-w-full' : ''}`} style={{ color: 'var(--text-primary)' }}>{user.nickname || user.account || user.username}</span>
+              <Link
+                to="/account"
+                title="账户中心"
+                className={`flex items-center gap-2 min-w-0 rounded-lg hover:bg-bg-hover ${collapsed ? 'justify-center py-1' : 'px-1.5 py-1'}`}
+                onClick={() => onClose?.()}
+              >
+                <span className="flex size-7 items-center justify-center rounded-full shrink-0" style={{ background: 'color-mix(in srgb, var(--accent) 10%, transparent)', color: 'var(--accent)' }}>
+                  <User size={14} />
+                </span>
+                {!collapsed && (
+                  <span className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>{user.nickname || user.account || user.username}</span>
+                )}
               </Link>
             )}
-            <button onClick={toggle} className={`sidebar-control-btn hover:bg-bg-hover ${collapsed ? 'flex-col items-center !h-auto !gap-0.5 !py-1 text-center' : ''}`}
-              style={{ color: 'var(--text-primary)' }}>
-              {dark ? <Sun size={16} className="sidebar-nav-icon" /> : <Moon size={16} className="sidebar-nav-icon" />}<span className={`sidebar-nav-text ${collapsed ? 'text-[10px] leading-none' : ''}`}>{dark ? '浅色' : '深色'}</span>
-            </button>
-            <button onClick={handleLogout} className={`sidebar-control-btn hover:bg-bg-hover ${collapsed ? 'flex-col items-center !h-auto !gap-0.5 !py-1 text-center' : ''}`}
-              style={{ color: 'var(--text-primary)' }}>
-              <LogOut size={16} className="sidebar-nav-icon" /><span className={`sidebar-nav-text ${collapsed ? 'text-[10px] leading-none' : ''}`}>退出登录</span>
-            </button>
-          </div>
-          {!collapsed && (
-            <div className="px-3 py-2 border-t flex flex-wrap gap-x-1 gap-y-0.5 text-xs opacity-50" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
-              <Link to="/wallet" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>积分</Link>
-              <span>|</span>
-              <Link to="/agreement" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>用户协议</Link>
-              <span>|</span>
-              <Link to="/privacy" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>隐私政策</Link>
-              <span>|</span>
-              <Link to="/refund" className="hover:underline hover:opacity-100 transition-opacity" onClick={() => onClose?.()}>捐赠说明与积分规则</Link>
+            {/* 主题 + 登出：纯图标小方钮 */}
+            <div className={`flex items-center gap-1 ${collapsed ? 'flex-col' : ''}`}>
+              <button
+                onClick={toggle}
+                aria-label="切换主题"
+                title={dark ? '切换到浅色' : '切换到深色'}
+                className="flex size-8 items-center justify-center rounded-lg hover:bg-bg-hover transition-colors shrink-0"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                {dark ? <Sun size={16} className="sidebar-nav-icon" /> : <Moon size={16} className="sidebar-nav-icon" />}
+              </button>
+              <button
+                onClick={handleLogout}
+                aria-label="退出登录"
+                title="退出登录"
+                className="flex size-8 items-center justify-center rounded-lg hover:bg-bg-hover transition-colors shrink-0"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                <LogOut size={16} className="sidebar-nav-icon" />
+              </button>
             </div>
-          )}
+          </div>
         </aside>
         {subNavVisible && (
           <aside className="w-44 flex flex-col flex-shrink-0"
@@ -166,17 +230,23 @@ export default function Sidebar({ open, onClose }) {
             <div className="flex-1 min-h-0 overflow-y-auto py-2 px-2 space-y-0.5">
               {subNavItems.map(({ path, icon: Icon, label }) => {
                 const active = location.pathname === path
+                const linkClass = `sidebar-nav-link ${active ? 'bg-accent/10' : 'hover:bg-bg-hover'}`
+                const linkStyle = { color: active ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: active ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined }
+                if (path === '/prompts') {
+                  return (
+                    <div key={path} className={linkClass} style={{ ...linkStyle, display: 'none' }}>
+                      <Icon size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">{label}</span>
+                    </div>
+                  )
+                }
                 return (
-                  <Link key={path} to={path}
-                    className={`sidebar-nav-link ${active ? 'bg-accent/10' : 'hover:bg-bg-hover'}`}
-                    style={{ color: active ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: active ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined }}
-                    onClick={() => onClose?.()}>
+                  <Link key={path} to={path} className={linkClass} style={linkStyle} onClick={() => onClose?.()}>
                     <Icon size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">{label}</span>{path==='/notifications'&&unreadNoticeCount>0&&<span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{background:'var(--accent)'}}>{unreadNoticeCount>99?'99+':unreadNoticeCount}</span>}
                   </Link>
                 )
               })}
             </div>
-            <div className="px-2 py-2 border-t space-y-0.5" style={{ borderColor: 'var(--border-color)' }}>
+            <div className="px-2 py-2 space-y-0.5" style={{ borderColor: 'var(--border-color)' }}>
               <button onClick={toggleLayoutMode} className="sidebar-control-btn hover:bg-bg-hover"
                 style={{ color: 'var(--text-primary)' }}>
                 <LayoutGrid size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">{layoutMode === 'masonry' ? '切换为网格' : '切换为瀑布流'}</span>
@@ -189,6 +259,7 @@ export default function Sidebar({ open, onClose }) {
           </aside>
         )}
       </div>
+      <SubscriptionDialog open={subOpen} onClose={() => setSubOpen(false)} />
     </>
   )
 }

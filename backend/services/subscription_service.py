@@ -295,6 +295,30 @@ def create_order(user_id: int, plan_id: int, channel: str, submit_ip: str, payer
     return dict(row)
 
 
+def get_plan_in_conn(conn, plan_id: int) -> dict | None:
+    plan = _get_plan(conn, plan_id=plan_id)
+    return _snapshot(plan) if plan else None
+
+
+def activate_plan_in_conn(conn, user_id: int, plan: dict, order_id=None) -> str:
+    """激活/续期订阅：供订阅订单审核与充值审核（套餐）共用，返回激活方式"""
+    state = ensure_current_cycle_in_conn(conn, user_id)
+    current_plan = state["plan"]
+    current_cycle = state["cycle"]
+    now = datetime.now()
+    if not current_plan.get("is_free") and state["subscription"].get("expires_at") and state["subscription"]["expires_at"] > now:
+        conn.execute(
+            "UPDATE user_subscriptions SET next_plan_id = %s, last_order_id = COALESCE(%s, last_order_id), updated_at = NOW() WHERE id = %s",
+            (plan["id"], order_id, state["subscription"]["id"]),
+        )
+        return "next_cycle"
+    if current_cycle.get("status") == "active":
+        _expire_cycle_in_conn(conn, current_cycle, user_id, now)
+    conn.execute("UPDATE user_subscriptions SET next_plan_id = NULL WHERE id = %s", (state["subscription"]["id"],))
+    _create_cycle_in_conn(conn, user_id, state["subscription"]["id"], plan, now, order_id)
+    return "current_cycle"
+
+
 def approve_order(order_id: int, admin_id: int, review_note: str = "") -> dict:
     from backend.database import get_db
     with get_db() as conn:
@@ -307,22 +331,7 @@ def approve_order(order_id: int, admin_id: int, review_note: str = "") -> dict:
         if order["status"] != "pending":
             raise ValueError("仅待审核订单可通过")
         plan = _order_plan(order)
-        state = ensure_current_cycle_in_conn(conn, order["user_id"])
-        current_plan = state["plan"]
-        current_cycle = state["cycle"]
-        now = datetime.now()
-        if not current_plan.get("is_free") and state["subscription"].get("expires_at") and state["subscription"]["expires_at"] > now:
-            conn.execute(
-                "UPDATE user_subscriptions SET next_plan_id = %s, last_order_id = %s, updated_at = NOW() WHERE id = %s",
-                (plan["id"], order_id, state["subscription"]["id"]),
-            )
-            activation = "next_cycle"
-        else:
-            if current_cycle.get("status") == "active":
-                _expire_cycle_in_conn(conn, current_cycle, order["user_id"], now)
-            conn.execute("UPDATE user_subscriptions SET next_plan_id = NULL WHERE id = %s", (state["subscription"]["id"],))
-            _create_cycle_in_conn(conn, order["user_id"], state["subscription"]["id"], plan, now, order_id)
-            activation = "current_cycle"
+        activation = activate_plan_in_conn(conn, order["user_id"], plan, order_id)
         conn.execute(
             "UPDATE subscription_orders SET status = 'approved', reviewed_by = %s, reviewed_at = NOW(), review_note = %s WHERE id = %s",
             (admin_id, review_note[:1000], order_id),
