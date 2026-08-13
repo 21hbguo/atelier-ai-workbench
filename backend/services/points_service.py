@@ -157,13 +157,19 @@ class PointsService:
             user = conn.execute("SELECT id FROM users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
             if not user:
                 raise ValueError("用户不存在")
+            # 幂等：退款标记流水已存在 → 直接返回当前余额，不重复退
             if request_key:
                 existing = conn.execute(
                     "SELECT 1 FROM point_transactions WHERE request_key = %s AND amount = 0", (request_key,),
                 ).fetchone()
                 if existing:
                     return cls._balance_in_conn(conn, user_id)
-            conn.execute("UPDATE users SET ai_daily_quota_remaining = ai_daily_quota_remaining + 1 WHERE id = %s", (user_id,))
+            # 免费次数 +1，封顶到每日总额（防止跨天退款把今日重置后的次数顶到 total+1）
+            total = int(get_limit_config()["ai_daily_free_quota"])
+            conn.execute(
+                "UPDATE users SET ai_daily_quota_remaining = LEAST(COALESCE(ai_daily_quota_remaining, 0) + 1, %s) WHERE id = %s",
+                (total, user_id),
+            )
             balance = cls._balance_in_conn(conn, user_id)
             conn.execute(
                 """INSERT INTO point_transactions (user_id, amount, balance_after, type, description, request_key, model_id)

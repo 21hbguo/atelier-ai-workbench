@@ -267,7 +267,7 @@ def get_limit_config():
     if out["points_cost_per_optimize"] <= 0: out["points_cost_per_optimize"] = 0.0001
     if out["points_cost_per_optimize_refine"] <= 0: out["points_cost_per_optimize_refine"] = 0.0001
     if out["points_cost_per_chat"] <= 0: out["points_cost_per_chat"] = 0.0001
-    if out["ai_daily_free_quota"] < 1: out["ai_daily_free_quota"] = 1
+    if out["ai_daily_free_quota"] < 0: out["ai_daily_free_quota"] = 0
     if out["chat_max_sessions"] < 1: out["chat_max_sessions"] = 1
     if out["chat_max_messages"] < 1: out["chat_max_messages"] = 1
     if out["chat_rate_limit_per_minute"] < 1: out["chat_rate_limit_per_minute"] = 1

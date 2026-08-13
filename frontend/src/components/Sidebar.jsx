@@ -41,6 +41,8 @@ export default function Sidebar({ open, onClose }) {
   const user = readUser()
   const isAdmin = Boolean(user?.is_admin)
   const [points, setPoints] = useState(user?.points ?? 0)
+  const [dailyRemaining, setDailyRemaining] = useState(0)
+  const [dailyTotal, setDailyTotal] = useState(0)
   const [checkedInToday, setCheckedInToday] = useState(false)
   const [rechargePendingCount, setRechargePendingCount] = useState(0)
   const [unreadNoticeCount, setUnreadNoticeCount] = useState(0)
@@ -55,6 +57,8 @@ export default function Sidebar({ open, onClose }) {
   useEffect(() => {
     pointsAPI.balance().then(res => {
       setPoints(res.data.points)
+      setDailyRemaining(Number(res.data?.ai_daily_remaining || 0))
+      setDailyTotal(Number(res.data?.ai_daily_total || 0))
       const u = readUser()
       if (u) { u.points = res.data.points; localStorage.setItem('user', JSON.stringify(u)) }
     }).catch(() => {})
@@ -69,6 +73,7 @@ export default function Sidebar({ open, onClose }) {
     const handleUpdate = () => {
       const u = readUser()
       if (u) setPoints(u.points ?? 0)
+      pointsAPI.balance().then(res => { setDailyRemaining(Number(res.data?.ai_daily_remaining || 0)); setDailyTotal(Number(res.data?.ai_daily_total || 0)) }).catch(() => {})
     }
     const handleSubscriptionUpdate = () => subscriptionAPI.me().then(res => setSubscription(res.data)).catch(() => {})
     const handleNoticeUpdate = () => Promise.allSettled([notificationAPI.unreadCount(),announcementAPI.getUnread()]).then(([noticeRes,annRes])=>setUnreadNoticeCount((noticeRes.status==='fulfilled'?(noticeRes.value.data.count||0):0)+(annRes.status==='fulfilled'?((annRes.value.data.items||[]).length):0))).catch(() => {})
@@ -197,7 +202,10 @@ export default function Sidebar({ open, onClose }) {
                   <User size={14} />
                 </span>
                 {!collapsed && (
-                  <span className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>{user.nickname || user.account || user.username}</span>
+                  <span className="ml-auto shrink-0 text-right text-[10px] leading-tight" style={{ color: 'var(--text-secondary)' }}>
+                    <span className="block">{dailyRemaining}/{dailyTotal} 次</span>
+                    <span className="block">{points} 积分</span>
+                  </span>
                 )}
               </Link>
             )}
