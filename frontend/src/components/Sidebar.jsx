@@ -162,7 +162,7 @@ export default function Sidebar({ open, onClose }) {
               return (
                 <button
                   type="button"
-                  title={hasPlan ? `${subscription.plan.name} · 点击管理套餐` : '开通套餐'}
+                  title={hasPlan ? `${subscription.plan.name} · 点击管理套餐` : '免费版 · 开通套餐'}
                   className={`group flex flex-col w-full rounded-xl border transition-all hover:bg-bg-hover cursor-pointer ${collapsed ? 'items-center justify-center py-2' : 'px-2 py-2'}`}
                   style={{ borderColor: 'color-mix(in srgb, var(--accent) 25%, transparent)' }}
                   onClick={() => setSubOpen(true)}
@@ -176,7 +176,7 @@ export default function Sidebar({ open, onClose }) {
                     {!collapsed && (
                       <>
                         <span className="text-[11px] font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
-                          {hasPlan ? subscription.plan.name : '开通套餐'}
+                          {hasPlan ? subscription.plan.name : '免费版 · 开通套餐'}
                         </span>
                         <span className="ml-auto text-[9px] font-semibold opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: 'var(--accent)' }}>查看 →</span>
                       </>
