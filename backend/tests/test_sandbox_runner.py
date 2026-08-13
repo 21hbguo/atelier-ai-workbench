@@ -135,6 +135,33 @@ def test_sandbox_outside_path_rejected(ws):
     assert "passwd" not in result  # 不得回显系统文件内容
 
 
+def test_sandbox_write_with_datetime_in_extra(ws):
+    """回归：ctx.extra 含 datetime（真实 entitlements.period_end）时沙箱执行不崩溃。
+
+    曾因 get_entitlements_in_conn 返回原生 datetime，沙箱 payload json.dumps 抛
+    TypeError: datetime is not JSON serializable，file_ops_write 全部失败。
+    """
+    from datetime import datetime as _dt
+
+    extra = {
+        "entitlements": {
+            "features": {"file_write": True},
+            "period_end": _dt(2026, 8, 14, 12, 0, 0),  # 真实链路中的 datetime 对象
+            "plan": {"name": "积分基础包"},
+        }
+    }
+    ctx = AgentContext(session_id=1, user_id=1, extra=extra)
+
+    result = _run(run_sandboxed(
+        "file_ops_write",
+        {"path": "note.md", "content": "hello"},
+        ctx,
+    ))
+    assert "已写入" in result, result
+    f = ws / "user_1" / "note.md"
+    assert f.read_text(encoding="utf-8") == "hello"
+
+
 # ---------- 沙箱内删除：写 → 删 → 验证原文件消失且 .trash 存在 ----------
 
 def test_sandbox_delete_moves_to_trash(ws):

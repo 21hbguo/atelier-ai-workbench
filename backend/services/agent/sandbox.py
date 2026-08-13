@@ -218,7 +218,9 @@ async def _run_sandboxed_locked(
     }
     if extra_module:
         payload["extra_module"] = extra_module
-    payload_bytes = (json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8")
+    # 防御：extra 透传内容可能含 datetime 等非 JSON 类型（如 entitlements.period_end），
+    # 统一转字符串，避免子进程通信序列化崩溃
+    payload_bytes = (json.dumps(payload, ensure_ascii=False, default=str) + "\n").encode("utf-8")
 
     try:
         proc = await asyncio.create_subprocess_exec(

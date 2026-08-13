@@ -76,3 +76,27 @@ def test_old_snapshot_plan_missing_in_db_keeps_snapshot():
 
     assert ent["plan"]["is_free"] is False
     assert ent["active"] is True
+
+
+def test_entitlements_period_end_is_isoformat_string():
+    """回归：entitlements.period_end 必须是 ISO 字符串（非 datetime 对象）。
+
+    ctx.extra 透传 entitlements 给沙箱子进程时 json.dumps(payload)，
+    datetime 不可序列化会导致工具全部失败；与 get_current_state 的 isoformat 行为对齐。
+    """
+    import json
+    from datetime import datetime as _dt
+
+    new_snapshot = {"id": 5, "code": "free", "name": "免费版", "is_free": True,
+                    "features": {}, "allowed_models": [], "max_concurrent_requests": 1}
+    state = _state_with_snapshot(new_snapshot)
+    state["cycle"]["period_end"] = _dt(2026, 8, 14, 12, 0, 0)
+    conn = MagicMock()
+    with patch.object(ss, "ensure_current_cycle_in_conn", return_value=state), \
+         patch.object(ss, "_get_plan", return_value=_free_plan_db()):
+        ent = ss.get_entitlements_in_conn(conn, 1)
+
+    assert ent["period_end"] == "2026-08-14T12:00:00"
+    assert isinstance(ent["period_end"], str)
+    # 沙箱 payload 链路（ctx.extra → json.dumps）必须可序列化
+    json.dumps({"extra": {"entitlements": ent}})

@@ -278,7 +278,7 @@ def get_entitlements_in_conn(conn, user_id: int) -> dict:
         "allowed_models": list(plan.get("allowed_models") or []),
         "max_concurrent_requests": max(1, int(plan.get("max_concurrent_requests") or 1)),
         "cycle_id": state["cycle"].get("id"),
-        "period_end": state["cycle"].get("period_end"),
+        "period_end": state["cycle"].get("period_end").isoformat() if state["cycle"].get("period_end") else None,
     }
 
 
