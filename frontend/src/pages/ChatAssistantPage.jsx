@@ -140,7 +140,7 @@ function SessionList({ sessions, activeId, loading, sending, creating, renaming,
           </div>
         ) : (
           <div className="flex items-center gap-1.5">
-            <button onClick={onCreate} disabled={sending || creating}
+            <button onClick={onCreate} disabled={creating}
               className="flex-1 inline-flex items-center justify-center gap-1.5 h-9 rounded-xl text-sm font-medium text-white disabled:opacity-50 transition-colors"
               style={{ background: 'var(--accent)' }}>
               <Plus size={16} /> {creating ? '创建中…' : '新建对话'}
@@ -171,15 +171,15 @@ function SessionList({ sessions, activeId, loading, sending, creating, renaming,
           const active = s.id === activeId
           const isRenaming = renaming && renaming.id === s.id
           const checked = selectedIds.includes(s.id)
+          const isStreaming = sending && sending.sessionId === s.id && !sending.stopped // 该会话正在生成中（已停止/失败则不再显示旋转标记）
           return (
             <div key={s.id}
-              className={`group relative rounded-xl px-3 py-2 cursor-pointer transition-colors ${active && !batchMode ? '' : 'hover:bg-bg-hover'} ${sending ? 'opacity-60' : ''}`}
+              className={`group relative rounded-xl px-3 py-2 cursor-pointer transition-colors ${active && !batchMode ? '' : 'hover:bg-bg-hover'} ${isStreaming ? 'opacity-80' : ''}`}
               style={{
                 background: (active && !batchMode) ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : (batchMode && checked ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent'),
                 border: `1px solid ${batchMode && checked ? 'color-mix(in srgb, var(--accent) 45%, var(--border-color))' : (active && !batchMode ? 'color-mix(in srgb, var(--accent) 25%, var(--border-color))' : 'transparent')}`,
               }}
               onClick={() => {
-                if (sending) return
                 if (batchMode) onToggleSelect(s.id)
                 else onSelect(s.id)
               }}>
@@ -204,8 +204,13 @@ function SessionList({ sessions, activeId, loading, sending, creating, renaming,
                         style={{ accentColor: 'var(--accent)' }} />
                     </span>
                   )}
-                  <div className={`text-sm font-medium truncate ${batchMode ? 'pl-6' : 'pr-9'}`} style={{ color: (active && !batchMode) ? 'var(--accent)' : 'var(--text-primary)' }}>
-                    {s.title || '新对话'}
+                  <div className={`flex items-center gap-1.5 ${batchMode ? 'pl-6' : 'pr-9'}`}>
+                    <span className="text-sm font-medium truncate" style={{ color: (active && !batchMode) ? 'var(--accent)' : 'var(--text-primary)' }}>
+                      {s.title || '新对话'}
+                    </span>
+                    {isStreaming && (
+                      <RefreshCw size={12} className="animate-spin flex-shrink-0" style={{ color: 'var(--accent)' }} title="回复生成中" />
+                    )}
                   </div>
                   {!batchMode && (
                     <>
@@ -1160,8 +1165,14 @@ export default function ChatAssistantPage() {
     chatAPI.sessions().then(res => {
       const items = res.data?.items || []
       setSessions(items)
-      // 不自动选中最近会话：每次进入页面显示引导页（快速新建会话），
-      // 历史会话保留在侧边栏，点击后才进入；引导页直接对话时 handleSend 自动建新会话（无感）
+      // 刷新/重新进入页面时恢复上次查看的会话（localStorage 记忆 activeId）：
+      // 会话仍有效则直接进入并加载消息，无记忆或会话已被删除则显示引导页。
+      // 用户已手动选择/新建过会话（activeIdRef 已更新）时不覆盖，防竞态。
+      if (activeIdRef.current) return
+      let savedId = null
+      try { savedId = localStorage.getItem('chat_active_session_id') } catch {}
+      const target = savedId ? items.find(s => String(s.id) === savedId) : null
+      if (target) setActiveId(target.id)
     }).catch(() => {}).finally(() => setSessionsLoading(false))
     const handlePoints = () => { const u = readUser(); if (u) setPoints(u.points ?? 0) }
     window.addEventListener('points-updated', handlePoints)
@@ -1186,6 +1197,14 @@ export default function ChatAssistantPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatModel?.model_id, chatModelId])
+
+  // 当前会话 ID 持久化到 localStorage：刷新/重新进入页面后恢复上次会话
+  // 注意：activeId 为 null 时不主动清除记忆——mount 首帧 activeId 必为 null，
+  // 无条件 removeItem 会把待恢复的记忆清掉；清除由删除会话路径显式处理
+  useEffect(() => {
+    if (!activeId) return
+    try { localStorage.setItem('chat_active_session_id', String(activeId)) } catch {}
+  }, [activeId])
 
   // 切换会话时加载消息
   useEffect(() => {
@@ -1670,6 +1689,11 @@ export default function ChatAssistantPage() {
     pendingQueueRef.current = []
     setPendingQueue([])
   }, [])
+  // 主动中止流（切换/新建/删除会话）时清空排队消息，队列随旧会话上下文一并丢弃，给出提示
+  const clearPendingWithNotice = useCallback(() => {
+    if (pendingQueueRef.current.length) showToast('排队消息已取消', 'error')
+    clearPending()
+  }, [showToast, clearPending])
   const focusInput = () => {
     if (inputRef.current) {
       inputRef.current.focus()
@@ -1776,29 +1800,30 @@ export default function ChatAssistantPage() {
   }, [sending, sendQueuedNext])
 
   const handleSelectSession = (id) => {
-    if (id === activeId || sending) return
+    if (id === activeId) return
+    // 生成中也可切换：abort 当前流（后端会取消并退款），旧流迟到回调由 streamId 守卫丢弃
     manualStopRef.current = true
     abortRef.current?.abort()
     sendingRef.current = null
     setSending(null)
     stopImagePolling() // 切会话后旧会话的后台图片任务不再补图（消息列表已切换）
-    clearPending()
+    clearPendingWithNotice()
     skipMessagesLoadRef.current = null // 切换会话不再跳过加载
     setActiveId(id)
     setSessionListOpen(false)
   }
 
   const handleCreateSession = async () => {
-    if (sending) { dialog.alert('请先停止当前生成，再新建对话'); return }
     if (creatingRef.current) return // 创建中：拦截重复点击，避免连续点击产生多个空会话
     creatingRef.current = true
     setCreatingSession(true)
+    // 生成中也可新建：abort 当前流（后端会取消并退款），旧流迟到回调由 streamId 守卫丢弃
     manualStopRef.current = true
     abortRef.current?.abort()
     sendingRef.current = null
     setSending(null)
     stopImagePolling() // 新建会话后旧会话的后台图片任务不再补图
-    clearPending()
+    clearPendingWithNotice()
     try {
       const res = await chatAPI.createSession()
       const s = res.data
@@ -1827,7 +1852,8 @@ export default function ChatAssistantPage() {
         abortRef.current?.abort()
         sendingRef.current = null
         setSending(null)
-        clearPending()
+        clearPendingWithNotice()
+        try { localStorage.removeItem('chat_active_session_id') } catch {}
         if (next.length) setActiveId(next[0].id)
         else { setActiveId(null); setMessages([]) }
       }
@@ -1867,7 +1893,8 @@ export default function ChatAssistantPage() {
         abortRef.current?.abort()
         sendingRef.current = null
         setSending(null)
-        clearPending()
+        clearPendingWithNotice()
+        try { localStorage.removeItem('chat_active_session_id') } catch {}
         if (next.length) {
           activeIdRef.current = next[0].id
           setActiveId(next[0].id)
@@ -1987,7 +2014,7 @@ export default function ChatAssistantPage() {
           style={{ background: 'var(--bg-sidebar)', borderRight: chatListCollapsed ? 'none' : '1px solid var(--border-color)' }}>
           {!chatListCollapsed && (
             <SessionList
-              sessions={sessions} activeId={activeId} loading={sessionsLoading} sending={!!sending} creating={creatingSession}
+              sessions={sessions} activeId={activeId} loading={sessionsLoading} sending={sending} creating={creatingSession}
               renaming={renaming} renamingValue={renaming?.title || ''}
               onSelect={handleSelectSession} onCreate={handleCreateSession} onDelete={handleDeleteSession}
               onStartRename={startRename} onRenamingChange={changeRename}
@@ -2014,7 +2041,7 @@ export default function ChatAssistantPage() {
               </div>
               <div className="flex-1 min-h-0">
                 <SessionList
-                  sessions={sessions} activeId={activeId} loading={sessionsLoading} sending={!!sending} creating={creatingSession}
+                  sessions={sessions} activeId={activeId} loading={sessionsLoading} sending={sending} creating={creatingSession}
                   renaming={renaming} renamingValue={renaming?.title || ''}
                   onSelect={handleSelectSession} onCreate={handleCreateSession} onDelete={handleDeleteSession}
                   onStartRename={startRename} onRenamingChange={changeRename}
