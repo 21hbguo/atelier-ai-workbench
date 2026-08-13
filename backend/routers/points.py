@@ -147,7 +147,7 @@ async def create_recharge_request(body: RechargeCreateRequest, request: Request,
         _expire_stale_requests(conn, user["user_id"])
         plan_row = None
         if body.plan_id:
-            # 套餐购买：金额/积分以套餐为准，不走捐赠档位与随机折扣
+            # 套餐购买：金额/积分以套餐为准，不走充值档位与随机折扣
             plan_row = conn.execute("SELECT * FROM subscription_plans WHERE id = %s AND enabled = TRUE", (body.plan_id,)).fetchone()
             if not plan_row or plan_row.get("is_free"):
                 raise HTTPException(status_code=400, detail="套餐不可购买")
@@ -155,11 +155,11 @@ async def create_recharge_request(body: RechargeCreateRequest, request: Request,
             points = int(plan_row["grant_points"] or 0)
         else:
             if body.amount <= 0:
-                raise HTTPException(status_code=400, detail="捐赠金额必须大于0")
+                raise HTTPException(status_code=400, detail="充值金额必须大于0")
             if body.points <= 0:
                 raise HTTPException(status_code=400, detail="赠送积分必须大于0")
             if not any(abs(float(pkg["amount"]) - float(body.amount)) < 1e-6 and int(pkg["points"]) == int(body.points) for pkg in get_recharge_packages()):
-                raise HTTPException(status_code=400, detail="捐赠档位已变更，请刷新页面后重试")
+                raise HTTPException(status_code=400, detail="充值档位已变更，请刷新页面后重试")
             amount = body.amount
             points = body.points
         # 查找该用户该渠道所有未过期的 pending 订单，优先复用金额匹配的
@@ -199,10 +199,10 @@ async def create_recharge_request(body: RechargeCreateRequest, request: Request,
         balance = conn.execute("SELECT points FROM users WHERE id = %s", (user["user_id"],)).fetchone()["points"]
         conn.execute(
             "INSERT INTO point_transactions (user_id, amount, balance_after, type, description, recharge_request_id) VALUES (%s, %s, %s, %s, %s, %s)",
-            (user["user_id"], 0, balance, "recharge_pending", f"待捐赠 (¥{actual_amount})", request_id),
+            (user["user_id"], 0, balance, "recharge_pending", f"待充值 (¥{actual_amount})", request_id),
         )
     logger.info(f"[audit.recharge.request] id={request_id} user={user['user_id']} base={amount} discount={discount} actual={actual_amount} points={points} plan_id={body.plan_id} risk={risk_level} flags={','.join(risk_flags) if risk_flags else 'none'} ip={ip}")
-    return {"id": request_id, "tx_no": tx_no, "amount": actual_amount, "discount": discount, "remaining_seconds": 600, "message": "已创建，请扫码捐赠"}
+    return {"id": request_id, "tx_no": tx_no, "amount": actual_amount, "discount": discount, "remaining_seconds": 600, "message": "已创建，请扫码充值"}
 
 @router.get("/invite")
 async def get_invite_info(user=Depends(get_current_user)):
@@ -340,7 +340,7 @@ async def app_push_callback(t: str, type: str, price: str, sign: str):
         )
         invite_result = InviteService.apply_recharge_rewards(conn, item, item.get("submit_ip") or "")
     try:
-        NotificationService.create(user_id, "recharge_approved", "捐赠成功", f"你的 ¥{paid_amount} 捐赠已到账，获得 {points} 积分", str(request_id))
+        NotificationService.create(user_id, "recharge_approved", "充值成功", f"你的 ¥{paid_amount} 充值已到账，获得 {points} 积分", str(request_id))
         if item.get("inviter_user_id") and invite_result.get("rebate_points", 0) > 0:
             NotificationService.create(item["inviter_user_id"], "invite_recharge_rebate", "邀请返利到账", f"你收到 {invite_result['rebate_points']} 积分返利", str(request_id))
     except Exception:

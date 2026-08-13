@@ -18,7 +18,7 @@ export default function PrivacyPage() {
           <p>1. <strong>账号信息</strong>：注册时提供的邮箱地址、昵称、密码（加密存储）。</p>
           <p>2. <strong>使用数据</strong>：生成的提示词、上传的参考图片、生成结果、操作日志。</p>
           <p>3. <strong>设备信息</strong>：IP 地址、浏览器类型、登录时间，用于安全风控。</p>
-          <p>4. <strong>支持信息</strong>：捐赠记录、支付凭证（如有），用于积分发放与异常核查。</p>
+          <p>4. <strong>支持信息</strong>：充值记录、支付凭证（如有），用于积分发放与异常核查。</p>
 
           <h2 className="text-base font-semibold mt-6" style={{ color: 'var(--text-primary)' }}>二、信息使用</h2>
           <p>我们使用收集的信息用于：</p>

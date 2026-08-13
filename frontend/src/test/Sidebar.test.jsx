@@ -277,7 +277,7 @@ describe('Sidebar', () => {
     renderSidebar()
     expect(screen.queryByText('用户协议')).not.toBeInTheDocument()
     expect(screen.queryByText('隐私政策')).not.toBeInTheDocument()
-    expect(screen.queryByText('捐赠说明与积分规则')).not.toBeInTheDocument()
+    expect(screen.queryByText('充值说明与积分规则')).not.toBeInTheDocument()
   })
 
   it('fetches recharge pending count for admin', async () => {

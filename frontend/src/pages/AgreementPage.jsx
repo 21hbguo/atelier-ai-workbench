@@ -22,11 +22,11 @@ export default function AgreementPage() {
           <p>3. 用户应妥善保管账号信息，因账号泄露造成的损失由用户自行承担。</p>
           <p>4. 本平台保留冻结或删除违规账号的权利。</p>
 
-          <h2 className="text-base font-semibold mt-6" style={{ color: 'var(--text-primary)' }}>三、积分与捐赠支持</h2>
+          <h2 className="text-base font-semibold mt-6" style={{ color: 'var(--text-primary)' }}>三、积分与充值</h2>
           <p>1. 积分是本平台的站内虚拟权益，用于 AI 图像生成、提示词优化、图片续期等功能消耗。</p>
           <p>2. 新用户注册即赠送一定积分，每日签到可获得额外积分。</p>
-          <p>3. 用户可通过自愿捐赠支持平台运行，平台会按页面公示规则赠送对应积分。</p>
-          <p>4. 捐赠属于用户自愿支持行为，不构成商品购买、预付储值或持续服务承诺。</p>
+          <p>3. 用户可通过自愿充值支持平台运行，平台会按页面公示规则赠送对应积分。</p>
+          <p>4. 充值属于用户自愿支持行为，不构成商品购买、预付储值或持续服务承诺。</p>
           <p>5. 积分不可转让、不可提现、不可跨账号转移；如遇生成失败，系统将自动退还本次消耗积分。</p>
 
           <h2 className="text-base font-semibold mt-6" style={{ color: 'var(--text-primary)' }}>四、图片生成与存储</h2>

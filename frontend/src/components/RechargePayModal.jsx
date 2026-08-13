@@ -20,7 +20,7 @@ function getCountdownTone(seconds) {
 
 /**
  * 通用支付卡片（复用积分支持的支付交互：倒计时 + 二维码 + 订单号 + 轮询到账）
- * mode: 'recharge' 捐赠充值 / 'subscription' 套餐购买
+ * mode: 'recharge' 单次充值 / 'subscription' 套餐购买
  */
 export default function RechargePayModal({ open, onClose, request, payConfig, mode = 'recharge', planName = '', onRenew, onSuccess }) {
   const [countdown, setCountdown] = useState(0)

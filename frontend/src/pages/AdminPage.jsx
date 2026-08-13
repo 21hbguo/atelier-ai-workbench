@@ -548,15 +548,15 @@ export default function AdminPage() {
     }
     try {
       recharge_packages = Array.isArray(payload.recharge_packages) ? payload.recharge_packages : []
-      if (!Array.isArray(recharge_packages) || !recharge_packages.length) throw new Error('捐赠档位需要 JSON 数组且至少保留一项')
+      if (!Array.isArray(recharge_packages) || !recharge_packages.length) throw new Error('充值档位需要 JSON 数组且至少保留一项')
       recharge_packages = recharge_packages.map((item, idx) => {
-        if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error(`捐赠档位第 ${idx + 1} 项不是对象`)
+        if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error(`充值档位第 ${idx + 1} 项不是对象`)
         const amount = Number(item.amount), points = Number(item.points), label = String(item.label || `套餐${idx + 1}`).trim()
-        if (!(amount > 0) || !(points > 0) || !Number.isFinite(amount) || !Number.isFinite(points)) throw new Error(`捐赠档位第 ${idx + 1} 项金额或积分不合法`)
-        if (!label) throw new Error(`捐赠档位第 ${idx + 1} 项标题不能为空`)
+        if (!(amount > 0) || !(points > 0) || !Number.isFinite(amount) || !Number.isFinite(points)) throw new Error(`充值档位第 ${idx + 1} 项金额或积分不合法`)
+        if (!label) throw new Error(`充值档位第 ${idx + 1} 项标题不能为空`)
         return { amount: Math.round(amount * 100) / 100, points: Math.round(points), label }
       })
-    } catch (e) { dialog.alert(e.message || '捐赠档位 JSON 格式错误'); return }
+    } catch (e) { dialog.alert(e.message || '充值档位 JSON 格式错误'); return }
     let generation_models
     let generation_providers
     try {
@@ -1097,7 +1097,7 @@ export default function AdminPage() {
                     </div>
                   </div>
                   <div className="p-3 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
-                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>捐赠支持实收</div>
+                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>充值实收</div>
                     <div className="space-y-2 text-sm">
                       <div style={{ color: 'var(--text-primary)' }}>今日：¥{overviewStats?.revenue?.today_amount ?? 0} / {overviewStats?.revenue?.today_orders ?? 0}单</div>
                       <div style={{ color: 'var(--text-primary)' }}>7天：¥{overviewStats?.revenue?.days7_amount ?? 0} / {overviewStats?.revenue?.days7_orders ?? 0}单</div>
@@ -1119,7 +1119,7 @@ export default function AdminPage() {
                     </div>
                   </div>
                   <div className="p-3 rounded-2xl border" style={{ borderColor: 'var(--border-color)' }}>
-                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>{{all:'总计',today:'今日','7d':'近7天','30d':'近30天'}[statsRange] || '近7天'}捐赠支持Top用户</div>
+                    <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>{{all:'总计',today:'今日','7d':'近7天','30d':'近30天'}[statsRange] || '近7天'}充值Top用户</div>
                     <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
                       {(overviewStats?.leaderboards?.recharge_top || []).slice(0, 8).map((i, idx) => <div key={`r-${i.user_id}`} className="flex items-center justify-between text-sm gap-2"><span className="truncate" title={`${i.nickname || i.account || i.username}`} style={{ color: 'var(--text-primary)' }}>{idx + 1}. {i.nickname || i.account || i.username}</span><span className="shrink-0" style={{ color: 'var(--color-warning)' }}>¥{i.amount}</span></div>)}
                     </div>
@@ -1366,7 +1366,7 @@ export default function AdminPage() {
             <div>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>捐赠记录</h3>
+                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>充值记录</h3>
                   {rechargePendingCount > 0 && <span className="px-2 py-0.5 rounded-full text-[11px] text-white" style={{ background: 'var(--color-error)' }}>待审 {rechargePendingCount}</span>}
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -1396,7 +1396,7 @@ export default function AdminPage() {
               </div>
               {rechargePendingCount > 0 && (
                 <div className="mb-3 px-3 py-2 rounded-2xl border text-sm flex items-center justify-between gap-3" style={{ borderColor: 'var(--color-warning)', background: 'color-mix(in srgb, var(--color-warning) 12%, transparent)', color: 'var(--color-warning)' }}>
-                  <span>当前有 {rechargePendingCount} 条捐赠凭证待审核。</span>
+                  <span>当前有 {rechargePendingCount} 条充值凭证待审核。</span>
                   <button onClick={() => { setRechargeStatusFilter('pending'); setCodesPage(1) }} className="px-2 py-1 rounded-2xl text-xs font-medium text-white" style={{ background: 'var(--color-warning)' }}>直达待审</button>
                 </div>
               )}
@@ -1562,8 +1562,8 @@ export default function AdminPage() {
                   { k: 'points_register_bonus', l: '注册送分', min: 0 },
                   { k: 'points_migration_amount', l: '补发积分值', min: 0 },
                   { k: 'invite_register_reward_points', l: '邀请注册奖励', min: 0 },
-                  { k: 'invite_recharge_rebate_percent', l: '捐赠返利百分比', min: 0 },
-                  { k: 'invite_recharge_bonus_percent', l: '捐赠加赠百分比', min: 0 },
+                  { k: 'invite_recharge_rebate_percent', l: '充值返利百分比', min: 0 },
+                  { k: 'invite_recharge_bonus_percent', l: '充值加赠百分比', min: 0 },
                   { k: 'login_rate_limit_per_minute_per_ip', l: '登录限流/分钟/IP', min: 1 },
                   { k: 'register_rate_limit_per_minute_per_ip', l: '注册限流/分钟/IP', min: 1 },
                 ].map(item => (
@@ -1598,7 +1598,7 @@ export default function AdminPage() {
                   { k: 'image_hosting_referer', l: '图床 Referer' },
                   { k: 'wechat_pay_qr_url', l: '微信收款码 URL' },
                   { k: 'alipay_pay_qr_url', l: '支付宝收款码 URL' },
-                  { k: 'donation_contact', l: '捐赠联系方式' },
+                  { k: 'donation_contact', l: '充值联系方式' },
                 ].map(item => (
                   <div key={item.k}>
                     <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>{item.l}</label>
@@ -1631,12 +1631,12 @@ export default function AdminPage() {
                 ))}
               </div>
               <div className="mt-3">
-                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>捐赠支持提示文案</label>
+                <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>充值提示文案</label>
                 <textarea value={runtimeConfig.manual_recharge_notice} onChange={e => onConfigInput('manual_recharge_notice', e.target.value)} rows={3} className="w-full px-3 py-2 rounded-2xl text-sm border resize-none outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
               <div className="mt-3">
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs" style={{ color: 'var(--text-secondary)' }}>捐赠档位</label>
+                  <label className="block text-xs" style={{ color: 'var(--text-secondary)' }}>充值档位</label>
                   <button type="button" onClick={handleAddRechargePackage} className="px-2 py-1 rounded-lg text-xs font-medium border" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>新增套餐</button>
                 </div>
                 <div className="space-y-2">
@@ -1661,7 +1661,7 @@ export default function AdminPage() {
                   <input type="number" min="0.01" step="0.01" value={runtimeConfig.recharge_random_discount_max} onChange={e => onConfigInput('recharge_random_discount_max', e.target.value)} className="w-full px-3 py-2 rounded-2xl text-sm border outline-none" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
                 </div>
               </div>
-              <div className="text-[11px] mt-1" style={{ color: 'var(--text-secondary)' }}>用于控制每笔捐赠生成的随机减免范围，例如 0.01 到 0.50。</div>
+              <div className="text-[11px] mt-1" style={{ color: 'var(--text-secondary)' }}>用于控制每笔充值生成的随机减免范围，例如 0.01 到 0.50。</div>
             </div>
             <div className="p-4 rounded-2xl border" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-ai-bubble)' }}>
               <div className="flex items-center justify-between mb-3">

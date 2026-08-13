@@ -859,7 +859,7 @@ async def migrate_points(admin=Depends(require_admin)):
     return {"message": f"已为 {result['migrated']} 个用户补发积分", **result}
 
 
-# ============ 人工捐赠审核 ============
+# ============ 人工充值审核 ============
 
 @router.get("/recharge-requests")
 async def list_recharge_requests(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), status: str = Query("all"), query: str = Query(None), sort: str = Query("created_at"), order: str = Query("desc"), admin=Depends(require_admin)):
@@ -904,7 +904,7 @@ async def approve_recharge_request(request_id: int, body: dict, admin=Depends(re
     with get_db() as conn:
         row = conn.execute("SELECT * FROM recharge_requests WHERE id = %s", (request_id,)).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="捐赠申请不存在")
+            raise HTTPException(status_code=404, detail="充值申请不存在")
         item = dict(row)
         if item["status"] == "approved":
             return {"message": "该申请已审核通过", "code": item.get("redeem_code"), "points": item.get("points")}
@@ -917,7 +917,7 @@ async def approve_recharge_request(request_id: int, body: dict, admin=Depends(re
             raise HTTPException(status_code=400, detail="发放积分必须大于0")
         user_id = item["user_id"]
         if item.get("plan_id"):
-            # 套餐审核：激活订阅（周期积分由订阅周期发放，不走捐赠积分/兑换码）
+            # 套餐审核：激活订阅（周期积分由订阅周期发放，不走充值积分/兑换码）
             plan = get_plan_in_conn(conn, item["plan_id"])
             if not plan or not plan.get("enabled") or plan.get("is_free"):
                 raise HTTPException(status_code=400, detail="套餐不可用")
@@ -944,14 +944,14 @@ async def approve_recharge_request(request_id: int, body: dict, admin=Depends(re
             "UPDATE redemption_codes SET is_used = true, used_by = %s, used_at = %s WHERE id = %s",
             (user_id, now, code_id),
         )
-        PointsService.add_points(user_id, points, "redeem_code", f"捐赠审核通过 (¥{item['amount']})", conn=conn, request_key=f"recharge-approve:{request_id}", recharge_request_id=request_id)
+        PointsService.add_points(user_id, points, "redeem_code", f"充值审核通过 (¥{item['amount']})", conn=conn, request_key=f"recharge-approve:{request_id}", recharge_request_id=request_id)
         conn.execute(
             "UPDATE recharge_requests SET status = 'approved', points = %s, redeem_code = %s, review_note = %s, reviewed_at = %s, reviewed_by = %s WHERE id = %s",
             (points, code, review_note, now, admin["user_id"], request_id),
         )
         invite_result=InviteService.apply_recharge_rewards(conn,{**item,"points":base_points},item.get("submit_ip") or "")
         try:
-            NotificationService.create(user_id, "recharge_approved", "捐赠审核通过", f"你的捐赠凭证已通过审核，已发放 {points} 积分", str(request_id))
+            NotificationService.create(user_id, "recharge_approved", "充值审核通过", f"你的充值凭证已通过审核，已发放 {points} 积分", str(request_id))
             if item.get("inviter_user_id") and invite_result.get("rebate_points",0)>0:
                 NotificationService.create(item["inviter_user_id"], "invite_recharge_rebate", "邀请返利到账", f"你收到 {invite_result['rebate_points']} 积分返利", str(request_id))
         except Exception:
@@ -968,7 +968,7 @@ async def reject_recharge_request(request_id: int, body: dict, admin=Depends(req
     with get_db() as conn:
         row = conn.execute("SELECT status FROM recharge_requests WHERE id = %s", (request_id,)).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="捐赠申请不存在")
+            raise HTTPException(status_code=404, detail="充值申请不存在")
         if row["status"] != "pending":
             raise HTTPException(status_code=400, detail="仅待审核申请可拒绝")
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -979,11 +979,11 @@ async def reject_recharge_request(request_id: int, body: dict, admin=Depends(req
         user_row = conn.execute("SELECT user_id FROM recharge_requests WHERE id = %s", (request_id,)).fetchone()
         if user_row:
             try:
-                NotificationService.create(user_row["user_id"], "recharge_rejected", "捐赠审核未通过", f"你的捐赠凭证未通过审核：{review_note}", str(request_id))
+                NotificationService.create(user_row["user_id"], "recharge_rejected", "充值审核未通过", f"你的充值凭证未通过审核：{review_note}", str(request_id))
             except Exception:
                 pass
         logger.info(f"[audit.recharge.reject] request={request_id} admin={admin['user_id']} reason={review_note[:120]}")
-        return {"message": "已拒绝该捐赠凭证"}
+        return {"message": "已拒绝该充值凭证"}
 
 
 @router.post("/recharge-requests/{request_id}/refund")
@@ -992,7 +992,7 @@ async def refund_recharge_request(request_id: int, body: dict, admin=Depends(req
     with get_db() as conn:
         row = conn.execute("SELECT * FROM recharge_requests WHERE id = %s", (request_id,)).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="捐赠申请不存在")
+            raise HTTPException(status_code=404, detail="充值申请不存在")
         item = dict(row)
         if item["status"] != "approved":
             raise HTTPException(status_code=400, detail="仅已通过的申请可回退发放")
@@ -1010,7 +1010,7 @@ async def refund_recharge_request(request_id: int, body: dict, admin=Depends(req
             (review_note, now, admin["user_id"], request_id),
         )
         try:
-            NotificationService.create(user_id, "recharge_refunded", "积分已回退", f"你的捐赠发放已回退，扣除 {points} 积分", str(request_id))
+            NotificationService.create(user_id, "recharge_refunded", "积分已回退", f"你的充值发放已回退，扣除 {points} 积分", str(request_id))
         except Exception:
             pass
         logger.info(f"[audit.recharge.refund] request={request_id} admin={admin['user_id']} user={user_id} points={points}")
