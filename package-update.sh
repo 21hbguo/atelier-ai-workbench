@@ -74,8 +74,13 @@ CHANGED_FILES=$(find . -type f -newer "$LAST_PACKAGE_FILE" \
     ! -path './frontend/node_modules/*' \
     ! -path './__pycache__/*' \
     ! -path './.claude/*' \
+    ! -path './临时/*' \
+    ! -path './local_backup/*' \
+    ! -path './.pytest_cache/*' \
     ! -name '*.pyc' \
     ! -name '*.tar.gz' \
+    ! -name '.env' \
+    ! -name '.env.*' \
     ! -name '.last_*_package' \
     ! -name '.last_full_package' \
     ! -name '.last_incremental_package' \
@@ -101,6 +106,11 @@ EXCLUDES=(
     --exclude='*.tar.gz'
     --exclude='.claude'
     --exclude='markdown'
+    --exclude='.env'
+    --exclude='.env.*'
+    --exclude='临时'
+    --exclude='local_backup'
+    --exclude='.pytest_cache'
     --newer="$LAST_PACKAGE_FILE"
 )
 
