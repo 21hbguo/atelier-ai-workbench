@@ -9,6 +9,51 @@
 
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
+// 语法高亮：按需注册常用语言（hljs 核心不带语言，registerLanguage 会同时注册各语言声明的别名，
+// 如 js/ts/py/sh/html/md/c++ 等，用户写 ```js 也能命中 javascript）
+import hljs from 'highlight.js/lib/core'
+import javascript from 'highlight.js/lib/languages/javascript'
+import typescript from 'highlight.js/lib/languages/typescript'
+import python from 'highlight.js/lib/languages/python'
+import bash from 'highlight.js/lib/languages/bash'
+import json from 'highlight.js/lib/languages/json'
+import css from 'highlight.js/lib/languages/css'
+import xml from 'highlight.js/lib/languages/xml'
+import markdown from 'highlight.js/lib/languages/markdown'
+import sql from 'highlight.js/lib/languages/sql'
+import java from 'highlight.js/lib/languages/java'
+import go from 'highlight.js/lib/languages/go'
+import rust from 'highlight.js/lib/languages/rust'
+import cpp from 'highlight.js/lib/languages/cpp'
+import c from 'highlight.js/lib/languages/c'
+
+// 依赖 subLanguage（如 typescript/markdown 内嵌 xml、css）的语言放在依赖之后注册更稳妥
+hljs.registerLanguage('javascript', javascript)
+hljs.registerLanguage('typescript', typescript)
+hljs.registerLanguage('python', python)
+hljs.registerLanguage('bash', bash)
+hljs.registerLanguage('json', json)
+hljs.registerLanguage('css', css)
+hljs.registerLanguage('xml', xml)
+hljs.registerLanguage('markdown', markdown)
+hljs.registerLanguage('sql', sql)
+hljs.registerLanguage('java', java)
+hljs.registerLanguage('go', go)
+hljs.registerLanguage('rust', rust)
+hljs.registerLanguage('cpp', cpp)
+hljs.registerLanguage('c', c)
+
+// 代码块头部显示的语言名（友好短名；未收录则保持用户输入原样）
+const LANG_LABELS = {
+  javascript: 'js',
+  typescript: 'ts',
+  python: 'py',
+  bash: 'sh',
+  xml: 'html',
+  markdown: 'md',
+  cpp: 'cpp',
+  c: 'c',
+}
 
 // 公式占位符（私用区字符 \uE000 几乎不可能出现在用户文本中，且不被转义/其他正则干扰）
 const KATEX_RE = /\uE000K(\d+)\uE000/g
@@ -53,13 +98,40 @@ function escapeHtml(text) {
     .replace(/'/g, '&#39;')
 }
 
+// 代码块语法高亮：优先按指定语言（getLanguage 命中注册名/别名），未指定或未注册时自动检测；
+// hljs.highlight 内部会转义输入，直接对围栏内【原始文本】调用；任何失败退回 escapeHtml 纯文本。
+function highlightCode(code, lang) {
+  try {
+    if (lang && hljs.getLanguage(lang)) {
+      return hljs.highlight(code, { language: lang, ignoreIllegals: true }).value
+    }
+    return hljs.highlightAuto(code).value
+  } catch {
+    return escapeHtml(code)
+  }
+}
+
+// KaTeX 渲染结果缓存：key = 公式原始字符串 + displayMode，命中直接复用，避免重复 renderToString
+const KATEX_CACHE = new Map()
+const KATEX_CACHE_MAX = 500
+function renderKaTeX(latex, displayMode) {
+  const key = (displayMode ? 'd:' : 'i:') + latex
+  const cached = KATEX_CACHE.get(key)
+  if (cached !== undefined) return cached
+  const html = katex.renderToString(latex, { throwOnError: false, displayMode })
+  // 简单容量限制：缓存超限时整体清空重建，防止无界增长
+  if (KATEX_CACHE.size >= KATEX_CACHE_MAX) KATEX_CACHE.clear()
+  KATEX_CACHE.set(key, html)
+  return html
+}
+
 function restoreFormulas(html, formulas) {
   if (!formulas.length) return html
   return html.replace(KATEX_RE, (_, n) => {
     const f = formulas[Number(n)]
     if (!f) return ''
     try {
-      const inner = katex.renderToString(f.latex, { throwOnError: false, displayMode: f.display })
+      const inner = renderKaTeX(f.latex, f.display)
       const cls = f.display ? 'katex-clickable katex-display' : 'katex-clickable'
       return `<span class="${cls}" data-latex="${escapeHtml(f.latex)}" title="点击复制公式">${inner}</span>`
     } catch {
@@ -211,7 +283,7 @@ export function mdToHtml(text) {
     // 代码块（含语言标注）
     const fence = line.match(/^```([\w+-]*)\s*$/)
     if (fence) {
-      const lang = fence[1] ? ` class="language-${fence[1]}"` : ''
+      const rawLang = fence[1]
       const buf = []
       let closed = false
       i++
@@ -221,7 +293,13 @@ export function mdToHtml(text) {
         i++
       }
       if (closed) {
-        out.push(`<pre><code${lang}>${escapeHtml(buf.join('\n'))}</code></pre>`)
+        // 围栏内提取原始文本 → hljs 高亮（内部自转义）→ 输出；失败则退回 escapeHtml 纯文本
+        const code = buf.join('\n')
+        const label = rawLang ? (LANG_LABELS[rawLang.toLowerCase()] || rawLang) : ''
+        const langAttr = rawLang ? ` language-${rawLang}` : ''
+        out.push(
+          `<pre class="md-code-block"><div class="md-code-header"><span class="md-code-lang">${escapeHtml(label)}</span><span class="md-code-actions"><button type="button" class="md-copy-btn">复制</button><button type="button" class="md-download-btn">下载</button></span></div><code class="hljs${langAttr}">${highlightCode(code, rawLang)}</code></pre>`
+        )
         continue
       }
       // 未闭合（流式输出中间态）：按普通文本渲染，避免吞掉后续内容
@@ -244,7 +322,9 @@ export function mdToHtml(text) {
           html += '</tr>'
         }
         html += '</tbody></table>'
-        out.push(html)
+        out.push(
+          `<div class="md-table-wrap"><div class="md-table-actions"><button type="button" class="md-table-copy-btn">复制</button><button type="button" class="md-table-download-btn">下载</button></div>${html}</div>`
+        )
         continue
       }
     }
