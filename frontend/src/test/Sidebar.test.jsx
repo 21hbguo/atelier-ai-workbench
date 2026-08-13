@@ -359,4 +359,23 @@ describe('Sidebar', () => {
     expect(chatCreateSessionMock).not.toHaveBeenCalled()
     dispatchSpy.mockRestore()
   })
+
+  it('does not highlight AI 绘画 on /chat page', () => {
+    mockLocation = { pathname: '/chat', search: '' }
+    renderSidebar()
+    const drawLink = screen.getByText('AI 绘画').closest('a')
+    expect(drawLink.style.color).not.toBe('var(--accent)')
+    expect(drawLink.className).not.toContain('bg-accent/10')
+    // AI 助手自身保持高亮
+    const chatLink = screen.getByText('AI 助手').closest('a')
+    expect(chatLink.style.color).toBe('var(--accent)')
+  })
+
+  it('keeps group highlight of AI 绘画 on draw sub pages', () => {
+    mockLocation = { pathname: '/works', search: '' }
+    renderSidebar()
+    const drawLink = screen.getByText('AI 绘画').closest('a')
+    expect(drawLink.style.color).toBe('var(--accent)')
+    expect(drawLink.className).toContain('bg-accent/10')
+  })
 })

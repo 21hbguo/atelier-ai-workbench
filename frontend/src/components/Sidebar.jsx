@@ -128,7 +128,8 @@ export default function Sidebar({ open, onClose }) {
           <nav className="flex-1 px-2 py-2 space-y-0.5 overflow-y-auto">
             {navItems.map(({ path, icon: Icon, label, shortLabel }) => {
               const active = location.pathname === path
-              const groupActive = path === '/draw' && subNavVisible && !active
+              // 「AI 绘画」仅在绘画相关子页面（/works、/square、/prompts、/notifications 等）保持组高亮；/chat 属于 AI 助手，不应高亮 AI 绘画
+              const groupActive = path === '/draw' && SUB_NAV_PATHS.includes(location.pathname) && !active
               return (
                 <Link key={path} to={path}
                   className={`sidebar-nav-link ${collapsed ? 'flex-col items-center !h-auto !gap-0.5 !py-1 text-center' : ''} ${(active || groupActive) ? 'bg-accent/10' : 'hover:bg-bg-hover'}`}
