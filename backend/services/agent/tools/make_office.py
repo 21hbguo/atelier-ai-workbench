@@ -10,9 +10,12 @@
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+import shutil
 import urllib.parse
+import uuid
 from pathlib import Path
 
 from backend.services import document_parser
@@ -95,8 +98,12 @@ def _cleanup(path: Path) -> None:
         logger.warning("[make_office] 清理失败: %s", path)
 
 
-async def _run_make(ctx, args, *, tool_label: str, ext: str, validate, build, describe) -> str:
-    """三个 Office 工具的公共执行骨架：权限/登录 → 路径 → 参数校验 → 生成 → 回读 → 发送。"""
+async def _run_make(ctx, args, *, tool_label: str, ext: str, validate, build, describe, pdf_preview: bool = False) -> str:
+    """三个 Office 工具的公共执行骨架：权限/登录 → 路径 → 参数校验 → 生成 → 回读 → 发送。
+
+    pdf_preview=True（仅 make_pptx 使用）：主文件发送成功后尝试用 soffice 转 PDF 预览
+    一并发送；转换失败/超时/soffice 不可用则静默降级，只发主文件（行为兼容）。
+    """
     if not _has_file_write(ctx):
         return "当前套餐不支持文件写入。"
     user_id = _user_id_or_none(ctx)
@@ -142,8 +149,78 @@ async def _run_make(ctx, args, *, tool_label: str, ext: str, validate, build, de
     # quote 默认不编码 "/"，正好保留相对路径层级（如 docs/报表.xlsx）
     url = f"/api/workspace/files/download?path={urllib.parse.quote(filename)}"
     ctx.add_file(filename=path.name, url=url, size=size, description=describe(args))
+    msg = f"已生成并发送【{path.name}】（{size} 字节），用户可在聊天中下载。"
+    # PDF 预览（仅 PPT）：soffice 转出 .pdf 一并发送，先 .pptx 后 .pdf；失败/超时/不可用只发主文件
+    if pdf_preview:
+        pdf_path = await _convert_pptx_to_pdf(path, path.parent)
+        if pdf_path is not None:
+            try:
+                pdf_size = os.path.getsize(pdf_path)
+            except OSError as exc:
+                logger.warning("[make_office] %s 读取 PDF 预览失败: %s", tool_label, exc)
+                pdf_size = -1
+            if 0 < pdf_size <= MAX_SEND_BYTES:
+                pdf_rel = str(Path(filename).with_suffix(".pdf"))  # 与主文件同目录同 basename
+                pdf_url = f"/api/workspace/files/download?path={urllib.parse.quote(pdf_rel)}"
+                ctx.add_file(filename=pdf_path.name, url=pdf_url, size=pdf_size, description="PPT 预览（PDF）")
+                msg += "（已附 PDF 预览版）"
+            else:
+                _cleanup(pdf_path)  # 预览过大或不可读：删掉，只发主文件
     logger.info("[make_office] %s 已生成并发送 %s（%d bytes）", tool_label, filename, size)
-    return f"已生成并发送【{path.name}】（{size} 字节），用户可在聊天中下载。\n文件内容预览：\n{preview}"
+    return f"{msg}\n文件内容预览：\n{preview}"
+
+
+# ---------- PPT PDF 预览（LibreOffice 转换，仅 make_pptx 使用）----------
+
+_PPTX_PDF_TIMEOUT = 60  # soffice 转换超时（秒），超时视为失败降级
+
+
+async def _convert_pptx_to_pdf(pptx_path: Path, out_dir: Path) -> Path | None:
+    """用 LibreOffice headless 把 .pptx 转成 .pdf 预览版；soffice 不可用/失败/超时返回 None（不抛异常）。
+
+    - 路径经 shutil.which("soffice") 探测，找不到直接返回 None；
+    - 每个转换用独立 UserInstallation（file:///tmp/lo_profile_<uuid>），避免并发转换
+      争用同一配置文件目录导致锁冲突/卡死；
+    - 转换前删除同名旧 pdf，防止转换失败时误判成功；
+    - 成功后返回 out_dir / (pptx_path.stem + ".pdf")，文件不存在返回 None。
+    """
+    soffice = shutil.which("soffice")
+    if not soffice:
+        return None
+    pdf_path = out_dir / (pptx_path.stem + ".pdf")
+    pdf_path.unlink(missing_ok=True)  # 清掉旧预览，转换失败时不误判
+    cmd = [
+        soffice,
+        f"-env:UserInstallation=file:///tmp/lo_profile_{uuid.uuid4().hex}",
+        "--headless",
+        "--convert-to", "pdf",
+        "--outdir", str(out_dir),
+        str(pptx_path),
+    ]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=_PPTX_PDF_TIMEOUT)
+        except asyncio.TimeoutError:
+            logger.warning("[make_office] soffice 转换 PDF 超时（>%ss），已终止进程", _PPTX_PDF_TIMEOUT)
+            try:
+                proc.kill()
+                await proc.wait()
+            except OSError:
+                pass
+            return None
+        if proc.returncode != 0:
+            detail = (stderr or b"").decode("utf-8", "replace")[:500]
+            logger.warning("[make_office] soffice 转换 PDF 失败（returncode=%s）: %s", proc.returncode, detail)
+            return None
+    except OSError as exc:
+        logger.warning("[make_office] soffice 转换 PDF 启动失败: %s", exc)
+        return None
+    if not pdf_path.is_file():
+        return None
+    return pdf_path
 
 
 # ---------- make_xlsx ----------
@@ -544,8 +621,8 @@ def _pptx_description(args: dict) -> str:
     if len(titles) > 3:
         shown += " 等"
     if shown:
-        return f"PPT 演示文稿：{shown}"
-    return f"PPT 演示文稿（共 {len(slides)} 页）"
+        return f"PPT 演示文稿（可编辑）：{shown}"
+    return f"PPT 演示文稿（可编辑），共 {len(slides)} 页"
 
 
 # ---------- 工具注册 ----------
@@ -756,4 +833,5 @@ async def make_pptx(args: dict, ctx: AgentContext) -> str:
         ctx, args,
         tool_label="make_pptx", ext="pptx",
         validate=_validate_pptx_args, build=_build_pptx, describe=_pptx_description,
+        pdf_preview=True,  # 生成后附带 soffice 转出的 PDF 预览版
     )

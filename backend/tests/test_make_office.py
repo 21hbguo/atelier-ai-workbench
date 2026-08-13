@@ -8,6 +8,7 @@ openpyxl / python-docx / python-pptx 读回验证内容，且 ctx.files 入队 1
 """
 import asyncio
 import os
+import shutil
 import urllib.parse
 
 import pytest
@@ -208,12 +209,16 @@ def test_make_pptx_success_enqueues(ws):
     }
     result = _run(make_pptx(args, ctx))
     assert "已生成并发送【deck.pptx】" in result
-    assert len(ctx.files) == 1
+    assert len(ctx.files) >= 1  # 本地有 soffice 时还会附 PDF 预览（共 2 条），无则 1 条
     f = ctx.files[0]
     assert f["filename"] == "deck.pptx"
     assert f["url"] == "/api/workspace/files/download?path=deck.pptx"
     assert f["size"] == os.path.getsize(_root(ws) / "deck.pptx")
     assert "PPT 演示文稿" in f["description"]
+    if len(ctx.files) == 2:  # soffice 可用：第二条是 PDF 预览
+        pdf = ctx.files[1]
+        assert pdf["filename"] == "deck.pdf"
+        assert pdf["description"] == "PPT 预览（PDF）"
     # python-pptx 读回验证内容
     prs = Presentation(str(_root(ws) / "deck.pptx"))
     assert len(prs.slides) == 2
@@ -225,6 +230,48 @@ def test_make_pptx_success_enqueues(ws):
     assert body is not None
     assert [p.text for p in body.text_frame.paragraphs] == ["要点1", "要点2"]
     assert prs.slides[1].notes_slide.notes_text_frame.text == "演讲备注"
+
+
+# ---------- PPT PDF 预览（soffice 转换，仅 make_pptx）----------
+
+@pytest.mark.skipif(shutil.which("soffice") is None, reason="本机未安装 LibreOffice（soffice），跳过 PDF 预览用例")
+def test_make_pptx_pdf_preview_generated(ws):
+    """真实调用 soffice：转换成功 → PDF 落盘非空、ctx.files 先 .pptx 后 .pdf、返回文本含 PDF。"""
+    ctx = _ctx()
+    args = {
+        "filename": "preview.pptx",
+        "slides": [
+            {"title": "封面", "layout": "title"},
+            {"title": "内容页", "bullets": ["要点1", "要点2"]},
+        ],
+    }
+    result = _run(make_pptx(args, ctx))
+    assert "已生成并发送【preview.pptx】" in result
+    assert "PDF" in result  # 转换成功时返回文本注明已附 PDF 预览版
+    assert len(ctx.files) == 2  # 先 .pptx 后 .pdf
+    pptx_f = ctx.files[0]
+    assert pptx_f["filename"] == "preview.pptx"
+    assert "可编辑" in pptx_f["description"]
+    pdf_f = ctx.files[1]
+    assert pdf_f["filename"] == "preview.pdf"
+    assert pdf_f["description"] == "PPT 预览（PDF）"
+    assert pdf_f["url"] == "/api/workspace/files/download?path=preview.pdf"
+    pdf_file = _root(ws) / "preview.pdf"
+    assert pdf_file.is_file()  # PDF 真实落盘
+    assert pdf_file.stat().st_size > 0  # 非空
+    assert pdf_f["size"] == pdf_file.stat().st_size
+
+
+def test_make_pptx_pdf_fallback_when_soffice_missing(ws, monkeypatch):
+    """soffice 不可用：正常降级，只发 .pptx，返回文本无 PDF 相关提示/错误。"""
+    monkeypatch.setattr(shutil, "which", lambda name: None)  # 模拟 soffice 不存在
+    ctx = _ctx()
+    result = _run(make_pptx({"filename": "fallback.pptx", "slides": [{"title": "T"}]}, ctx))
+    assert "已生成并发送【fallback.pptx】" in result
+    assert "PDF" not in result  # 正常降级：不出现 PDF 相关提示/错误
+    assert len(ctx.files) == 1  # 只发送 .pptx
+    assert ctx.files[0]["filename"] == "fallback.pptx"
+    assert not (_root(ws) / "fallback.pdf").exists()
 
 
 # ---------- 默认美观模板（theme 主题） ----------
