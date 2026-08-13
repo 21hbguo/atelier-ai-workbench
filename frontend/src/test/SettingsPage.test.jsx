@@ -59,9 +59,14 @@ describe('SettingsPage', () => {
     expect(screen.getByText('确认修改')).toBeInTheDocument()
   })
 
-  it('renders session history section', async () => {
+  it('hides recent login sessions section but still fetches sessions for risk warning', async () => {
+    mockSessions([
+      { id: 's1', ip: '1.2.3.4', user_agent: 'Chrome/120', risk_level: 'low', is_current: true, created_at: '2025-01-01T12:00:00+08:00' },
+    ])
     renderPage()
-    expect(screen.getByText('最近登录会话')).toBeInTheDocument()
+    expect(screen.queryByText('最近登录会话')).not.toBeInTheDocument()
+    expect(screen.queryByText('1.2.3.4')).not.toBeInTheDocument()
+    expect(screen.queryByText('暂无记录')).not.toBeInTheDocument()
     await waitFor(() => expect(sessionsMock).toHaveBeenCalled())
   })
 
@@ -105,29 +110,6 @@ describe('SettingsPage', () => {
     await waitFor(() => expect(alertMock).toHaveBeenCalledWith('旧密码错误'))
   })
 
-  it('shows loading state initially', async () => {
-    sessionsMock.mockReturnValue(new Promise(() => {}))
-    renderPage()
-    expect(screen.getByText('加载中...')).toBeInTheDocument()
-  })
-
-  it('shows empty state when no sessions', async () => {
-    mockSessions([])
-    renderPage()
-    await waitFor(() => expect(screen.getByText('暂无记录')).toBeInTheDocument())
-  })
-
-  it('renders session items with IP and user agent', async () => {
-    mockSessions([
-      { id: 's1', ip: '1.2.3.4', user_agent: 'Chrome/120', risk_level: 'low', is_current: true, created_at: '2025-01-01T12:00:00+08:00' },
-    ])
-    renderPage()
-    await waitFor(() => expect(screen.getByText('1.2.3.4')).toBeInTheDocument())
-    expect(screen.getByText('Chrome/120')).toBeInTheDocument()
-    expect(screen.getByText('当前')).toBeInTheDocument()
-    expect(screen.getByText('low')).toBeInTheDocument()
-  })
-
   it('shows risk warning when a session has high risk', async () => {
     mockSessions([
       { id: 's1', ip: '1.2.3.4', user_agent: 'Chrome', risk_level: 'high', is_current: false, created_at: '2025-01-01T12:00:00+08:00' },
@@ -141,21 +123,8 @@ describe('SettingsPage', () => {
       { id: 's1', ip: '1.2.3.4', user_agent: 'Chrome', risk_level: 'low', is_current: true, created_at: '2025-01-01T12:00:00+08:00' },
     ])
     renderPage()
-    await waitFor(() => expect(screen.getByText('1.2.3.4')).toBeInTheDocument())
+    await waitFor(() => expect(sessionsMock).toHaveBeenCalled())
     expect(screen.queryByText(/检测到近24小时/)).not.toBeInTheDocument()
   })
 
-  it('shows unknown IP fallback when ip is missing', async () => {
-    mockSessions([
-      { id: 's1', ip: '', user_agent: 'Firefox', risk_level: 'low', is_current: false, created_at: '2025-01-01T12:00:00+08:00' },
-    ])
-    renderPage()
-    await waitFor(() => expect(screen.getByText('未知IP')).toBeInTheDocument())
-  })
-
-  it('shows alert on session fetch failure', async () => {
-    sessionsMock.mockRejectedValue(new Error('网络错误'))
-    renderPage()
-    await waitFor(() => expect(alertMock).toHaveBeenCalledWith('网络错误'))
-  })
 })

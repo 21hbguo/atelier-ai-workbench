@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ShieldAlert, KeyRound } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
-import Pagination from '../components/Pagination'
 import { accountAPI } from '../api'
 import { useAppDialog } from '../components/AppDialogProvider'
 
@@ -10,25 +9,12 @@ export default function SettingsPage() {
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  // 会话数据仅用于多 IP 风险提示（最近登录会话列表已隐藏）
   const [sessions, setSessions] = useState([])
-  const [page, setPage] = useState(1)
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(false)
-  const size = 10
 
-  const fetchSessions = async (p = 1) => {
-    setLoading(true)
-    try {
-      const { data } = await accountAPI.sessions(p, size)
-      setSessions(data.items || [])
-      setTotal(data.total || 0)
-    } catch (e) {
-      dialog.alert(e.message || '加载失败')
-    }
-    setLoading(false)
-  }
-
-  useEffect(() => { fetchSessions(page) }, [page])
+  useEffect(() => {
+    accountAPI.sessions(1, 10).then(({ data }) => setSessions(data.items || [])).catch(() => {})
+  }, [])
 
   const onChangePassword = async () => {
     if (!oldPassword || !newPassword) return
@@ -104,63 +90,6 @@ export default function SettingsPage() {
             </div>
           )}
 
-          <div className="p-4 rounded-2xl border" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
-            <div className="text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>最近登录会话</div>
-            {loading ? (
-              <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>加载中...</div>
-            ) : sessions.length === 0 ? (
-              <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>暂无记录</div>
-            ) : (
-              <div className="space-y-2">
-                {sessions.map(s => (
-                  <div
-                    key={s.id}
-                    className="p-3 rounded-2xl border"
-                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-xs" style={{ color: 'var(--text-primary)' }}>
-                        {s.ip || '未知IP'}
-                        {s.is_current && (
-                          <span
-                            className="ml-2 px-1.5 py-0.5 rounded-full text-[10px] text-white"
-                            style={{ background: 'var(--accent)' }}
-                          >
-                            当前
-                          </span>
-                        )}
-                      </div>
-                      <div
-                        className="text-[10px]"
-                        style={{
-                          color: s.risk_level === 'high'
-                            ? 'var(--color-error)'
-                            : s.risk_level === 'medium'
-                              ? 'var(--color-warning)'
-                              : 'var(--color-success)',
-                        }}
-                      >
-                        {s.risk_level}
-                      </div>
-                    </div>
-                    <div className="text-[11px] mt-1" style={{ color: 'var(--text-secondary)' }}>
-                      {s.user_agent || '-'}
-                    </div>
-                    <div className="text-[11px] mt-1" style={{ color: 'var(--text-secondary)' }}>
-                      登录时间：{(() => {
-                        const v = String(s.created_at || '')
-                        const withTz = v.includes('T')
-                          ? (v.includes('+') || v.includes('Z') ? v : v + '+08:00')
-                          : v.replace(' ', 'T') + '+08:00'
-                        return new Date(withTz).toLocaleString('zh-CN')
-                      })()}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            <Pagination page={page} totalPages={Math.max(1, Math.ceil(total / size))} onPageChange={setPage} />
-          </div>
         </div>
       </div>
     </MainLayout>
