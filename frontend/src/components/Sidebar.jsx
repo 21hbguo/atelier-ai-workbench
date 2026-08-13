@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useLocation, Link, useNavigate } from 'react-router-dom'
-import { Sun, Moon, BookOpen, Sparkles, Image, X, Globe, LogOut, User, Shield, Coins, Crown, Wallet, Settings, LayoutGrid, MessageCircle, Bell, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Sun, Moon, BookOpen, Sparkles, Image, X, Globe, LogOut, User, Shield, Crown, Wallet, Settings, LayoutGrid, MessageCircle, Bell, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useTheme } from '../ThemeContext'
 import { useLayoutMode } from '../LayoutModeContext'
 import { announcementAPI, authAPI, pointsAPI, notificationAPI, subscriptionAPI } from '../api'
@@ -163,34 +163,26 @@ export default function Sidebar({ open, onClose }) {
                 <button
                   type="button"
                   title={hasPlan ? `${subscription.plan.name} · 点击管理套餐` : '免费版 · 开通套餐'}
-                  className={`group flex flex-col w-full rounded-xl border transition-all hover:bg-bg-hover cursor-pointer ${collapsed ? 'items-center justify-center py-2' : 'px-2 py-2'}`}
+                  className={`group flex flex-col w-full rounded-xl border transition-all hover:bg-bg-hover cursor-pointer text-left ${collapsed ? 'items-center justify-center py-2' : 'px-2 py-2'}`}
                   style={{ borderColor: 'color-mix(in srgb, var(--accent) 25%, transparent)' }}
                   onClick={() => setSubOpen(true)}
                 >
-                  <div className="flex items-center gap-1.5">
-                    {hasPlan ? (
-                      <Crown size={12} className="shrink-0" style={{ color: 'var(--accent)' }} />
-                    ) : (
-                      <Coins size={12} className="shrink-0" style={{ color: 'var(--accent)' }} />
-                    )}
-                    {!collapsed && (
-                      <>
-                        <span className="text-[11px] font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
-                          {hasPlan ? subscription.plan.name : '免费版 · 开通套餐'}
-                        </span>
-                        <span className="ml-auto text-[9px] font-semibold opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: 'var(--accent)' }}>查看 →</span>
-                      </>
-                    )}
+                  <div className={`flex items-center gap-1.5 ${collapsed ? 'flex-col' : ''}`}>
+                    {hasPlan && <Crown size={12} className="shrink-0" style={{ color: 'var(--accent)' }} />}
+                    <span className={`font-semibold truncate max-w-full ${collapsed ? 'text-[10px] leading-none text-center' : 'text-[11px]'}`} style={{ color: 'var(--text-primary)' }}>
+                      {hasPlan ? subscription.plan.name : (collapsed ? '免费版' : '免费版 · 开通套餐')}
+                    </span>
                   </div>
                   {!collapsed && (
-                    <div className="text-[10px] truncate" style={{ color: 'var(--text-secondary)' }}>
-                      {hasPlan ? `周期至 ${formatDate(subscription.cycle?.period_end)}` : '解锁更多模型 · 不限次数'}
+                    <div className="text-[10px] leading-snug mt-1" style={{ color: 'var(--text-secondary)' }}>
+                      <div className="truncate">{dailyTotal === null ? '不限次' : dailyTotal > 0 ? `今日已用 ${Math.max(0, dailyTotal - dailyRemaining)}/${dailyTotal} 次` : (hasPlan ? `周期至 ${formatDate(subscription.cycle?.period_end)}` : '解锁更多模型')}</div>
+                      <div className="truncate">{points} 积分</div>
                     </div>
                   )}
                 </button>
               )
             })()}
-            {/* 用户行：圆形头像 + 昵称 */}
+            {/* 用户行：圆形头像 + 账户名 */}
             {user && (
               <Link
                 to="/account"
@@ -202,14 +194,8 @@ export default function Sidebar({ open, onClose }) {
                   <User size={14} />
                 </span>
                 {!collapsed && (
-                  <span className="ml-1 min-w-0 flex-1 text-left leading-tight">
-                    {dailyTotal === null ? (
-                      <span className="block text-[10px]" title="AI 助手不限次数">不限次 · {points} 积分</span>
-                    ) : dailyTotal > 0 ? (
-                      <span className="block text-[10px]" title="今日 AI 助手已用次数/总次数（用完后将扣除积分）">今日已用 {Math.max(0, dailyTotal - dailyRemaining)}/{dailyTotal} 次 · {points} 积分</span>
-                    ) : (
-                      <span className="block text-[10px]">{points} 积分</span>
-                    )}
+                  <span className="ml-1 min-w-0 flex-1 text-left">
+                    <span className="block truncate text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{user.nickname || user.account || user.username}</span>
                   </span>
                 )}
               </Link>

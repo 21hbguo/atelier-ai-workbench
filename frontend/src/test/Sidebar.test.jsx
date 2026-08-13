@@ -145,11 +145,11 @@ describe('Sidebar', () => {
     expect(screen.getByText('AI 助手')).toBeInTheDocument()
   })
 
-  it('does not display user nickname in sidebar footer', () => {
+  it('displays account name in sidebar footer', () => {
     renderSidebar()
-    // 左下角用户行不显示用户名/昵称（只显示次数与积分）
-    expect(screen.queryByText('测试员')).not.toBeInTheDocument()
-    expect(screen.queryByText('tester')).not.toBeInTheDocument()
+    // 左下角用户行显示账户名（昵称优先）
+    expect(screen.getByText('测试员')).toBeInTheDocument()
+    expect(screen.queryByText('今日已用')).not.toBeInTheDocument()
   })
 
   it('keeps account link even without nickname', () => {

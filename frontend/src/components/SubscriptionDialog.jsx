@@ -233,13 +233,10 @@ export default function SubscriptionDialog({ open, onClose }) {
                               )}
                             </div>
                           )}
-                          <div className="mt-1 text-[11px] flex-1" style={{ color: 'var(--text-secondary)' }}>
-                            {[plan.features?.web_search && '联网搜索', plan.features?.file_upload && '文件上传', plan.features?.file_write && '文件写入'].filter(Boolean).join(' · ') || '基础功能'}
-                          </div>
                           <button
                             type="button"
                             onClick={() => startPay(plan)}
-                            className={`mt-4 w-full flex items-center justify-center px-3 py-2 rounded-2xl text-sm font-medium transition-all ${isCurrent ? 'opacity-60' : 'text-white'}`}
+                            className={`mt-auto pt-4 w-full flex items-center justify-center px-3 py-2 rounded-2xl text-sm font-medium transition-all ${isCurrent ? 'opacity-60' : 'text-white'}`}
                             style={isCurrent ? { border: '1px solid var(--border-color)', color: 'var(--text-secondary)', background: 'transparent' } : { background: 'var(--accent)' }}
                           >
                             {plan.is_free ? '免费使用' : isCurrent ? '当前套餐' : '购买 / 续费'}
