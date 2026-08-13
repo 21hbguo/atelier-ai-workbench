@@ -290,20 +290,16 @@ async def app_push_callback(t: str, type: str, price: str, sign: str):
         return "fail"
     channel = "wechat" if type == "1" else "alipay"
     paid_amount = float(price)
-    import math
-    base_amount = math.ceil(paid_amount)
-    discount = round(base_amount - paid_amount, 2)
-    discount_range=get_recharge_random_discount_range()
-    if discount < discount_range["min"] or discount > discount_range["max"]:
-        logger.warning(f"[appPush] discount 超出范围 paid={paid_amount} discount={discount}")
-        return "success"
+    plan_name = None
+    # 按实付金额区间匹配（而非反推 discount）：套餐原价非整数（如 ¥9.9）时反推必然失配，
+    # 金额匹配对整数/非整数原价均成立；随机折扣机制不受影响
     with get_db() as conn:
         row = conn.execute(
-            "SELECT * FROM recharge_requests WHERE channel = %s AND discount = %s AND status = 'pending' AND created_at >= NOW() - interval '10 minutes' ORDER BY created_at ASC LIMIT 1",
-            (channel, discount),
+            "SELECT * FROM recharge_requests WHERE channel = %s AND status = 'pending' AND ABS(amount - %s) < 0.01 AND created_at >= NOW() - interval '10 minutes' ORDER BY created_at ASC LIMIT 1",
+            (channel, paid_amount),
         ).fetchone()
         if not row:
-            logger.warning(f"[appPush] 未匹配到 channel={channel} discount={discount} price={paid_amount}")
+            logger.warning(f"[appPush] 未匹配到 channel={channel} price={paid_amount}")
             return "success"
         item = dict(row)
         request_id = item["id"]
@@ -317,33 +313,53 @@ async def app_push_callback(t: str, type: str, price: str, sign: str):
             return "success"
         from datetime import datetime
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        while True:
-            code = secrets.token_urlsafe(8).upper()
-            if not conn.execute("SELECT id FROM redemption_codes WHERE code = %s", (code,)).fetchone():
-                break
-        conn.execute(
-            "INSERT INTO redemption_codes (code, points, recharge_request_id) VALUES (%s, %s, %s)",
-            (code, points, request_id),
-        )
-        code_id = conn.execute("SELECT id FROM redemption_codes WHERE code = %s", (code,)).fetchone()["id"]
-        conn.execute(
-            "UPDATE redemption_codes SET is_used = true, used_by = %s, used_at = %s WHERE id = %s",
-            (user_id, now, code_id),
-        )
-        PointsService.add_points(
-            user_id, points, "redeem_code", f"VMQ自动到账 (¥{paid_amount})",
-            conn=conn, request_key=f"vmq-appPush:{request_id}", recharge_request_id=request_id,
-        )
-        conn.execute(
-            "UPDATE recharge_requests SET status = 'approved', review_note = %s, reviewed_at = %s WHERE id = %s",
-            (f"VMQ自动到账 discount={discount}", now, request_id),
-        )
-        invite_result = InviteService.apply_recharge_rewards(conn, item, item.get("submit_ip") or "")
+
+        if item.get("plan_id"):
+            # 套餐支付自动到账：激活订阅（周期积分由订阅周期发放）
+            from backend.services.subscription_service import activate_plan_in_conn, get_plan_in_conn
+            plan = get_plan_in_conn(conn, item["plan_id"])
+            if not plan or not plan.get("enabled") or plan.get("is_free"):
+                logger.warning(f"[appPush] 套餐不可用 request={request_id} plan_id={item['plan_id']}")
+                return "success"
+            activation = activate_plan_in_conn(conn, user_id, plan)
+            conn.execute(
+                "UPDATE recharge_requests SET status = 'approved', review_note = %s, reviewed_at = %s WHERE id = %s",
+                (f"VMQ自动到账 ¥{paid_amount}，已激活「{plan['name']}」", now, request_id),
+            )
+            plan_name = plan["name"]
+            logger.info(f"[appPush] 套餐自动到账 request={request_id} user={user_id} plan={plan['name']} activation={activation}")
+        else:
+            while True:
+                code = secrets.token_urlsafe(8).upper()
+                if not conn.execute("SELECT id FROM redemption_codes WHERE code = %s", (code,)).fetchone():
+                    break
+            conn.execute(
+                "INSERT INTO redemption_codes (code, points, recharge_request_id) VALUES (%s, %s, %s)",
+                (code, points, request_id),
+            )
+            code_id = conn.execute("SELECT id FROM redemption_codes WHERE code = %s", (code,)).fetchone()["id"]
+            conn.execute(
+                "UPDATE redemption_codes SET is_used = true, used_by = %s, used_at = %s WHERE id = %s",
+                (user_id, now, code_id),
+            )
+            PointsService.add_points(
+                user_id, points, "redeem_code", f"VMQ自动到账 (¥{paid_amount})",
+                conn=conn, request_key=f"vmq-appPush:{request_id}", recharge_request_id=request_id,
+            )
+            conn.execute(
+                "UPDATE recharge_requests SET status = 'approved', review_note = %s, reviewed_at = %s WHERE id = %s",
+                (f"VMQ自动到账 ¥{paid_amount}", now, request_id),
+            )
+            invite_result = InviteService.apply_recharge_rewards(conn, item, item.get("submit_ip") or "")
+    # 事务外发通知：避免通知 INSERT 的外键锁与套餐激活的 users FOR UPDATE 锁死锁
     try:
-        NotificationService.create(user_id, "recharge_approved", "充值成功", f"你的 ¥{paid_amount} 充值已到账，获得 {points} 积分", str(request_id))
-        if item.get("inviter_user_id") and invite_result.get("rebate_points", 0) > 0:
-            NotificationService.create(item["inviter_user_id"], "invite_recharge_rebate", "邀请返利到账", f"你收到 {invite_result['rebate_points']} 积分返利", str(request_id))
+        if plan_name:
+            NotificationService.create(user_id, "subscription_approved", "套餐已生效", f"你的「{plan_name}」套餐已自动激活，周期积分已发放", str(request_id))
+        else:
+            NotificationService.create(user_id, "recharge_approved", "充值成功", f"你的 ¥{paid_amount} 充值已到账，获得 {points} 积分", str(request_id))
+            if item.get("inviter_user_id") and invite_result.get("rebate_points", 0) > 0:
+                NotificationService.create(item["inviter_user_id"], "invite_recharge_rebate", "邀请返利到账", f"你收到 {invite_result['rebate_points']} 积分返利", str(request_id))
     except Exception:
         pass
-    logger.info(f"[appPush] 自动到账 request={request_id} user={user_id} points={points} paid={paid_amount} discount={discount}")
+    logger.info(f"[appPush] 自动到账 request={request_id} user={user_id} points={points} paid={paid_amount} plan={plan_name or 'redeem'}")
     return "success"

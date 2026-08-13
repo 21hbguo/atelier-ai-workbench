@@ -54,6 +54,7 @@ def _snapshot(plan: dict) -> dict:
         "allowed_models": list(plan.get("allowed_models") or []),
         "max_concurrent_requests": int(plan.get("max_concurrent_requests") or 1),
         "is_free": bool(plan.get("is_free")),
+        "enabled": bool(plan.get("enabled")),
     }
 
 

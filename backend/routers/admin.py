@@ -938,6 +938,12 @@ async def list_recharge_requests(page: int = Query(1, ge=1), size: int = Query(2
 @router.post("/recharge-requests/{request_id}/approve")
 async def approve_recharge_request(request_id: int, body: dict, admin=Depends(require_admin)):
     review_note = (body.get("review_note") or "").strip()[:500]
+    plan_name = None
+    activation = None
+    code = None
+    points = 0
+    user_id = None
+    invite_result = None
     with get_db() as conn:
         row = conn.execute("SELECT * FROM recharge_requests WHERE id = %s", (request_id,)).fetchone()
         if not row:
@@ -964,37 +970,40 @@ async def approve_recharge_request(request_id: int, body: dict, admin=Depends(re
                 "UPDATE recharge_requests SET status = 'approved', review_note = %s, reviewed_at = %s, reviewed_by = %s WHERE id = %s",
                 (review_note or f"套餐审核通过，已激活「{plan['name']}」", now, admin["user_id"], request_id),
             )
-            try:
-                NotificationService.create(user_id, "subscription_approved", "套餐已生效", f"你的「{plan['name']}」套餐已激活，周期积分已发放", str(request_id))
-            except Exception:
-                pass
+            plan_name = plan["name"]
             logger.info(f"[audit.recharge.approve] request={request_id} admin={admin['user_id']} user={user_id} plan={plan['name']} activation={activation}")
-            return {"message": "审核通过，套餐已生效", "plan": plan["name"], "activation": activation}
-        while True:
-            code = secrets.token_urlsafe(8).upper()
-            if not conn.execute("SELECT id FROM redemption_codes WHERE code = %s", (code,)).fetchone():
-                break
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        conn.execute("INSERT INTO redemption_codes (code, points, recharge_request_id) VALUES (%s, %s, %s)", (code, points, request_id))
-        code_id = conn.execute("SELECT id FROM redemption_codes WHERE code = %s", (code,)).fetchone()["id"]
-        conn.execute(
-            "UPDATE redemption_codes SET is_used = true, used_by = %s, used_at = %s WHERE id = %s",
-            (user_id, now, code_id),
-        )
-        PointsService.add_points(user_id, points, "redeem_code", f"充值审核通过 (¥{item['amount']})", conn=conn, request_key=f"recharge-approve:{request_id}", recharge_request_id=request_id)
-        conn.execute(
-            "UPDATE recharge_requests SET status = 'approved', points = %s, redeem_code = %s, review_note = %s, reviewed_at = %s, reviewed_by = %s WHERE id = %s",
-            (points, code, review_note, now, admin["user_id"], request_id),
-        )
-        invite_result=InviteService.apply_recharge_rewards(conn,{**item,"points":base_points},item.get("submit_ip") or "")
-        try:
+        else:
+            while True:
+                code = secrets.token_urlsafe(8).upper()
+                if not conn.execute("SELECT id FROM redemption_codes WHERE code = %s", (code,)).fetchone():
+                    break
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            conn.execute("INSERT INTO redemption_codes (code, points, recharge_request_id) VALUES (%s, %s, %s)", (code, points, request_id))
+            code_id = conn.execute("SELECT id FROM redemption_codes WHERE code = %s", (code,)).fetchone()["id"]
+            conn.execute(
+                "UPDATE redemption_codes SET is_used = true, used_by = %s, used_at = %s WHERE id = %s",
+                (user_id, now, code_id),
+            )
+            PointsService.add_points(user_id, points, "redeem_code", f"充值审核通过 (¥{item['amount']})", conn=conn, request_key=f"recharge-approve:{request_id}", recharge_request_id=request_id)
+            conn.execute(
+                "UPDATE recharge_requests SET status = 'approved', points = %s, redeem_code = %s, review_note = %s, reviewed_at = %s, reviewed_by = %s WHERE id = %s",
+                (points, code, review_note, now, admin["user_id"], request_id),
+            )
+            invite_result = InviteService.apply_recharge_rewards(conn, {**item, "points": base_points}, item.get("submit_ip") or "")
+            logger.info(f"[audit.recharge.approve] request={request_id} admin={admin['user_id']} user={user_id} points={points} amount={item['amount']}")
+    # 事务外发通知：避免通知 INSERT 的外键锁与激活/加积分的 users 行锁死锁
+    try:
+        if plan_name:
+            NotificationService.create(user_id, "subscription_approved", "套餐已生效", f"你的「{plan_name}」套餐已激活，周期积分已发放", str(request_id))
+        else:
             NotificationService.create(user_id, "recharge_approved", "充值审核通过", f"你的充值凭证已通过审核，已发放 {points} 积分", str(request_id))
-            if item.get("inviter_user_id") and invite_result.get("rebate_points",0)>0:
+            if item.get("inviter_user_id") and invite_result and invite_result.get("rebate_points", 0) > 0:
                 NotificationService.create(item["inviter_user_id"], "invite_recharge_rebate", "邀请返利到账", f"你收到 {invite_result['rebate_points']} 积分返利", str(request_id))
-        except Exception:
-            pass
-        logger.info(f"[audit.recharge.approve] request={request_id} admin={admin['user_id']} user={user_id} points={points} amount={item['amount']}")
-        return {"message": "审核通过，积分已发放", "code": code, "points": points}
+    except Exception:
+        pass
+    if plan_name:
+        return {"message": "审核通过，套餐已生效", "plan": plan_name, "activation": activation}
+    return {"message": "审核通过，积分已发放", "code": code, "points": points}
 
 
 @router.post("/recharge-requests/{request_id}/reject")

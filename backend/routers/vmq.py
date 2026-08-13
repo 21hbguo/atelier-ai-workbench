@@ -44,6 +44,7 @@ async def vmq_notify(
 
     channel = "wechat" if type == "wxpay" else "alipay"
     amount = float(money)
+    plan_name = None
 
     with get_db() as conn:
         existing = conn.execute(
@@ -54,7 +55,7 @@ async def vmq_notify(
             return {"status": "ok", "reason": "已处理过"}
 
         row = conn.execute(
-            "SELECT * FROM recharge_requests WHERE channel = %s AND amount = %s AND status = 'pending' ORDER BY created_at ASC LIMIT 1",
+            "SELECT * FROM recharge_requests WHERE channel = %s AND status = 'pending' AND ABS(amount - %s) < 0.01 AND created_at >= NOW() - interval '10 minutes' ORDER BY created_at ASC LIMIT 1",
             (channel, amount),
         ).fetchone()
 
@@ -80,44 +81,44 @@ async def vmq_notify(
                 "UPDATE recharge_requests SET status = 'approved', review_note = %s, reviewed_at = %s WHERE id = %s",
                 (f"VMQ自动审核 trade_no={trade_no}，已激活「{plan['name']}」", now, request_id),
             )
-            try:
-                NotificationService.create(user_id, "subscription_approved", "套餐已生效", f"你的「{plan['name']}」套餐已自动激活，周期积分已发放", str(request_id))
-            except Exception:
-                pass
+            plan_name = plan["name"]
             logger.info(f"[vmq.notify] 套餐自动审核通过 request={request_id} user={user_id} plan={plan['name']} activation={activation}")
-            return {"status": "ok"}
+        else:
+            while True:
+                code = secrets.token_urlsafe(8).upper()
+                if not conn.execute("SELECT id FROM redemption_codes WHERE code = %s", (code,)).fetchone():
+                    break
 
-        while True:
-            code = secrets.token_urlsafe(8).upper()
-            if not conn.execute("SELECT id FROM redemption_codes WHERE code = %s", (code,)).fetchone():
-                break
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            conn.execute(
+                "INSERT INTO redemption_codes (code, points, recharge_request_id) VALUES (%s, %s, %s)",
+                (code, points, request_id),
+            )
+            code_id = conn.execute("SELECT id FROM redemption_codes WHERE code = %s", (code,)).fetchone()["id"]
+            conn.execute(
+                "UPDATE redemption_codes SET is_used = true, used_by = %s, used_at = %s WHERE id = %s",
+                (user_id, now, code_id),
+            )
+            PointsService.add_points(
+                user_id, points, "redeem_code", f"VMQ自动审核 (¥{amount})",
+                conn=conn, request_key=f"vmq-notify:{trade_no}", recharge_request_id=request_id,
+            )
+            conn.execute(
+                "UPDATE recharge_requests SET status = 'approved', points = %s, redeem_code = %s, review_note = %s, reviewed_at = %s WHERE id = %s",
+                (points, code, f"VMQ自动审核 trade_no={trade_no}", now, request_id),
+            )
+            invite_result = InviteService.apply_recharge_rewards(conn, {**item, "points": base_points}, item.get("submit_ip") or "")
 
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        conn.execute(
-            "INSERT INTO redemption_codes (code, points, recharge_request_id) VALUES (%s, %s, %s)",
-            (code, points, request_id),
-        )
-        code_id = conn.execute("SELECT id FROM redemption_codes WHERE code = %s", (code,)).fetchone()["id"]
-        conn.execute(
-            "UPDATE redemption_codes SET is_used = true, used_by = %s, used_at = %s WHERE id = %s",
-            (user_id, now, code_id),
-        )
-        PointsService.add_points(
-            user_id, points, "redeem_code", f"VMQ自动审核 (¥{amount})",
-            conn=conn, request_key=f"vmq-notify:{trade_no}", recharge_request_id=request_id,
-        )
-        conn.execute(
-            "UPDATE recharge_requests SET status = 'approved', points = %s, redeem_code = %s, review_note = %s, reviewed_at = %s WHERE id = %s",
-            (points, code, f"VMQ自动审核 trade_no={trade_no}", now, request_id),
-        )
-        invite_result = InviteService.apply_recharge_rewards(conn, {**item, "points": base_points}, item.get("submit_ip") or "")
-
+    # 事务外发通知：避免通知 INSERT 的外键锁与套餐激活的 users FOR UPDATE 锁死锁
     try:
-        NotificationService.create(user_id, "recharge_approved", "充值成功", f"你的 ¥{amount} 充值已自动到账，获得 {points} 积分", str(request_id))
-        if item.get("inviter_user_id") and invite_result.get("rebate_points", 0) > 0:
-            NotificationService.create(item["inviter_user_id"], "invite_recharge_rebate", "邀请返利到账", f"你收到 {invite_result['rebate_points']} 积分返利", str(request_id))
+        if plan_name:
+            NotificationService.create(user_id, "subscription_approved", "套餐已生效", f"你的「{plan_name}」套餐已自动激活，周期积分已发放", str(request_id))
+        else:
+            NotificationService.create(user_id, "recharge_approved", "充值成功", f"你的 ¥{amount} 充值已自动到账，获得 {points} 积分", str(request_id))
+            if item.get("inviter_user_id") and invite_result.get("rebate_points", 0) > 0:
+                NotificationService.create(item["inviter_user_id"], "invite_recharge_rebate", "邀请返利到账", f"你收到 {invite_result['rebate_points']} 积分返利", str(request_id))
     except Exception:
         pass
 
-    logger.info(f"[vmq.notify] 自动审核通过 request={request_id} user={user_id} points={points} amount={amount} trade_no={trade_no}")
+    logger.info(f"[vmq.notify] 自动审核通过 request={request_id} user={user_id} points={points} amount={amount} plan={plan_name or 'redeem'} trade_no={trade_no}")
     return {"status": "ok"}
