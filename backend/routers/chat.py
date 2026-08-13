@@ -720,6 +720,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                 "file_ops_read", "file_ops_write", "file_ops_edit",
                 "file_ops_list", "file_ops_glob", "file_ops_grep",
                 "send_file",
+                "make_xlsx", "make_docx", "make_pptx",
             ])
         tools_names.append("image_gen")
         tools_names.append("show_widget")
@@ -836,6 +837,25 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                             "工具写入工作区）；\n"
                             "2. description 可选，用一句话说明文件内容，展示在文件卡片上；\n"
                             "3. 发送后附一句说明即可，不要重复发送已发送过的文件，不要频繁发送无关文件。"
+                        )
+                    if all(t in tools_names for t in ("make_xlsx", "make_docx", "make_pptx")):
+                        # Office 文件生成工具使用指南：仅在三个工具实际注册给模型时注入（通道一）
+                        agent_system += (
+                            "\n\n【Office 文件生成】\n"
+                            "用户需要 Word/Excel/PPT 文件（如简历、报表、演示文稿、合同文档等）时，"
+                            "调用对应工具直接生成：\n"
+                            "1. make_xlsx：Excel 表格/数据报表，sheets 为工作表列表（每表可含 "
+                            "name/header/rows/column_widths，rows 必须是数组的数组）；\n"
+                            "2. make_docx：Word 文档，title 为文档标题，sections 为章节列表（每章可含 "
+                            "heading/paragraphs/bullets/table）；\n"
+                            "3. make_pptx：PPT 演示文稿，slides 为幻灯片列表（每页可含 title/layout/"
+                            "bullets/notes）。\n"
+                            "使用规范：\n"
+                            "1. filename 必须以对应扩展名结尾（.xlsx/.docx/.pptx），文件生成到用户工作区，"
+                            "父目录自动创建，同名文件会被覆盖；\n"
+                            "2. 参数按工具规范填写并控制规模（sheets≤10、sections≤50、slides≤50），"
+                            "超出限制工具会返回错误；\n"
+                            "3. 生成后工具会自动发送文件卡片，回复附一句说明即可，不要回显文件全部内容。"
                         )
                     # 当天日期：动态内容追加到 system 最末尾，固定指南保持前缀稳定可命中缓存
                     if body.web_search and not attached_docs:
