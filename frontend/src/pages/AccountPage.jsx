@@ -41,6 +41,7 @@ export default function AccountPage() {
   const displayName = user?.nickname || user?.account || user?.username || '用户'
   const account = user?.account || user?.username || '-'
   const initial = displayName.slice(0, 1).toUpperCase()
+  const isAdmin = Boolean(user?.is_admin)
 
   const refresh = useCallback(() => {
     Promise.allSettled([
@@ -92,7 +93,7 @@ export default function AccountPage() {
             <QuickCard onClick={() => setPointsOpen(true)} icon={Coins} label="当前积分" value={formatPoints(points)} sub="可用于生成与对话" />
             <QuickCard onClick={() => setPointsOpen(true)} icon={Check} label="今日签到" value={checkedInToday === null ? '签到状态加载中' : checkedInToday ? '今日已签到' : '今日未签到'} sub={checkedInToday ? '明天再来签到' : '每日签到可领积分'} tone={checkedInToday ? 'var(--color-success)' : 'var(--accent)'} />
             <QuickCard icon={ShieldCheck} label="账户状态" value="正常" sub="身份已验证" tone="var(--color-success)" />
-            <QuickCard to="/notifications" icon={Bell} label="通知" value="查看" sub="公告与消息提醒" />
+            {isAdmin && <QuickCard to="/notifications" icon={Bell} label="通知" value="查看" sub="公告与消息提醒" />}
           </div>
 
           <div className="mt-5 mb-2 flex items-center justify-between"><h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>常用功能</h2><span className="text-xs" style={{ color: 'var(--text-secondary)' }}>快捷进入对应页面</span></div>

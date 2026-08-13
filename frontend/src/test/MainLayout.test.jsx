@@ -112,10 +112,18 @@ describe('MainLayout', () => {
   })
 
   it('renders mobile topbar with quick nav links', () => {
+    readUserMock.mockReturnValue({ id: 1, username: 'admin', nickname: 'A', points: 0, is_admin: true })
     renderLayout()
     const topbarLinks = document.querySelectorAll('.mobile-topbar-link-text')
     const labels = [...topbarLinks].map(el => el.textContent)
     expect(labels).toEqual(['助手', '绘画', '作品', '广场', '通知'])
+  })
+
+  it('hides notification link in topbar for regular users', () => {
+    renderLayout()
+    const topbarLinks = document.querySelectorAll('.mobile-topbar-link-text')
+    const labels = [...topbarLinks].map(el => el.textContent)
+    expect(labels).toEqual(['助手', '绘画', '作品', '广场'])
   })
 
   it('opens sidebar when menu button is clicked', () => {
@@ -135,6 +143,7 @@ describe('MainLayout', () => {
   })
 
   it('shows notification dot when unread count > 0', async () => {
+    readUserMock.mockReturnValue({ id: 1, username: 'admin', nickname: 'A', points: 0, is_admin: true })
     unreadCountMock.mockResolvedValue({ data: { count: 3 } })
     getUnreadMock.mockResolvedValue({ data: { items: [] } })
     renderLayout()

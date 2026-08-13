@@ -111,7 +111,7 @@ describe('Sidebar', () => {
     renderSidebar()
     expect(screen.getByText('AI 助手')).toBeInTheDocument()
     expect(screen.getByText('AI 绘画')).toBeInTheDocument()
-    expect(screen.getAllByText('积分').length).toBeGreaterThanOrEqual(1)
+    expect(screen.queryByText('积分')).not.toBeInTheDocument()
   })
 
   it('hides second sidebar on non-draw pages', () => {
@@ -124,6 +124,7 @@ describe('Sidebar', () => {
 
   it('shows second sidebar items on draw-related pages', () => {
     mockLocation = { pathname: '/draw', search: '' }
+    readUserMock.mockReturnValue({ id: 1, username: 'admin', nickname: '管理员', points: 0, is_admin: true })
     renderSidebar()
     expect(screen.getByText('画图')).toBeInTheDocument()
     expect(screen.getByText('我的作品')).toBeInTheDocument()
@@ -178,6 +179,7 @@ describe('Sidebar', () => {
     unreadCountMock.mockResolvedValue({ data: { count: 5 } })
     getUnreadMock.mockResolvedValue({ data: { items: [] } })
     mockLocation = { pathname: '/draw', search: '' }
+    readUserMock.mockReturnValue({ id: 1, username: 'admin', nickname: '管理员', points: 0, is_admin: true })
     renderSidebar()
     await waitFor(() => expect(screen.getByText('5')).toBeInTheDocument())
   })
@@ -186,6 +188,7 @@ describe('Sidebar', () => {
     unreadCountMock.mockResolvedValue({ data: { count: 0 } })
     getUnreadMock.mockResolvedValue({ data: { items: [] } })
     mockLocation = { pathname: '/draw', search: '' }
+    readUserMock.mockReturnValue({ id: 1, username: 'admin', nickname: '管理员', points: 0, is_admin: true })
     renderSidebar()
     await waitFor(() => {
       const noticeLink = screen.getByText('通知').closest('a')
@@ -197,8 +200,16 @@ describe('Sidebar', () => {
     unreadCountMock.mockResolvedValue({ data: { count: 60 } })
     getUnreadMock.mockResolvedValue({ data: { items: Array.from({ length: 50 }, (_, i) => ({ id: i })) } })
     mockLocation = { pathname: '/draw', search: '' }
+    readUserMock.mockReturnValue({ id: 1, username: 'admin', nickname: '管理员', points: 0, is_admin: true })
     renderSidebar()
     await waitFor(() => expect(screen.getByText('99+')).toBeInTheDocument())
+  })
+
+  it('hides notification item for regular users', () => {
+    mockLocation = { pathname: '/draw', search: '' }
+    renderSidebar()
+    expect(screen.getByText('我的作品')).toBeInTheDocument()
+    expect(screen.queryByText('通知')).not.toBeInTheDocument()
   })
 
   it('renders mobile overlay when open and closes on overlay click', () => {

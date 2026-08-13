@@ -226,7 +226,7 @@ export default function Sidebar({ open, onClose }) {
           <aside className="w-44 flex flex-col flex-shrink-0"
             style={{ background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border-color)' }}>
             <div className="flex-1 min-h-0 overflow-y-auto py-2 px-2 space-y-0.5">
-              {subNavItems.map(({ path, icon: Icon, label }) => {
+              {subNavItems.filter(item => item.path !== '/notifications' || isAdmin).map(({ path, icon: Icon, label }) => {
                 const active = location.pathname === path
                 const linkClass = `sidebar-nav-link ${active ? 'bg-accent/10' : 'hover:bg-bg-hover'}`
                 const linkStyle = { color: active ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: active ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined }

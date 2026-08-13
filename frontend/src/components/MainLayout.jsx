@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { Menu } from 'lucide-react'
 import Sidebar from './Sidebar'
 import { announcementAPI, notificationAPI } from '../api'
+import { readUser } from '../auth'
 
 const quickNavItems = [
   { label: '助手', path: '/chat' },
@@ -16,6 +17,7 @@ export default function MainLayout({ children, dragProps }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [unreadNoticeCount, setUnreadNoticeCount] = useState(0)
   const location = useLocation()
+  const isAdmin = Boolean(readUser()?.is_admin)
   useEffect(()=>{
     let timer=0;
     const load=()=>Promise.allSettled([
@@ -38,7 +40,7 @@ export default function MainLayout({ children, dragProps }) {
           <div className="mobile-topbar-inner">
             <button onClick={() => setSidebarOpen(true)} className="mobile-topbar-menu" style={{ color: 'var(--text-primary)' }}><Menu size={20} className="block" /></button>
             <div className="mobile-topbar-links scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
-            {quickNavItems.map(item => {
+            {quickNavItems.filter(item => item.path !== '/notifications' || isAdmin).map(item => {
               const isActive = item.path === '/' ? location.pathname === '/' : location.pathname.startsWith(item.path)
               return (
                 <Link key={item.path} to={item.path} className="mobile-topbar-link" style={{ color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', borderBottomColor: isActive ? 'var(--accent)' : 'transparent' }}>
