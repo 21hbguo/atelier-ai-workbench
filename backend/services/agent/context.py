@@ -33,6 +33,8 @@ class AgentContext:
     citations: list[dict] = field(default_factory=list)
     # 工具执行过程中收集的画图/可视化 widget（{"kind": str, "title": str, "code": str}），由 loop 增量推给前端
     widgets: list[dict] = field(default_factory=list)
+    # 工具执行过程中收集的可下载文件（{"filename", "url", "size", "description"}），由 loop 增量推给前端
+    files: list[dict] = field(default_factory=list)
     # 生图任务超时上报：image_gen 超时（任务仍在后台生成）时置
     # {"task_id": str, "status": "processing"}，由 loop 推 image_task 事件（只发一次）
     image_task: Optional[dict] = None
@@ -69,3 +71,25 @@ class AgentContext:
             logger.warning("[agent/context] add_widget 忽略空 code（kind=%s）", kind)
             return
         self.widgets.append({"kind": kind, "title": title or "", "code": code})
+
+    def add_file(self, filename: str, url: str, size: int, description: str = "") -> None:
+        """记录一个可下载文件（send_file 工具产出）。
+
+        filename/url 须为非空字符串；size 须为非负整数；description 可为空串。
+        校验不通过时直接丢弃并记 warning，不抛异常（与 add_widget 的容错风格一致）。
+        """
+        if not isinstance(filename, str) or not filename.strip():
+            logger.warning("[agent/context] add_file 忽略空 filename=%r", filename)
+            return
+        if not isinstance(url, str) or not url.strip():
+            logger.warning("[agent/context] add_file 忽略空 url=%r", url)
+            return
+        if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+            logger.warning("[agent/context] add_file 忽略非法 size=%r", size)
+            return
+        self.files.append({
+            "filename": filename,
+            "url": url,
+            "size": size,
+            "description": description or "",
+        })

@@ -7,6 +7,7 @@ import { readUser } from '../auth'
 import { mdToHtml } from '../utils/markdown'
 import { saveBlob } from '../utils/download'
 import WidgetViewer from '../components/WidgetViewer'
+import FileCard from '../components/FileCard'
 import { ModelLogo } from '../components/modelIcons'
 
 // markdown 渲染结果（.md-body）的样式，沿用全站 CSS 变量体系
@@ -396,6 +397,7 @@ const MessageItem = memo(function MessageItem({ msg, onCopy, onRegenerate }) {
               dangerouslySetInnerHTML={{ __html: mdHtml }} />
             <CitationList citations={msg.citations} />
             <WidgetViewer widgets={msg.widgets} />
+            <FileCard files={msg.sent_files} />
           </>
         )}
         <div className="text-xs mt-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>{formatTime(msg.created_at)}</div>
@@ -524,6 +526,7 @@ const StreamBubble = memo(function StreamBubble({ sending, onStop, onRetry }) {
         )}
         <CitationList citations={sending.citations} />
         <WidgetViewer widgets={sending.widgets} />
+        <FileCard files={sending.files} />
         {sending.stopped ? (
           <div className="mt-2 flex items-center gap-2">
             <span className="text-xs" style={{ color: 'var(--color-error)' }}>{sending.error || '已停止生成'}</span>
@@ -1081,7 +1084,7 @@ export default function ChatAssistantPage() {
   const [messages, setMessages] = useState([])
   const [messagesLoading, setMessagesLoading] = useState(false)
   const [input, setInput] = useState('')
-  const [sending, setSending] = useState(null) // { sessionId, content, text, thinking, toolStatus, citations, widgets, pendingImage, stopped, error, manual }
+  const [sending, setSending] = useState(null) // { sessionId, content, text, thinking, toolStatus, citations, widgets, files, pendingImage, stopped, error, manual }
   // 链接抓取状态（SSE url_status 事件）：{ status: 'fetching'|'ok'|'failed', url, error } | null
   const [linkStatus, setLinkStatus] = useState(null)
   const linkTimerRef = useRef(null)
@@ -1174,6 +1177,8 @@ export default function ChatAssistantPage() {
   const citationsRef = useRef({ streamId: null, items: [] })
   // 本次流的 widget 累积（SSE widget 事件；streamId 绑定防旧流迟到污染，模式同 citationsRef）
   const widgetsRef = useRef({ streamId: null, items: [] })
+  // 本次流的文件累积（SSE file 事件；streamId 绑定防旧流迟到污染，模式同 widgetsRef）
+  const filesRef = useRef({ streamId: null, items: [] })
   const flushStreamBuf = useCallback(() => {
     streamRafRef.current = null
     const { streamId: sid, text, thinking } = streamBufRef.current
@@ -1616,7 +1621,7 @@ export default function ChatAssistantPage() {
     stopImagePolling()
     // 流的唯一身份：停止后立刻发新消息时，旧流的迟到回调不会误操作新流
     const streamId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    const st = { streamId, sessionId, content, text: '', thinking: '', toolStatus: null, citations: [], widgets: [], pendingImage: null, stopped: false, error: '', manual: false }
+    const st = { streamId, sessionId, content, text: '', thinking: '', toolStatus: null, citations: [], widgets: [], files: [], pendingImage: null, stopped: false, error: '', manual: false }
     sendingRef.current = st
     setSending(st)
     // 本次流开始：重置节流缓冲（避免残留上一流的未 flush 内容）
@@ -1625,6 +1630,8 @@ export default function ChatAssistantPage() {
     citationsRef.current = { streamId, items: [] }
     // 本次流开始：重置 widget 累积（避免上一流的 widgets 残留）
     widgetsRef.current = { streamId, items: [] }
+    // 本次流开始：重置文件累积（避免上一流的 files 残留）
+    filesRef.current = { streamId, items: [] }
     // 本次流开始：重置链接抓取状态（避免上一流的 url_status 残留）
     clearLinkTimer(); setLinkStatus(null)
     if (streamRafRef.current) { cancelAnimationFrame(streamRafRef.current); streamRafRef.current = null }
@@ -1688,6 +1695,17 @@ export default function ChatAssistantPage() {
         setSending(prev =>
           (prev && prev.streamId === streamId) ? { ...prev, widgets: buf.items } : prev)
       },
+      onFile: data => {
+        // streamId 守卫（与 onWidget 一致）：旧流迟到的 file 不得写入新流
+        const buf = filesRef.current
+        if (buf.streamId !== streamId) return
+        const file = data?.file
+        if (!file || !file.filename || !file.url) return
+        buf.items.push(file)
+        // 同步发送中气泡：流式期间实时显示文件卡片
+        setSending(prev =>
+          (prev && prev.streamId === streamId) ? { ...prev, files: buf.items } : prev)
+      },
       onImageTask: data => {
         // 工具等待超时后生图转入后台：拿到任务 id 启动轮询（每 8s 一次，最多 120 次）。
         // 轮询状态独立于 sending 生命周期（done 后 sending 清空仍可补图）。
@@ -1712,7 +1730,9 @@ export default function ChatAssistantPage() {
         const citations = citationsRef.current.streamId === streamId ? citationsRef.current.items : []
         // 同上：widgets 仅当仍是本次流时挂载（取完再清理 sending，避免发送中状态已置 null 丢失）
         const widgets = widgetsRef.current.streamId === streamId ? widgetsRef.current.items : []
-        setMessages(prev => [...prev, { id: newId, role: 'assistant', content: full, thinking, citations, widgets, created_at: new Date().toISOString() }])
+        // 同上：files 仅当仍是本次流时挂载
+        const files = filesRef.current.streamId === streamId ? filesRef.current.items : []
+        setMessages(prev => [...prev, { id: newId, role: 'assistant', content: full, thinking, citations, widgets, sent_files: files, created_at: new Date().toISOString() }])
         // 发送成功：文件已上传为会话上下文，清空上传区（失败时保留 docs 便于重试）
         setDocs([])
         // 流结束：若仍停留在 fetching（事件顺序异常），清除残留状态

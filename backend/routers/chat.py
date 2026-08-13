@@ -496,7 +496,7 @@ async def list_messages(session_id: int, user=Depends(get_current_user)):
     with get_db() as conn:
         _owns_session(conn, session_id, user_id)
         rows = conn.execute(
-            "SELECT id, role, content, thinking, file_ids, citations, created_at FROM chat_messages WHERE session_id = %s ORDER BY id ASC",
+            "SELECT id, role, content, thinking, file_ids, citations, widgets, files, created_at FROM chat_messages WHERE session_id = %s ORDER BY id ASC",
             (session_id,),
         ).fetchall()
     # 收集所有消息引用的文件 id，一次性查 chat_files 避免 N+1
@@ -544,6 +544,18 @@ async def list_messages(session_id: int, user=Depends(get_current_user)):
                 citations = json.loads(r["citations"])
             except (TypeError, ValueError):
                 citations = []
+        widgets = []
+        if r["widgets"]:
+            try:
+                widgets = json.loads(r["widgets"])
+            except (TypeError, ValueError):
+                widgets = []
+        sent_files = []
+        if r["files"]:
+            try:
+                sent_files = json.loads(r["files"])
+            except (TypeError, ValueError):
+                sent_files = []
         items.append({
             "id": r["id"],
             "role": r["role"],
@@ -551,6 +563,8 @@ async def list_messages(session_id: int, user=Depends(get_current_user)):
             "thinking": r["thinking"] or "",
             "files": files,  # 关联文件 [{id, original_name}]；file_ids 为空/查询失败时 []
             "citations": citations,  # 来源引用 [{url,title,snippet}]；无引用时 []
+            "widgets": widgets,  # 画图 widget [{kind,title,code}]；无 widget 时 []
+            "sent_files": sent_files,  # send_file 发送的可下载文件 [{filename,url,size,description}]；无时 []
             "created_at": r["created_at"].isoformat() if r["created_at"] else None,
         })
     return {"items": items}
@@ -718,6 +732,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                 "file_ops_write_text",
                 "file_ops_read", "file_ops_write", "file_ops_edit",
                 "file_ops_list", "file_ops_glob", "file_ops_grep",
+                "send_file",
             ])
         tools_names.append("image_gen")
         tools_names.append("show_widget")
@@ -823,6 +838,18 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                             "3. 一次调用产出 1 个图，复杂系统可拆成多次调用分别绘制；\n"
                             "4. 调用后附一句简短说明即可，不要把 code 内容粘贴进回复。"
                         )
+                    if "send_file" in tools_names:
+                        # 文件发送工具使用指南：仅在 send_file 实际注册给模型时注入（通道一）
+                        agent_system += (
+                            "\n\n【文件发送】\n"
+                            "完成用户需要的文件写入工作区后，当用户明确要求拿到/下载/保存文件时，"
+                            "调用 send_file 工具把文件发送到聊天里供用户下载。\n"
+                            "使用规范：\n"
+                            "1. path 必须是相对工作区根目录的相对路径（调用前文件必须已由 file_ops_* "
+                            "工具写入工作区）；\n"
+                            "2. description 可选，用一句话说明文件内容，展示在文件卡片上；\n"
+                            "3. 发送后附一句说明即可，不要重复发送已发送过的文件，不要频繁发送无关文件。"
+                        )
                     # 当天日期：动态内容追加到 system 最末尾，固定指南保持前缀稳定可命中缓存
                     if body.web_search and not attached_docs:
                         from datetime import datetime as _dt
@@ -870,15 +897,19 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                         elif etype == "widget":
                             # 画图工具产出的 widget（SVG/HTML 片段，SSE 实时推送前端渲染）
                             yield f"event: widget\ndata: {json.dumps({'widget': event['widget']}, ensure_ascii=False)}\n\n"
+                        elif etype == "file":
+                            # send_file 工具产出的可下载文件（SSE 实时推送前端展示下载卡片）
+                            yield f"event: file\ndata: {json.dumps({'file': event['file']}, ensure_ascii=False)}\n\n"
                         elif etype == "done":
                             text = str(event.get("text") or "")
                             thinking = str(event.get("thinking") or "").strip()
                             with get_db() as conn:
                                 new_row = conn.execute(
-                                    "INSERT INTO chat_messages (session_id, role, content, thinking, citations, widgets) VALUES (%s, 'assistant', %s, %s, %s::jsonb, %s::jsonb) RETURNING id",
+                                    "INSERT INTO chat_messages (session_id, role, content, thinking, citations, widgets, files) VALUES (%s, 'assistant', %s, %s, %s::jsonb, %s::jsonb, %s::jsonb) RETURNING id",
                                     (session_id, text, thinking or None,
                                      json.dumps(ctx.citations, ensure_ascii=False) if ctx.citations else None,
-                                     json.dumps(ctx.widgets, ensure_ascii=False) if ctx.widgets else None),
+                                     json.dumps(ctx.widgets, ensure_ascii=False) if ctx.widgets else None,
+                                     json.dumps(ctx.files, ensure_ascii=False) if ctx.files else None),
                                 ).fetchone()
                             finished = True
                             new_msg_id = new_row["id"] if new_row else None

@@ -494,6 +494,8 @@ def init_db():
             "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS citations JSONB",
             # 迁移：聊天消息增加 widgets（JSONB 数组，画图工具产出的 SVG/HTML 片段落库，刷新后仍可展示）
             "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS widgets JSONB",
+            # 迁移：聊天消息增加 files（JSONB 数组，send_file 工具产出的可下载文件落库，刷新后仍可展示）
+            "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS files JSONB",
             """CREATE TABLE IF NOT EXISTS llm_models (
                 id SERIAL PRIMARY KEY,
                 model_id VARCHAR(128) NOT NULL UNIQUE,
