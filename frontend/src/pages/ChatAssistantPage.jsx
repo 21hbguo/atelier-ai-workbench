@@ -1877,7 +1877,7 @@ export default function ChatAssistantPage() {
       try {
         const res = await chatAPI.createSession()
         const s = res.data
-        setSessions(prev => [s, ...prev])
+        setSessions(prev => [s, ...prev.filter(p => p.id !== s.id)]) // 去重：后端可能复用已存在的空会话
         sid = s.id
         activeIdRef.current = s.id
         skipMessagesLoadRef.current = s.id // 本地消息已就绪，跳过首次加载
@@ -1916,7 +1916,7 @@ export default function ChatAssistantPage() {
       try {
         const res = await chatAPI.createSession()
         const s = res.data
-        setSessions(prev => [s, ...prev])
+        setSessions(prev => [s, ...prev.filter(p => p.id !== s.id)]) // 去重：后端可能复用已存在的空会话
         sid = s.id
         activeIdRef.current = s.id
         skipMessagesLoadRef.current = s.id // 本地消息已就绪，跳过首次加载
@@ -1967,11 +1967,12 @@ export default function ChatAssistantPage() {
     try {
       const res = await chatAPI.createSession()
       const s = res.data
-      setSessions(prev => [s, ...prev])
+      setSessions(prev => [s, ...prev.filter(p => p.id !== s.id)]) // 去重：后端可能复用已存在的空会话
       skipMessagesLoadRef.current = s.id // 新建会话消息为空，跳过首次加载避免竞态覆盖
       setActiveId(s.id)
       setMessages([])
       setSessionListOpen(false)
+      focusInput() // 新建后直接聚焦对话框，用户可直接输入
     } catch (err) {
       dialog.alert(err.message || '创建会话失败')
     } finally {

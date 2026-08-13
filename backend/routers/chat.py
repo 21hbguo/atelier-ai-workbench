@@ -562,6 +562,9 @@ async def list_sessions(user=Depends(get_current_user)):
 async def create_session(user=Depends(get_current_user)):
     user_id = user["user_id"]
     with get_db() as conn:
+        # 会话级 advisory 锁：同一用户的"查空会话→新建"串行化，杜绝并发点击双 INSERT
+        # （check-then-act 竞态：两个请求同时查不到空会话就会各自 INSERT）
+        conn.execute("SELECT pg_advisory_xact_lock(%s)", (user_id,))
         # 空会话复用（防恶意/重复点击新建产生海量垃圾会话）：若该用户已存在
         # 无任何消息的会话，直接返回最早那个空会话，不再 INSERT——空会话无限点击
         # 也只会得到同一个会话，数据库零增长。用户删除空会话后才真正新建。
