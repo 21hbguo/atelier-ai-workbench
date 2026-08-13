@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react'
 import { Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, PanelLeftClose, PanelLeftOpen, Brain, AlertCircle, CheckSquare, Cpu, ChevronDown, Check, Paperclip, FileText, Settings, Globe, Image as ImageIcon, Search } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
 import { useAppDialog } from '../components/AppDialogProvider'
 import { chatAPI, pointsAPI, taskAPI } from '../api'
 import { readUser } from '../auth'
 import { mdToHtml } from '../utils/markdown'
+import { saveBlob } from '../utils/download'
 import WidgetViewer from '../components/WidgetViewer'
 import { ModelLogo } from '../components/modelIcons'
 
@@ -34,6 +35,34 @@ const MD_STYLES = `
 .md-body .katex-clickable{cursor:pointer;border-radius:6px;transition:background .15s,box-shadow .15s;padding:0 3px}
 .md-body .katex-clickable:hover{background:color-mix(in srgb,var(--accent) 10%,transparent)}
 .md-body .katex-clickable.katex-copied{box-shadow:0 0 0 1.5px var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent)}
+/* ============ 可见滚动条（macOS 默认隐藏；消息容器/思考区/代码块/表格） ============ */
+.chat-scroll-area::-webkit-scrollbar,.thinking-scroll-area::-webkit-scrollbar,.md-body pre::-webkit-scrollbar,.md-body table::-webkit-scrollbar,.md-code-block code::-webkit-scrollbar{width:6px;height:6px}
+.chat-scroll-area::-webkit-scrollbar-thumb,.thinking-scroll-area::-webkit-scrollbar-thumb,.md-body pre::-webkit-scrollbar-thumb,.md-body table::-webkit-scrollbar-thumb,.md-code-block code::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--text-secondary) 25%,transparent);border-radius:3px}
+.chat-scroll-area::-webkit-scrollbar-thumb:hover,.thinking-scroll-area::-webkit-scrollbar-thumb:hover,.md-body pre::-webkit-scrollbar-thumb:hover,.md-body table::-webkit-scrollbar-thumb:hover,.md-code-block code::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--text-secondary) 45%,transparent)}
+.chat-scroll-area::-webkit-scrollbar-track,.thinking-scroll-area::-webkit-scrollbar-track,.md-body pre::-webkit-scrollbar-track,.md-body table::-webkit-scrollbar-track,.md-code-block code::-webkit-scrollbar-track{background:transparent}
+.chat-scroll-area,.thinking-scroll-area,.md-body pre,.md-body table,.md-code-block code{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--text-secondary) 25%,transparent) transparent}
+/* ============ 代码块卡片（markdown.js 生成 .md-code-block） ============ */
+.md-body pre.md-code-block{position:relative;margin:.6em 0;padding:0;overflow:hidden;background:#1e1e1e;border:1px solid rgba(255,255,255,.08);border-radius:10px}
+.md-code-header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;background:rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.07)}
+.md-code-lang{font-size:11px;line-height:1;color:rgba(255,255,255,.5);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.md-code-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.md-copy-btn,.md-download-btn,.md-table-copy-btn,.md-table-download-btn{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;font-size:11px;line-height:1;border-radius:6px;cursor:pointer;color:rgba(255,255,255,.78);background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.12);opacity:0;transition:opacity .15s,background .15s,color .15s}
+.md-code-block:hover .md-copy-btn,.md-code-block:hover .md-download-btn,.md-table-wrap:hover .md-table-copy-btn,.md-table-wrap:hover .md-table-download-btn{opacity:1}
+.md-copy-btn:hover,.md-download-btn:hover,.md-table-copy-btn:hover,.md-table-download-btn:hover{color:#fff;background:rgba(255,255,255,.18)}
+.md-code-block code.hljs{display:block;overflow-x:auto;padding:12px 14px;font-size:12.5px;line-height:1.6;background:transparent;color:#d4d4d4;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+/* 语法高亮 token 颜色（VSCode Dark+ 色板） */
+.md-code-block .hljs-comment,.md-code-block .hljs-quote,.md-code-block .hljs-deletion{color:#6a9955}
+.md-code-block .hljs-keyword,.md-code-block .hljs-selector-tag,.md-code-block .hljs-literal,.md-code-block .hljs-section,.md-code-block .hljs-link,.md-code-block .hljs-doctag,.md-code-block .hljs-meta .hljs-keyword{color:#c586c0}
+.md-code-block .hljs-string,.md-code-block .hljs-regexp,.md-code-block .hljs-addition,.md-code-block .hljs-attribute{color:#ce9178}
+.md-code-block .hljs-number,.md-code-block .hljs-meta{color:#b5cea8}
+.md-code-block .hljs-title,.md-code-block .hljs-title.function_,.md-code-block .hljs-title.class_{color:#dcdcaa}
+.md-code-block .hljs-attr,.md-code-block .hljs-variable,.md-code-block .hljs-template-variable,.md-code-block .hljs-selector-attr,.md-code-block .hljs-selector-class,.md-code-block .hljs-selector-id,.md-code-block .hljs-property{color:#9cdcfe}
+.md-code-block .hljs-built_in,.md-code-block .hljs-type,.md-code-block .hljs-builtin-name{color:#4ec9b0}
+.md-code-block .hljs-params,.md-code-block .hljs-operator,.md-code-block .hljs-punctuation{color:#d4d4d4}
+.md-code-block .hljs-symbol,.md-code-block .hljs-bullet{color:#b5cea8}
+/* ============ 表格（markdown.js 生成 .md-table-wrap） ============ */
+.md-table-wrap{position:relative}
+.md-table-actions{position:absolute;top:8px;right:8px;display:flex;gap:6px;z-index:3}
 `
 
 function parseDate(s) {
@@ -90,6 +119,16 @@ async function copyText(text) {
     document.body.removeChild(ta)
     return ok
   } catch { return false }
+}
+
+// 表格 DOM → CSV 文本：每行 <tr> 的 th/td 文本逗号连接，含逗号/引号/换行时双引号包裹转义
+const tableToCsv = (table) => {
+  const rows = [...table.querySelectorAll('tr')]
+    .map(tr => [...tr.querySelectorAll('th,td')].map(cell => {
+      const v = (cell.textContent || '').trim()
+      return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
+    }).join(','))
+  return rows.join('\n')
 }
 
 // ============ 会话列表 ============
@@ -231,7 +270,7 @@ function SessionList({ sessions, activeId, loading, sending, creating, renaming,
 }
 
 // ============ 思考过程折叠块（默认折叠） ============
-function ThinkingBlock({ text, isStreaming = false }) {
+const ThinkingBlock = memo(function ThinkingBlock({ text, isStreaming = false }) {
   const [open, setOpen] = useState(false)
   if (!text || !text.trim()) return null
   const lines = text.trim().split('\n')
@@ -251,12 +290,12 @@ function ThinkingBlock({ text, isStreaming = false }) {
         <ChevronDown size={13} className={`flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="px-3 pb-3 text-xs whitespace-pre-wrap break-words max-h-72 overflow-y-auto"
+        <div className="thinking-scroll-area px-3 pb-3 text-xs whitespace-pre-wrap break-words max-h-72 overflow-y-auto"
           style={{ color: 'var(--text-secondary)' }}>{text}</div>
       )}
     </div>
   )
-}
+})
 
 // ============ 引用来源卡片（SSE citations 事件，最多显示 8 条；兼容 {url,title,snippet?}） ============
 function CitationList({ citations = [] }) {
@@ -298,8 +337,14 @@ function CitationList({ citations = [] }) {
 }
 
 // ============ 消息气泡 ============
-function MessageItem({ msg, onCopy, onRegenerate }) {
+// memo：历史消息的 props（msg/onCopy/onRegenerate）在流式期间稳定，避免每帧全列表重渲染；
+// mdToHtml 用 useMemo 按 msg.content 缓存，历史消息只解析一次
+const MessageItem = memo(function MessageItem({ msg, onCopy, onRegenerate }) {
   const isUser = msg.role === 'user'
+  const mdHtml = useMemo(
+    () => (isUser || msg.error ? null : mdToHtml(msg.content)),
+    [msg.content, isUser, msg.error]
+  )
   return (
     <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} mb-4 animate-fade-in-up group`}>
       <div className="relative max-w-[85%] sm:max-w-[78%] rounded-2xl px-4 py-3"
@@ -335,7 +380,7 @@ function MessageItem({ msg, onCopy, onRegenerate }) {
           <>
             <ThinkingBlock text={msg.thinking} />
             <div className="md-body text-sm" style={{ color: 'var(--text-primary)' }}
-              dangerouslySetInnerHTML={{ __html: mdToHtml(msg.content) }} />
+              dangerouslySetInnerHTML={{ __html: mdHtml }} />
             <CitationList citations={msg.citations} />
             <WidgetViewer widgets={msg.widgets} />
           </>
@@ -359,7 +404,7 @@ function MessageItem({ msg, onCopy, onRegenerate }) {
       )}
     </div>
   )
-}
+})
 
 // ============ 排队中的待发送消息（对话区即时回显） ============
 // 成功入队的消息立即在对话区显示「用户问题 + 等待动画」，轮到它时占位移除、
@@ -412,8 +457,10 @@ function PendingQueueBubbles({ items }) {
 }
 
 // ============ 流式输出中的 AI 气泡 ============
-function StreamBubble({ sending, onStop, onRetry }) {
+// memo：sending 引用变化（流式 flush/状态更新）时才重渲染；text 稳定后（停止/完成）不再被父组件其他状态变化波及
+const StreamBubble = memo(function StreamBubble({ sending, onStop, onRetry }) {
   const hasText = sending.text.length > 0
+  const mdHtml = useMemo(() => mdToHtml(sending.text), [sending.text])
   return (
     <div className="flex justify-start mb-4 animate-fade-in-up">
       <div className="max-w-[85%] sm:max-w-[78%] rounded-2xl px-4 py-3" style={{ background: 'var(--bg-ai-bubble)', boxShadow: 'var(--shadow-md)' }}>
@@ -453,7 +500,7 @@ function StreamBubble({ sending, onStop, onRetry }) {
         )}
         {hasText ? (
           <div className="md-body text-sm" style={{ color: 'var(--text-primary)' }}
-            dangerouslySetInnerHTML={{ __html: mdToHtml(sending.text) }} />
+            dangerouslySetInnerHTML={{ __html: mdHtml }} />
         ) : (
           <div className="flex items-center gap-1.5 py-1">
             <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--text-secondary)' }} />
@@ -485,7 +532,7 @@ function StreamBubble({ sending, onStop, onRetry }) {
       </div>
     </div>
   )
-}
+})
 
 // ============ 空状态引导 ============
 // 后台图片任务轮询参数（SSE image_task 事件触发，见 ChatAssistantPage 内轮询逻辑）
@@ -1083,6 +1130,14 @@ export default function ChatAssistantPage() {
   const renamingRef = useRef(null)
   const abortRef = useRef(null)
   const scrollRef = useRef(null)
+  // 自动滚动跟随标志（ref 而非 state，避免滚动产生重渲染）：
+  // true=跟随贴底；用户上滚（底部距离 > 80px）置 false，滚回底部（≤ 80px）恢复 true
+  const stickToBottomRef = useRef(true)
+  const handleMessageScroll = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 80
+  }, [])
   const inputRef = useRef(null)
   const sendingRef = useRef(null) // 与 sending 同步，供事件/回调读取最新状态（也兼作发送锁）
   const creatingRef = useRef(false) // 新建会话锁：createSession 异步期间拦截重复点击，保证只创建一个
@@ -1202,6 +1257,8 @@ export default function ChatAssistantPage() {
 
   // 切换会话时加载消息
   useEffect(() => {
+    // 切换会话/首次加载：整个消息列表替换，重置为跟随贴底
+    stickToBottomRef.current = true
     if (!activeId) { setMessages([]); return }
     if (skipMessagesLoadRef.current === activeId) { skipMessagesLoadRef.current = null; return }
     skipMessagesLoadRef.current = null // 残留标记（如切换会话后）一并清掉
@@ -1238,10 +1295,57 @@ export default function ChatAssistantPage() {
     return () => document.removeEventListener('click', onClick)
   }, [showToast])
 
-  // 自动滚动到底部
+  // 代码块/表格的复制与下载按钮：markdown.js 注入的 HTML 无法绑 React 事件，
+  // 与 katex 委托同理用 document click 委托（独立 listener，避免互相干扰）
+  useEffect(() => {
+    const onClick = async (e) => {
+      const btn = e.target.closest?.('button.md-copy-btn, button.md-download-btn, button.md-table-copy-btn, button.md-table-download-btn')
+      if (!btn) return
+      e.preventDefault()
+      e.stopPropagation()
+      try {
+        if (btn.classList.contains('md-copy-btn') || btn.classList.contains('md-download-btn')) {
+          const pre = btn.closest('pre.md-code-block')
+          const text = pre?.querySelector('code')?.textContent || ''
+          if (!text) return
+          if (btn.classList.contains('md-copy-btn')) {
+            const ok = await copyText(text)
+            showToast(ok ? '代码已复制' : '复制失败', ok ? 'success' : 'error')
+          } else {
+            const lang = (pre?.querySelector('.md-code-lang')?.textContent || '').trim()
+            const safe = (lang.replace(/[^\w-]+/g, '-') || 'code').slice(0, 32)
+            const ok = await saveBlob(new Blob([text], { type: 'text/plain;charset=utf-8' }), `code-${safe}.txt`)
+            if (ok) showToast('代码已下载')
+          }
+        } else {
+          const table = btn.closest('.md-table-wrap')?.querySelector('table')
+          if (!table) return
+          const csv = tableToCsv(table)
+          if (!csv) return
+          if (btn.classList.contains('md-table-copy-btn')) {
+            const ok = await copyText(csv)
+            showToast(ok ? '表格已复制' : '复制失败', ok ? 'success' : 'error')
+          } else {
+            // 带 BOM 防止 Excel 打开 CSV 中文乱码
+            const ok = await saveBlob(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }), 'table.csv')
+            if (ok) showToast('表格已下载')
+          }
+        }
+      } catch {
+        showToast('操作失败', 'error')
+      }
+    }
+    document.addEventListener('click', onClick)
+    return () => document.removeEventListener('click', onClick)
+  }, [showToast])
+
+  // 自动滚动到底部：仅当用户未上滚（stickToBottomRef=true）时才贴底；
+  // 用户上滚回看历史时跳过赋值，滚回底部（≤80px）自动恢复跟随。
+  // 只在「需要跟随」时写 scrollTop，避免每帧强制同步布局；直接赋值不 smooth（流式下 smooth 会卡）
   useEffect(() => {
     const el = scrollRef.current
-    if (el) el.scrollTop = el.scrollHeight
+    if (!el || !stickToBottomRef.current) return
+    el.scrollTop = el.scrollHeight
   }, [messages, messagesLoading, sending?.text, sending?.stopped, pendingQueue])
 
   const refreshSessions = useCallback(() => {
@@ -1699,6 +1803,8 @@ export default function ChatAssistantPage() {
   }
 
   const handleSend = async (raw) => {
+    // 发送新消息：用户意图是看新回复，重置为跟随贴底
+    stickToBottomRef.current = true
     const text = String(raw ?? input).trim()
     if (!text) return
     // 已成功上传的文件作为「引用」随消息发送（展示在对话区消息上，输入框标签立即移除）
@@ -1924,7 +2030,8 @@ export default function ChatAssistantPage() {
     }
   }
 
-  const handleStop = () => {
+  // useCallback：仅依赖 refs/setter，引用稳定 → StreamBubble memo 不因 onStop 变化失效
+  const handleStop = useCallback(() => {
     manualStopRef.current = true
     abortRef.current?.abort()
     // 兜底：无论底层中断是否立即生效（abort 已释放/网络延迟），先把 UI 与发送锁
@@ -1933,7 +2040,7 @@ export default function ChatAssistantPage() {
       sendingRef.current = { ...sendingRef.current, stopped: true, error: '已停止生成', manual: true }
     }
     setSending(prev => (prev && !prev.stopped) ? { ...prev, stopped: true, error: '已停止生成' } : prev)
-  }
+  }, [])
 
   const handleReasoningEffort = (v) => {
     setReasoningEffort(v)
@@ -1945,16 +2052,20 @@ export default function ChatAssistantPage() {
     try { localStorage.setItem('chat_model_id', id) } catch { /* 忽略 localStorage 异常 */ }
   }
 
-  const handleRetry = () => {
-    if (!sending) return
-    const { sessionId, content } = sending
+  // 用 sendingRef 读当前发送状态（与 sending state 同步），依赖仅 startStream → 引用稳定，
+  // StreamBubble memo 不因 onRetry 变化失效
+  const handleRetry = useCallback(() => {
+    const cur = sendingRef.current
+    if (!cur) return
+    const { sessionId, content } = cur
     setSending(null)
     startStream(sessionId, content, effortRef.current)
-  }
+  }, [startStream])
 
   // 「重新回答」：删除该回答分支点（对应问题消息及之后全部），再复用 send_message
   // 链路重新发送同一问题 —— 扣费/退款/落库全部走现有逻辑，积分消耗与正常发送一致。
-  const handleRegenerate = async (msg) => {
+  // useCallback：稳定引用使 MessageItem memo 在流式期间（messages 不变）不失效
+  const handleRegenerate = useCallback(async (msg) => {
     if (!msg || msg.role !== 'assistant') return
     if (sendingRef.current && !sendingRef.current.stopped) {
       dialog.alert('请先停止当前生成，再重新回答')
@@ -1992,12 +2103,12 @@ export default function ChatAssistantPage() {
       return [...prev.slice(0, ui), { ...userMsg, id: userLocalId, created_at: new Date().toISOString() }]
     })
     startStream(sid, userMsg.content, effortRef.current, null, userLocalId)
-  }
+  }, [dialog, messages, cost, startStream])
 
-  const handleCopy = async (text) => {
+  const handleCopy = useCallback(async (text) => {
     const ok = await copyText(String(text || ''))
     showToast(ok ? '已复制' : '复制失败', ok ? 'success' : 'error')
-  }
+  }, [showToast])
 
   const startRename = (s) => { const r = { id: s.id, title: s.title || '' }; renamingRef.current = r; setRenaming(r) }
   const changeRename = (v) => { const r = { ...renamingRef.current, title: v }; renamingRef.current = r; setRenaming(r) }
@@ -2077,7 +2188,7 @@ export default function ChatAssistantPage() {
             </button>
           )}
 
-          <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
+          <div ref={scrollRef} onScroll={handleMessageScroll} className="chat-scroll-area flex-1 min-h-0 overflow-y-auto">
             <div className="mx-auto w-full max-w-3xl px-4 py-5 pb-40 lg:pb-8">
               {messagesLoading ? (
                 <div className="text-center text-xs py-10" style={{ color: 'var(--text-secondary)' }}>加载中…</div>
