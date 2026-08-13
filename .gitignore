@@ -14,6 +14,9 @@ dist/
 data/app.db
 data/app.db-shm
 data/app.db-wal
+data/user_workspaces/
+data/chat_uploads/
+data/uploads/
 data/evo_thumbs/
 .codex/
 .claude/data/database.db

@@ -13,14 +13,15 @@ from backend.services.points_service import PointsService
 from backend.services.subscription_service import activate_plan_in_conn, get_plan_in_conn
 from backend.services.invite_service import InviteService
 from backend.services.notification_service import NotificationService
-from backend.services.image_expiry import refresh_permanent_flags_by_filenames
+from backend.services.image_expiry import refresh_permanent_flags_by_filenames, remove_generated_image_thumbnails
 from backend.services.finance_service import FinanceService
 from backend.services.favorite_service import FavoriteService
 from backend.services.classification_service import ClassificationService
 from backend.services.content_audit_service import ContentAuditService
 from backend.services.title_generator import TitleGenerator
 from backend.services.prompt_embedding_service import PromptEmbeddingService
-from backend.config import get_generation_providers, get_generation_models, get_config
+from backend.services.agent.workspace import remove_user_workspace, user_workspace_root
+from backend.config import CHAT_UPLOAD_DIR, GENERATED_IMAGES_DIR, UPLOAD_DIR, get_generation_providers, get_generation_models, get_config
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 logger = logging.getLogger(__name__)
@@ -225,6 +226,15 @@ async def delete_user(user_id: int, admin=Depends(require_admin)):
         user = conn.execute("SELECT id FROM users WHERE id = %s", (user_id,)).fetchone()
         if not user:
             raise HTTPException(status_code=404, detail="用户不存在")
+        chat_upload_names = [row["storage_name"] for row in conn.execute(
+            "SELECT storage_name FROM chat_files WHERE user_id = %s", (user_id,)
+        ).fetchall()]
+        upload_names = [row["storage_name"] for row in conn.execute(
+            "SELECT storage_name FROM upload_files WHERE owner_id = %s", (user_id,)
+        ).fetchall()]
+        image_names = [row["filename"] for row in conn.execute(
+            "SELECT filename FROM image_metadata WHERE user_id = %s", (user_id,)
+        ).fetchall()]
         recharge_ids = [r["id"] for r in conn.execute("SELECT id FROM recharge_requests WHERE user_id = %s", (user_id,)).fetchall()]
         if recharge_ids:
             conn.execute("UPDATE point_transactions SET recharge_request_id = NULL WHERE recharge_request_id = ANY(%s)", (recharge_ids,))
@@ -243,6 +253,7 @@ async def delete_user(user_id: int, admin=Depends(require_admin)):
         square_filenames = [r["filename"] for r in square_rows]
         if square_image_ids:
             conn.execute("DELETE FROM square_likes WHERE image_id = ANY(%s)", (square_image_ids,))
+        conn.execute("DELETE FROM chat_sessions WHERE user_id = %s", (user_id,))
         conn.execute("DELETE FROM upload_files WHERE owner_id = %s", (user_id,))
         conn.execute("DELETE FROM image_metadata WHERE user_id = %s", (user_id,))
         conn.execute("DELETE FROM tasks WHERE user_id = %s", (user_id,))
@@ -259,7 +270,33 @@ async def delete_user(user_id: int, admin=Depends(require_admin)):
         conn.execute("DELETE FROM point_transactions WHERE user_id = %s", (user_id,))
         conn.execute("DELETE FROM daily_checkins WHERE user_id = %s", (user_id,))
         conn.execute("DELETE FROM users WHERE id = %s", (user_id,))
-        return {"message": "删除成功"}
+    for storage_name in chat_upload_names:
+        try:
+            # 新格式 uploads/{name}：文件在用户工作区 uploads/ 目录；
+            # 旧格式 {name}：文件在 data/chat_uploads/ 目录（兼容存量数据）。basename 兜底防穿越。
+            if storage_name.startswith("uploads/"):
+                path = user_workspace_root(user_id) / "uploads" / os.path.basename(storage_name)
+            else:
+                path = CHAT_UPLOAD_DIR / os.path.basename(storage_name)
+            path.unlink(missing_ok=True)
+        except OSError:
+            logger.exception("删除用户聊天附件失败: %s", storage_name)
+    for storage_name in upload_names:
+        try:
+            (UPLOAD_DIR / os.path.basename(storage_name)).unlink(missing_ok=True)
+        except OSError:
+            logger.exception("删除用户上传文件失败: %s", storage_name)
+    for filename in image_names:
+        try:
+            (GENERATED_IMAGES_DIR / os.path.basename(filename)).unlink(missing_ok=True)
+            remove_generated_image_thumbnails(filename)
+        except OSError:
+            logger.exception("删除用户生成图片失败: %s", filename)
+    try:
+        remove_user_workspace(user_id)
+    except OSError:
+        logger.exception("删除用户工作区失败: %s", user_id)
+    return {"message": "删除成功"}
 
 
 _SQUARE_ORDER_MAP = {"likes": "si.likes_count DESC, si.id DESC", "time": "si.created_at DESC, si.id DESC"}

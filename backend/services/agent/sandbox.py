@@ -34,7 +34,13 @@ SANDBOXED_TOOLS = frozenset({
     "file_ops_list",
     "file_ops_glob",
     "file_ops_grep",
+    "file_ops_delete",
 })
+
+# 全局沙箱并发上限：同时最多运行 MAX_CONCURRENT_SANDBOXES 个受限子进程，
+# 防多用户同时起沙箱压垮服务器（per-user 锁之上再加全局信号量）
+MAX_CONCURRENT_SANDBOXES = 8
+_sem = asyncio.Semaphore(MAX_CONCURRENT_SANDBOXES)
 
 # prlimit 资源上限
 CPU_SECONDS = 10           # --cpu=10
@@ -166,7 +172,10 @@ async def run_sandboxed(
         lock = asyncio.Lock()
         _locks[user_id] = lock
     async with lock:
-        return await _run_sandboxed_locked(name, args, ctx, timeout, extra_module)
+        # 全局并发上限：per-user 锁内、起子进程前获取信号量，
+        # 限制同时运行的沙箱子进程总数（默认 8），防多用户并发压垮服务器
+        async with _sem:
+            return await _run_sandboxed_locked(name, args, ctx, timeout, extra_module)
 
 
 async def _run_sandboxed_locked(

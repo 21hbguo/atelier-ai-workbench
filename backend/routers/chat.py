@@ -4,17 +4,27 @@ import json
 import logging
 import os
 import secrets
+import shutil
 import time
 import uuid
 import zipfile
 from collections import deque
 from decimal import Decimal
+from pathlib import Path
 from fastapi import APIRouter, HTTPException, Depends, Query, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from backend import config
 from backend.auth import get_current_user
 from backend.database import get_db
-from backend.config import CHAT_UPLOAD_DIR, UPLOAD_DIR, get_limit_config, get_llm_config, MAX_FILE_SIZE
+from backend.config import CHAT_UPLOAD_DIR, get_limit_config, get_llm_config, MAX_FILE_SIZE
+from backend.services.agent.workspace import (
+    ensure_user_uploads,
+    ensure_workspace_capacity,
+    purge_expired_trash,
+    user_uploads_root,
+    user_workspace_root,
+)
 from backend.services.points_service import PointsService
 from backend.services.banned_words import BannedWordsService
 from backend.services.chat_service import ChatService, build_system_prompt
@@ -79,51 +89,117 @@ def _owns_session(conn, session_id: int, user_id: int):
     return row
 
 
-def _remove_chat_uploads(storage_names: list[str]) -> None:
+def _remove_chat_uploads(user_id, storage_names: list[str] | None = None) -> None:
+    """删除聊天附件文件（会话/批量删除时调用）。
+
+    - 新格式 storage_name 形如 uploads/{name}：文件在用户工作区 uploads/ 目录，
+      路径 = user_workspace_root(user_id) / uploads / basename（basename 兜底防穿越）；
+    - 旧格式 storage_name 形如 {name}：文件在 data/chat_uploads/ 目录（兼容存量数据）；
+    - 兼容旧调用签名 _remove_chat_uploads(storage_names)（第一个参数为列表时）。
+    删除后若 uploads 目录已空则顺带移除空目录。
+    """
+    if storage_names is None:
+        # 兼容旧签名：第一个位置参数实际是 storage_names 列表
+        storage_names, user_id = user_id, None
     for storage_name in storage_names:
-        path = CHAT_UPLOAD_DIR / os.path.basename(storage_name)
         try:
+            if str(storage_name).startswith("uploads/"):
+                if user_id is None:
+                    continue  # 无 user_id 无法定位工作区（新格式调用必传，理论不可达）
+                path = user_workspace_root(user_id) / "uploads" / os.path.basename(storage_name)
+            else:
+                path = CHAT_UPLOAD_DIR / os.path.basename(storage_name)
             path.unlink(missing_ok=True)
         except OSError:
             logger.exception("[chat] remove attachment failed: %s", storage_name)
+    # 顺带清理：uploads 目录已空则移除（保持目录整洁）
+    if user_id is not None:
+        try:
+            uploads = user_uploads_root(user_id)
+            if uploads.exists() and not any(uploads.iterdir()):
+                uploads.rmdir()
+        except OSError:
+            pass
 
 
 def reconcile_chat_uploads() -> dict:
-    """迁移旧聊天附件并仅清理 chat_files 未引用的独立目录文件。"""
-    with get_db() as conn:
-        names = {row["storage_name"] for row in conn.execute("SELECT storage_name FROM chat_files").fetchall()}
+    """聊天附件迁移 + 清理 + 回收站过期清理（启动时与每小时循环调用）。
+
+    1) 迁移：旧格式 storage_name（{hex}.{ext}，文件在 data/chat_uploads/）迁移到
+       用户工作区 uploads/ 目录，并把 chat_files.storage_name 更新为 uploads/{name}
+       （无论源文件是否还在都更新字段，保证幂等）；
+    2) 清理：删除 data/chat_uploads/ 中未被引用且未迁移成功的残留文件；
+    3) 回收站：各用户工作区 .trash/ 下过期（默认 30 天）条目自动清理。
+    """
     migrated = deleted = failed = 0
-    for name in names:
+    trash_purged = 0
+    rows = []
+    try:
+        with get_db() as conn:
+            rows = conn.execute("SELECT id, user_id, storage_name FROM chat_files").fetchall()
+    except Exception:
+        failed += 1
+        logger.exception("[chat] reconcile: 查询 chat_files 失败")
+        # DB 不可用时绝不能继续清理旧目录（会把所有文件当孤儿误删），直接返回
+        return {"migrated": 0, "deleted": 0, "failed": failed, "trash_purged": 0}
+    # 尚未迁移成功的旧格式文件名集合：旧目录清理时跳过，防止误删待迁移文件
+    pending_old_names: set[str] = set()
+    for row in rows:
+        name = str(row["storage_name"] or "")
+        if name.startswith("uploads/"):
+            continue
+        user_id = row["user_id"]
         safe_name = os.path.basename(name)
-        source = UPLOAD_DIR / safe_name
-        target = CHAT_UPLOAD_DIR / safe_name
+        pending_old_names.add(safe_name)
+        source = CHAT_UPLOAD_DIR / safe_name
+        target = user_uploads_root(user_id) / safe_name
         try:
             if source.exists():
-                if target.exists():
-                    source.unlink()
-                else:
-                    source.replace(target)
-                migrated += 1
-        except OSError:
+                ensure_user_uploads(user_id)
+                if not target.exists():
+                    shutil.copy2(source, target)
+                source.unlink(missing_ok=True)
+            with get_db() as conn:
+                conn.execute(
+                    "UPDATE chat_files SET storage_name = %s WHERE id = %s",
+                    (f"uploads/{safe_name}", row["id"]),
+                )
+            migrated += 1
+            pending_old_names.discard(safe_name)
+        except Exception:
             failed += 1
-            logger.exception("[chat] migrate attachment failed: %s", safe_name)
-    for path in CHAT_UPLOAD_DIR.iterdir():
-        if not path.is_file() or path.name in names:
+            logger.exception("[chat] reconcile: 迁移附件失败 %s", safe_name)
+    # 旧目录清理：未被引用（且未迁移成功）的残留文件删除
+    if CHAT_UPLOAD_DIR.exists():
+        for path in CHAT_UPLOAD_DIR.iterdir():
+            if not path.is_file() or path.name in pending_old_names:
+                continue
+            try:
+                path.unlink()
+                deleted += 1
+            except OSError:
+                failed += 1
+                logger.exception("[chat] reconcile: 清理残留附件失败 %s", path.name)
+    # 各用户回收站过期清理
+    for user_dir in Path(config.USER_WORKSPACES_DIR).glob("user_*"):
+        if not user_dir.is_dir():
             continue
         try:
-            path.unlink()
-            deleted += 1
+            user_id = int(user_dir.name[len("user_"):])
+        except ValueError:
+            continue
+        try:
+            trash_purged += purge_expired_trash(user_id)
         except OSError:
-            failed += 1
-            logger.exception("[chat] cleanup attachment failed: %s", path.name)
-    return {"migrated": migrated, "deleted": deleted, "failed": failed}
+            logger.exception("[chat] reconcile: 清理回收站失败 %s", user_dir.name)
+    return {"migrated": migrated, "deleted": deleted, "failed": failed, "trash_purged": trash_purged}
 
 
 async def chat_upload_cleanup_loop(interval_seconds: int = 3600):
     while True:
         try:
             result = await asyncio.to_thread(reconcile_chat_uploads)
-            if result["migrated"] or result["deleted"] or result["failed"]:
+            if result["migrated"] or result["deleted"] or result["failed"] or result["trash_purged"]:
                 logger.info("[chat] attachment reconcile result=%s", result)
         except Exception:
             logger.exception("[chat] attachment reconcile crashed")
@@ -229,7 +305,7 @@ async def upload_chat_file(
     file: UploadFile = File(...),
     user=Depends(get_current_user),
 ):
-    """上传聊天文档：校验后存 data/chat_uploads/，解析全文写入 chat_files，供后续对话注入上下文。"""
+    """上传聊天文档：校验后存用户工作区 uploads/ 目录，解析全文写入 chat_files，供后续对话注入上下文。"""
     user_id = user["user_id"]
     with get_db() as conn:
         _owns_session(conn, session_id, user_id)
@@ -254,8 +330,14 @@ async def upload_chat_file(
         if len(content) > MAX_FILE_SIZE:
             raise HTTPException(status_code=400, detail=f"文件大小超过{MAX_FILE_SIZE // 1024 // 1024}MB限制")
     ext = _validate_chat_doc(file, content)
-    storage_name = f"{secrets.token_hex(16)}.{ext}"
-    save_path = CHAT_UPLOAD_DIR / storage_name
+    storage_name = f"uploads/{secrets.token_hex(16)}.{ext}"
+    uploads_root = ensure_user_uploads(user_id)
+    save_path = uploads_root / os.path.basename(storage_name)
+    # 写前检查工作区容量（uploads 原件同样计入 100MB 工作区容量）
+    try:
+        ensure_workspace_capacity(user_id, save_path, len(content))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="工作区容量不足")
     await asyncio.to_thread(_write_file, save_path, content)
 
     # 解析失败：删除已写文件并返回 4xx
@@ -522,7 +604,7 @@ async def delete_session(session_id: int, user=Depends(get_current_user)):
             "SELECT storage_name FROM chat_files WHERE session_id = %s", (session_id,)
         ).fetchall()]
         conn.execute("DELETE FROM chat_sessions WHERE id = %s", (session_id,))
-    _remove_chat_uploads(storage_names)
+    _remove_chat_uploads(user_id, storage_names)
     return {"ok": True}
 
 
@@ -545,7 +627,7 @@ async def batch_delete_sessions(body: ChatBatchDeleteRequest, user=Depends(get_c
             (ids, user_id),
         )
         deleted = cur.rowcount
-    _remove_chat_uploads(storage_names)
+    _remove_chat_uploads(user_id, storage_names)
     return {"deleted": deleted}
 
 

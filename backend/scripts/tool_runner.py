@@ -36,11 +36,12 @@ from pathlib import Path
 # 项目根目录（backend/scripts/tool_runner.py 的上两级；子进程 cwd 即此）
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-# 沙箱白名单：只允许 file_ops_* 六个工作区文件工具
+# 沙箱白名单：只允许 file_ops_* 七个工作区文件工具
 ALLOWED_TOOLS = frozenset({
     "file_ops_read",
     "file_ops_write",
     "file_ops_edit",
+    "file_ops_delete",
     "file_ops_list",
     "file_ops_glob",
     "file_ops_grep",

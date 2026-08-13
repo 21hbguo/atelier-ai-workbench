@@ -25,7 +25,11 @@ from backend.services.agent.workspace import (
     MAX_LINE_CHARS,
     MAX_LIST_ITEMS,
     MAX_READ_LINE_CHARS,
+    TRASH_DIR_NAME,
     ensure_workspace_capacity,
+    is_uploads_path,
+    move_to_trash,
+    rel_workspace_path,
     MAX_READ_LINES,
     resolve_workspace_path,
     user_workspace_root,
@@ -73,6 +77,24 @@ def _get_edit_lock(path: Path) -> asyncio.Lock:
     else:
         _EDIT_LOCKS.move_to_end(key)
     return lock
+
+
+# 用户上传原件（uploads/）写保护文案
+_UPLOADS_READONLY_MSG = (
+    "该文件是用户上传的原件（uploads/ 目录），不允许覆盖或修改；"
+    "如需基于它生成新文件，请写到工作区其他位置"
+)
+
+
+def _reject_uploads_write(user_id: int, path: Path) -> str | None:
+    """uploads/ 写保护：path 位于 uploads/ 下时返回拒绝文案，否则返回 None。"""
+    try:
+        rel = rel_workspace_path(user_id, path)
+    except ValueError as exc:
+        return f"路径无效：{exc}"
+    if is_uploads_path(rel):
+        return _UPLOADS_READONLY_MSG
+    return None
 
 
 # ---------- file_ops_read ----------
@@ -183,6 +205,9 @@ async def file_ops_write(args: dict, ctx: AgentContext) -> str:
     except ValueError as exc:
         logger.warning("[file_ops_workspace] write 路径无效: %s", exc)
         return f"路径无效：{exc}"
+    blocked = _reject_uploads_write(user_id, path)
+    if blocked:
+        return blocked
     try:
         async with _get_edit_lock(path):  # 与 edit 共用锁，防 read-modify-write 并发丢更新
             if mode == "create" and path.exists():
@@ -240,6 +265,9 @@ async def file_ops_edit(args: dict, ctx: AgentContext) -> str:
     except ValueError as exc:
         logger.warning("[file_ops_workspace] edit 路径无效: %s", exc)
         return f"路径无效：{exc}"
+    blocked = _reject_uploads_write(user_id, path)
+    if blocked:
+        return blocked
     if not path.exists():
         return f"文件不存在：{path_str}"
     try:
@@ -277,12 +305,16 @@ async def file_ops_edit(args: dict, ctx: AgentContext) -> str:
 # ---------- file_ops_list ----------
 
 def _list_entries(path: Path, recursive: bool):
-    """返回 [(显示名, Path)]：目录在前、按名字排序；recursive 时递归收集。"""
+    """返回 [(显示名, Path)]：目录在前、按名字排序；recursive 时递归收集。
+
+    默认跳过回收站目录（.trash），不展示给模型/用户。
+    """
     if not recursive:
         entries = sorted(path.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
-        return [(p.name, p) for p in entries]
+        return [(p.name, p) for p in entries if p.name != TRASH_DIR_NAME]
     items = []
     for dirpath, dirnames, filenames in os.walk(path):
+        dirnames[:] = [d for d in dirnames if d != TRASH_DIR_NAME]
         rel = Path(dirpath).relative_to(path)
         for d in sorted(dirnames):
             items.append((rel / d, path / rel / d))
@@ -344,6 +376,65 @@ async def file_ops_list(args: dict, ctx: AgentContext) -> str:
         lines.append(f"（条目过多，已截断，仅显示前 {MAX_LIST_ITEMS} 个）")
     logger.info("[file_ops_workspace] 已列出 %s（%d 个条目）", path_str, len(entries))
     return "\n".join(lines)
+
+
+# ---------- file_ops_delete ----------
+
+@agent_tool(
+    name="file_ops_delete",
+    description=(
+        f"{_WORKSPACE_DESC}删除文件或目录（移入回收站 .trash/，30 天内可恢复，30 天后自动清理）。"
+        "删除前必须先调用 file_ops_list 列出工作区文件，让用户确认要删哪些、经用户明确同意后再删；"
+        "uploads/ 目录下的文件是用户上传的原件，删除必须格外谨慎；"
+        "不要在用户没有明确要求删除时主动删除。删除目录需要 recursive=true。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "相对工作区根目录的文件或目录路径"},
+            "recursive": {"type": "boolean", "description": "删除目录时需要 true（默认 false，仅删文件）"},
+        },
+        "required": ["path"],
+    },
+)
+async def file_ops_delete(args: dict, ctx: AgentContext) -> str:
+    if not _has_file_write(ctx):
+        return "当前套餐不支持文件写入。"
+    user_id = _user_id_or_none(ctx)
+    if user_id is None:
+        return "需要登录后才能使用文件工具"
+    path_str = str(args.get("path") or "").strip()
+    recursive = bool(args.get("recursive"))
+    try:
+        path = resolve_workspace_path(user_id, path_str)
+    except ValueError as exc:
+        logger.warning("[file_ops_workspace] delete 路径无效: %s", exc)
+        return f"路径无效：{exc}"
+    if not path.exists():
+        return f"文件或目录不存在：{path_str}"
+    try:
+        rel = rel_workspace_path(user_id, path)
+    except ValueError as exc:
+        return f"路径无效：{exc}"
+    if not rel.parts:
+        return "不能删除工作区根目录"
+    if len(rel.parts) == 1 and is_uploads_path(rel):
+        return "uploads/ 目录是用户上传原件的存放目录，不能删除"
+    if path.is_dir() and not recursive:
+        return f"目录删除需 recursive=true：{path_str}"
+    try:
+        move_to_trash(user_id, path)
+    except ValueError as exc:
+        # 回收站内拒绝 / 回收站已满等
+        return str(exc)
+    except OSError:
+        logger.exception("[file_ops_workspace] 删除失败 %s", path_str)
+        return "删除失败"
+    logger.info("[file_ops_workspace] 已删除（移入回收站）%s", path_str)
+    return (
+        f"已将 {rel.as_posix()} 移入回收站（30 天内可恢复），"
+        "如确认不再需要、需彻底删除，请明确告知。"
+    )
 
 
 # ---------- file_ops_glob ----------

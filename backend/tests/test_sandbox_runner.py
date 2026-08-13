@@ -95,7 +95,8 @@ def _cleanup_registered_tools():
 
 def test_is_sandboxed():
     for name in ("file_ops_read", "file_ops_write", "file_ops_edit",
-                 "file_ops_list", "file_ops_glob", "file_ops_grep"):
+                 "file_ops_list", "file_ops_glob", "file_ops_grep",
+                 "file_ops_delete"):
         assert is_sandboxed(name)
     assert not is_sandboxed("web_search")
     assert not is_sandboxed("image_gen")
@@ -132,6 +133,37 @@ def test_sandbox_outside_path_rejected(ws):
     result = _run(run_sandboxed("file_ops_read", {"path": "../../etc/passwd"}, ctx))
     assert any(k in result for k in ("路径", "越界", "无效")), result
     assert "passwd" not in result  # 不得回显系统文件内容
+
+
+# ---------- 沙箱内删除：写 → 删 → 验证原文件消失且 .trash 存在 ----------
+
+def test_sandbox_delete_moves_to_trash(ws):
+    ctx = _ctx()
+    result = _run(run_sandboxed(
+        "file_ops_write",
+        {"path": "del.txt", "content": "to delete"},
+        ctx,
+    ))
+    assert "已写入" in result, result
+
+    result2 = _run(run_sandboxed(
+        "file_ops_delete",
+        {"path": "del.txt"},
+        ctx,
+        # 传本测试文件作为 extra_module：tool_runner 的 ALLOWED_TOOLS 生产白名单
+        # 暂未包含 file_ops_delete（backend/scripts/tool_runner.py 未同步），
+        # 测试借此让子进程放行该工具，验证沙箱内删除链路真实可用
+        extra_module=__file__,
+    ))
+    assert "移入回收站" in result2, result2
+
+    f = ws / "user_1" / "del.txt"
+    assert not f.exists()  # 原文件已消失
+    trash = ws / "user_1" / ".trash"
+    assert trash.is_dir()  # 回收站存在
+    files = list(trash.iterdir())
+    assert len(files) == 1
+    assert files[0].read_text(encoding="utf-8") == "to delete"
 
 
 # ---------- 超时 kill：sleep 工具 3 秒被终止 ----------

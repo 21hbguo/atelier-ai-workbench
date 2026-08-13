@@ -5,6 +5,7 @@ write 三种模式、edit 替换语义与并发锁、list/glob/grep 基本行为
 测试模式与 test_agent_image_gen.py 一致：无 pytest-asyncio，用 asyncio.run 包装协程。
 """
 import asyncio
+import os
 
 import pytest
 
@@ -448,3 +449,144 @@ def test_read_truncates_overlong_line(ws):
     assert "行过长已截断" in result
     assert "1: " + long_line not in result  # 完整超长行不应出现
     assert "2: 短行" in result
+
+
+# ---------- file_ops_delete（回收站式删除） ----------
+
+def test_delete_file_moves_to_trash(ws):
+    root = _root(ws)
+    _write(root, "del.txt", "content")
+    result = _run(fow.file_ops_delete({"path": "del.txt"}, _ctx()))
+    assert "移入回收站" in result, result
+    assert not (root / "del.txt").exists()  # 原路径消失
+    trash_files = list((root / ".trash").iterdir())
+    assert len(trash_files) == 1
+    assert trash_files[0].read_text(encoding="utf-8") == "content"  # 内容进回收站
+
+
+def test_delete_dir_requires_recursive(ws):
+    root = _root(ws)
+    _write(root, "dir/a.txt", "a")
+    result = _run(fow.file_ops_delete({"path": "dir"}, _ctx()))
+    assert "recursive" in result, result
+    assert (root / "dir/a.txt").exists()  # 未被删除
+
+
+def test_delete_dir_recursive(ws):
+    root = _root(ws)
+    _write(root, "dir/a.txt", "a")
+    _write(root, "dir/sub/b.txt", "b")
+    result = _run(fow.file_ops_delete({"path": "dir", "recursive": True}, _ctx()))
+    assert "移入回收站" in result, result
+    assert not (root / "dir").exists()  # 整个目录移走
+    trash_dirs = [p for p in (root / ".trash").iterdir() if p.is_dir()]
+    assert len(trash_dirs) == 1
+    assert (trash_dirs[0] / "sub" / "b.txt").read_text(encoding="utf-8") == "b"
+
+
+def test_delete_not_exists(ws):
+    result = _run(fow.file_ops_delete({"path": "missing.txt"}, _ctx()))
+    assert "不存在" in result, result
+
+
+def test_delete_uploads_dir_rejected(ws):
+    root = _root(ws)
+    _write(root, "uploads/a.txt", "a")
+    result = _run(fow.file_ops_delete({"path": "uploads", "recursive": True}, _ctx()))
+    assert "不能删除" in result, result
+    assert (root / "uploads/a.txt").exists()
+
+
+def test_delete_workspace_root_rejected(ws):
+    root = _root(ws)
+    _write(root, "a.txt", "a")
+    result = _run(fow.file_ops_delete({"path": ".", "recursive": True}, _ctx()))
+    assert "不能删除工作区根目录" in result, result
+    assert (root / "a.txt").exists()
+
+
+def test_delete_trash_inner_rejected(ws):
+    root = _root(ws)
+    _write(root, "a.txt", "a")
+    _run(fow.file_ops_delete({"path": "a.txt"}, _ctx()))
+    trash_file = list((root / ".trash").iterdir())[0]
+    result = _run(fow.file_ops_delete({"path": f".trash/{trash_file.name}"}, _ctx()))
+    assert "回收站" in result, result
+    assert trash_file.exists()  # 回收站内文件不能被再次删除
+
+
+def test_delete_requires_entitlement(ws):
+    root = _root(ws)
+    _write(root, "a.txt", "a")
+    result = _run(fow.file_ops_delete({"path": "a.txt"}, _ctx(file_write=False)))
+    assert result == "当前套餐不支持文件写入。"
+    assert (root / "a.txt").exists()
+
+
+# ---------- uploads/ 原件写保护 ----------
+
+def test_write_uploads_rejected(ws):
+    root = _root(ws)
+    _write(root, "uploads/original.txt", "original")
+    result = _run(fow.file_ops_write({"path": "uploads/original.txt", "content": "hacked"}, _ctx()))
+    assert "原件" in result, result
+    assert (root / "uploads/original.txt").read_text(encoding="utf-8") == "original"
+    # 在 uploads/ 下新建同样被拒
+    result2 = _run(fow.file_ops_write({"path": "uploads/new.txt", "content": "x"}, _ctx()))
+    assert "原件" in result2, result2
+    assert not (root / "uploads/new.txt").exists()
+
+
+def test_edit_uploads_rejected(ws):
+    root = _root(ws)
+    _write(root, "uploads/original.txt", "original")
+    result = _run(fow.file_ops_edit({"path": "uploads/original.txt", "old_string": "orig", "new_string": "xx"}, _ctx()))
+    assert "原件" in result, result
+    assert (root / "uploads/original.txt").read_text(encoding="utf-8") == "original"
+
+
+# ---------- file_ops_list 隐藏 .trash ----------
+
+def test_list_hides_trash(ws):
+    root = _root(ws)
+    _write(root, "a.txt", "a")
+    _write(root, ".trash/old.txt", "old")
+    result = _run(fow.file_ops_list({"path": "."}, _ctx()))
+    assert "a.txt" in result
+    assert ".trash" not in result
+    result2 = _run(fow.file_ops_list({"path": ".", "recursive": True}, _ctx()))
+    assert ".trash" not in result2
+    assert "old.txt" not in result2
+
+
+# ---------- move_to_trash / purge_expired_trash ----------
+
+def test_move_to_trash_over_capacity_rejected(ws, monkeypatch):
+    root = _root(ws)
+    _write(root, "big.txt", "x" * 100)
+    monkeypatch.setattr(workspace, "MAX_TRASH_BYTES", 50)
+    result = _run(fow.file_ops_delete({"path": "big.txt"}, _ctx()))
+    assert "回收站已满" in result, result
+    # 任务语义：移动后检查总量，文件已进回收站但返回拒绝文案
+    assert not (root / "big.txt").exists()
+    assert list((root / ".trash").iterdir())
+
+
+def test_purge_expired_trash(ws, monkeypatch):
+    import time as _time
+
+    root = _root(ws)
+    _write(root, "a.txt", "a")
+    _run(fow.file_ops_delete({"path": "a.txt"}, _ctx()))
+    trash_file = list((root / ".trash").iterdir())[0]
+    # 把回收站文件 mtime 改成 31 天前 → 过期
+    old = _time.time() - 31 * 86400
+    os.utime(trash_file, (old, old))
+    removed = workspace.purge_expired_trash(123)
+    assert removed == 1
+    assert not trash_file.exists()
+    # 未过期的文件保留
+    _write(root, "b.txt", "b")
+    _run(fow.file_ops_delete({"path": "b.txt"}, _ctx()))
+    assert list((root / ".trash").iterdir())  # 新鲜文件还在
+    assert workspace.purge_expired_trash(123) == 0
