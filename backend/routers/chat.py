@@ -414,10 +414,14 @@ async def list_sessions(user=Depends(get_current_user)):
             """
             SELECT s.id, s.title, s.created_at, s.updated_at,
                    (SELECT COUNT(*) FROM chat_messages m WHERE m.session_id = s.id) AS message_count,
-                   (SELECT content FROM chat_messages m WHERE m.session_id = s.id ORDER BY m.id DESC LIMIT 1) AS last_message
+                   (SELECT content FROM chat_messages m WHERE m.session_id = s.id ORDER BY m.id DESC LIMIT 1) AS last_message,
+                   (SELECT created_at FROM chat_messages m WHERE m.session_id = s.id ORDER BY m.id DESC LIMIT 1) AS last_message_at
             FROM chat_sessions s
             WHERE s.user_id = %s
-            ORDER BY s.updated_at DESC
+            ORDER BY COALESCE(
+                (SELECT created_at FROM chat_messages m WHERE m.session_id = s.id ORDER BY m.id DESC LIMIT 1),
+                s.updated_at, s.created_at
+            ) DESC
             """,
             (user_id,),
         ).fetchall()
@@ -428,6 +432,7 @@ async def list_sessions(user=Depends(get_current_user)):
                 "title": r["title"],
                 "created_at": r["created_at"].isoformat() if r["created_at"] else None,
                 "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
+                "last_message_at": r["last_message_at"].isoformat() if r["last_message_at"] else None,
                 "message_count": r["message_count"] or 0,
                 "last_message": r["last_message"] or "",
             }
@@ -442,10 +447,15 @@ async def create_session(user=Depends(get_current_user)):
     with get_db() as conn:
         # 会话数量不限制（免费与付费权益一致，未来如需限制改读套餐 features.max_chat_sessions）
         row = conn.execute(
-            "INSERT INTO chat_sessions (user_id, title) VALUES (%s, '新对话') RETURNING id, title",
+            "INSERT INTO chat_sessions (user_id, title) VALUES (%s, '新对话') RETURNING id, title, created_at, updated_at",
             (user_id,),
         ).fetchone()
-    return {"id": row["id"], "title": row["title"]}
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+        "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
+    }
 
 
 @router.patch("/sessions/{session_id}")
