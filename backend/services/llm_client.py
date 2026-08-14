@@ -14,9 +14,11 @@
         # event: {"type":"chunk","text":...} ... {"type":"done","text":完整} 或 {"type":"error","detail":...}
 """
 import asyncio
+import base64
 import httpx
 import json
 import logging
+import os
 import time
 
 from backend.config import get_llm_config
@@ -31,6 +33,16 @@ _ANTHROPIC_EFFORT_BUDGET = {
     "high": 2048,
     "max": 4096,
     "xhigh": 4096,
+}
+
+# 图片扩展名 → media_type 推断映射（jpg→image/jpeg；识别不出时默认 image/png）
+_IMAGE_EXT_MEDIA_TYPES = {
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "webp": "image/webp",
+    "gif": "image/gif",
+    "bmp": "image/bmp",
 }
 
 
@@ -73,6 +85,79 @@ class LLMClient:
         base = str(llm_cfg.get("base_url") or "").lower()
         return "anthropic" if "anthropic" in base else "openai"
 
+    # ---------- 图片消息块归一化 ----------
+    # 统一输入格式（调用方构造）：
+    #   {"type": "text", "text": "..."}
+    #   {"type": "image", "url": "https://..."}             外链，URL 原样透传
+    #   {"type": "image", "data": "<base64裸串>", "media_type": "image/png"}   base64 数据
+    #   {"type": "image", "path": "/abs/path.png"}          本地文件，内部读文件转 base64
+    # media_type 未给时按扩展名推断（jpg→image/jpeg），推断不出默认 image/png。
+
+    @staticmethod
+    def _infer_image_media_type(path: str) -> str:
+        """按文件扩展名推断 media_type；无法识别时默认 image/png。"""
+        ext = os.path.splitext(path)[1].lower().lstrip(".")
+        return _IMAGE_EXT_MEDIA_TYPES.get(ext, "image/png")
+
+    @staticmethod
+    def _convert_image_block(block: dict, proto: str) -> dict:
+        """把统一格式的 image 块转换为目标协议格式。
+        - OpenAI: {"type":"image_url","image_url":{"url":...}}（base64 场景为 data: URL）
+        - Anthropic: {"type":"image","source":{"type":"base64"|"url",...}}
+        本地文件 path 同步读取转 base64（本方法在同步上下文 _build_request 内调用）；
+        文件不存在或读取失败抛 LLMError（带明确中文错误信息），不静默忽略。
+        """
+        url = block.get("url")
+        if url:
+            if proto == "anthropic":
+                return {"type": "image", "source": {"type": "url", "url": url}}
+            return {"type": "image_url", "image_url": {"url": url}}
+
+        data = block.get("data")
+        if data is not None:
+            media_type = block.get("media_type") or "image/png"
+            if proto == "anthropic":
+                return {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": data}}
+            return {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{data}"}}
+
+        path = block.get("path")
+        if path:
+            try:
+                with open(path, "rb") as f:
+                    raw = f.read()
+            except FileNotFoundError:
+                raise LLMError(f"图片文件不存在: {path}") from None
+            except OSError as e:
+                raise LLMError(f"读取图片文件失败: {path}（{e}）") from e
+            b64 = base64.b64encode(raw).decode("ascii")
+            media_type = block.get("media_type") or LLMClient._infer_image_media_type(path)
+            if proto == "anthropic":
+                return {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}}
+            return {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{b64}"}}
+
+        raise LLMError(f"image 块缺少 url/data/path 字段: {block}")
+
+    @staticmethod
+    def _normalize_messages(messages: list, proto: str) -> list:
+        """消息归一化：content 为 str 时原样保留（向后兼容）；content 为 list 时
+        把 image 块转换为协议格式，text 块及其它未知块原样透传。"""
+        out = []
+        for msg in messages or []:
+            content = msg.get("content")
+            if not isinstance(content, list):
+                out.append(msg)
+                continue
+            new_msg = dict(msg)
+            new_content = []
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "image":
+                    new_content.append(LLMClient._convert_image_block(block, proto))
+                else:
+                    new_content.append(block)
+            new_msg["content"] = new_content
+            out.append(new_msg)
+        return out
+
     @classmethod
     def _build_request(cls, llm_cfg: dict, system: str, messages: list, max_tokens: int,
                        reasoning_effort: str, temperature: float | None, extra_body: dict | None,
@@ -85,6 +170,8 @@ class LLMClient:
         api_key = str(llm_cfg.get("api_key") or "")
         proto = cls.protocol(llm_cfg)
         extra_body = dict(extra_body or {})
+        # 图片消息块归一化（content 为 str 的消息原样透传）
+        messages = cls._normalize_messages(messages, proto)
 
         if proto == "anthropic":
             url = f"{base}/v1/messages"

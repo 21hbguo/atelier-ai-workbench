@@ -199,6 +199,22 @@ def get_active() -> dict:
     return fb
 
 
+def has_vision(model: dict | None) -> bool:
+    """模型档案 capabilities 是否含 vision（不区分大小写）。"""
+    if not model:
+        return False
+    caps = model.get("capabilities") or []
+    return any(str(c).strip().lower() == "vision" for c in caps)
+
+
+def get_vision_default() -> dict | None:
+    """返回 enabled 且 capabilities 含 vision 的第一个模型（按 CSV 顺序）；无则 None。"""
+    for r in _read_all():
+        if r.get("enabled") and has_vision(r):
+            return r
+    return None
+
+
 def _build_row(data: dict, existing: dict | None = None) -> dict:
     model_id = str(data.get("model_id") or "").strip()
     if not model_id:

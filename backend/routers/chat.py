@@ -32,7 +32,7 @@ from backend.services.document_parser import parse_file
 from backend.services.llm_client import LLMClient, LLMError
 from backend.services.agent import AgentContext
 from backend.services.agent.loop import run_agent_stream
-from backend.services.llm_model_service import get_active as get_active_model, get_all as get_all_models, get_by_model_id
+from backend.services.llm_model_service import get_active as get_active_model, get_all as get_all_models, get_by_model_id, has_vision, get_vision_default
 from backend.services.billing_service import BillingService
 from backend.services.subscription_service import get_entitlements_in_conn
 
@@ -51,6 +51,37 @@ class ChatSendRequest(BaseModel):
     reasoning_effort: str = Field("auto", pattern="^(auto|low|medium|high|max|xhigh)$")
     model_id: str = Field("", max_length=128)
     web_search: bool = Field(False, description="开启联网搜索（无文档会话也走 agent 工具链路，仅注册 web_search 工具）")
+    image_file_ids: list[int] = Field(
+        default_factory=list,
+        max_length=4,
+        description="随本条消息发送给视觉模型的图片 chat_files id（须属于本会话，图片与文本同管道直发，不经 OCR；最多 4 张）",
+    )
+
+
+def _attach_image_blocks(messages: list[dict], image_blocks: list[dict]) -> list[dict]:
+    """把图片内容块附加到当前用户消息（最后一条 user 消息）的 content 上。
+
+    - 无图片块时原样返回（不带图时消息构造完全不变）；
+    - 当前用户消息 content 为字符串时升级为 list：先 text 块后 image 块；
+    - content 已为 list 时在末尾追加图片块。
+    仅影响真正发给 LLM 的 messages，历史消息与落库内容不动。
+    """
+    if not image_blocks:
+        return messages
+    for i in range(len(messages) - 1, -1, -1):
+        msg = messages[i]
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content")
+        if isinstance(content, str):
+            blocks = [{"type": "text", "text": content}] + list(image_blocks)
+        elif isinstance(content, list):
+            blocks = list(content) + list(image_blocks)
+        else:
+            blocks = [{"type": "text", "text": str(content or "")}] + list(image_blocks)
+        messages[i] = {**msg, "content": blocks}
+        break
+    return messages
 
 
 class ChatRenameRequest(BaseModel):
@@ -250,6 +281,16 @@ _CHAT_DOC_MIME = {
 # 代码/配置文件兜底 MIME
 for _ext in _CHAT_DOC_EXTS:
     _CHAT_DOC_MIME.setdefault(_ext, "text/plain")
+# 聊天图片上传：允许的扩展名与对应 MIME（图片不 OCR、不解析，直接随消息以视觉块发给模型）
+_CHAT_IMG_EXTS = {"png", "jpg", "jpeg", "webp", "gif", "bmp"}
+_CHAT_IMG_MIME = {
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "webp": "image/webp",
+    "gif": "image/gif",
+    "bmp": "image/bmp",
+}
 # zip 炸弹防护：office 文档解压后总大小上限（压缩包 20MB 可膨胀 GB 级）
 _MAX_UNZIPPED_SIZE = 200 * 1024 * 1024
 # 每会话上传文件数上限（防磁盘/DB 无限增长）
@@ -305,7 +346,9 @@ async def upload_chat_file(
     file: UploadFile = File(...),
     user=Depends(get_current_user),
 ):
-    """上传聊天文档：校验后存用户工作区 uploads/ 目录，解析全文写入 chat_files，供后续对话注入上下文。"""
+    """上传聊天文件：文档校验后存用户工作区 uploads/ 目录并解析全文写入 chat_files；
+    图片（png/jpg/jpeg/webp/gif/bmp）不 OCR、不解析，直接存文件落库（status=image），
+    随消息以视觉内容块直发视觉模型。"""
     user_id = user["user_id"]
     with get_db() as conn:
         _owns_session(conn, session_id, user_id)
@@ -329,7 +372,17 @@ async def upload_chat_file(
         content += chunk
         if len(content) > MAX_FILE_SIZE:
             raise HTTPException(status_code=400, detail=f"文件大小超过{MAX_FILE_SIZE // 1024 // 1024}MB限制")
-    ext = _validate_chat_doc(file, content)
+    # 图片：跳过 _validate_chat_doc 的 UTF-8/魔数校验（不 OCR、不解析），仅做空内容与大小检查
+    filename = file.filename or ""
+    ext = os.path.splitext(filename)[1].lower().lstrip(".")
+    is_image = ext in _CHAT_IMG_EXTS
+    if is_image:
+        if not content:
+            raise HTTPException(status_code=400, detail="文件内容为空")
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=400, detail=f"文件大小超过{MAX_FILE_SIZE // 1024 // 1024}MB限制")
+    else:
+        ext = _validate_chat_doc(file, content)
     storage_name = f"uploads/{secrets.token_hex(16)}.{ext}"
     uploads_root = ensure_user_uploads(user_id)
     save_path = uploads_root / os.path.basename(storage_name)
@@ -340,34 +393,43 @@ async def upload_chat_file(
         raise HTTPException(status_code=400, detail="工作区容量不足")
     await asyncio.to_thread(_write_file, save_path, content)
 
-    # 解析失败：删除已写文件并返回 4xx
-    try:
-        page_content = await asyncio.to_thread(parse_file, str(save_path), ext)
-    except ValueError as e:
-        save_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception:
-        logger.exception("[chat/upload] parse failed: %s", storage_name)
-        save_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=400, detail="文件解析失败，请检查文件内容")
+    # 图片不解析（不 OCR、不提取文本），page_content 存占位标记；文档走 parse_file
+    if is_image:
+        page_content = "[image]"
+        char_count = 0
+        status = "image"
+    else:
+        try:
+            page_content = await asyncio.to_thread(parse_file, str(save_path), ext)
+        except ValueError as e:
+            save_path.unlink(missing_ok=True)
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception:
+            logger.exception("[chat/upload] parse failed: %s", storage_name)
+            save_path.unlink(missing_ok=True)
+            raise HTTPException(status_code=400, detail="文件解析失败，请检查文件内容")
+        char_count = len(page_content)
+        status = "parsed"
 
     original_name = os.path.basename(file.filename or "")[:255] or "upload"
-    content_type = (file.content_type or "").split(";")[0].strip().lower() or _CHAT_DOC_MIME[ext]
-    char_count = len(page_content)
+    content_type = (file.content_type or "").split(";")[0].strip().lower() \
+        or (_CHAT_IMG_MIME[ext] if is_image else _CHAT_DOC_MIME[ext])
     with get_db() as conn:
         row = conn.execute(
             """INSERT INTO chat_files
                (session_id, user_id, storage_name, original_name, content_type, page_content, char_count, status)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, 'parsed')
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                RETURNING id""",
-            (session_id, user_id, storage_name, original_name, content_type, page_content, char_count),
+            (session_id, user_id, storage_name, original_name, content_type, page_content, char_count, status),
         ).fetchone()
-    logger.info("[chat/upload] session=%s file_id=%s name=%s chars=%s", session_id, row["id"], original_name, char_count)
+    logger.info("[chat/upload] session=%s file_id=%s name=%s chars=%s kind=%s",
+                session_id, row["id"], original_name, char_count, "image" if is_image else "doc")
     return {
         "file_id": row["id"],
         "original_name": original_name,
         "char_count": char_count,
         "storage_name": storage_name,
+        "kind": "image" if is_image else "doc",
     }
 
 
@@ -763,11 +825,38 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                 and body.model_id != (active_model.get("model_id") or ""):
             raise HTTPException(status_code=400, detail="该模型未配置接口，请在模型档案中填写 API 地址和 Key")
 
+    # 带图状态：目标模型无视觉时自动切换；image_files 为随消息直发的图片记录
+    model_switched = False
+    image_files: list = []
+    image_blocks: list = []
+
     with get_db() as conn:
         entitlements = get_entitlements_in_conn(conn, user_id)
         if not entitlements["active"]:
             raise HTTPException(status_code=403, detail="当前订阅已暂停或撤销")
         allowed_models = entitlements["allowed_models"]
+        # 带图校验：图片必须属于本会话；目标模型无视觉时自动切换到可用的视觉模型
+        if body.image_file_ids:
+            # 去重（重复传同一张图视为一张），且仅接受 status='image' 的记录，
+            # 防止会话内已解析文档通过 image_file_ids 冒充图片直发模型
+            requested_ids = list(dict.fromkeys(body.image_file_ids))
+            image_files = conn.execute(
+                "SELECT id, original_name, storage_name, content_type FROM chat_files "
+                "WHERE id = ANY(%s) AND session_id = %s AND user_id = %s AND status = 'image'",
+                (requested_ids, session_id, user_id),
+            ).fetchall()
+            if len(image_files) != len(requested_ids):
+                raise HTTPException(status_code=404, detail="图片不存在或不属于当前会话")
+            if not has_vision(target_model):
+                vision_default = get_vision_default()
+                if vision_default is None:
+                    raise HTTPException(status_code=400, detail="当前模型不支持图片识别，且没有可用的视觉模型")
+                target_model = vision_default
+                model_switched = True
+                logger.info(
+                    "[chat/send] 图片消息自动切换视觉模型: %s (user=%s session=%s)",
+                    target_model.get("model_id"), user_id, session_id,
+                )
         target_model_id = target_model.get("model_id") or body.model_id
         if allowed_models and target_model_id not in allowed_models:
             raise HTTPException(status_code=403, detail="当前套餐不支持该模型")
@@ -780,6 +869,15 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
         msg_cnt = conn.execute("SELECT COUNT(*) AS cnt FROM chat_messages WHERE session_id = %s", (session_id,)).fetchone()["cnt"]
         if msg_cnt >= max_messages:
             raise HTTPException(status_code=400, detail=f"该会话消息已达上限（{max_messages} 条），请新建会话继续")
+
+    # 图片内容块：本地文件绝对路径，由 LLMClient 内部读文件转 base64（图片与文本同管道直发，不经 OCR）
+    for r in image_files:
+        storage_name = str(r["storage_name"] or "")
+        if storage_name.startswith("uploads/"):
+            p = user_workspace_root(user_id) / "uploads" / os.path.basename(storage_name)
+        else:
+            p = CHAT_UPLOAD_DIR / os.path.basename(storage_name)
+        image_blocks.append({"type": "image", "path": str(p)})
 
     active_limit = entitlements["max_concurrent_requests"]
     active_count = _active_chat_requests.get(user_id, 0)
@@ -947,7 +1045,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
         try:
             # 先回传用户消息的真实 id：前端用它替换本地临时 id，
             # 使「重新回答」能定位刚发送的问题消息（删除分支点需要数据库 id）
-            yield f"event: user_message_id\ndata: {json.dumps({'message_id': user_msg_id}, ensure_ascii=False)}\n\n"
+            yield f"event: user_message_id\ndata: {json.dumps({'message_id': user_msg_id, 'model_switched': model_switched, 'image_files': [{'id': r['id'], 'original_name': r['original_name'], 'content_type': r['content_type']} for r in image_files]}, ensure_ascii=False)}\n\n"
             if use_agent:
                 # 会话有上传文档：agent 工具循环（流式多轮；自动模式无需前端指定）
                 try:
@@ -1090,6 +1188,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                         session_id, target_model, attached_docs,
                         system_prompt=agent_system, override=override,
                     )
+                    messages = _attach_image_blocks(messages, image_blocks)
                     async for event in run_agent_stream(
                         system=agent_system,
                         messages=messages,
@@ -1143,7 +1242,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                                 model_cfg=target_model, usage=event.get("usage"),
                                 req_id=req_id, pre_charged=cost_per, pre_balance=balance_after, pre_allocation=precharge,
                             )
-                            yield f"event: done\ndata: {json.dumps({'text': text, 'thinking': thinking, 'points_balance': float(final_balance), 'message_id': new_msg_id, 'ai_daily_remaining': chat_free_remaining}, ensure_ascii=False)}\n\n"
+                            yield f"event: done\ndata: {json.dumps({'text': text, 'thinking': thinking, 'points_balance': float(final_balance), 'message_id': new_msg_id, 'ai_daily_remaining': chat_free_remaining, 'model_switched': model_switched}, ensure_ascii=False)}\n\n"
                 except LLMError as e:
                     refunded = True
                     _refund_once()
@@ -1223,6 +1322,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                     web_inject = ""
                 if web_inject:
                     messages.insert(inject_idx, {"role": "user", "content": web_inject})
+            messages = _attach_image_blocks(messages, image_blocks)
             async for event in ChatService.chat_stream([], body.reasoning_effort, model=target_model, attached_docs=attached_docs, prebuilt_messages=messages):
                 if event["type"] == "chunk":
                     _append_assistant_delta(text=str(event["text"] or ""))
@@ -1240,7 +1340,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                         model_cfg=target_model, usage=event.get("usage"),
                         req_id=req_id, pre_charged=cost_per, pre_balance=balance_after, pre_allocation=precharge,
                     )
-                    yield f"event: done\ndata: {json.dumps({'text': event['text'], 'thinking': event.get('thinking', ''), 'points_balance': float(final_balance), 'message_id': new_msg_id, 'ai_daily_remaining': chat_free_remaining}, ensure_ascii=False)}\n\n"
+                    yield f"event: done\ndata: {json.dumps({'text': event['text'], 'thinking': event.get('thinking', ''), 'points_balance': float(final_balance), 'message_id': new_msg_id, 'ai_daily_remaining': chat_free_remaining, 'model_switched': model_switched}, ensure_ascii=False)}\n\n"
                 elif event["type"] == "error":
                     refunded = True
                     _refund_once()
