@@ -43,6 +43,7 @@ def _vision_model(model_id="gpt-5.6-luna"):
 
 def test_recognize_returns_description(tmp_path, monkeypatch):
     """正常路径：查图 → 读文件 → 调视觉模型 → 返回识别文本。"""
+    monkeypatch.setenv("ATELIER_PROXY_API_KEY", "sk-test-123")
     (tmp_path / "uploads").mkdir(exist_ok=True)
     img = tmp_path / "uploads" / "a.png"
     img.write_bytes(b"\x89PNG fake")
@@ -113,6 +114,7 @@ def test_recognize_falls_back_to_vision_default(tmp_path, monkeypatch):
     (tmp_path / "uploads").mkdir(exist_ok=True)
     img = tmp_path / "uploads" / "c.png"
     img.write_bytes(b"png")
+    monkeypatch.setenv("ATELIER_PROXY_API_KEY", "sk-test-123")
     monkeypatch.setattr(tool, "user_workspace_root", lambda uid: tmp_path)
     rows = [{"id": 25, "original_name": "c.png", "storage_name": "uploads/c.png"}]
     fallback = _vision_model("gpt-5.6-terra")
@@ -130,6 +132,7 @@ def test_recognize_falls_back_to_vision_default(tmp_path, monkeypatch):
 
 
 def test_recognize_file_missing_returns_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("ATELIER_PROXY_API_KEY", "sk-test-123")
     monkeypatch.setattr(tool, "user_workspace_root", lambda uid: tmp_path)  # 目录为空，文件不存在
     rows = [{"id": 26, "original_name": "gone.png", "storage_name": "uploads/gone.png"}]
     with _mock_get_db(rows), \
@@ -142,6 +145,7 @@ def test_recognize_llm_error_returns_readable_message(tmp_path, monkeypatch):
     (tmp_path / "uploads").mkdir(exist_ok=True)
     img = tmp_path / "uploads" / "d.png"
     img.write_bytes(b"png")
+    monkeypatch.setenv("ATELIER_PROXY_API_KEY", "sk-test-123")
     monkeypatch.setattr(tool, "user_workspace_root", lambda uid: tmp_path)
     rows = [{"id": 27, "original_name": "d.png", "storage_name": "uploads/d.png"}]
 
