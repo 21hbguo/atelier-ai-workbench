@@ -1,12 +1,15 @@
 import axios from 'axios'
-import { clearUser, writeUser } from './auth'
+import { clearUser, readUser, writeUser } from './auth'
 
 const api = axios.create({ baseURL: '/api', timeout: 1800000, withCredentials: true, headers: { 'Content-Type': 'application/json' } })
 const refreshClient = axios.create({ baseURL: '/api', timeout: 1800000, withCredentials: true, headers: { 'Content-Type': 'application/json' } })
 let refreshPromise = null
 let promptCategoryCache = null
 let promptCategoryPromise = null
+let subscriptionMeCache = null
+let subscriptionMePromise = null
 const PROMPT_CATEGORY_CACHE_TTL = 60000
+const SUBSCRIPTION_CACHE_TTL = 30000
 function invalidatePromptCategoryCache() {
   promptCategoryCache = null
   promptCategoryPromise = null
@@ -20,6 +23,19 @@ function loadPromptCategories(force = false) {
     return res
   }).finally(() => { promptCategoryPromise = null })
   return promptCategoryPromise
+}
+function loadSubscriptionMe(force = false) {
+  const userId = readUser()?.id ?? readUser()?.user_id ?? null
+  if (!force && subscriptionMeCache?.userId === userId && Date.now() - subscriptionMeCache.ts < SUBSCRIPTION_CACHE_TTL) return Promise.resolve(subscriptionMeCache.response)
+  if (!force && subscriptionMePromise?.userId === userId) return subscriptionMePromise.promise
+  const promise = api.get('/subscriptions/me').then(res => {
+    subscriptionMeCache = { userId, ts: Date.now(), response: res }
+    return res
+  }).finally(() => {
+    if (subscriptionMePromise?.promise === promise) subscriptionMePromise = null
+  })
+  subscriptionMePromise = { userId, promise }
+  return promise
 }
 
 api.interceptors.response.use(
@@ -391,7 +407,11 @@ export const pointsAPI = {
 
 export const subscriptionAPI = {
   plans: () => api.get('/subscriptions/plans'),
-  me: () => api.get('/subscriptions/me'),
+  cachedMe: () => {
+    const userId = readUser()?.id ?? readUser()?.user_id ?? null
+    return subscriptionMeCache?.userId === userId && Date.now() - subscriptionMeCache.ts < SUBSCRIPTION_CACHE_TTL ? subscriptionMeCache.response?.data || null : null
+  },
+  me: (force = false) => loadSubscriptionMe(force),
   usage: (days = 30) => api.get('/subscriptions/usage', { params: { days } }),
   modelPrices: () => api.get('/subscriptions/model-prices'),
   orders: (page = 1, size = 20) => api.get('/subscriptions/orders', { params: { page, size } }),

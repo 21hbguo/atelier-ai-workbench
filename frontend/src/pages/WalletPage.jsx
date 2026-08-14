@@ -169,7 +169,7 @@ export default function WalletPage() {
   const fetchSubscription = async () => {
     try {
       const [me, usage, plans, orders, prices] = await Promise.all([
-        subscriptionAPI.me(), subscriptionAPI.usage(), subscriptionAPI.plans(), subscriptionAPI.orders(), subscriptionAPI.modelPrices(),
+        subscriptionAPI.me(true), subscriptionAPI.usage(), subscriptionAPI.plans(), subscriptionAPI.orders(), subscriptionAPI.modelPrices(),
       ])
       setSubscription(me.data)
       setSubscriptionUsage(usage.data)

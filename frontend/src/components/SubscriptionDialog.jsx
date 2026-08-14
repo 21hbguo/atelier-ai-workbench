@@ -22,7 +22,8 @@ export default function SubscriptionDialog({ open, onClose }) {
   const dialog = useAppDialog()
   const navigate = useNavigate()
   const [plans, setPlans] = useState([])
-  const [subscription, setSubscription] = useState(null)
+  const [subscription, setSubscription] = useState(() => subscriptionAPI.cachedMe?.() || null)
+  const [subscriptionReady, setSubscriptionReady] = useState(() => Boolean(subscriptionAPI.cachedMe?.()))
   const [loading, setLoading] = useState(false)
   // 支付（复用积分支持的支付交互：渠道 + 二维码 + 倒计时 + 轮询）
   const [payConfig, setPayConfig] = useState({ alipay_pay_qr_url: '', wechat_pay_qr_url: '' })
@@ -42,9 +43,12 @@ export default function SubscriptionDialog({ open, onClose }) {
         wechat_pay_qr_url: data.wechat_pay_qr_url || '',
       })
     }).catch(() => {})
-    Promise.allSettled([subscriptionAPI.plans(), subscriptionAPI.me()]).then(([p, m]) => {
+    Promise.allSettled([subscriptionAPI.plans(), subscriptionAPI.me(true)]).then(([p, m]) => {
       setPlans(p.status === 'fulfilled' ? (p.value.data?.items || []) : [])
-      setSubscription(m.status === 'fulfilled' ? (m.value.data || null) : null)
+      if (m.status === 'fulfilled') {
+        setSubscription(m.value.data || null)
+        setSubscriptionReady(true)
+      }
     }).finally(() => setLoading(false))
   }, [open])
 
@@ -52,7 +56,11 @@ export default function SubscriptionDialog({ open, onClose }) {
 
   const hasPlan = subscription?.plan && !subscription.plan.is_free
 
-  const refreshMe = () => subscriptionAPI.me().then(res => setSubscription(res.data)).catch(() => {})
+  const refreshMe = () => subscriptionAPI.me(true).then(res => {
+    setSubscription(res.data)
+    setSubscriptionReady(true)
+    window.dispatchEvent(new Event('subscriptions-updated'))
+  }).catch(() => {})
 
   const startPay = plan => {
     if (!readUser()) {
@@ -112,7 +120,9 @@ export default function SubscriptionDialog({ open, onClose }) {
             <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-secondary)' }}>
               {selectedPlan
                 ? `应付 ¥${selectedPlan.price_rmb} · ${selectedPlan.name}`
-                : hasPlan
+                  : !subscriptionReady
+                    ? <span aria-label="套餐信息加载中" className="block h-3 w-40 rounded-full animate-pulse" style={{ background: 'var(--bg-hover)' }} />
+                  : hasPlan
                   ? `当前套餐：${subscription.plan.name}${subscription.plan.features?.package_type !== 'credits' && subscription.cycle?.period_end ? ` · 周期至 ${formatDate(subscription.cycle.period_end)}` : ''}`
                   : '当前为免费套餐，升级解锁更多权益'}
             </p>
