@@ -1972,7 +1972,20 @@ export default function ChatAssistantPage() {
             sendingRef.current = { ...sendingRef.current, stopped: true, error: errText, manual: false, status: msg.status }
             setSending(prev => (prev && prev.streamId === streamId) ? { ...prev, stopped: true, error: errText, manual: false, status: msg.status } : prev)
           } else {
-            // done：清空 sending（消息已更新为终态）
+            // done：本页发送场景 messages 中无占位行 → 补进消息列表；
+            // 续看（resumed）场景消息已在列表中，由上面的 map 更新过终态
+            setMessages(prev => {
+              const idx = prev.findIndex(m => String(m.id) === String(messageId))
+              if (idx >= 0) return prev
+              return [...prev, {
+                id: messageId, role: 'assistant', content: msg.content || '',
+                thinking: msg.thinking || '',
+                citations: Array.isArray(msg.citations) ? msg.citations : [],
+                widgets: Array.isArray(msg.widgets) ? msg.widgets : [],
+                sent_files: Array.isArray(msg.sent_files) ? msg.sent_files : [],
+                created_at: new Date().toISOString(),
+              }]
+            })
             sendingRef.current = null
             setSending(prev => (prev && prev.streamId === streamId) ? null : prev)
             refreshSessions()

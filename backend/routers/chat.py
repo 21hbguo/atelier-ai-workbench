@@ -1384,14 +1384,17 @@ async def run_generation(ctx: ChatGenContext) -> None:
         finished = True
         CHAT_TASK_MANAGER.finish(task_id)
 
-    def _refund() -> None:
+    def _refund() -> bool:
         nonlocal refunded
-        if not refunded:
-            _refund_chat_request(
-                ctx.user_id, ctx.cost_per, ctx.req_id,
-                ctx.chat_charge_mode, ctx.daily_total, ctx.target_model_id,
-            )
+        if refunded:
+            return True
+        ok = _refund_chat_request(
+            ctx.user_id, ctx.cost_per, ctx.req_id,
+            ctx.chat_charge_mode, ctx.daily_total, ctx.target_model_id,
+        )
+        if ok:
             refunded = True
+        return ok
 
     def _handle_done(text: str, thinking: str, citations, widgets, files, usage) -> None:
         new_msg_id = _save_assistant_message(
@@ -1577,27 +1580,37 @@ async def run_generation(ctx: ChatGenContext) -> None:
             # 用户 stop/删除/服务关闭：退款 + 标 stopped + 广播；吞掉异常正常清理，不向上抛
             logger.warning("[chat/send] task cancelled: task=%s", task_id)
             if not finished:
-                _refund()
-                _mark_message_status(ctx.assistant_msg_id, "stopped", None)
-                _finish("stopped", "stopped", {"detail": "生成已停止"})
+                if _refund():
+                    _mark_message_status(ctx.assistant_msg_id, "stopped", None)
+                    _finish("stopped", "stopped", {"detail": "生成已停止"})
+                else:
+                    # 退款失败：保持 streaming（任务对象留内存），由重启 recover 幂等重试
+                    logger.warning("[chat/send] refund failed on cancel, keep streaming: task=%s", task_id)
     except LLMError as e:
         logger.warning("[chat/send] LLM error: task=%s detail=%s", task_id, e)
         if not finished:
-            _refund()
-            _mark_message_status(ctx.assistant_msg_id, "failed", str(e))
-            _finish("failed", "error", {"detail": str(e)})
+            if _refund():
+                _mark_message_status(ctx.assistant_msg_id, "failed", str(e))
+                _finish("failed", "error", {"detail": str(e)})
+            else:
+                # 退款失败：保持 streaming，由重启 recover 幂等重试
+                logger.warning("[chat/send] refund failed on LLM error, keep streaming: task=%s", task_id)
     except Exception:
         logger.exception("[chat/send] unexpected task error: task=%s", task_id)
         if not finished:
-            _refund()
-            _mark_message_status(ctx.assistant_msg_id, "failed", "回复失败，请重试")
-            _finish("failed", "error", {"detail": "回复失败，请重试"})
+            if _refund():
+                _mark_message_status(ctx.assistant_msg_id, "failed", "回复失败，请重试")
+                _finish("failed", "error", {"detail": "回复失败，请重试"})
+            else:
+                # 退款失败：保持 streaming，由重启 recover 幂等重试
+                logger.warning("[chat/send] refund failed on unexpected error, keep streaming: task=%s", task_id)
     finally:
-        # 兜底：任务结束但既未完成也未进入终态（理论不应发生）→ 退款 + 标 failed
+        # 兜底：任务结束但既未完成也未进入终态（理论不应发生）→ 退款成功才标 failed；
+        # 退款失败保持 streaming（任务对象留内存），由重启 recover 幂等重试
         if not finished:
-            _refund()
-            _mark_message_status(ctx.assistant_msg_id, "failed", "回复失败，请重试")
-            CHAT_TASK_MANAGER.finish(task_id)
+            if _refund():
+                _mark_message_status(ctx.assistant_msg_id, "failed", "回复失败，请重试")
+                CHAT_TASK_MANAGER.finish(task_id)
 
 
 def recover_interrupted_chat_messages() -> int:
@@ -1628,7 +1641,14 @@ def recover_interrupted_chat_messages() -> int:
                     charge_mode, daily_total, "",
                 )
             else:
-                refund_ok = False  # 旧数据无 req_id：无法幂等退款，跳过（保持 streaming 由人工处理）
+                # 旧数据无 req_id：无法幂等退款，直接标 failed（避免前端对残留 streaming
+                # 消息启动永不终止的兜底轮询）；退款需人工处理
+                refund_ok = True
+                with get_db() as conn:
+                    conn.execute(
+                        "UPDATE chat_messages SET status = 'failed', error = %s WHERE id = %s AND status = 'streaming'",
+                        ("服务重启导致生成中断（无退款记录，请联系客服）", r["id"]),
+                    )
             if refund_ok:
                 with get_db() as conn:
                     conn.execute(
@@ -1773,12 +1793,17 @@ async def stop_message(message_id: int, user=Depends(get_current_user)):
         # 未启动任务（create_task 后立即 stop）取消时协程函数体不会执行，
         # 不能依赖其 except CancelledError 分支清理；协程 except 对已终态幂等兜底。
         CHAT_TASK_MANAGER.cancel_by_message_id(message_id)
-        task.status = "stopped"
-        _mark_message_status(message_id, "stopped", None)
-        _refund_chat_request(
+        refund_ok = _refund_chat_request(
             task.user_id, task.cost_per, task.req_id,
             task.charge_mode, task.daily_total, task.model_id,
         )
+        if not refund_ok:
+            # 退款失败：不标终态（保持 streaming），已启动任务的协程 except 会重试并兜底
+            # （未启动任务则留待重启 recover 幂等重试），避免「先标终态后退款失败」永久漏退
+            logger.warning("[chat/stop] refund failed, keep streaming: msg=%s", message_id)
+            return {"ok": True}
+        task.status = "stopped"
+        _mark_message_status(message_id, "stopped", None)
         CHAT_TASK_MANAGER.broadcast(task.task_id, "stopped", {"detail": "生成已停止"})
         CHAT_TASK_MANAGER.finish(task.task_id)
         return {"ok": True}
