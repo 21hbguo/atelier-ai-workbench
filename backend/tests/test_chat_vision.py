@@ -403,7 +403,8 @@ def test_attach_image_note_injects_text_block():
 
 
 def test_send_no_vision_agent_channel_degrades_to_note(tmp_path, monkeypatch):
-    """agent 通道（protocol=openai → use_agent=True）降级：不附图片块，注入说明文本。"""
+    """agent 通道（protocol=openai → use_agent=True）降级：注册 image_recognize 工具，
+    不附图片块，注入带 file_ids 的说明引导模型调用工具识别。"""
     monkeypatch.setattr(chat_module.config, "USER_WORKSPACES_DIR", tmp_path)
     captured = {"agent_calls": []}
 
@@ -411,7 +412,7 @@ def test_send_no_vision_agent_channel_degrades_to_note(tmp_path, monkeypatch):
         return [{"role": "user", "content": "看图说话"}]
 
     async def _fake_agent_stream(**kwargs):
-        captured["agent_calls"].append(kwargs["messages"])
+        captured["agent_calls"].append({"messages": kwargs["messages"], "tools_names": kwargs["tools_names"]})
         yield {"type": "done", "text": "我看不了图", "thinking": ""}
 
     patches, conn, _ = _base_patches(active_model=_no_vision_model(), vision_default=None)
@@ -427,10 +428,16 @@ def test_send_no_vision_agent_channel_degrades_to_note(tmp_path, monkeypatch):
             events = _consume_sse(resp)
 
     assert len(captured["agent_calls"]) == 1
-    last_user = [m for m in captured["agent_calls"][0] if m["role"] == "user"][-1]
+    call = captured["agent_calls"][0]
+    # 注册了 image_recognize 工具（降级识别引擎可用时）
+    assert "image_recognize" in call["tools_names"]
+    # 最后一条 user 消息：说明块含 file_ids 引导，无 image 块（图片不直发）
+    last_user = [m for m in call["messages"] if m["role"] == "user"][-1]
     assert isinstance(last_user["content"], list)
     assert not any(b.get("type") == "image" for b in last_user["content"])
-    assert any(b.get("type") == "text" and "不支持图片识别" in b.get("text", "") for b in last_user["content"])
+    note = [b for b in last_user["content"] if b.get("type") == "text" and "系统说明" in b.get("text", "")]
+    assert note and str(IMAGE_FILE_ID) in note[0]["text"]
+    assert "image_recognize" in note[0]["text"]
     done = [d for e, d in events if e == "done"][0]
     assert done["image_degraded"] is True
 
