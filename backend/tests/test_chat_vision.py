@@ -449,6 +449,24 @@ def test_send_no_vision_recognize_failure_injects_failed_note(tmp_path):
     assert done["model_switched"] is False
 
 
+def test_send_no_vision_recognize_cancelled_refunds():
+    """识别段请求取消（CancelledError）：幂等退款被调用且异常向上传播（积分已扣不丢）。"""
+    patches, conn, captured = _base_patches(
+        active_model=_no_vision_model(), vision_engine=_vision_model("gpt-5.6-luna"),
+    )
+    refunded = {}
+    with patches, \
+         patch.object(chat_module, "recognize_image",
+                      new=AsyncMock(side_effect=asyncio.CancelledError())), \
+         patch.object(chat_module, "_refund_chat_request",
+                      side_effect=lambda *a, **k: refunded.update(called=True)):
+        with pytest.raises(asyncio.CancelledError):
+            _run(chat_module.send_message(
+                SESSION_ID, ChatSendRequest(content="看图说话", image_file_ids=[IMAGE_FILE_ID]), USER,
+            ))
+    assert refunded.get("called") is True
+
+
 # ---------------------------------------------------------------------------
 # 4. 无 vision 且无默认视觉模型：降级为自然回复（不硬报错）
 # ---------------------------------------------------------------------------
