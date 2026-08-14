@@ -32,6 +32,7 @@ from backend.services.document_parser import parse_file
 from backend.services.llm_client import LLMClient, LLMError
 from backend.services.agent import AgentContext
 from backend.services.agent.loop import run_agent_stream
+from backend.services.agent.tools.image_recognize import pick_vision_model
 from backend.services.llm_model_service import get_active as get_active_model, get_all as get_all_models, get_by_model_id, has_vision, get_vision_default
 from backend.services.billing_service import BillingService
 from backend.services.subscription_service import get_entitlements_in_conn
@@ -1073,9 +1074,9 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
         tools_names.append("image_gen")
         tools_names.append("show_widget")
         tools_names.append("rename_session")  # 对话早期给默认名会话自动起名
-        # 降级场景：主模型无视觉且存在可用识别引擎 → 注册 image_recognize 工具，
+        # 降级场景：主模型无视觉但存在可用识别引擎 → 注册 image_recognize 工具，
         # 主模型调用工具（内部用便宜视觉模型如 gpt-5.6-luna 识别），基于识别结果回答
-        if image_degraded and (get_by_model_id("gpt-5.6-luna") or get_vision_default()):
+        if image_degraded and pick_vision_model() is not None:
             tools_names.append("image_recognize")
         # 熔断开关：DISABLED_TOOLS（环境变量，逗号分隔）中列出的工具直接不暴露给模型，
         # 用于紧急下线单个工具而无需改代码发版（此处过滤 + loop.py 允许列表双保险）
