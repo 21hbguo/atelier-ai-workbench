@@ -107,6 +107,30 @@ def _mark_url(mark):
     return mark[start + 1:end].strip() or None
 
 
+def _is_drawing_request(messages) -> bool:
+    """判断最近一条用户消息是否明确要求画图（含 svg/流程图/架构图/时序图等关键词）。
+
+    用于"画图承诺兜底"：模型只回文字未调用 show_widget 时，检测用户意图决定是否强制补一轮。
+    """
+    try:
+        for m in reversed(messages):
+            role = str(m.get("role") or "")
+            if role == "user":
+                content = str(m.get("content") or "")
+                break
+        else:
+            return False
+    except Exception:
+        return False
+    lowered = content.lower()
+    drawing_kw = (
+        "svg", "流程图", "架构图", "时序图", "思维导图", "线框图",
+        "页面原型", "网页原型", "mockup", "画个图", "画一张", "画图", "画个",
+        "画一下", "重新画", "再画", "画出来", "画一个", "图呢", "画线框图",
+    )
+    return any(kw in content or kw in lowered for kw in drawing_kw)
+
+
 def _append_tool_images(text, marks):
     """把工具返回的 markdown 图片追加到最终回复文本（LLM 未主动贴图时兜底）。
 
@@ -186,6 +210,7 @@ async def run_agent_stream(
     tool_image_marks: list[str] = []  # 生图类工具返回的 markdown 图片（最终回复缺失时自动追加）
 
     executed_calls = 0  # 已执行的工具调用累计数
+    drawing_nudge_injected = False  # 画图承诺兜底提示是否已注入（只提示一次，防死循环）
     sent_citations = 0  # 已推送的来源引用条数（citations 事件只发增量）
     sent_widgets = 0  # 已推送的画图 widget 条数（widget 事件只发增量）
     sent_files = 0  # 已推送的可下载文件条数（file 事件只发增量）
@@ -276,6 +301,29 @@ async def run_agent_stream(
         if not calls:
             # 无 tool_calls → 直接返回文本
             if text.strip():
+                # 画图承诺兜底：用户明确要求画图/重画，但模型只回了文字没调用 show_widget，
+                # 且本轮工具尚未产出任何 widget → 注入提示强制再走一轮，避免"只有文字没有图"。
+                # 仅当 show_widget 在本轮可用且已执行工具次数未达上限时触发，且只提示一次。
+                if (
+                    not ctx.widgets
+                    and tools_names is not None
+                    and "show_widget" in tools_names
+                    and (max_tool_calls is None or executed_calls < max_tool_calls)
+                    and not drawing_nudge_injected
+                    and _is_drawing_request(messages)
+                ):
+                    drawing_nudge_injected = True
+                    logger.info("[agent/loop] 检测到画图请求但未产出 widget，注入提示强制调用 show_widget")
+                    work.append({"role": "assistant", "content": text})
+                    work.append({
+                        "role": "user",
+                        "content": (
+                            "你上一条回复只描述了画面内容，但没有真正绘制出图。"
+                            "用户要求的是可见的图，请立即调用 show_widget 工具（kind=\"svg\"）实际生成 SVG 并展示，"
+                            "生成成功后再附一句简短说明；不要再只给文字描述。"
+                        ),
+                    })
+                    continue
                 text = _append_tool_images(text, tool_image_marks)
                 yield {"type": "done", "text": text, "thinking": "\n\n".join(thinking_parts), "usage": total_usage}
                 return
@@ -352,7 +400,8 @@ async def run_agent_stream(
                             if done:
                                 raw_result = handler_task.result()
                                 break
-                            yield {"type": "heartbeat"}
+                            # 心跳携带当前工具名：前端展示"正在使用 xx 工具（已 Ns）"，避免长耗时工具看起来像卡住
+                            yield {"type": "heartbeat", "name": name, "elapsed": int(time.monotonic() - started)}
                     finally:
                         # 生成器被提前关闭（客户端断连等）时取消未完成的工具任务，
                         # 避免 wait_generation_task 等长任务继续空耗事件循环

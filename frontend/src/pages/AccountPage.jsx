@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Bell, Check, Coins, Gift, KeyRound, ShieldCheck, Sparkles, WalletCards } from 'lucide-react'
+import { Bell, Check, Coins, Crown, Gift, KeyRound, ShieldCheck, Sparkles, WalletCards } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
 import PointsModal from '../components/PointsModal'
 import RecordsModal from '../components/RecordsModal'
 import RedeemModal from '../components/RedeemModal'
-import { pointsAPI } from '../api'
+import { pointsAPI, subscriptionAPI } from '../api'
 import { readUser } from '../auth'
 
 const transactionLabels = {
@@ -30,10 +30,32 @@ const formatTime = value => {
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
+// 套餐副文案：credits 积分包 → 永久有效；会员 → 周期至；免费 → 每日次数/开通引导
+const planDetail = (subscription, dailyRemaining, dailyTotal, fmt) => {
+  const plan = subscription?.plan
+  const hasPlan = Boolean(plan && !plan.is_free)
+  if (hasPlan) {
+    if (plan.features?.package_type === 'credits') return '积分包 · 永久有效'
+    return subscription?.cycle?.period_end ? `周期至 ${fmt(subscription.cycle.period_end)}` : '套餐已生效'
+  }
+  if (dailyTotal !== null && dailyTotal > 0) return (
+    <span className="inline-flex items-center gap-1.5 align-middle">
+      <span className="shrink-0">今日额度</span>
+      <span className="flex-1 h-1 min-w-0 rounded-full overflow-hidden" style={{ background: 'color-mix(in srgb, var(--text-secondary) 18%, transparent)' }}>
+        <span className="block h-full rounded-full" style={{ width: `${Math.min(100, (Math.max(0, dailyRemaining) / dailyTotal) * 100)}%`, background: 'var(--accent)' }} />
+      </span>
+    </span>
+  )
+  return '开通套餐解锁更多权益'
+}
+
 export default function AccountPage() {
   const user = readUser()
   const [points, setPoints] = useState(user?.points ?? 0)
-  const [checkedInToday, setCheckedInToday] = useState(null)
+  const [dailyRemaining, setDailyRemaining] = useState(null)
+  const [dailyTotal, setDailyTotal] = useState(null)
+  const [subscription, setSubscription] = useState(null)
+  const [subscriptionReady, setSubscriptionReady] = useState(false)
   const [transactions, setTransactions] = useState([])
   const [pointsOpen, setPointsOpen] = useState(false)
   const [recordsOpen, setRecordsOpen] = useState(false)
@@ -46,19 +68,28 @@ export default function AccountPage() {
   const refresh = useCallback(() => {
     Promise.allSettled([
       pointsAPI.balance(),
-      pointsAPI.checkinStatus(),
       pointsAPI.transactions(1, 3),
-    ]).then(([balance, checkin, records]) => {
-      if (balance.status === 'fulfilled') setPoints(balance.value.data?.points ?? 0)
-      if (checkin.status === 'fulfilled') setCheckedInToday(Boolean(checkin.value.data?.checked_in_today))
+      subscriptionAPI.me(),
+    ]).then(([balance, records, sub]) => {
+      if (balance.status === 'fulfilled') {
+        setPoints(balance.value.data?.points ?? 0)
+        setDailyRemaining(balance.value.data?.ai_daily_remaining === null ? null : Number(balance.value.data?.ai_daily_remaining || 0))
+        setDailyTotal(balance.value.data?.ai_daily_total === null ? null : Number(balance.value.data?.ai_daily_total || 0))
+      }
       if (records.status === 'fulfilled') setTransactions(records.value.data?.items || [])
+      if (sub.status === 'fulfilled') { setSubscription(sub.value.data); setSubscriptionReady(true) }
     })
-  }, [setPoints, setCheckedInToday, setTransactions])
+  }, [setPoints, setDailyRemaining, setDailyTotal, setTransactions, setSubscription, setSubscriptionReady])
 
   useEffect(() => {
     refresh()
+    const handleSubscriptionUpdate = () => subscriptionAPI.me(true).then(res => { setSubscription(res.data); setSubscriptionReady(true) }).catch(() => {})
     window.addEventListener('points-updated', refresh)
-    return () => window.removeEventListener('points-updated', refresh)
+    window.addEventListener('subscriptions-updated', handleSubscriptionUpdate)
+    return () => {
+      window.removeEventListener('points-updated', refresh)
+      window.removeEventListener('subscriptions-updated', handleSubscriptionUpdate)
+    }
   }, [refresh])
 
   const actions = [
@@ -88,10 +119,23 @@ export default function AccountPage() {
                 </div>
               </div>
               <div className="relative mt-4 flex gap-2"><Link to="/settings" className="rounded-lg px-3 py-2 text-xs font-semibold text-white" style={{ background: 'var(--accent)' }}>编辑资料</Link><Link to="/settings" className="rounded-lg border px-3 py-2 text-xs font-semibold" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>账户安全</Link></div>
+              {/* 资产信息：积分 + 套餐 */}
+              <div className="relative mt-4 grid grid-cols-2 gap-3 border-t pt-4" style={{ borderColor: 'var(--border-color)' }}>
+                <div className="rounded-xl px-3 py-2.5" style={{ background: 'var(--bg-primary)' }}>
+                  <span className="flex items-center gap-1.5 text-[10px] font-medium" style={{ color: 'var(--text-secondary)' }}><Coins size={12} style={{ color: 'var(--accent)' }} />当前积分</span>
+                  <strong className="mt-1 block text-xl font-bold leading-tight tracking-tight" style={{ color: 'var(--accent)' }}>{formatPoints(points)}</strong>
+                  <span className="mt-0.5 block truncate text-[10px]" style={{ color: 'var(--text-secondary)' }}>永久 {formatPoints(subscription?.permanent_points ?? 0)} · 总 {formatPoints(subscription?.total_points ?? points)}</span>
+                </div>
+                <div className="rounded-xl px-3 py-2.5" style={{ background: 'var(--bg-primary)' }}>
+                  <span className="flex items-center gap-1.5 text-[10px] font-medium" style={{ color: 'var(--text-secondary)' }}><Crown size={12} style={{ color: 'var(--accent)' }} />当前套餐</span>
+                  {subscriptionReady ? <>
+                    <strong className="mt-1 block truncate text-base font-bold leading-tight" style={{ color: 'var(--text-primary)' }}>{subscription?.plan?.name || '免费套餐'}</strong>
+                    <span className="mt-1 block truncate text-[10px]" style={{ color: 'var(--text-secondary)' }}>{planDetail(subscription, dailyRemaining, dailyTotal, formatTime)}</span>
+                  </> : <span aria-label="套餐加载中" className="mt-2 block h-3 w-24 rounded-full animate-pulse" style={{ background: 'var(--bg-hover)' }} />}
+                </div>
+              </div>
             </section>
 
-            <QuickCard onClick={() => setPointsOpen(true)} icon={Coins} label="当前积分" value={formatPoints(points)} sub="可用于生成与对话" />
-            <QuickCard onClick={() => setPointsOpen(true)} icon={Check} label="今日签到" value={checkedInToday === null ? '签到状态加载中' : checkedInToday ? '今日已签到' : '今日未签到'} sub={checkedInToday ? '明天再来签到' : '每日签到可领积分'} tone={checkedInToday ? 'var(--color-success)' : 'var(--accent)'} />
             <QuickCard icon={ShieldCheck} label="账户状态" value="正常" sub="身份已验证" tone="var(--color-success)" />
             <QuickCard to="/notifications" icon={Bell} label="通知" value="查看" sub="公告与消息提醒" />
           </div>

@@ -72,6 +72,39 @@ describe('saveBlob', () => {
     vi.runAllTimers()
     expect(URL.revokeObjectURL).toHaveBeenCalledTimes(2)
   })
+
+  it('strips charset parameter from MIME for showSaveFilePicker', async () => {
+    // 代码块/表格下载的 Blob type 带 ;charset=utf-8 参数，showSaveFilePicker 要求不带参数的合法 MIME，
+    // 否则抛 TypeError 导致下载失败。这里模拟 picker 可用，断言收到的是规范化后的 MIME。
+    const pickerSpy = vi.fn().mockResolvedValue({ createWritable: vi.fn().mockResolvedValue({ write: vi.fn(), close: vi.fn() }) })
+    Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true })
+    Object.defineProperty(window, 'showSaveFilePicker', { configurable: true, writable: true, value: pickerSpy })
+    try {
+      await saveBlob(new Blob(['code'], { type: 'text/plain;charset=utf-8' }), 'code.py.txt')
+      expect(pickerSpy).toHaveBeenCalledTimes(1)
+      const arg = pickerSpy.mock.calls[0][0]
+      const accept = arg.types?.[0]?.accept || {}
+      expect(Object.keys(accept)).toEqual(['text/plain'])
+      expect(accept['text/plain']).toEqual(['.txt'])
+    } finally {
+      delete window.showSaveFilePicker
+      delete window.isSecureContext
+    }
+  })
+
+  it('falls back to anchor download when showSaveFilePicker throws', async () => {
+    // picker 抛错（如 MIME 不被支持/权限受限）时不能把错误抛给调用方，应回退普通下载保证可用
+    Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true })
+    Object.defineProperty(window, 'showSaveFilePicker', { configurable: true, writable: true, value: vi.fn().mockRejectedValue(new TypeError('not supported')) })
+    try {
+      const result = await saveBlob(new Blob(['code']), 'code.txt')
+      expect(result).toBe(true)
+      expect(clickSpy).toHaveBeenCalledTimes(1)
+    } finally {
+      delete window.showSaveFilePicker
+      delete window.isSecureContext
+    }
+  })
 })
 
 describe('getDownloadFilename', () => {

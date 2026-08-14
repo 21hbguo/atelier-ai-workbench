@@ -1,5 +1,5 @@
-import { render, screen, cleanup } from '@testing-library/react'
-import { describe, it, expect, beforeEach } from 'vitest'
+import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import WidgetViewer, { sanitizeSvg } from './WidgetViewer'
 
 beforeEach(() => cleanup())
@@ -69,5 +69,49 @@ describe('WidgetViewer', () => {
     )
     expect(container.querySelectorAll('iframe').length).toBe(1)
     expect(container.querySelectorAll('.widget-svg svg').length).toBe(1)
+  })
+
+  describe('downloadWidget', () => {
+    let anchors, createUrlSpy, revokeSpy
+    beforeEach(() => {
+      anchors = []
+      createUrlSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:widget-url')
+      revokeSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+      const origCreateElement = document.createElement.bind(document)
+      vi.spyOn(document, 'createElement').mockImplementation(tag => {
+        const el = origCreateElement(tag)
+        if (tag === 'a') anchors.push(el)
+        return el
+      })
+      vi.useFakeTimers()
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+      vi.restoreAllMocks()
+    })
+
+    it('downloads svg widget with sanitized filename', () => {
+      render(
+        <WidgetViewer widgets={[{ kind: 'svg', title: '流程图 A/B:1', code: '<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>' }]} />
+      )
+      fireEvent.click(screen.getByText('下载 SVG'))
+      expect(createUrlSpy).toHaveBeenCalled()
+      expect(anchors.length).toBe(1)
+      expect(anchors[0].download).toBe('流程图 A B 1.svg')
+      // 延迟释放：click 后不立即 revoke（立即 revoke 在 Safari/iOS 会下载失败）
+      expect(revokeSpy).not.toHaveBeenCalled()
+      vi.runAllTimers()
+      expect(revokeSpy).toHaveBeenCalledWith('blob:widget-url')
+    })
+
+    it('downloads html widget with fallback title', () => {
+      render(
+        <WidgetViewer widgets={[{ kind: 'html', code: '<p>x</p>' }]} />
+      )
+      fireEvent.click(screen.getByText('下载 HTML'))
+      expect(anchors.length).toBe(1)
+      expect(anchors[0].download).toBe('widget.html')
+      vi.runAllTimers()
+    })
   })
 })

@@ -783,10 +783,18 @@ async def list_messages(session_id: int, user=Depends(get_current_user)):
         try:
             with get_db() as conn:
                 frows = conn.execute(
-                    "SELECT id, original_name FROM chat_files WHERE id = ANY(%s)",
+                    "SELECT id, original_name, storage_name, status FROM chat_files WHERE id = ANY(%s)",
                     (list(wanted),),
                 ).fetchall()
-            files_by_id = {f["id"]: {"id": f["id"], "original_name": f["original_name"]} for f in frows}
+            files_by_id = {
+                f["id"]: {
+                    "id": f["id"],
+                    "original_name": f["original_name"],
+                    "storage_name": f["storage_name"],
+                    "kind": "image" if f["status"] == "image" else "doc",
+                }
+                for f in frows
+            }
         except Exception:
             logger.exception("[chat/messages] 查询关联文件失败，回退空列表")
             files_by_id = {}
@@ -830,7 +838,7 @@ async def list_messages(session_id: int, user=Depends(get_current_user)):
             "thinking": r["thinking"] or "",
             "status": r["status"] or "done",
             "error": r["error"],
-            "files": files,  # 关联文件 [{id, original_name}]；file_ids 为空/查询失败时 []
+            "files": files,  # 关联文件 [{id, original_name, storage_name, kind}]，kind='image'|'doc'；file_ids 为空/查询失败时 []
             "citations": citations,  # 来源引用 [{url,title,snippet}]；无引用时 []
             "widgets": widgets,  # 画图 widget [{kind,title,code}]；无 widget 时 []
             "sent_files": sent_files,  # send_file 发送的可下载文件 [{filename,url,size,description}]；无时 []
@@ -1496,8 +1504,9 @@ async def run_generation(ctx: ChatGenContext) -> None:
                     # 生图任务超时仍在后台生成：透传 task_id，前端据其轮询补图
                     _emit("image_task", {"task_id": event["task_id"], "status": event.get("status", "processing")})
                 elif etype == "heartbeat":
-                    # 工具执行期间（生图最长约 100s）的保活事件（事件环保留，SSE 层透传）
-                    _emit("heartbeat", {"type": "heartbeat"})
+                    # 工具执行期间（生图最长约 100s）的保活事件（事件环保留，SSE 层透传）；
+                    # 携带工具名/已耗时供前端展示"正在使用 xx 工具（已 Ns）"，避免长耗时工具看起来像卡住
+                    _emit("heartbeat", {"type": "heartbeat", "name": event.get("name"), "elapsed": event.get("elapsed")})
                 elif etype == "citations":
                     # 工具执行的来源引用（实时展示；done 分支随消息落库）
                     _emit("citations", {"citations": event["citations"]})

@@ -14,17 +14,24 @@ export function sanitizeSvg(code) {
 }
 
 // 下载单个 widget（Blob + URL.createObjectURL；svg → text/svg+xml/.svg，html → text/html/.html）
+// 注意：a.click() 后不能立即 revokeObjectURL，部分浏览器（尤其 Safari/iOS）在下载启动前
+// 回收 blob URL 会导致下载失败，需延迟释放（与 utils/download.js 的 fallbackDownload 一致）
 function downloadWidget(widget) {
   const isSvg = widget.kind === 'svg'
   const blob = new Blob([String(widget.code || '')], { type: isSvg ? 'text/svg+xml' : 'text/html' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${widget.title || 'widget'}.${isSvg ? 'svg' : 'html'}`
+  // 清洗文件名：标题可能含 / \ : * ? " < > | 等非法字符，直接作为 download 名会下载失败；
+  // 替换为空格并合并连续空白，空格本身在文件名中合法
+  const safeTitle = String(widget.title || '').replace(/[\\/:*?"<>|]+/g, ' ').trim().replace(/\s+/g, ' ') || (isSvg ? 'widget' : 'widget')
+  a.download = `${safeTitle}.${isSvg ? 'svg' : 'html'}`
   document.body.appendChild(a)
   a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
+  setTimeout(() => {
+    a.remove()
+    URL.revokeObjectURL(url)
+  }, 1500)
 }
 
 // 卡片内 SVG 自身样式（注入内容无法直接绑 style，用轻量 <style> 规则）

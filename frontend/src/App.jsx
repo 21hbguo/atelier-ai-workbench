@@ -8,6 +8,7 @@ import { useUserSync } from './hooks/useUserSync'
 import { useVersionSync } from './hooks/useVersionSync'
 import AnnouncementModal from './components/AnnouncementModal'
 import WelcomeModal from './components/WelcomeModal'
+import VersionUpdateBanner from './components/VersionUpdateBanner'
 import { announcementAPI, authAPI } from './api'
 import { clearUser, readUser, writeUser } from './auth'
 import ChatPage from './pages/ChatPage'
@@ -80,7 +81,7 @@ function AppContent() {
   const [authReady, setAuthReady] = useState(!!cachedUser)
   const [welcomePoints, setWelcomePoints] = useState(null)
   useUserSync()
-  useVersionSync()
+  const versionSync = useVersionSync()
   useEffect(() => {
     let active = true
     const sync = () => active && setUser(readUser())
@@ -126,6 +127,7 @@ function AppContent() {
       <BrowserRouter>
         <AnnouncementManager user={user} />
         <WelcomeModal points={welcomePoints} onClose={() => setWelcomePoints(null)} />
+        <VersionUpdateBanner show={versionSync.updateAvailable} onRefresh={versionSync.reloadNow} />
         <Suspense fallback={routeFallback}><Routes>
           {/* 已登录用户访问 /login 直接跳到 /chat */}
           <Route path="/login" element={

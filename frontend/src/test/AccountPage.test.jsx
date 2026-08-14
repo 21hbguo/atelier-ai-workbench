@@ -2,10 +2,10 @@ import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/re
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 
-const { readUserMock, balanceMock, checkinStatusMock, inviteInfoMock, transactionsMock, subscriptionMeMock } = vi.hoisted(() => ({ readUserMock: vi.fn(), balanceMock: vi.fn(), checkinStatusMock: vi.fn(), inviteInfoMock: vi.fn(), transactionsMock: vi.fn(), subscriptionMeMock: vi.fn() }))
+const { readUserMock, balanceMock, inviteInfoMock, transactionsMock, subscriptionMeMock } = vi.hoisted(() => ({ readUserMock: vi.fn(), balanceMock: vi.fn(), inviteInfoMock: vi.fn(), transactionsMock: vi.fn(), subscriptionMeMock: vi.fn() }))
 
 vi.mock('../auth', () => ({ readUser: readUserMock }))
-vi.mock('../api', () => ({ pointsAPI: { balance: balanceMock, checkinStatus: checkinStatusMock, inviteInfo: inviteInfoMock, transactions: transactionsMock }, subscriptionAPI: { me: subscriptionMeMock } }))
+vi.mock('../api', () => ({ pointsAPI: { balance: balanceMock, inviteInfo: inviteInfoMock, transactions: transactionsMock }, subscriptionAPI: { me: subscriptionMeMock } }))
 vi.mock('../components/MainLayout', () => ({ default: ({ children }) => <div>{children}</div> }))
 
 import AccountPage from '../pages/AccountPage'
@@ -15,27 +15,29 @@ const renderPage = () => render(<MemoryRouter><AccountPage /></MemoryRouter>)
 beforeEach(() => {
   cleanup()
   readUserMock.mockReturnValue({ account: 'atelier-user', nickname: '设计师', points: 10 })
-  balanceMock.mockResolvedValue({ data: { points: 248 } })
-  checkinStatusMock.mockResolvedValue({ data: { checked_in_today: true } })
+  balanceMock.mockResolvedValue({ data: { points: 248, ai_daily_remaining: null, ai_daily_total: null } })
   inviteInfoMock.mockResolvedValue({ data: { summary: { invited_register_count: 3 } } })
   transactionsMock.mockResolvedValue({ data: { items: [{ id: 1, type: 'daily_checkin', amount: 10, description: '每日签到', created_at: '2026-08-13 09:12:00' }] } })
-  subscriptionMeMock.mockResolvedValue({ data: { plan: { name: '免费套餐' }, cycle: null } })
+  subscriptionMeMock.mockResolvedValue({ data: { plan: { name: '免费套餐', is_free: true, features: {} }, cycle: null, permanent_points: 0, total_points: 248 } })
 })
 
 describe('AccountPage', () => {
-  it('loads and renders balance, check-in status and recent transactions', async () => {
+  it('loads and renders balance, plan and recent transactions without check-in card', async () => {
     renderPage()
     await waitFor(() => expect(screen.getAllByText('248').length).toBeGreaterThan(0))
-    expect(screen.getByText('今日已签到')).toBeInTheDocument()
+    expect(screen.getByText('免费套餐')).toBeInTheDocument()
+    expect(screen.getByText('开通套餐解锁更多权益')).toBeInTheDocument()
+    expect(screen.queryByText('今日签到')).not.toBeInTheDocument()
+    expect(screen.queryByText('签到')).not.toBeInTheDocument()
     expect(screen.queryByText('邀请好友')).not.toBeInTheDocument()
     expect(screen.getAllByText('每日签到').length).toBeGreaterThan(0)
   })
 
-  it('opens points modal when points card is clicked', async () => {
+  it('opens points modal via plan entry without check-in button', async () => {
     renderPage()
-    fireEvent.click(screen.getByText('当前积分'))
+    fireEvent.click(screen.getByText('积分与套餐'))
     await waitFor(() => expect(screen.getByText('我的积分')).toBeInTheDocument())
-    await waitFor(() => expect(screen.getByText('已签到 ✓')).toBeInTheDocument())
+    expect(screen.queryByText('签到')).not.toBeInTheDocument()
   })
 
   it('opens redeem modal when redeem action is clicked', async () => {

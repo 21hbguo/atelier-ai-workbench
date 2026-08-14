@@ -182,7 +182,14 @@ export default function Sidebar({ open, onClose }) {
                   </div>
                   {!collapsed && (
                     <div className="text-[10px] leading-snug mt-1" style={{ color: 'var(--text-secondary)' }}>
-                      <div className="truncate">{subscriptionReady ? (dailyTotal === null ? '不限次' : dailyTotal > 0 ? `今日已用 ${Math.max(0, dailyTotal - dailyRemaining)}/${dailyTotal} 次` : (hasPlan ? (subscription.plan.features?.package_type === 'credits' ? '永久积分' : `周期至 ${formatDate(subscription.cycle?.period_end)}`) : '解锁更多模型')) : <span aria-label="套餐权益加载中" className="block h-2.5 w-24 rounded-full animate-pulse" style={{ background: 'var(--bg-hover)' }} />}</div>
+                      <div className="truncate">{subscriptionReady ? (dailyTotal === null ? '不限量' : dailyTotal > 0 ? (
+                        <span className="flex items-center gap-1.5">
+                          <span className="shrink-0">今日额度</span>
+                          <span className="flex-1 h-1 min-w-0 rounded-full overflow-hidden" style={{ background: 'color-mix(in srgb, var(--text-secondary) 18%, transparent)' }}>
+                            <span className="block h-full rounded-full" style={{ width: `${Math.min(100, (Math.max(0, dailyRemaining) / dailyTotal) * 100)}%`, background: 'var(--accent)' }} />
+                          </span>
+                        </span>
+                      ) : (hasPlan ? (subscription.plan.features?.package_type === 'credits' ? '永久积分' : `周期至 ${formatDate(subscription.cycle?.period_end)}`) : '解锁更多模型')) : <span aria-label="套餐权益加载中" className="block h-2.5 w-24 rounded-full animate-pulse" style={{ background: 'var(--bg-hover)' }} />}</div>
                       <div className="truncate">{points} 积分</div>
                     </div>
                   )}

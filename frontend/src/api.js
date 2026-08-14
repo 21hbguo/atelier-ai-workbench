@@ -199,12 +199,13 @@ export const chatAPI = {
   },
   // 创建聊天任务：不再返回 SSE 流，返回 JSON { task_id, assistant_message_id, user_message_id }。
   // 非 2xx（含 429 并发限制）由 axios 拦截器统一转为 Error（detail 已翻译为中文），调用方 catch 展示。
-  sendMessage: (sessionId, content, { reasoning_effort = 'auto', model_id = '', web_search = false } = {}) =>
+  sendMessage: (sessionId, content, { reasoning_effort = 'auto', model_id = '', web_search = false, image_file_ids = [] } = {}) =>
     api.post(`/chat/sessions/${sessionId}/messages`, {
       content,
       reasoning_effort,
       ...(model_id ? { model_id } : {}),
       ...(web_search ? { web_search: true } : {}),
+      ...(image_file_ids?.length ? { image_file_ids } : {}),
     }),
   // 显式停止生成（后端负责退款，幂等）：POST /api/chat/messages/{message_id}/stop → { ok }
   stopMessage: messageId => api.post(`/chat/messages/${messageId}/stop`),
@@ -213,7 +214,7 @@ export const chatAPI = {
   // 连接断开不影响后台任务（结果落库），因此不做空闲超时；abort 仅中断订阅连接本身。
   // 事件：chunk/thinking/tool_status/url_status/citations/widget/file/image_task/done/error/stopped。
   // user_message_id 事件不再发送（发送时由 sendMessage 返回真实 id），此处忽略。
-  streamTask: async (taskId, { signal, onChunk, onThinking, onToolStatus, onUrlStatus, onCitations, onWidget, onFile, onImageTask, onDone, onError, onStopped } = {}) => {
+  streamTask: async (taskId, { signal, onChunk, onThinking, onToolStatus, onUrlStatus, onCitations, onWidget, onFile, onImageTask, onHeartbeat, onDone, onError, onStopped } = {}) => {
     try {
       const resp = await fetch(`/api/chat/tasks/${taskId}/stream`, {
         method: 'GET',
@@ -254,6 +255,7 @@ export const chatAPI = {
             else if (eventType === 'widget') onWidget?.(data)
             else if (eventType === 'file') onFile?.(data)
             else if (eventType === 'image_task') onImageTask?.(data)
+            else if (eventType === 'heartbeat') onHeartbeat?.(data)
             else if (eventType === 'done') onDone?.(data)
             else if (eventType === 'error') onError?.(data.detail)
             else if (eventType === 'stopped') onStopped?.(data)

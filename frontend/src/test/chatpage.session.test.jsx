@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-library/react'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 
 // 会话恢复/生成中切换的回归测试：直接渲染 ChatAssistantPage（不走 App 路由）。
@@ -244,5 +244,49 @@ describe('ChatAssistantPage 无会话上传', () => {
 
     await waitFor(() => expect(alertMock).toHaveBeenCalledWith('创建失败'))
     expect(uploadDocMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('ChatAssistantPage 工具调用轨迹（toolSteps）', () => {
+  it('流式期间工具轨迹累积展示：executing 显示加载中，done 后保留勾选', async () => {
+    sessionsMock.mockResolvedValue(ok({ items: [{ id: 1, title: '会话一' }] }))
+    messagesMock.mockResolvedValue(ok({ items: [] }))
+
+    render(<ChatAssistantPage />)
+    await waitFor(() => expect(screen.getByText('会话一')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('会话一'))
+    await waitFor(() => expect(messagesMock).toHaveBeenCalledWith(1))
+
+    const textarea = screen.getByPlaceholderText('输入消息，Enter 发送，Shift+Enter 换行')
+    fireEvent.change(textarea, { target: { value: '画个svg' } })
+    fireEvent.keyDown(textarea, { key: 'Enter', code: 'Enter' })
+
+    await waitFor(() => expect(streamTaskMock).toHaveBeenCalledTimes(1))
+    const streamOptions = streamTaskMock.mock.calls[0][1]
+
+    // 工具开始执行：出现"正在调用工具"轨迹
+    act(() => { streamOptions.onToolStatus({ name: 'show_widget', status: 'executing' }) })
+    expect(screen.getByText('正在调用工具')).toBeInTheDocument()
+    expect(screen.getByText('show_widget')).toBeInTheDocument()
+
+    // 工具完成：轨迹保留，状态变为"已完成"
+    act(() => { streamOptions.onToolStatus({ name: 'show_widget', status: 'done' }) })
+    expect(screen.getByText('已完成')).toBeInTheDocument()
+    // executing 消失（只剩 done 轨迹），耗时条不显示
+    expect(screen.queryByText('正在调用工具')).not.toBeInTheDocument()
+
+    // 第二个工具开始：与已完成轨迹并存（轨迹列表）
+    act(() => { streamOptions.onToolStatus({ name: 'web_search', status: 'executing' }) })
+    expect(screen.getAllByText('正在调用工具').length).toBe(1)
+    expect(screen.getByText('已完成')).toBeInTheDocument()
+
+    // 心跳事件：不崩溃且 sending 保持
+    act(() => { streamOptions.onHeartbeat?.({ name: 'web_search', elapsed: 12 }) })
+    expect(screen.getByText('web_search')).toBeInTheDocument()
+
+    // 结束流
+    act(() => { streamOptions.onToolStatus({ name: 'web_search', status: 'done' }) })
+    act(() => { streamOptions.onDone?.({ text: '画好了', message_id: 'm1' }) })
+    await waitFor(() => expect(screen.queryByText('停止生成')).not.toBeInTheDocument())
   })
 })

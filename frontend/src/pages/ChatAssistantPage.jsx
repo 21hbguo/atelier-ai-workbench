@@ -394,10 +394,17 @@ const MessageItem = memo(function MessageItem({ msg, onCopy, onRegenerate }) {
         style={{ background: isUser ? 'var(--bg-user-bubble)' : 'var(--bg-ai-bubble)', boxShadow: isUser ? 'none' : 'var(--shadow-md)' }}>
         {isUser ? (
           <>
-            {/* 用户消息关联的文件（会话上下文，后端 messages 接口返回 files） */}
+            {/* 用户消息关联的文件（会话上下文，后端 messages 接口返回 files；图片渲染缩略图） */}
             {msg.files?.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mb-2">
-                {msg.files.map((f, i) => (
+                {msg.files.map((f, i) => f.kind === 'image' && f.storage_name ? (
+                  <a key={f.id || `img-${i}`} href={chatFileUrl(f.storage_name)} target="_blank" rel="noreferrer"
+                    title={f.original_name || '图片'}>
+                    <img src={chatFileUrl(f.storage_name)} alt={f.original_name || '图片'}
+                      className="w-24 h-24 object-cover rounded-lg border"
+                      style={{ borderColor: 'var(--border-color)' }} />
+                  </a>
+                ) : (
                   <span key={f.id || `${f.original_name}-${i}`} title={f.original_name || '文件'}
                     className="inline-flex items-center gap-1 max-w-full px-2 py-0.5 rounded-full text-[11px] font-medium border"
                     style={{
@@ -510,34 +517,64 @@ function PendingQueueBubbles({ items }) {
 // memo：sending 引用变化（流式 flush/状态更新）时才重渲染；text 稳定后（停止/完成）不再被父组件其他状态变化波及
 const StreamBubble = memo(function StreamBubble({ sending, onStop, onRetry }) {
   const hasText = sending.text.length > 0
+  // 当前正在执行的工具（toolSteps 中最后一条 executing，用于耗时展示）
+  // 不用 Array.findLast（ES2023，旧浏览器不兼容），逆序手找
+  let executingStep = null
+  const stepsArr = Array.isArray(sending.toolSteps) ? sending.toolSteps : []
+  for (let i = stepsArr.length - 1; i >= 0; i--) {
+    if (stepsArr[i].status === 'executing') { executingStep = stepsArr[i]; break }
+  }
+  const [nowTick, setNowTick] = useState(Date.now())
+  // 有正在执行的工具时每秒刷新一次，让"已耗时 Ns"实时走动
+  useEffect(() => {
+    if (!executingStep) return
+    const id = window.setInterval(() => setNowTick(Date.now()), 1000)
+    return () => window.clearInterval(id)
+  }, [executingStep?.key])
+  const executingElapsed = executingStep ? Math.max(1, Math.floor((nowTick - executingStep.startedAt) / 1000)) : 0
   return (
     <div className="flex justify-start mb-4 animate-fade-in-up">
       <div className="max-w-[85%] sm:max-w-[78%] rounded-2xl px-4 py-3" style={{ background: 'var(--bg-ai-bubble)', boxShadow: 'var(--shadow-md)' }}>
         <ThinkingBlock text={sending.thinking} isStreaming={!sending.stopped} />
-        {/* 工具调用状态（agent 模式：tool_status 事件，executing 显示加载中，done 时已清除） */}
-        {/* image_gen 特化为图片占位卡片（骨架 shimmer），其他工具保持通用文字条 */}
-        {sending.toolStatus && sending.toolStatus.name !== 'image_gen' && (
-          <div className="mb-2 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs"
-            style={{
-              background: 'color-mix(in srgb, var(--accent) 8%, transparent)',
-              border: '1px solid color-mix(in srgb, var(--accent) 25%, var(--border-color))',
-              color: 'var(--text-secondary)',
-            }}>
-            <Settings size={13} className="animate-spin flex-shrink-0" style={{ color: 'var(--accent)' }} />
-            <span className="flex-shrink-0 font-medium" style={{ color: 'var(--accent)' }}>正在调用工具</span>
-            <span className="min-w-0 truncate">{sending.toolStatus.name || '…'}</span>
-          </div>
-        )}
-        {sending.toolStatus?.name === 'image_gen' && (
-          <div className="mb-2 rounded-xl overflow-hidden"
-            style={{ border: '1px solid var(--border-color)', background: 'var(--bg-card)' }}>
-            <div className="card-feed-skeleton-card" style={{ aspectRatio: '4 / 3' }}>
-              <div className="card-feed-skeleton-shimmer" />
-            </div>
-            <div className="flex items-center gap-1.5 px-3 py-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
-              <ImageIcon size={13} className="animate-pulse flex-shrink-0" style={{ color: 'var(--accent)' }} />
-              <span className="font-medium" style={{ color: 'var(--accent)' }}>正在生成图片…</span>
-            </div>
+        {/* 工具调用轨迹（agent 模式：tool_status 事件累积；executing 显示加载中+已耗时，done 保留勾选标记） */}
+        {/* image_gen 特化为图片占位卡片（骨架 shimmer），其他工具显示轨迹条目 */}
+        {Array.isArray(sending.toolSteps) && sending.toolSteps.length > 0 && (
+          <div className="mb-2 flex flex-col gap-1">
+            {sending.toolSteps.map(step => step.name === 'image_gen' ? (
+              <div key={step.key} className="rounded-xl overflow-hidden"
+                style={{ border: '1px solid var(--border-color)', background: 'var(--bg-card)' }}>
+                <div className="card-feed-skeleton-card" style={{ aspectRatio: '4 / 3' }}>
+                  <div className="card-feed-skeleton-shimmer" />
+                </div>
+                <div className="flex items-center gap-1.5 px-3 py-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  {step.status === 'done'
+                    ? <Check size={13} className="flex-shrink-0" style={{ color: 'var(--accent)' }} />
+                    : <ImageIcon size={13} className="animate-pulse flex-shrink-0" style={{ color: 'var(--accent)' }} />}
+                  <span className="font-medium" style={{ color: 'var(--accent)' }}>{step.status === 'done' ? '图片生成完成' : '正在生成图片…'}</span>
+                  {step.status === 'executing' && <span className="tabular-nums">{executingStep?.key === step.key ? `${executingElapsed}s` : ''}</span>}
+                </div>
+              </div>
+            ) : (
+              <div key={step.key} className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs"
+                style={{
+                  background: 'color-mix(in srgb, var(--accent) 8%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--accent) 25%, var(--border-color))',
+                  color: 'var(--text-secondary)',
+                }}>
+                {step.status === 'done' ? (
+                  <Check size={13} className="flex-shrink-0" style={{ color: 'var(--accent)' }} />
+                ) : (
+                  <Settings size={13} className="animate-spin flex-shrink-0" style={{ color: 'var(--accent)' }} />
+                )}
+                <span className="flex-shrink-0 font-medium" style={{ color: 'var(--accent)' }}>
+                  {step.status === 'done' ? '已完成' : '正在调用工具'}
+                </span>
+                <span className="min-w-0 truncate">{step.name || '…'}</span>
+                {step.status === 'executing' && executingStep?.key === step.key && (
+                  <span className="tabular-nums flex-shrink-0">{executingElapsed}s</span>
+                )}
+              </div>
+            ))}
           </div>
         )}
         {/* 工具等待超时后生图转入后台：image_task 事件到达，任务轮询中 */}
@@ -752,7 +789,7 @@ const MODEL_FAMILIES = [
 ]
 const familyKeyOf = (m) => String(m.provider || '').trim().toLowerCase()
 
-function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, dailyTotal, dailyRemaining, reasoningEffort, onReasoningEffort, efforts, modelLabel, modelProvider, pendingQueue, onEditPending, onRemovePending, models, chatModelId, onSelectModel, onUploadClick, docs, onRemoveDoc, uploadingCount, uploadNote, webSearch, onWebSearch, linkStatus, dragActive, dragHandlers }) {
+function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, dailyTotal, dailyRemaining, reasoningEffort, onReasoningEffort, efforts, modelLabel, modelProvider, pendingQueue, onEditPending, onRemovePending, models, chatModelId, onSelectModel, onUploadClick, docs, onRemoveDoc, uploadingCount, uploadNote, webSearch, onWebSearch, linkStatus, dragActive, dragHandlers, onPasteFiles }) {
   const [effortOpen, setEffortOpen] = useState(false)
   const [modelOpen, setModelOpen] = useState(false)
   const [modelQuery, setModelQuery] = useState('')
@@ -829,10 +866,17 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
             )}
           </div>
           {(dailyTotal === null || dailyTotal > 0) && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium"
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium"
               style={{ color: 'var(--text-secondary)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)', border: '1px solid var(--border-color)' }}
-              title="今日 AI 助手已用次数/免费总次数（用完后将扣除积分）">
-              {dailyTotal === null ? '今日不限次' : `今日已用 ${Math.max(0, dailyTotal - dailyRemaining)}/${dailyTotal} 次`}
+              title="今日 AI 助手用量（用完后将扣除积分）">
+              {dailyTotal === null ? '今日不限量' : (
+                <>
+                  <span className="w-14 h-1.5 rounded-full overflow-hidden shrink-0" style={{ background: 'color-mix(in srgb, var(--text-secondary) 20%, transparent)' }}>
+                    <span className="block h-full rounded-full" style={{ width: `${Math.min(100, (Math.max(0, dailyRemaining) / dailyTotal) * 100)}%`, background: 'var(--accent)' }} />
+                  </span>
+                  <span>今日额度</span>
+                </>
+              )}
             </span>
           )}
           <span className="ml-auto hidden sm:inline text-[11px]" style={{ color: 'var(--text-secondary)' }}>思考强度越高，回复越深入，耗时越长</span>
@@ -893,28 +937,52 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
                         ? 'color-mix(in srgb,var(--color-success) 45%,var(--border-color))'
                         : 'color-mix(in srgb,var(--accent) 28%,var(--border-color))',
                   }}
-                  title={`${doc.name}${doc.char_count != null ? `（${doc.char_count} 字符）` : ''}${doc.error ? `：${doc.error}` : ''}`}>
-                  {doc.status === 'uploading' || doc.status === 'pending' ? (
+                  title={`${doc.name}${doc.kind !== 'image' && doc.char_count != null ? `（${doc.char_count} 字符）` : ''}${doc.error ? `：${doc.error}` : ''}`}>
+                  {doc.kind === 'image' && doc.preview ? (
                     <>
-                      <svg className="-rotate-90" width="28" height="28" viewBox="0 0 36 36">
-                        <circle cx="18" cy="18" r="15" fill="none" stroke="color-mix(in srgb,var(--accent) 20%,transparent)" strokeWidth="3" />
-                        <circle cx="18" cy="18" r="15" fill="none" stroke="var(--accent)" strokeWidth="3" strokeLinecap="round"
-                          strokeDasharray={`${Math.max(0, Math.min(100, Number(doc.progress) || 0)) * 0.94} 100`} />
-                      </svg>
-                      <span className="text-[8px] font-semibold" style={{ color: 'var(--text-secondary)' }}>{Math.round(Number(doc.progress) || 0)}%</span>
-                    </>
-                  ) : doc.status === 'error' ? (
-                    <>
-                      <AlertCircle size={14} style={{ color: 'var(--color-error)' }} />
-                      <span className="text-[8px] leading-none" style={{ color: 'var(--color-error)' }}>上传失败</span>
+                      <img src={doc.preview} alt={doc.name} className="w-full h-full object-cover" draggable={false} />
+                      {/* 上传中：半透明遮罩 + 进度圈；失败：红底红叉 */}
+                      {doc.status === 'uploading' || doc.status === 'pending' ? (
+                        <div className="absolute inset-0 flex items-center justify-center"
+                          style={{ background: 'color-mix(in srgb, var(--bg-card) 55%, transparent)' }}>
+                          <svg className="-rotate-90" width="30" height="30" viewBox="0 0 36 36">
+                            <circle cx="18" cy="18" r="15" fill="none" stroke="color-mix(in srgb,var(--accent) 25%,transparent)" strokeWidth="3" />
+                            <circle cx="18" cy="18" r="15" fill="none" stroke="var(--accent)" strokeWidth="3" strokeLinecap="round"
+                              strokeDasharray={`${Math.max(0, Math.min(100, Number(doc.progress) || 0)) * 0.94} 100`} />
+                          </svg>
+                        </div>
+                      ) : doc.status === 'error' ? (
+                        <div className="absolute inset-0 flex items-center justify-center"
+                          style={{ background: 'color-mix(in srgb, var(--color-error) 30%, transparent)' }}>
+                          <AlertCircle size={16} style={{ color: 'var(--color-error)' }} />
+                        </div>
+                      ) : null}
                     </>
                   ) : (
                     <>
-                      <FileText size={14} style={{ color: 'var(--accent)' }} />
-                      <span className="text-[8px] leading-none uppercase" style={{ color: 'var(--text-secondary)' }}>{doc.ext}</span>
+                      {doc.status === 'uploading' || doc.status === 'pending' ? (
+                        <>
+                          <svg className="-rotate-90" width="28" height="28" viewBox="0 0 36 36">
+                            <circle cx="18" cy="18" r="15" fill="none" stroke="color-mix(in srgb,var(--accent) 20%,transparent)" strokeWidth="3" />
+                            <circle cx="18" cy="18" r="15" fill="none" stroke="var(--accent)" strokeWidth="3" strokeLinecap="round"
+                              strokeDasharray={`${Math.max(0, Math.min(100, Number(doc.progress) || 0)) * 0.94} 100`} />
+                          </svg>
+                          <span className="text-[8px] font-semibold" style={{ color: 'var(--text-secondary)' }}>{Math.round(Number(doc.progress) || 0)}%</span>
+                        </>
+                      ) : doc.status === 'error' ? (
+                        <>
+                          <AlertCircle size={14} style={{ color: 'var(--color-error)' }} />
+                          <span className="text-[8px] leading-none" style={{ color: 'var(--color-error)' }}>上传失败</span>
+                        </>
+                      ) : (
+                        <>
+                          <FileText size={14} style={{ color: 'var(--accent)' }} />
+                          <span className="text-[8px] leading-none uppercase" style={{ color: 'var(--text-secondary)' }}>{doc.ext}</span>
+                        </>
+                      )}
+                      <span className="absolute left-1 bottom-0.5 right-1 text-[7px] truncate text-center" style={{ color: 'var(--text-secondary)' }}>{doc.name}</span>
                     </>
                   )}
-                  <span className="absolute left-1 bottom-0.5 right-1 text-[7px] truncate text-center" style={{ color: 'var(--text-secondary)' }}>{doc.name}</span>
                   <button onClick={(e) => { e.stopPropagation(); onRemoveDoc(doc.id) }}
                     className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                     <X size={10} />
@@ -933,6 +1001,7 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
                 t.style.height = Math.min(t.scrollHeight, 160) + 'px'
               }}
               onKeyDown={handleKeyDown}
+              onPaste={onPasteFiles}
               className="block w-full resize-none bg-transparent outline-none py-2"
               style={{ color: 'var(--text-primary)', minHeight: '56px', maxHeight: '160px', overflowY: 'auto', fontSize: '15px', paddingLeft: '10px' }} />
             {/* 粘贴链接轻提示：输入含 http(s):// 时实时显示 */}
@@ -1061,7 +1130,7 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
                   <span className="text-[11px] leading-none">联网</span>
                 </button>
                 <button type="button" onClick={onUploadClick}
-                  title="上传文档/代码（txt/md/csv/pdf/docx/xlsx/pptx/py/js/ts/go/yaml 等 50+ 格式；一次最多 5 个，会话累计最多 20 个）"
+                  title="上传文档或图片（文档支持 txt/md/csv/pdf/docx/xlsx/pptx/py/js/ts/go/yaml 等 50+ 格式；图片支持 png/jpg/jpeg/webp/gif/bmp，单张 ≤10MB；一次最多 5 个，会话累计最多 20 个；也可以直接 Ctrl+V 粘贴图片）"
                   className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg hover:bg-bg-hover transition-colors"
                   style={{ color: 'var(--text-secondary)' }}>
                   <Paperclip size={15} />
@@ -1111,6 +1180,11 @@ const DOC_EXTS = new Set([
 ])
 const DOC_ACCEPT = '.txt,.md,.csv,.json,.html,.pdf,.docx,.xlsx,.pptx,.py,.js,.mjs,.cjs,.jsx,.ts,.tsx,.java,.go,.rs,.c,.h,.cpp,.hpp,.cc,.cs,.php,.rb,.swift,.kt,.sh,.bash,.zsh,.fish,.ps1,.sql,.lua,.r,.pl,.scala,.dart,.vue,.svelte,.yaml,.yml,.toml,.ini,.conf,.cfg,.xml,.properties,.env'
 const MAX_DOC_SIZE = 10 * 1024 * 1024
+// 图片上传限制（与后端 backend/routers/chat.py 的 _CHAT_IMG_EXTS / 单消息最多 4 张一致）
+const IMG_EXTS = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'])
+const MAX_IMAGES = 4 // 后端 image_file_ids 硬上限（单条消息最多 4 张图）
+// 会话文件访问 URL（storage_name 形如 uploads/xxxx.png）
+const chatFileUrl = (storageName) => `/api/workspace/files/download?path=${encodeURIComponent(storageName)}`
 
 export default function ChatAssistantPage() {
   const dialog = useAppDialog()
@@ -1174,7 +1248,7 @@ export default function ChatAssistantPage() {
     if (uploadNoteTimerRef.current) clearTimeout(uploadNoteTimerRef.current)
     uploadNoteTimerRef.current = setTimeout(() => setUploadNote(''), 6000)
   }, [])
-  // 会话文档列表（对齐 AI 绘画参考图交互）：{id,name,ext,size,status,progress,error,file_id,char_count,file}
+  // 会话文件列表（对齐 AI 绘画参考图交互；文档与图片共用）：{id,name,ext,size,status,progress,error,file_id,char_count,kind:'doc'|'image',preview,storage_name,file}
   const [docs, setDocs] = useState([])
   const fileRef = useRef(null)
   // 拖拽上传：输入区高亮状态 + dragenter/dragleave 配对计数（防闪烁）
@@ -1426,7 +1500,7 @@ export default function ChatAssistantPage() {
   // 发送锁：防止 createSession 等异步间隙出现并发发送（占位 sessionId=null，startStream 会覆盖）
   const acquireSendLock = useCallback((content) => {
     if (sendingRef.current && !sendingRef.current.stopped) return false
-    sendingRef.current = { sessionId: null, content, text: '', thinking: '', toolStatus: null, stopped: false, error: '', manual: false }
+    sendingRef.current = { sessionId: null, content, text: '', thinking: '', toolSteps: [], stopped: false, error: '', manual: false }
     return true
   }, [])
   const releaseSendLock = useCallback(() => { sendingRef.current = null }, [])
@@ -1474,27 +1548,38 @@ export default function ChatAssistantPage() {
     const errors = []
     for (const f of picked) {
       const ext = (f.name.split('.').pop() || '').toLowerCase()
-      if (!DOC_EXTS.has(ext)) { errors.push(`「${f.name}」格式不支持`); continue }
+      if (!DOC_EXTS.has(ext) && !IMG_EXTS.has(ext)) {
+        errors.push(`「${f.name}」格式不支持`)
+        continue
+      }
       if (f.size > MAX_DOC_SIZE) { errors.push(`「${f.name}」超过 10MB`); continue }
       valid.push(f)
     }
     if (errors.length) showUploadNote(errors.slice(0, 3).join('；'))
     setDocs(prev => {
       const remaining = MAX_DOCS - prev.length
-      if (remaining <= 0) { showUploadNote(`最多只能上传 ${MAX_DOCS} 个文档`); return prev }
-      if (valid.length > remaining) showUploadNote(`最多只能上传 ${MAX_DOCS} 个文档，已自动截取前 ${remaining} 个`)
-      const items = valid.slice(0, Math.max(0, remaining)).map(f => ({
-        id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        name: f.name,
-        ext: (f.name.split('.').pop() || '').toLowerCase(),
-        size: f.size,
-        status: 'pending',
-        progress: 0,
-        error: '',
-        file_id: null,
-        char_count: null,
-        file: f,
-      }))
+      if (remaining <= 0) { showUploadNote(`最多只能上传 ${MAX_DOCS} 个文件`); return prev }
+      if (valid.length > remaining) showUploadNote(`最多只能上传 ${MAX_DOCS} 个文件，已自动截取前 ${remaining} 个`)
+      const items = valid.slice(0, Math.max(0, remaining)).map(f => {
+        const ext = (f.name.split('.').pop() || '').toLowerCase()
+        const isImage = IMG_EXTS.has(ext)
+        return {
+          id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          name: f.name,
+          ext,
+          size: f.size,
+          status: 'pending',
+          progress: 0,
+          error: '',
+          file_id: null,
+          char_count: null,
+          // 图片（粘贴/选择/拖拽）与文档共用上传链路；preview 为本地 blob 预览，上传成功后由 storage_name 访问
+          kind: isImage ? 'image' : 'doc',
+          preview: isImage ? URL.createObjectURL(f) : null,
+          storage_name: null,
+          file: f,
+        }
+      })
       return [...prev, ...items]
     })
   }, [])
@@ -1525,6 +1610,9 @@ export default function ChatAssistantPage() {
         progress: 100,
         file_id: data?.file_id,
         char_count: data?.char_count,
+        // 图片与文档共用上传接口：storage_name 用于消息内图片访问 URL，kind 区分渲染
+        storage_name: data?.storage_name,
+        kind: data?.kind || item.kind,
         file: null,
       })
     } catch (err) {
@@ -1542,11 +1630,49 @@ export default function ChatAssistantPage() {
     }
   }, [docs, startDocUpload])
 
-  // 移除文档标签（本地移除；服务器文件随会话删除级联清理，后端暂无单删接口）
+  // 移除文件标签（本地移除；服务器文件随会话删除级联清理，后端暂无单删接口）
   const removeDoc = useCallback(id => {
     docAbortRef.current.get(id)?.abort()
-    setDocs(prev => prev.filter(d => d.id !== id))
+    setDocs(prev => {
+      const target = prev.find(d => d.id === id)
+      if (target?.preview) URL.revokeObjectURL(target.preview)
+      return prev.filter(d => d.id !== id)
+    })
   }, [])
+
+  // 粘贴图片：Ctrl+V 时从剪贴板提取图片文件，走与文件选择/拖拽相同的入队上传链路。
+  // 无图片（纯文本/链接等）直接放行浏览器默认粘贴行为；图片与文本混合粘贴时只取图片。
+  const handlePasteFiles = useCallback((e) => {
+    const items = Array.from(e?.clipboardData?.items || [])
+    const rawFiles = items
+      .filter(it => it.kind === 'file' && String(it.type || '').startsWith('image/'))
+      .map(it => it.getAsFile())
+      .filter(Boolean)
+    if (!rawFiles.length) return // 纯文本粘贴等：不拦截
+    const extOfType = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif', 'image/bmp': 'bmp', 'image/x-ms-bmp': 'bmp' }
+    const ts = Date.now()
+    const files = []
+    const rejected = []
+    rawFiles.forEach((f, i) => {
+      const type = String(f.type || '').split(';')[0].trim().toLowerCase()
+      const ext = extOfType[type]
+      if (!ext) { rejected.push(`「${f.name || '图片'}」图片格式不支持（支持 png/jpg/jpeg/webp/gif/bmp）`); return }
+      let name = String(f.name || '').trim()
+      // 剪贴板 File 可能无名字或无扩展名：按 MIME 类型规范命名
+      if (!name) name = `pasted-${ts}-${i}.${ext}`
+      else if (!new RegExp(`\\.${ext}$`, 'i').test(name)) name = `${name}.${ext}`
+      files.push(new File([f], name, { type: f.type || 'image/png' }))
+    })
+    if (rejected.length) showUploadNote(rejected.slice(0, 2).join('；'))
+    if (!files.length) return // 图片全部被拒（如 svg/avif）：放行浏览器默认粘贴行为
+    e.preventDefault()
+    let picked = files
+    if (picked.length > MAX_IMAGES) {
+      showUploadNote(`一次最多粘贴 ${MAX_IMAGES} 张图片，已自动截取前 ${MAX_IMAGES} 张`)
+      picked = picked.slice(0, MAX_IMAGES)
+    }
+    void addDocs(picked)
+  }, [addDocs, showUploadNote])
 
   // 拖拽上传：window 级 dragover/drop 阻止浏览器直接打开文件
   // （仅拦截含文件的拖拽；文本/链接拖拽放行浏览器默认行为，如拖入输入框插入文本）
@@ -1713,10 +1839,29 @@ export default function ChatAssistantPage() {
         buf.thinking += t
         if (!streamRenderTimerRef.current) streamRenderTimerRef.current = setTimeout(flushStreamBuf, STREAM_RENDER_INTERVAL_MS)
       },
-      onToolStatus: data => setSending(prev =>
-        (prev && prev.streamId === streamId)
-          ? { ...prev, toolStatus: data?.status === 'done' ? null : { name: data?.name || '', status: data?.status || 'executing' } }
-          : prev),
+      onToolStatus: data => setSending(prev => {
+        if (!prev || prev.streamId !== streamId) return prev
+        const name = data?.name || ''
+        const status = data?.status || 'executing'
+        const steps = Array.isArray(prev.toolSteps) ? [...prev.toolSteps] : []
+        if (status === 'executing') {
+          // 新工具开始执行：追加一条轨迹（同名工具可多次调用，用时间戳区分）
+          steps.push({ key: `${name}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name, status: 'executing', startedAt: Date.now() })
+        } else {
+          // 工具完成：把最后一条 executing 的同名轨迹标记为 done
+          for (let i = steps.length - 1; i >= 0; i--) {
+            if (steps[i].name === name && steps[i].status === 'executing') {
+              steps[i] = { ...steps[i], status: 'done' }
+              break
+            }
+          }
+        }
+        return { ...prev, toolSteps: steps }
+      }),
+      onHeartbeat: () => {
+        // 心跳确认工具仍在执行（后端 10s 粒度保活事件）。耗时展示由渲染端按
+        // executingStep.startedAt 实时计算，无需在此更新 state（避免无谓重渲染）。
+      },
       onUrlStatus: data => {
         // streamId 守卫（与 onToolStatus 一致）：旧流迟到的 url_status（抓取最长 10s）
         // 不得覆盖新流状态
@@ -1874,12 +2019,12 @@ export default function ChatAssistantPage() {
   // ============ 发送链路：POST 创建任务 → 替换本地用户消息 id → 初始化 sending → 订阅 ============
   // 替代旧 startStream：发送与订阅解耦。sending 的 text/thinking 从空开始（打字机），
   // taskId/assistantMessageId 由 sendMessage 返回后写入（停止按钮依赖 assistantMessageId）。
-  const startChatTask = useCallback(async (sessionId, content, reasoningEffort = 'auto', useWeb = null, localUserMsgId = null) => {
+  const startChatTask = useCallback(async (sessionId, content, reasoningEffort = 'auto', useWeb = null, localUserMsgId = null, imageFileIds = []) => {
     // 新任务开始：终止上一流遗留的后台图片轮询（旧任务结果不再补进新流，防串流）
     stopImagePolling()
     // 流的唯一身份：旧流的迟到回调不会误操作新流
     const streamId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    const st = { streamId, sessionId, content, text: '', thinking: '', toolStatus: null, citations: [], widgets: [], files: [], pendingImage: null, stopped: false, error: '', manual: false, status: 'streaming', taskId: null, assistantMessageId: null, resumed: false }
+    const st = { streamId, sessionId, content, text: '', thinking: '', toolSteps: [], citations: [], widgets: [], files: [], pendingImage: null, stopped: false, error: '', manual: false, status: 'streaming', taskId: null, assistantMessageId: null, resumed: false }
     sendingRef.current = st
     setSending(st)
     // 本次流开始：重置节流缓冲（避免残留上一流的未 flush 内容）
@@ -1899,6 +2044,7 @@ export default function ChatAssistantPage() {
         reasoning_effort: reasoningEffort,
         model_id: modelIdRef.current,
         web_search: useWeb === null ? webSearchRef.current : useWeb,
+        image_file_ids: imageFileIds,
       })
     } catch (err) {
       const errMsg = err?.message || '发送失败'
@@ -1949,6 +2095,7 @@ export default function ChatAssistantPage() {
   const startResumePolling = useCallback((sessionId, messageId, streamId) => {
     stopResumePolling()
     resumePollTimerRef.current = setInterval(async () => {
+      let res
       try { res = await chatAPI.messages(sessionId) } catch { return } // 失败等下一轮
       const items = res.data?.items || []
       const msg = items.find(m => String(m.id) === String(messageId))
@@ -2020,7 +2167,7 @@ export default function ChatAssistantPage() {
       content: retryContent,
       text: streamingMsg.content || '',
       thinking: streamingMsg.thinking || '',
-      toolStatus: null,
+      toolSteps: [],
       citations: Array.isArray(streamingMsg.citations) ? streamingMsg.citations : [],
       widgets: Array.isArray(streamingMsg.widgets) ? streamingMsg.widgets : [],
       files: Array.isArray(streamingMsg.sent_files) ? streamingMsg.sent_files : [],
@@ -2054,8 +2201,8 @@ export default function ChatAssistantPage() {
 
   // ============ 排队队列操作 ============
   const MAX_PENDING = 10
-  const enqueuePending = (text, files = []) => {
-    const item = { id: `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, text, files }
+  const enqueuePending = (text, files = [], imageFileIds = []) => {
+    const item = { id: `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, text, files, imageFileIds }
     pendingQueueRef.current = [...pendingQueueRef.current, item]
     setPendingQueue(pendingQueueRef.current)
     return item
@@ -2102,10 +2249,22 @@ export default function ChatAssistantPage() {
     const text = String(raw ?? input).trim()
     if (!text) return
     // 已成功上传的文件作为「引用」随消息发送（展示在对话区消息上，输入框标签立即移除）
-    const successFiles = docs
+    let successFiles = docs
       .filter(d => d.status === 'success' && d.file_id != null)
-      .map(d => ({ id: d.file_id, original_name: d.name }))
-    const clearSentDocs = () => setDocs(prev => prev.filter(d => d.status !== 'success'))
+      .map(d => ({ id: d.file_id, original_name: d.name, storage_name: d.storage_name, kind: d.kind || 'doc' }))
+    // 图片单消息最多 MAX_IMAGES 张（后端 image_file_ids 硬上限 4）：粘贴入口已截取，
+    // 文件选择/拖拽路径一次可入 5 张，此处统一裁剪兜底，保证后端不 422（被裁图片已上传但随消息不发送）
+    let imageFileIds = successFiles.filter(f => f.kind === 'image').map(f => f.id)
+    if (imageFileIds.length > MAX_IMAGES) {
+      const keptIds = new Set(imageFileIds.slice(0, MAX_IMAGES))
+      showUploadNote(`一条消息最多发送 ${MAX_IMAGES} 张图片，已自动截取前 ${MAX_IMAGES} 张`)
+      successFiles = successFiles.filter(f => f.kind !== 'image' || keptIds.has(f.id))
+      imageFileIds = [...keptIds]
+    }
+    const clearSentDocs = () => setDocs(prev => {
+      for (const d of prev) { if (d.status === 'success' && d.preview) URL.revokeObjectURL(d.preview) }
+      return prev.filter(d => d.status !== 'success')
+    })
     // 正在生成中：进入排队队列，当前回复结束后自动发送
     if (sendingRef.current && !sendingRef.current.stopped) {
       if (pendingQueueRef.current.length >= MAX_PENDING) {
@@ -2113,7 +2272,7 @@ export default function ChatAssistantPage() {
         focusInput()
         return
       }
-      enqueuePending(text, successFiles)
+      enqueuePending(text, successFiles, imageFileIds)
       clearSentDocs()
       setInput('')
       if (inputRef.current) inputRef.current.style.height = 'auto'
@@ -2148,7 +2307,7 @@ export default function ChatAssistantPage() {
     const userLocalId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     setMessages(prev => [...prev, { id: userLocalId, role: 'user', content: text, files: successFiles, created_at: new Date().toISOString() }])
     clearSentDocs()
-    await startChatTask(sid, text, effortRef.current, null, userLocalId)
+    await startChatTask(sid, text, effortRef.current, null, userLocalId, imageFileIds)
     focusInput()
   }
 
@@ -2187,7 +2346,7 @@ export default function ChatAssistantPage() {
     }
     const userLocalId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     setMessages(prev => [...prev, { id: userLocalId, role: 'user', content: item.text, files: item.files || [], created_at: new Date().toISOString() }])
-    startChatTask(sid, item.text, effortRef.current, null, userLocalId)
+    startChatTask(sid, item.text, effortRef.current, null, userLocalId, item.imageFileIds || [])
   }, [dialog, cost, startChatTask, acquireSendLock, releaseSendLock, clearPending])
 
   // sending 变为空闲时自动发送排队中的下一条
@@ -2438,7 +2597,11 @@ export default function ChatAssistantPage() {
       if (ui < 0) return prev
       return [...prev.slice(0, ui), { ...userMsg, id: userLocalId, created_at: new Date().toISOString() }]
     })
-    startChatTask(sid, userMsg.content, effortRef.current, null, userLocalId)
+    // 原问题携带的图片：文件属于会话（chat_files），删除消息不级联删文件，重新回答时随消息重发
+    const retryImageIds = (userMsg.files || [])
+      .filter(f => f.kind === 'image' && f.id != null)
+      .map(f => Number(f.id))
+    startChatTask(sid, userMsg.content, effortRef.current, null, userLocalId, retryImageIds)
   }, [dialog, messages, cost, startChatTask])
 
   const handleCopy = useCallback(async (text) => {
@@ -2544,7 +2707,7 @@ export default function ChatAssistantPage() {
           </div>
 
           <input ref={fileRef} type="file" className="hidden" multiple
-            accept={DOC_ACCEPT}
+            accept={`${DOC_ACCEPT},${[...IMG_EXTS].map(e => `.${e}`).join(',')}`}
             onChange={handleFilesSelected} />
           <ChatInputBar inputRef={inputRef} value={input} onChange={setInput}
             onSend={handleSend} onStop={handleStop} sending={!!sending && !sending?.stopped} cost={cost} points={points}
@@ -2558,7 +2721,8 @@ export default function ChatAssistantPage() {
             uploadingCount={docs.filter(d => d.status === 'uploading' || d.status === 'pending').length}
             uploadNote={uploadNote}
             webSearch={webSearch} onWebSearch={toggleWebSearch}
-            linkStatus={linkStatus} dragActive={dragActive} dragHandlers={dragHandlers} />
+            linkStatus={linkStatus} dragActive={dragActive} dragHandlers={dragHandlers}
+            onPasteFiles={handlePasteFiles} />
         </div>
       </div>
       {toast && (
