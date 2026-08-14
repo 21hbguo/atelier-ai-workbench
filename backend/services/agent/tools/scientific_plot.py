@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import re
 import urllib.parse
 from pathlib import Path
@@ -11,13 +12,22 @@ from pathlib import Path
 from backend.services.agent.context import AgentContext
 from backend.services.agent.registry import agent_tool
 from backend.services.agent.tools.send_file import MAX_SEND_BYTES
-from backend.services.agent.workspace import MAX_WORKSPACE_BYTES, resolve_workspace_path, workspace_usage_bytes
+from backend.services.agent.workspace import (
+    MAX_WORKSPACE_BYTES,
+    TRASH_DIR_NAME,
+    is_uploads_path,
+    rel_workspace_path,
+    resolve_workspace_path,
+    workspace_usage_bytes,
+)
 
 logger = logging.getLogger(__name__)
 
 MAX_ROWS = 50_000
 MAX_COLUMNS = 100
 MAX_OUTPUT_FILES = 4
+MIN_FIGURE_SIZE = 2
+MAX_FIGURE_SIZE = 16
 PLOT_TYPES = {"line", "bar", "scatter", "distribution", "heatmap", "volcano", "pca", "roc_pr"}
 PLOT_STYLES = {"science", "nature", "ieee"}
 SAFE_NAME = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
@@ -316,8 +326,14 @@ def _build_plot(path: Path, output_base: Path, args: dict) -> list[Path]:
     if style not in PLOT_STYLES:
         raise ValueError(f"style 必须是：{', '.join(sorted(PLOT_STYLES))}")
     plt = _configure_style(style)
-    width, height = args.get("width") or 6.4, args.get("height") or 4.2
-    figure, ax = plt.subplots(figsize=(float(width), float(height)))
+    try:
+        width = float(args.get("width") or 6.4)
+        height = float(args.get("height") or 4.2)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("width 和 height 必须是数字") from exc
+    if not all(math.isfinite(value) and MIN_FIGURE_SIZE <= value <= MAX_FIGURE_SIZE for value in (width, height)):
+        raise ValueError(f"width 和 height 必须在 {MIN_FIGURE_SIZE}-{MAX_FIGURE_SIZE} 英寸之间")
+    figure, ax = plt.subplots(figsize=(width, height))
     try:
         {
             "line": _plot_line,
@@ -376,8 +392,8 @@ def _build_plot(path: Path, output_base: Path, args: dict) -> list[Path]:
             "trendline": {"type": "boolean", "description": "散点图是否添加线性趋势线，默认 false"},
             "style": {"type": "string", "enum": sorted(PLOT_STYLES), "description": "论文样式，默认 science"},
             "color_map": {"type": "string", "description": "热图 Matplotlib 色图，默认 viridis"},
-            "width": {"type": "number", "description": "图宽（英寸），默认 6.4"},
-            "height": {"type": "number", "description": "图高（英寸），默认 4.2"},
+            "width": {"type": "number", "minimum": MIN_FIGURE_SIZE, "maximum": MAX_FIGURE_SIZE, "description": "图宽（英寸），默认 6.4"},
+            "height": {"type": "number", "minimum": MIN_FIGURE_SIZE, "maximum": MAX_FIGURE_SIZE, "description": "图高（英寸），默认 4.2"},
             "x_label": {"type": "string", "description": "X 轴显示名，可选"},
             "y_label": {"type": "string", "description": "Y 轴显示名，可选"},
             "show_grid": {"type": "boolean", "description": "是否显示网格，默认 true"},
@@ -409,6 +425,9 @@ async def scientific_plot(args: dict, ctx: AgentContext) -> str:
         return f"数据文件不存在：{source_path}"
     if source.suffix.lower() not in {".csv", ".xlsx"}:
         return "source_path 仅支持 .csv 或 .xlsx 文件"
+    output_workspace_path = rel_workspace_path(user_id, output_base)
+    if is_uploads_path(output_workspace_path) or output_workspace_path.parts[0] == TRASH_DIR_NAME:
+        return "output_name 不能写入 uploads/ 或 .trash/ 目录"
     output_base.parent.mkdir(parents=True, exist_ok=True)
     try:
         outputs = await asyncio.to_thread(_build_plot, source, output_base, args)

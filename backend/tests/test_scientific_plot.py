@@ -50,6 +50,40 @@ def test_scientific_plot_rejects_unknown_column(workspace):
     assert "找不到列：missing" in result
 
 
+def test_scientific_plot_cannot_use_other_user_data(workspace):
+    other_upload = workspace.parent / "user_2" / "uploads"
+    other_upload.mkdir(parents=True)
+    other_data = other_upload / "private.csv"
+    other_data.write_text("time,value\n1,999\n", encoding="utf-8")
+
+    result = _run(scientific_plot({
+        "source_path": str(other_data), "plot_type": "line", "output_name": "figures/private",
+        "x_column": "time", "y_columns": ["value"],
+    }, _ctx()))
+
+    assert "路径无效" in result
+    assert not (workspace / "figures" / "private.png").exists()
+
+
+def test_scientific_plot_rejects_oversized_figure(workspace):
+    result = _run(scientific_plot({
+        "source_path": "uploads/data.csv", "plot_type": "line", "output_name": "figures/large",
+        "x_column": "time", "y_columns": ["value"], "width": 100,
+    }, _ctx()))
+
+    assert "width 和 height 必须在" in result
+
+
+@pytest.mark.parametrize("output_name", ["uploads/plot", ".trash/plot"])
+def test_scientific_plot_rejects_protected_output_directories(workspace, output_name):
+    result = _run(scientific_plot({
+        "source_path": "uploads/data.csv", "plot_type": "line", "output_name": output_name,
+        "x_column": "time", "y_columns": ["value"],
+    }, _ctx()))
+
+    assert "output_name 不能写入" in result
+
+
 @pytest.mark.parametrize(("plot_type", "args"), [
     ("heatmap", {"value_columns": ["value", "fc", "p"]}),
     ("pca", {"feature_columns": ["value", "fc", "f1", "f2"]}),
