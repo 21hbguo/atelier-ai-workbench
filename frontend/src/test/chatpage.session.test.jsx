@@ -189,3 +189,39 @@ describe('ChatAssistantPage 会话恢复与生成中切换', () => {
     expect(screen.queryByText('停止生成')).not.toBeInTheDocument()
   })
 })
+
+describe('ChatAssistantPage 无会话上传', () => {
+  it('无会话时选择文件自动创建会话并上传', async () => {
+    sessionsMock.mockResolvedValue(ok({ items: [] }))
+    createSessionMock.mockResolvedValue(ok({ id: 99, title: '新对话' }))
+    uploadDocMock.mockResolvedValue(ok({ file_id: 1, char_count: 10 }))
+
+    const { container } = render(<ChatAssistantPage />)
+    await waitFor(() => expect(sessionsMock).toHaveBeenCalled())
+
+    // 无激活会话（未选任何会话）→ 选择文件
+    const fileInput = container.querySelector('input[type="file"]')
+    const file = new File(['hello world'], 'note.txt', { type: 'text/plain' })
+    fireEvent.change(fileInput, { target: { files: [file] } })
+
+    // 自动创建会话，上传使用新会话 id
+    await waitFor(() => expect(createSessionMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(uploadDocMock).toHaveBeenCalled())
+    expect(uploadDocMock.mock.calls[0][0]).toBe(99)
+  })
+
+  it('创建会话失败时不发起上传', async () => {
+    sessionsMock.mockResolvedValue(ok({ items: [] }))
+    createSessionMock.mockRejectedValue(new Error('创建失败'))
+
+    const { container } = render(<ChatAssistantPage />)
+    await waitFor(() => expect(sessionsMock).toHaveBeenCalled())
+
+    const fileInput = container.querySelector('input[type="file"]')
+    const file = new File(['hello world'], 'note.txt', { type: 'text/plain' })
+    fireEvent.change(fileInput, { target: { files: [file] } })
+
+    await waitFor(() => expect(alertMock).toHaveBeenCalledWith('创建失败'))
+    expect(uploadDocMock).not.toHaveBeenCalled()
+  })
+})

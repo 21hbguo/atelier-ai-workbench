@@ -1403,11 +1403,24 @@ export default function ChatAssistantPage() {
       ? { ...d, ...(typeof patch === 'function' ? patch(d) : patch) } : d))
   }, [])
 
-  // 文件入队：扩展名/大小校验 + 单次 5 个 + 会话 20 个上限截取（文件选择器与拖拽上传共用）
-  const addDocs = useCallback((files) => {
+  // 文件入队：扩展名/大小校验 + 单次 5 个 + 会话 20 个上限截取（文件选择器与拖拽上传共用）。
+  // 无激活会话时自动创建会话（上传即对话开始），创建成功后再入队上传。
+  const addDocs = useCallback(async (files) => {
     if (!files || !files.length) return
-    const sid = activeIdRef.current
-    if (!sid) { showUploadNote('请先创建/选择会话再上传文档'); return }
+    if (!activeIdRef.current) {
+      showUploadNote('正在创建会话，稍候上传…')
+      try {
+        const res = await chatAPI.createSession()
+        const s = res.data
+        setSessions(prev => [s, ...prev.filter(p => p.id !== s.id)]) // 去重：后端可能复用已存在的空会话
+        setActiveId(s.id)
+        activeIdRef.current = s.id // 立即同步 ref（useEffect 同步在渲染后，await 返回时可能未更新）
+        setMessages([])
+      } catch (err) {
+        dialog.alert(err.message || '创建会话失败')
+        return
+      }
+    }
     let picked = files
     if (picked.length > MAX_BATCH) {
       showUploadNote(`一次最多上传 ${MAX_BATCH} 个文件，已自动截取前 ${MAX_BATCH} 个`)
@@ -1446,7 +1459,7 @@ export default function ChatAssistantPage() {
   const handleFilesSelected = useCallback(e => {
     const files = Array.from(e.target.files || [])
     e.target.value = ''
-    addDocs(files)
+    void addDocs(files)
   }, [addDocs])
 
   // 上传单个文档（进度/成功/失败状态，对齐绘画页 uploadItem）
@@ -1530,7 +1543,7 @@ export default function ChatAssistantPage() {
     e.preventDefault()
     dragCounterRef.current = 0
     setDragActive(false)
-    addDocs(Array.from(e.dataTransfer.files || []))
+    void addDocs(Array.from(e.dataTransfer.files || []))
   }, [addDocs])
   const dragHandlers = {
     onDragEnter: handleDragEnter,
@@ -1975,8 +1988,10 @@ export default function ChatAssistantPage() {
       setMessages([])
       setSessionListOpen(false)
       focusInput() // 新建后直接聚焦对话框，用户可直接输入
+      return s // 供「无会话时上传文件自动建会话」复用
     } catch (err) {
       dialog.alert(err.message || '创建会话失败')
+      return null
     } finally {
       creatingRef.current = false
       setCreatingSession(false)
