@@ -3,13 +3,14 @@ import { Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, PanelLeftClose,
 import MainLayout from '../components/MainLayout'
 import GroupBuyBanner from '../components/GroupBuyBanner'
 import { useAppDialog } from '../components/AppDialogProvider'
-import { chatAPI, pointsAPI, taskAPI } from '../api'
+import { chatAPI, pointsAPI, subscriptionAPI, taskAPI } from '../api'
 import { readUser } from '../auth'
 import { mdToHtml } from '../utils/markdown'
 import { saveBlob } from '../utils/download'
 import WidgetViewer from '../components/WidgetViewer'
 import FileCard from '../components/FileCard'
 import { ModelLogo } from '../components/modelIcons'
+import useDelayedQuotaRemaining from '../hooks/useDelayedQuotaRemaining'
 
 // 模块级：assistant_message_id → task_id 映射缓存。
 // 历史接口不返回 task_id（按契约），续传订阅时优先用此缓存匹配「同页面发送→切走→切回」；
@@ -789,7 +790,7 @@ const MODEL_FAMILIES = [
 ]
 const familyKeyOf = (m) => String(m.provider || '').trim().toLowerCase()
 
-function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, dailyTotal, dailyRemaining, reasoningEffort, onReasoningEffort, efforts, modelLabel, modelProvider, pendingQueue, onEditPending, onRemovePending, models, chatModelId, onSelectModel, onUploadClick, docs, onRemoveDoc, uploadingCount, uploadNote, webSearch, onWebSearch, linkStatus, dragActive, dragHandlers, onPasteFiles }) {
+function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost, points, dailyTotal, dailyRemaining, isMember, reasoningEffort, onReasoningEffort, efforts, modelLabel, modelProvider, pendingQueue, onEditPending, onRemovePending, models, chatModelId, onSelectModel, onUploadClick, docs, onRemoveDoc, uploadingCount, uploadNote, webSearch, onWebSearch, linkStatus, dragActive, dragHandlers, onPasteFiles }) {
   const [effortOpen, setEffortOpen] = useState(false)
   const [modelOpen, setModelOpen] = useState(false)
   const [modelQuery, setModelQuery] = useState('')
@@ -831,6 +832,9 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
       onSend() // 生成中会自动进入排队
     }
   }
+  const displayRemaining = useDelayedQuotaRemaining(dailyRemaining, { enabled: isMember })
+  const quotaPct = dailyTotal > 0 ? Math.min(100, Math.round((Math.max(0, displayRemaining) / dailyTotal) * 100)) : 0
+  const quotaColor = quotaPct <= 20 ? 'var(--color-error)' : 'var(--accent)'
   return (
     <div className="lg:static fixed inset-x-0 z-20 flex-shrink-0"
       style={{ background: 'var(--bg-primary)', borderTop: '1px solid var(--border-color)', bottom: 'env(keyboard-inset-height, 0px)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
@@ -871,10 +875,11 @@ function ChatInputBar({ inputRef, value, onChange, onSend, onStop, sending, cost
               title="今日 AI 助手用量（用完后将扣除积分）">
               {dailyTotal === null ? '今日不限量' : (
                 <>
-                  <span className="w-14 h-1.5 rounded-full overflow-hidden shrink-0" style={{ background: 'color-mix(in srgb, var(--text-secondary) 20%, transparent)' }}>
-                    <span className="block h-full rounded-full" style={{ width: `${Math.min(100, (Math.max(0, dailyRemaining) / dailyTotal) * 100)}%`, background: 'var(--accent)' }} />
-                  </span>
                   <span>今日额度</span>
+                  <span className="w-10 h-1.5 rounded-full overflow-hidden shrink-0" style={{ background: 'color-mix(in srgb, var(--text-secondary) 20%, transparent)' }}>
+                    <span className="block h-full rounded-full" style={{ width: `${quotaPct}%`, background: quotaColor }} />
+                  </span>
+                  <span className="tabular-nums" style={{ color: quotaColor }}>{quotaPct}%</span>
                 </>
               )}
             </span>
@@ -1221,6 +1226,7 @@ export default function ChatAssistantPage() {
   const [points, setPoints] = useState(() => readUser()?.points ?? 0)
   const [dailyTotal, setDailyTotal] = useState(0)
   const [dailyRemaining, setDailyRemaining] = useState(0)
+  const [chatSubscription, setChatSubscription] = useState(null)
   const [reasoningEffort, setReasoningEffort] = useState(() => localStorage.getItem('chat_reasoning_effort') || 'auto')
   const [modelInfo, setModelInfo] = useState(null) // { label, reasoning_efforts, ... }（激活模型档案）
   const [models, setModels] = useState([]) // 全部启用的模型档案
@@ -1357,6 +1363,7 @@ export default function ChatAssistantPage() {
       setDailyTotal(res.data?.ai_daily_total === null ? null : Number(res.data?.ai_daily_total || 0))
       setDailyRemaining(res.data?.ai_daily_remaining === null ? null : Number(res.data?.ai_daily_remaining || 0))
     }).catch(() => {})
+    subscriptionAPI.me().then(res => { setChatSubscription(res.data) }).catch(() => {})
     chatAPI.sessions().then(res => {
       const items = res.data?.items || []
       setSessions(items)
@@ -2711,7 +2718,7 @@ export default function ChatAssistantPage() {
             onChange={handleFilesSelected} />
           <ChatInputBar inputRef={inputRef} value={input} onChange={setInput}
             onSend={handleSend} onStop={handleStop} sending={!!sending && !sending?.stopped} cost={cost} points={points}
-            dailyTotal={dailyTotal} dailyRemaining={dailyRemaining}
+            dailyTotal={dailyTotal} dailyRemaining={dailyRemaining} isMember={chatSubscription?.plan?.features?.package_type === 'membership'}
             reasoningEffort={reasoningEffort} onReasoningEffort={handleReasoningEffort}
             efforts={chatModel?.reasoning_efforts} modelLabel={chatModel?.label || modelInfo?.label || modelInfo?.model_id}
             modelProvider={chatModel?.provider || modelInfo?.provider || ''}

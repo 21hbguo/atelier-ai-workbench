@@ -7,6 +7,7 @@ import { announcementAPI, authAPI, chatAPI, pointsAPI, notificationAPI, subscrip
 import { clearUser, readUser } from '../auth'
 import { useAppDialog } from './AppDialogProvider'
 import SubscriptionDialog from './SubscriptionDialog'
+import useDelayedQuotaRemaining from '../hooks/useDelayedQuotaRemaining'
 
 const formatDate = ts => {
   if (!ts) return ''
@@ -109,6 +110,9 @@ export default function Sidebar({ open, onClose }) {
 
   const subNavVisible = SUB_NAV_PATHS.includes(location.pathname) || location.pathname === '/chat'
   const isChatPage = location.pathname === '/chat'
+  const displayRemaining = useDelayedQuotaRemaining(dailyRemaining, { enabled: subscription?.plan?.features?.package_type === 'membership' })
+  const quotaPct = dailyTotal !== null && dailyTotal > 0 ? Math.min(100, Math.round((Math.max(0, displayRemaining) / dailyTotal) * 100)) : 0
+  const quotaColor = quotaPct <= 20 ? 'var(--color-error)' : 'var(--accent)'
 
   return (
     <>
@@ -185,12 +189,13 @@ export default function Sidebar({ open, onClose }) {
                       <div className="truncate">{subscriptionReady ? (dailyTotal === null ? '不限量' : dailyTotal > 0 ? (
                         <span className="flex items-center gap-1.5">
                           <span className="shrink-0">今日额度</span>
-                          <span className="flex-1 h-1 min-w-0 rounded-full overflow-hidden" style={{ background: 'color-mix(in srgb, var(--text-secondary) 18%, transparent)' }}>
-                            <span className="block h-full rounded-full" style={{ width: `${Math.min(100, (Math.max(0, dailyRemaining) / dailyTotal) * 100)}%`, background: 'var(--accent)' }} />
+                          <span className="w-10 h-1 shrink-0 rounded-full overflow-hidden" style={{ background: 'color-mix(in srgb, var(--text-secondary) 18%, transparent)' }}>
+                            <span className="block h-full rounded-full" style={{ width: `${quotaPct}%`, background: quotaColor }} />
                           </span>
+                          <span className="shrink-0 font-semibold tabular-nums" style={{ color: quotaColor }}>{quotaPct}%</span>
                         </span>
                       ) : (hasPlan ? (subscription.plan.features?.package_type === 'credits' ? '永久积分' : `周期至 ${formatDate(subscription.cycle?.period_end)}`) : '解锁更多模型')) : <span aria-label="套餐权益加载中" className="block h-2.5 w-24 rounded-full animate-pulse" style={{ background: 'var(--bg-hover)' }} />}</div>
-                      <div className="truncate">{points} 积分</div>
+                      <div className="truncate">积分剩余 {Math.round(Number(points))}</div>
                     </div>
                   )}
                 </button>

@@ -77,6 +77,9 @@ vi.mock('../api', () => ({
   pointsAPI: {
     balance: balanceMock,
   },
+  subscriptionAPI: {
+    me: () => Promise.resolve({ data: { plan: { name: '免费套餐', is_free: true, features: {} }, cycle: null } }),
+  },
   taskAPI: {
     get: taskGetMock,
   },

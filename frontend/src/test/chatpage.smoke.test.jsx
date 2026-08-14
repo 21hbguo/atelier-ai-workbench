@@ -45,6 +45,9 @@ vi.mock('../api', async () => {
       checkinStatus: () => ok({ checked_in_today: false }),
       checkin: () => ok({ points: 110, message: 'ok' }),
     },
+    subscriptionAPI: {
+      me: () => ok({ plan: { name: '免费套餐', is_free: true, features: {} }, cycle: null }),
+    },
     configAPI: {
       get: () =>
         ok({

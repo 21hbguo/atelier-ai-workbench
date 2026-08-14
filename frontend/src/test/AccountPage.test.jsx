@@ -33,6 +33,13 @@ describe('AccountPage', () => {
     expect(screen.getAllByText('每日签到').length).toBeGreaterThan(0)
   })
 
+  it('renders daily quota progress bar with remaining percent', async () => {
+    balanceMock.mockResolvedValue({ data: { points: 248, ai_daily_remaining: 8, ai_daily_total: 10 } })
+    renderPage()
+    await waitFor(() => expect(screen.getByText('80%')).toBeInTheDocument())
+    expect(screen.getByText('今日额度')).toBeInTheDocument()
+  })
+
   it('opens points modal via plan entry without check-in button', async () => {
     renderPage()
     fireEvent.click(screen.getByText('积分与套餐'))

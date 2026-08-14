@@ -7,6 +7,7 @@ import RecordsModal from '../components/RecordsModal'
 import RedeemModal from '../components/RedeemModal'
 import { pointsAPI, subscriptionAPI } from '../api'
 import { readUser } from '../auth'
+import useDelayedQuotaRemaining from '../hooks/useDelayedQuotaRemaining'
 
 const transactionLabels = {
   daily_checkin: '每日签到',
@@ -38,14 +39,20 @@ const planDetail = (subscription, dailyRemaining, dailyTotal, fmt) => {
     if (plan.features?.package_type === 'credits') return '积分包 · 永久有效'
     return subscription?.cycle?.period_end ? `周期至 ${fmt(subscription.cycle.period_end)}` : '套餐已生效'
   }
-  if (dailyTotal !== null && dailyTotal > 0) return (
-    <span className="inline-flex items-center gap-1.5 align-middle">
-      <span className="shrink-0">今日额度</span>
-      <span className="flex-1 h-1 min-w-0 rounded-full overflow-hidden" style={{ background: 'color-mix(in srgb, var(--text-secondary) 18%, transparent)' }}>
-        <span className="block h-full rounded-full" style={{ width: `${Math.min(100, (Math.max(0, dailyRemaining) / dailyTotal) * 100)}%`, background: 'var(--accent)' }} />
+  if (dailyTotal !== null && dailyTotal > 0) {
+    const remaining = Math.max(0, Number(dailyRemaining) || 0)
+    const pct = Math.min(100, Math.round((remaining / dailyTotal) * 100))
+    const color = pct <= 20 ? 'var(--color-error)' : 'var(--accent)'
+    return (
+      <span className="flex items-center gap-2">
+        <span className="shrink-0">今日额度</span>
+        <span className="w-10 h-1 shrink-0 rounded-full overflow-hidden" style={{ background: 'color-mix(in srgb, var(--text-secondary) 18%, transparent)' }}>
+          <span className="block h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+        </span>
+        <span className="shrink-0 font-semibold tabular-nums" style={{ color }}>{pct}%</span>
       </span>
-    </span>
-  )
+    )
+  }
   return '开通套餐解锁更多权益'
 }
 
@@ -64,6 +71,7 @@ export default function AccountPage() {
   const account = user?.account || user?.username || '-'
   const initial = displayName.slice(0, 1).toUpperCase()
   const isAdmin = Boolean(user?.is_admin)
+  const displayRemaining = useDelayedQuotaRemaining(dailyRemaining, { enabled: subscription?.plan?.features?.package_type === 'membership' })
 
   const refresh = useCallback(() => {
     Promise.allSettled([
@@ -130,7 +138,7 @@ export default function AccountPage() {
                   <span className="flex items-center gap-1.5 text-[10px] font-medium" style={{ color: 'var(--text-secondary)' }}><Crown size={12} style={{ color: 'var(--accent)' }} />当前套餐</span>
                   {subscriptionReady ? <>
                     <strong className="mt-1 block truncate text-base font-bold leading-tight" style={{ color: 'var(--text-primary)' }}>{subscription?.plan?.name || '免费套餐'}</strong>
-                    <span className="mt-1 block truncate text-[10px]" style={{ color: 'var(--text-secondary)' }}>{planDetail(subscription, dailyRemaining, dailyTotal, formatTime)}</span>
+                    <span className="mt-1 block truncate text-[10px]" style={{ color: 'var(--text-secondary)' }}>{planDetail(subscription, displayRemaining, dailyTotal, formatTime)}</span>
                   </> : <span aria-label="套餐加载中" className="mt-2 block h-3 w-24 rounded-full animate-pulse" style={{ background: 'var(--bg-hover)' }} />}
                 </div>
               </div>
