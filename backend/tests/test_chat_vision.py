@@ -21,6 +21,7 @@ from fastapi import HTTPException
 from backend.routers import chat as chat_module
 from backend.routers.chat import ChatSendRequest, _attach_image_blocks, _attach_image_note
 from backend.services import llm_model_service
+from backend.services.chat_task_manager import CHAT_TASK_MANAGER
 
 # 1x1 透明 PNG 假字节（真实文件头，够写入磁盘即可）
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
@@ -59,6 +60,8 @@ def _execute_side_effect(sql, *params):
         cur.fetchone.return_value = {"id": 1}
     elif "VALUES (%s, 'user', %s" in s:
         cur.fetchone.return_value = {"id": 101}  # user 消息落库
+    elif "VALUES (%s, 'assistant'" in s:
+        cur.fetchone.return_value = {"id": 102}  # assistant 占位消息落库（status='streaming'）
     elif "citations, widgets, files" in s:
         cur.fetchone.return_value = {"id": 102}  # assistant 消息落库
     else:
@@ -161,21 +164,29 @@ def _base_patches(conn=None, active_model=None, vision_default=None):
     return _Patches(patches), conn, captured
 
 
-def _consume_sse(resp):
-    """消费 StreamingResponse 的 SSE 事件，返回 [(event, data_dict), ...]。"""
-    events = []
+@pytest.fixture(autouse=True)
+def _cleanup_chat_tasks():
+    """测试隔离：清空内存任务表（终态任务本应自清，失败用例可能残留）。"""
+    CHAT_TASK_MANAGER._tasks.clear()
+    yield
+    CHAT_TASK_MANAGER._tasks.clear()
 
-    async def _drain():
-        async for chunk in resp.body_iterator:
-            text = chunk.decode("utf-8") if isinstance(chunk, bytes) else str(chunk)
-            for line in text.splitlines():
-                if line.startswith("event:"):
-                    events.append([line[len("event:"):].strip(), None])
-                elif line.startswith("data:"):
-                    events[-1][1] = json.loads(line[len("data:"):].strip())
 
-    _run(_drain())
-    return events
+async def _send_and_wait(session_id, body, user):
+    """任务制发送：POST 返回 {task_id,...} 后等待后台任务跑完，返回 (result, task)。"""
+    result = await chat_module.send_message(session_id, body, user)
+    task = CHAT_TASK_MANAGER.get(result["task_id"])
+    assert task is not None, "任务应注册到内存管理器"
+    try:
+        await asyncio.wait_for(task.asyncio_task, timeout=5)
+    except asyncio.TimeoutError:
+        raise AssertionError(f"后台任务 5s 未完成: {result['task_id']}")
+    return result, task
+
+
+def _task_events(task):
+    """从任务事件环提取 [(event, data_dict), ...]（终态后任务已从管理器移除，对象引用仍可读）。"""
+    return [(item["type"], item["data"]) for item in task.events]
 
 
 # ---------------------------------------------------------------------------
@@ -260,10 +271,9 @@ def test_send_with_image_attaches_image_block(tmp_path, monkeypatch):
     monkeypatch.setattr(chat_module.config, "USER_WORKSPACES_DIR", tmp_path)
     patches, conn, captured = _base_patches()  # active 为视觉模型 → 不切换
     with patches:
-        resp = _run(chat_module.send_message(
+        result, task = _run(_send_and_wait(
             SESSION_ID, ChatSendRequest(content="看图说话", image_file_ids=[IMAGE_FILE_ID]), USER,
         ))
-        events = _consume_sse(resp)  # event_generator 惰性执行，必须在 patch 生效期内消费
 
     # 断言传给 LLM 的最后一条 user 消息 content 是 list：先 text 块后 image 块
     assert len(captured["chat_stream_calls"]) == 1
@@ -277,13 +287,16 @@ def test_send_with_image_attaches_image_block(tmp_path, monkeypatch):
     for m in messages[:-1]:
         assert isinstance(m["content"], str)
 
-    # SSE：user_message_id 事件带 image_files；模型支持视觉 → model_switched=false
-    umi = [d for e, d in events if e == "user_message_id"][0]
-    assert umi["image_files"] == [{"id": IMAGE_FILE_ID, "original_name": "photo.png", "content_type": "image/png"}]
-    assert umi["model_switched"] is False
+    # 任务制契约：POST 返回三个 id；done 事件带 model_switched=false（不再有 user_message_id 事件）
+    assert result["user_message_id"] == 101
+    assert result["assistant_message_id"] == 102
+    assert result["task_id"] == "chat-102"
+    events = _task_events(task)
+    assert not any(e == "user_message_id" for e, _ in events)
     done = [d for e, d in events if e == "done"][0]
     assert done["text"] == "这是一张图"
     assert done["model_switched"] is False
+    assert done["message_id"] == 102
 
 
 def test_attach_image_blocks_no_images_returns_same_list():
@@ -329,10 +342,9 @@ def test_send_switches_to_vision_model_when_target_lacks_vision(tmp_path):
             active_model=_no_vision_model(), vision_default=_vision_model("gpt-5.5"),
         )
         with patches:
-            resp = _run(chat_module.send_message(
+            result, task = _run(_send_and_wait(
                 SESSION_ID, ChatSendRequest(content="看图说话", image_file_ids=[IMAGE_FILE_ID]), USER,
             ))
-            events = _consume_sse(resp)  # event_generator 惰性执行，必须在 patch 生效期内消费
 
     # 传给 LLM 的 model 已切换为视觉模型
     assert captured["chat_stream_calls"][0]["model"]["model_id"] == "gpt-5.5"
@@ -340,11 +352,11 @@ def test_send_switches_to_vision_model_when_target_lacks_vision(tmp_path):
     messages = captured["chat_stream_calls"][0]["messages"]
     last_user = [m for m in messages if m["role"] == "user"][-1]
     assert any(b.get("type") == "image" for b in last_user["content"])
-    # SSE done / user_message_id 事件带 model_switched=true
+    # done 事件带 model_switched=true（user_message_id 事件已移除，POST 返回 id）
+    events = _task_events(task)
     done = [d for e, d in events if e == "done"][0]
     assert done["model_switched"] is True
-    umi = [d for e, d in events if e == "user_message_id"][0]
-    assert umi["model_switched"] is True
+    assert result["user_message_id"] == 101
 
 
 # ---------------------------------------------------------------------------
@@ -355,10 +367,9 @@ def test_send_no_vision_and_no_default_degrades_to_note():
     """无可用视觉模型：不报错——消息注入说明文本（图片不直发），模型自然回复，正常扣费落库。"""
     patches, conn, captured = _base_patches(active_model=_no_vision_model(), vision_default=None)
     with patches:
-        resp = _run(chat_module.send_message(
+        result, task = _run(_send_and_wait(
             SESSION_ID, ChatSendRequest(content="看图说话", image_file_ids=[IMAGE_FILE_ID]), USER,
         ))
-        events = _consume_sse(resp)  # event_generator 惰性执行，必须在 patch 生效期内消费
 
     # 发给 LLM 的消息：最后一条 user 消息是 list，含说明文本块、无 image 块（图片不直发）
     assert len(captured["chat_stream_calls"]) == 1
@@ -372,16 +383,15 @@ def test_send_no_vision_and_no_default_degrades_to_note():
     # 模型未切换（仍是原模型）
     assert captured["chat_stream_calls"][0]["model"]["model_id"] == "no-vision"
 
-    # SSE：done / user_message_id 事件带 image_degraded=true、model_switched=false
-    umi = [d for e, d in events if e == "user_message_id"][0]
-    assert umi["image_degraded"] is True
-    assert umi["model_switched"] is False
+    # done 事件带 image_degraded=true、model_switched=false；正常得到回复并落库
+    events = _task_events(task)
     done = [d for e, d in events if e == "done"][0]
     assert done["image_degraded"] is True
+    assert done["model_switched"] is False
     assert done["text"] == "这是一张图"  # 正常得到回复（fake chat_stream 返回）
-    # 正常落库：INSERT chat_messages 已执行（user 消息 + assistant 消息）
+    # 正常落库：INSERT chat_messages 已执行（user 消息 + assistant 占位消息）
     insert_calls = [c for c in conn.execute.call_args_list if "INSERT INTO chat_messages" in str(c.args[0])]
-    assert len(insert_calls) >= 1
+    assert len(insert_calls) >= 2
 
 
 def test_attach_image_note_injects_text_block():
@@ -422,10 +432,9 @@ def test_send_no_vision_agent_channel_degrades_to_note(tmp_path, monkeypatch):
         with patch.object(chat_module.LLMClient, "protocol", return_value="openai"), \
              patch.object(chat_module.ChatService, "prepare_session_messages", new=_fake_prepare), \
              patch.object(chat_module, "run_agent_stream", new=_fake_agent_stream):
-            resp = _run(chat_module.send_message(
+            result, task = _run(_send_and_wait(
                 SESSION_ID, ChatSendRequest(content="看图说话", image_file_ids=[IMAGE_FILE_ID]), USER,
             ))
-            events = _consume_sse(resp)
 
     assert len(captured["agent_calls"]) == 1
     call = captured["agent_calls"][0]
@@ -438,6 +447,7 @@ def test_send_no_vision_agent_channel_degrades_to_note(tmp_path, monkeypatch):
     note = [b for b in last_user["content"] if b.get("type") == "text" and "系统说明" in b.get("text", "")]
     assert note and str(IMAGE_FILE_ID) in note[0]["text"]
     assert "image_recognize" in note[0]["text"]
+    events = _task_events(task)
     done = [d for e, d in events if e == "done"][0]
     assert done["image_degraded"] is True
 

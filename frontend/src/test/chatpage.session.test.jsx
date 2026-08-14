@@ -17,7 +17,9 @@ const {
   batchDeleteSessionsMock,
   deleteMessagesMock,
   uploadDocMock,
-  sendStreamMock,
+  sendMessageMock,
+  streamTaskMock,
+  stopMessageMock,
   balanceMock,
   taskGetMock,
   alertMock,
@@ -35,7 +37,9 @@ const {
   const batchDeleteSessionsMock = vi.fn()
   const deleteMessagesMock = vi.fn()
   const uploadDocMock = vi.fn()
-  const sendStreamMock = vi.fn()
+  const sendMessageMock = vi.fn()
+  const streamTaskMock = vi.fn()
+  const stopMessageMock = vi.fn()
   const balanceMock = vi.fn()
   const taskGetMock = vi.fn()
   const alertMock = vi.fn()
@@ -46,7 +50,8 @@ const {
   return {
     modelMock, modelsMock, costMock, sessionsMock, messagesMock, createSessionMock,
     renameSessionMock, deleteSessionMock, batchDeleteSessionsMock, deleteMessagesMock,
-    uploadDocMock, sendStreamMock, balanceMock, taskGetMock, alertMock, confirmMock, dialogStable,
+    uploadDocMock, sendMessageMock, streamTaskMock, stopMessageMock, balanceMock, taskGetMock,
+    alertMock, confirmMock, dialogStable,
   }
 })
 
@@ -65,7 +70,9 @@ vi.mock('../api', () => ({
     batchDeleteSessions: batchDeleteSessionsMock,
     deleteMessages: deleteMessagesMock,
     uploadDoc: uploadDocMock,
-    sendStream: sendStreamMock,
+    sendMessage: sendMessageMock,
+    streamTask: streamTaskMock,
+    stopMessage: stopMessageMock,
   },
   pointsAPI: {
     balance: balanceMock,
@@ -123,9 +130,12 @@ beforeEach(() => {
   batchDeleteSessionsMock.mockReset().mockResolvedValue(ok({ deleted: 0 }))
   deleteMessagesMock.mockReset().mockResolvedValue(ok({}))
   uploadDocMock.mockReset().mockResolvedValue(ok({}))
-  // 关键：sendStream 返回一个可控的 pending Promise（永不 settle），
+  // 任务制：sendMessage 返回 { task_id, assistant_message_id, user_message_id }，
+  // 组件随后发起 streamTask 订阅；streamTask 返回可控 pending Promise（永不 settle），
   // 组件因此停留在 sending 状态；options.signal 由 mock.calls 记录供 abort 断言。
-  sendStreamMock.mockReset().mockImplementation(() => new Promise(() => {}))
+  sendMessageMock.mockReset().mockResolvedValue(ok({ task_id: 'task-1', assistant_message_id: 'a-1', user_message_id: 'u-1' }))
+  streamTaskMock.mockReset().mockImplementation(() => new Promise(() => {}))
+  stopMessageMock.mockReset().mockResolvedValue(ok({ ok: true }))
   balanceMock.mockReset().mockResolvedValue(ok({ points: 100, ai_daily_total: 10, ai_daily_remaining: 10 }))
   taskGetMock.mockReset().mockResolvedValue(ok({}))
   alertMock.mockReset()
@@ -165,7 +175,7 @@ describe('ChatAssistantPage 会话恢复与生成中切换', () => {
     expect(localStorage.getItem('chat_active_session_id')).toBeNull()
   })
 
-  it('生成中可切换会话：abort 旧流并加载新会话消息', async () => {
+  it('生成中可切换会话：断开订阅并加载新会话消息（后台任务继续）', async () => {
     sessionsMock.mockResolvedValue(ok({
       items: [{ id: 1, title: '会话一' }, { id: 2, title: '会话二' }],
     }))
@@ -177,22 +187,25 @@ describe('ChatAssistantPage 会话恢复与生成中切换', () => {
     // 等会话 1 加载完成，确保发送落在已有会话上（activeIdRef=1）
     await waitFor(() => expect(messagesMock).toHaveBeenCalledWith(1))
 
-    // 输入消息并回车发送 → sendStream 返回 pending promise，组件进入 sending 状态
+    // 输入消息并回车发送 → sendMessage 创建任务，streamTask 订阅返回 pending promise，
+    // 组件进入 sending 状态
     const textarea = screen.getByPlaceholderText('输入消息，Enter 发送，Shift+Enter 换行')
     fireEvent.change(textarea, { target: { value: '测试消息' } })
     fireEvent.keyDown(textarea, { key: 'Enter', code: 'Enter' })
 
-    await waitFor(() => expect(sendStreamMock).toHaveBeenCalledTimes(1))
-    expect(sendStreamMock.mock.calls[0][0]).toBe(1) // 发送到会话 1
+    await waitFor(() => expect(sendMessageMock).toHaveBeenCalledTimes(1))
+    expect(sendMessageMock.mock.calls[0][0]).toBe(1) // 发送到会话 1
+    await waitFor(() => expect(streamTaskMock).toHaveBeenCalledTimes(1))
+    expect(streamTaskMock.mock.calls[0][0]).toBe('task-1') // 订阅返回的 task_id
     expect(screen.getByText('停止生成')).toBeInTheDocument() // sending 状态可见
 
-    const sendOptions = sendStreamMock.mock.calls[0][2]
+    const streamOptions = streamTaskMock.mock.calls[0][1]
 
     // 生成中点击会话列表中的另一个会话
     fireEvent.click(screen.getByText('会话二'))
 
-    // 旧流被 abort，且组件切换到新会话并加载其消息
-    expect(sendOptions.signal.aborted).toBe(true)
+    // 订阅连接被断开（abort 订阅，非取消任务），组件切换到新会话并加载其消息
+    expect(streamOptions.signal.aborted).toBe(true)
     await waitFor(() => expect(messagesMock).toHaveBeenCalledWith(2))
     expect(screen.queryByText('停止生成')).not.toBeInTheDocument()
   })

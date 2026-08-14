@@ -654,7 +654,7 @@ describe('interceptor refresh logic', () => {
   })
 })
 
-describe('chatAPI.sendStream SSE events', () => {
+describe('chatAPI.streamTask SSE events', () => {
   let origFetch
   // 构造 SSE 响应：events 为 [eventType, payload] 数组，逐个编码为 event/data 行
   const sseResponse = (events) => {
@@ -682,7 +682,7 @@ describe('chatAPI.sendStream SSE events', () => {
     ])))
     const onImageTask = vi.fn()
     const onDone = vi.fn()
-    await api.chatAPI.sendStream('s1', 'hi', { onImageTask, onDone })
+    await api.chatAPI.streamTask('task-1', { onImageTask, onDone })
     expect(onImageTask).toHaveBeenCalledWith({ task_id: 'task-123' })
     expect(onDone).toHaveBeenCalled()
   })
@@ -694,7 +694,7 @@ describe('chatAPI.sendStream SSE events', () => {
     ])))
     const onImageTask = vi.fn()
     const onDone = vi.fn()
-    await api.chatAPI.sendStream('s1', 'hi', { onImageTask, onDone })
+    await api.chatAPI.streamTask('task-1', { onImageTask, onDone })
     expect(onImageTask).toHaveBeenCalledWith({ other: 1 })
     expect(onDone).toHaveBeenCalled()
   })
@@ -706,8 +706,45 @@ describe('chatAPI.sendStream SSE events', () => {
     ])))
     const onImageTask = vi.fn()
     const onDone = vi.fn()
-    await api.chatAPI.sendStream('s1', 'hi', { onImageTask, onDone })
+    await api.chatAPI.streamTask('task-1', { onImageTask, onDone })
     expect(onImageTask).not.toHaveBeenCalled()
     expect(onDone).toHaveBeenCalled()
+  })
+
+  it('dispatches stopped event to onStopped', async () => {
+    global.fetch = vi.fn(() => Promise.resolve(sseResponse([
+      ['stopped', { message_id: 'm-1' }],
+    ])))
+    const onStopped = vi.fn()
+    await api.chatAPI.streamTask('task-1', { onStopped })
+    expect(onStopped).toHaveBeenCalledWith({ message_id: 'm-1' })
+  })
+
+  it('dispatches error event detail to onError', async () => {
+    global.fetch = vi.fn(() => Promise.resolve(sseResponse([
+      ['error', { detail: '积分不足' }],
+    ])))
+    const onError = vi.fn()
+    await api.chatAPI.streamTask('task-1', { onError })
+    expect(onError).toHaveBeenCalledWith('积分不足')
+  })
+
+  it('reports non-ok response to onError', async () => {
+    global.fetch = vi.fn(() => Promise.resolve({ ok: false, status: 404, json: async () => ({ detail: '任务不存在' }) }))
+    const onError = vi.fn()
+    await api.chatAPI.streamTask('task-404', { onError })
+    expect(onError).toHaveBeenCalledWith('任务不存在')
+  })
+
+  it('AbortError is silent (subscription disconnect)', async () => {
+    const controller = new AbortController()
+    global.fetch = vi.fn(() => new Promise((_, reject) => {
+      controller.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+    }))
+    const onError = vi.fn()
+    const p = api.chatAPI.streamTask('task-1', { signal: controller.signal, onError })
+    controller.abort()
+    await p
+    expect(onError).not.toHaveBeenCalled()
   })
 })

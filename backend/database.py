@@ -496,6 +496,17 @@ def init_db():
             "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS widgets JSONB",
             # 迁移：聊天消息增加 files（JSONB 数组，send_file 工具产出的可下载文件落库，刷新后仍可展示）
             "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS files JSONB",
+            # 迁移：聊天消息增加 status（streaming/done/failed/stopped，任务制后台生成的状态机）
+            "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS status VARCHAR(16) NOT NULL DEFAULT 'done'",
+            # 迁移：聊天消息增加 error（失败/停止时的错误文案，终态展示用）
+            "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS error TEXT",
+            # 迁移：聊天消息增加 req_id（本次生成请求的唯一 id，服务重启后按它幂等退款）
+            "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS req_id VARCHAR(64)",
+            # 迁移：聊天消息增加 charge_mode（预扣模式 free/paid/unlimited，重启退款时按它精确退还）
+            "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS charge_mode VARCHAR(16)",
+            # 迁移：聊天消息增加 daily_total（免费用户每日次数总额，free 模式退款封顶按它计算；
+            # 落库避免重启恢复时用「当前套餐」重算导致换档后多退/少退）
+            "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS daily_total INT",
             """CREATE TABLE IF NOT EXISTS llm_models (
                 id SERIAL PRIMARY KEY,
                 model_id VARCHAR(128) NOT NULL UNIQUE,

@@ -11,6 +11,34 @@ import WidgetViewer from '../components/WidgetViewer'
 import FileCard from '../components/FileCard'
 import { ModelLogo } from '../components/modelIcons'
 
+// 模块级：assistant_message_id → task_id 映射缓存。
+// 历史接口不返回 task_id（按契约），续传订阅时优先用此缓存匹配「同页面发送→切走→切回」；
+// 缓存缺失时退化为轮询 messages 兜底（见 startResumePolling）。
+const taskIdCache = new Map()
+function rememberTaskId(assistantMessageId, taskId) {
+  if (!assistantMessageId || !taskId) return
+  taskIdCache.set(String(assistantMessageId), String(taskId))
+  if (taskIdCache.size > 100) {
+    const oldest = taskIdCache.keys().next().value
+    if (oldest !== undefined) taskIdCache.delete(oldest)
+  }
+}
+// 续传回放去重：续传订阅时后端会先快速回放已生成内容，而前端已用历史消息的 content
+// 预填 sending.text。回放 chunk 累积文本若与预填文本前缀一致则跳过（防重复展示）；
+// 一旦回放超出存量（进入实时增量），停用去重、返回增量文本。
+// 返回 '' = 仍在回放存量内（丢弃）；返回 null = 不去重（正常追加）；返回字符串 = 追加该增量。
+function replayDedup(guardRef, streamId, text) {
+  const g = guardRef.current
+  if (!g || g.streamId !== streamId || !g.base || !g.active) return null
+  g.acc += text
+  if (g.base.startsWith(g.acc)) return ''
+  g.active = false // 回放结束：后续全部按增量追加
+  let i = 0
+  const max = Math.min(g.acc.length, g.base.length)
+  while (i < max && g.acc[i] === g.base[i]) i++
+  return g.acc.slice(i)
+}
+
 // markdown 渲染结果（.md-body）的样式，沿用全站 CSS 变量体系
 const MD_STYLES = `
 .md-body{line-height:1.65;word-break:break-word}
@@ -400,6 +428,12 @@ const MessageItem = memo(function MessageItem({ msg, onCopy, onRegenerate }) {
             <WidgetViewer widgets={msg.widgets} />
             <FileCard files={msg.sent_files} />
           </>
+        )}
+        {!isUser && !msg.error && (msg.status === 'stopped' || msg.status === 'failed') && (
+          <div className="mt-1.5 flex items-center gap-1 text-xs" style={{ color: 'var(--color-error)' }}>
+            <AlertCircle size={12} className="flex-shrink-0" />
+            <span className="break-words">{msg.status === 'stopped' ? '已停止生成' : '生成失败'}</span>
+          </div>
         )}
         <div className="text-xs mt-1.5 text-right" style={{ color: 'var(--text-secondary)' }}>{formatTime(msg.created_at)}</div>
       </div>
@@ -1169,7 +1203,6 @@ export default function ChatAssistantPage() {
   const creatingRef = useRef(false) // 新建会话锁：createSession 异步期间拦截重复点击，保证只创建一个
   const [creatingSession, setCreatingSession] = useState(false)
   const pendingQueueRef = useRef([]) // 与 pendingQueue 同步
-  const manualStopRef = useRef(false)
   const pointsRef = useRef(points)
   const dailyRemainingRef = useRef(dailyRemaining)
   const dailyTotalRef = useRef(dailyTotal)
@@ -1189,6 +1222,14 @@ export default function ChatAssistantPage() {
   const widgetsRef = useRef({ streamId: null, items: [] })
   // 本次流的文件累积（SSE file 事件；streamId 绑定防旧流迟到污染，模式同 widgetsRef）
   const filesRef = useRef({ streamId: null, items: [] })
+  // 切回续看：已恢复订阅的 streaming 消息 id（防 messages 更新导致重复订阅）
+  const resumeSubscribedRef = useRef(null)
+  // 切回续看兜底：无 task_id 缓存时轮询 messages 的定时器（每 2s，直到消息进入终态）
+  const resumePollTimerRef = useRef(null)
+  // 续传回放去重守卫（见 replayDedup）：{ streamId, base, acc, active }
+  const resumeGuardRef = useRef(null)
+  // 兜底轮询中转 ref：subscribeTask 定义早于 startResumePolling，直接依赖会 TDZ，用 ref 转发
+  const startResumePollingRef = useRef(null)
   const flushStreamBuf = useCallback(() => {
     streamRenderTimerRef.current = null
     const { streamId: sid, text, thinking } = streamBufRef.current
@@ -1252,7 +1293,9 @@ export default function ChatAssistantPage() {
     window.addEventListener('points-updated', handlePoints)
     return () => {
       window.removeEventListener('points-updated', handlePoints)
+      // 仅断开订阅连接：后台任务继续，结果落库（任务制语义，无取消动作）
       abortRef.current?.abort()
+      if (resumePollTimerRef.current) { clearInterval(resumePollTimerRef.current); resumePollTimerRef.current = null }
     }
   }, [])
 
@@ -1634,49 +1677,40 @@ export default function ChatAssistantPage() {
   // 组件卸载：终止后台图片轮询
   useEffect(() => () => stopImagePolling(), [stopImagePolling])
 
-  const startStream = useCallback((sessionId, content, reasoningEffort = 'auto', useWeb = null, localUserMsgId = null) => {
+
+  // ============ 任务订阅（SSE，仅订阅连接，不携带任务取消语义） ============
+  // 订阅任务流：abort 只断开订阅连接；后台任务继续，结果落库。
+  // st 为本次流的 sending 对象（含 streamId；resumed=true 表示切回续传，需回放去重）。
+  const subscribeTask = useCallback((taskId, st) => {
     const controller = new AbortController()
     abortRef.current = controller
-    // 新流开始：终止上一流遗留的后台图片轮询（旧任务结果不再补进新流，防串流）
-    stopImagePolling()
-    // 流的唯一身份：停止后立刻发新消息时，旧流的迟到回调不会误操作新流
-    const streamId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    const st = { streamId, sessionId, content, text: '', thinking: '', toolStatus: null, citations: [], widgets: [], files: [], pendingImage: null, stopped: false, error: '', manual: false }
-    sendingRef.current = st
-    setSending(st)
-    // 本次流开始：重置节流缓冲（避免残留上一流的未 flush 内容）
-    streamBufRef.current = { streamId, text: '', thinking: '' }
-    // 本次流开始：重置引用累积（避免上一流的 citations 残留）
-    citationsRef.current = { streamId, items: [] }
-    // 本次流开始：重置 widget 累积（避免上一流的 widgets 残留）
-    widgetsRef.current = { streamId, items: [] }
-    // 本次流开始：重置文件累积（避免上一流的 files 残留）
-    filesRef.current = { streamId, items: [] }
-    // 本次流开始：重置链接抓取状态（避免上一流的 url_status 残留）
-    clearLinkTimer(); setLinkStatus(null)
-    if (streamRenderTimerRef.current) { clearTimeout(streamRenderTimerRef.current); streamRenderTimerRef.current = null }
-    chatAPI.sendStream(sessionId, content, {
+    const streamId = st.streamId
+    chatAPI.streamTask(String(taskId), {
       signal: controller.signal,
-      reasoning_effort: reasoningEffort,
-      model_id: modelIdRef.current,
-      web_search: useWeb === null ? webSearchRef.current : useWeb,
-      onUserMessageId: data => {
-        const realId = data?.message_id
-        if (!realId || !localUserMsgId) return
-        // 精确替换本次发送的 user 消息临时 id（重新回答需定位数据库 id）；
-        // 只替换本次消息，避免误伤历史残留的 local- 消息
-        setMessages(prev => prev.map(m => (m.id === localUserMsgId ? { ...m, id: String(realId) } : m)))
-      },
       onChunk: data => {
         const buf = streamBufRef.current
         if (buf.streamId !== streamId) return
-        buf.text += String(data.text || '')
+        let t = String(data.text || '')
+        if (st.resumed) {
+          const inc = replayDedup(resumeGuardRef, streamId, t)
+          if (inc === '') return // 回放存量内：跳过（防重复展示）
+          if (inc != null) t = inc // 回放结束：追加超出存量的增量
+        }
+        if (!t) return
+        buf.text += t
         if (!streamRenderTimerRef.current) streamRenderTimerRef.current = setTimeout(flushStreamBuf, STREAM_RENDER_INTERVAL_MS)
       },
       onThinking: data => {
         const buf = streamBufRef.current
         if (buf.streamId !== streamId) return
-        buf.thinking += String(data.text || '')
+        let t = String(data.text || '')
+        if (st.resumed) {
+          const inc = replayDedup(resumeGuardRef, streamId, t)
+          if (inc === '') return
+          if (inc != null) t = inc
+        }
+        if (!t) return
+        buf.thinking += t
         if (!streamRenderTimerRef.current) streamRenderTimerRef.current = setTimeout(flushStreamBuf, STREAM_RENDER_INTERVAL_MS)
       },
       onToolStatus: data => setSending(prev =>
@@ -1735,9 +1769,18 @@ export default function ChatAssistantPage() {
         setSending(prev =>
           (prev && prev.streamId === streamId) ? { ...prev, pendingImage: { taskId: String(taskId), status: 'queued' } } : prev)
       },
+      onStopped: () => {
+        // 后端确认停止（stopMessage 生效或后端主动停）：置 stopped 保留气泡，断开订阅
+        setLinkStatus(prev => prev?.status === 'fetching' ? null : prev)
+        if (sendingRef.current?.streamId === streamId) {
+          sendingRef.current = { ...sendingRef.current, stopped: true, error: sendingRef.current.error || '已停止生成', manual: false, status: 'stopped' }
+        }
+        setSending(prev =>
+          (prev && prev.streamId === streamId) ? { ...prev, stopped: true, error: prev.error || '已停止生成', manual: false, status: 'stopped' } : prev)
+        abortRef.current?.abort()
+      },
       onDone: data => {
         const thinking = String(data.thinking || '')
-        manualStopRef.current = false
         // 优先用后端返回的数据库 id（重新回答/定位需要真实 id），缺失时回退本地临时 id
         const newId = data.message_id || `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
         // done 前已完成的后台图片追加（completed/failed 先于 done 到达时，追加文本已写入
@@ -1752,7 +1795,16 @@ export default function ChatAssistantPage() {
         const widgets = widgetsRef.current.streamId === streamId ? widgetsRef.current.items : []
         // 同上：files 仅当仍是本次流时挂载
         const files = filesRef.current.streamId === streamId ? filesRef.current.items : []
-        setMessages(prev => [...prev, { id: newId, role: 'assistant', content: full, thinking, citations, widgets, sent_files: files, created_at: new Date().toISOString() }])
+        setMessages(prev => {
+          const idx = prev.findIndex(m => m.id === newId)
+          if (idx >= 0) {
+            // 续传转正：更新已存在的历史 streaming 消息（清除 streaming/error 状态）
+            const next = [...prev]
+            next[idx] = { ...next[idx], content: full, thinking, citations, widgets, sent_files: files, status: undefined, error: undefined }
+            return next
+          }
+          return [...prev, { id: newId, role: 'assistant', content: full, thinking, citations, widgets, sent_files: files, created_at: new Date().toISOString() }]
+        })
         // 发送成功：文件已上传为会话上下文，清空上传区（失败时保留 docs 便于重试）
         setDocs([])
         // 流结束：若仍停留在 fetching（事件顺序异常），清除残留状态
@@ -1762,6 +1814,7 @@ export default function ChatAssistantPage() {
           sendingRef.current = null
           setSending(null)
         }
+        resumeGuardRef.current = null
         const bal = data.points_balance
         if (bal != null) {
           const num = Number(bal)
@@ -1777,28 +1830,35 @@ export default function ChatAssistantPage() {
         }
         refreshSessions()
       },
-      onError: msg => {
-        const errMsg = msg || '生成失败'
-        const isManual = manualStopRef.current
-        manualStopRef.current = false
-        // 流异常结束（含手动停止）：若仍停留在 fetching，清除残留链接状态
-        setLinkStatus(prev => prev?.status === 'fetching' ? null : prev)
-        if (isManual) {
-          // 手动停止：保留错误气泡 + 重试按钮，不自动继续队列
-          if (sendingRef.current?.streamId === streamId) {
-            sendingRef.current = { ...sendingRef.current, stopped: true, error: errMsg, manual: true }
+      onError: (msg, isNetwork) => {
+        if (isNetwork) {
+          // 订阅连接断开（非主动 abort）：任务仍在后台继续，结果落库；仅提示，不取消。
+          // 断网期间转兜底轮询续看（每 2s 拉最新内容，消息终态自动停），避免气泡停在半成品
+          showToast('连接已断开，生成将在后台继续，返回会话可继续查看', 'error')
+          const cur = sendingRef.current
+          if (cur && cur.streamId === streamId && !cur.stopped && cur.assistantMessageId && cur.sessionId) {
+            startResumePollingRef.current?.(cur.sessionId, cur.assistantMessageId, streamId)
           }
-          setSending(prev =>
-            (prev && prev.streamId === streamId) ? { ...prev, stopped: true, error: errMsg, manual: true } : prev)
-        } else {
-          // 自动失败：错误追加为消息，清空状态让队列继续自动发送
-          if (sendingRef.current?.streamId === streamId) sendingRef.current = null
-          setSending(prev => (prev && prev.streamId === streamId) ? null : prev)
+          return
+        }
+        const errMsg = msg || '生成失败'
+        // 后端 error 事件 = 任务失败（含积分不足/429 等）：若仍停留在 fetching，清除残留链接状态
+        setLinkStatus(prev => prev?.status === 'fetching' ? null : prev)
+        const cur = sendingRef.current
+        if (cur && cur.streamId === streamId) {
+          if (cur.resumed && cur.assistantMessageId) {
+            // 续传场景：历史消息已存在 → 更新为失败态
+            setMessages(prev => prev.map(m => (m.id === cur.assistantMessageId ? { ...m, status: 'failed', error: errMsg } : m)))
+          } else {
+            // 本页发送场景：错误追加为消息
+            setMessages(prev => [...prev, { id: `err-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, role: 'assistant', content: '', error: errMsg, created_at: new Date().toISOString() }])
+          }
           // 本流无成功消息：后台图片任务完成后无处可补，放弃本地补图
           // （任务结果仍保留在后端；lastAssistantMsgIdRef 残留旧值会补错消息）
           lastAssistantMsgIdRef.current = null
-          setMessages(prev => [...prev, { id: `err-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, role: 'assistant', content: '', error: errMsg, created_at: new Date().toISOString() }])
+          sendingRef.current = null
         }
+        setSending(prev => (prev && prev.streamId === streamId) ? null : prev)
         if (/积分不足|余额不足/.test(errMsg)) {
           dialog.alert(errMsg)
           pointsAPI.balance().then(res => {
@@ -1809,7 +1869,175 @@ export default function ChatAssistantPage() {
         }
       },
     }).finally(() => { if (abortRef.current === controller) abortRef.current = null })
-  }, [dialog, refreshSessions, flushStreamBuf, clearLinkTimer, updateLinkStatus, stopImagePolling, startImagePolling])
+  }, [dialog, refreshSessions, flushStreamBuf, clearLinkTimer, updateLinkStatus, stopImagePolling, startImagePolling, showToast])
+
+  // ============ 发送链路：POST 创建任务 → 替换本地用户消息 id → 初始化 sending → 订阅 ============
+  // 替代旧 startStream：发送与订阅解耦。sending 的 text/thinking 从空开始（打字机），
+  // taskId/assistantMessageId 由 sendMessage 返回后写入（停止按钮依赖 assistantMessageId）。
+  const startChatTask = useCallback(async (sessionId, content, reasoningEffort = 'auto', useWeb = null, localUserMsgId = null) => {
+    // 新任务开始：终止上一流遗留的后台图片轮询（旧任务结果不再补进新流，防串流）
+    stopImagePolling()
+    // 流的唯一身份：旧流的迟到回调不会误操作新流
+    const streamId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const st = { streamId, sessionId, content, text: '', thinking: '', toolStatus: null, citations: [], widgets: [], files: [], pendingImage: null, stopped: false, error: '', manual: false, status: 'streaming', taskId: null, assistantMessageId: null, resumed: false }
+    sendingRef.current = st
+    setSending(st)
+    // 本次流开始：重置节流缓冲（避免残留上一流的未 flush 内容）
+    streamBufRef.current = { streamId, text: '', thinking: '' }
+    // 本次流开始：重置引用累积（避免上一流的 citations 残留）
+    citationsRef.current = { streamId, items: [] }
+    // 本次流开始：重置 widget 累积（避免上一流的 widgets 残留）
+    widgetsRef.current = { streamId, items: [] }
+    // 本次流开始：重置文件累积（避免上一流的 files 残留）
+    filesRef.current = { streamId, items: [] }
+    // 本次流开始：重置链接抓取状态（避免上一流的 url_status 残留）
+    clearLinkTimer(); setLinkStatus(null)
+    if (streamRenderTimerRef.current) { clearTimeout(streamRenderTimerRef.current); streamRenderTimerRef.current = null }
+    let res
+    try {
+      res = await chatAPI.sendMessage(sessionId, content, {
+        reasoning_effort: reasoningEffort,
+        model_id: modelIdRef.current,
+        web_search: useWeb === null ? webSearchRef.current : useWeb,
+      })
+    } catch (err) {
+      const errMsg = err?.message || '发送失败'
+      // 发送失败（含 429 并发限制等，detail 已由 axios 拦截器翻译）：错误气泡 + 释放发送锁
+      setMessages(prev => [...prev, { id: `err-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, role: 'assistant', content: '', error: errMsg, created_at: new Date().toISOString() }])
+      lastAssistantMsgIdRef.current = null
+      if (sendingRef.current?.streamId === streamId) sendingRef.current = null
+      setSending(prev => (prev && prev.streamId === streamId) ? null : prev)
+      if (/积分不足|余额不足/.test(errMsg)) {
+        dialog.alert(errMsg)
+        pointsAPI.balance().then(res => {
+          setPoints(Number(res.data?.points || 0))
+          setDailyTotal(res.data?.ai_daily_total === null ? null : Number(res.data?.ai_daily_total || 0))
+          setDailyRemaining(res.data?.ai_daily_remaining === null ? null : Number(res.data?.ai_daily_remaining || 0))
+        }).catch(() => {})
+      }
+      return
+    }
+    const taskId = res.data?.task_id
+    const assistantMessageId = res.data?.assistant_message_id
+    const userMessageId = res.data?.user_message_id
+    // 用后端返回的真实 id 替换本地用户消息临时 id（重新回答定位数据库 id 依赖真实 id）
+    if (userMessageId && localUserMsgId) {
+      setMessages(prev => prev.map(m => (m.id === localUserMsgId ? { ...m, id: String(userMessageId) } : m)))
+    }
+    if (!taskId || !assistantMessageId) {
+      // 契约保证返回；防御性兜底：不订阅，任务结果落库后刷新可见
+      return
+    }
+    // 记录 task_id 缓存：切走再切回时续传订阅用（历史接口不返回 task_id）
+    rememberTaskId(String(assistantMessageId), String(taskId))
+    if (sendingRef.current?.streamId === streamId) {
+      sendingRef.current = { ...sendingRef.current, taskId: String(taskId), assistantMessageId: String(assistantMessageId) }
+    }
+    setSending(prev =>
+      (prev && prev.streamId === streamId)
+        ? { ...prev, taskId: String(taskId), assistantMessageId: String(assistantMessageId) }
+        : prev)
+    subscribeTask(String(taskId), { ...st, taskId: String(taskId), assistantMessageId: String(assistantMessageId) })
+  }, [subscribeTask, dialog, stopImagePolling, clearLinkTimer])
+
+  // ============ 切回自动续看 ============
+  // 无 task_id 缓存时的兜底：轮询 messages 每 2s，直到该 streaming 消息进入终态
+  // （此时停止轮询并把最新 content/thinking 补进 sending/messages）。
+  const stopResumePolling = useCallback(() => {
+    if (resumePollTimerRef.current) { clearInterval(resumePollTimerRef.current); resumePollTimerRef.current = null }
+  }, [])
+  const startResumePolling = useCallback((sessionId, messageId, streamId) => {
+    stopResumePolling()
+    resumePollTimerRef.current = setInterval(async () => {
+      try { res = await chatAPI.messages(sessionId) } catch { return } // 失败等下一轮
+      const items = res.data?.items || []
+      const msg = items.find(m => m.id === messageId)
+      if (!msg) { stopResumePolling(); return }
+      const terminal = !!(msg.status && msg.status !== 'streaming')
+      // 同步最新内容到本地（sending 还在时）
+      if (sendingRef.current?.streamId === streamId) {
+        const patch = { text: msg.content || '', thinking: msg.thinking || '' }
+        sendingRef.current = { ...sendingRef.current, ...patch }
+        setSending(prev => (prev && prev.streamId === streamId) ? { ...prev, ...patch } : prev)
+      }
+      setMessages(prev => prev.map(m => (m.id === messageId
+        ? { ...m, content: msg.content ?? m.content, thinking: msg.thinking ?? m.thinking, status: msg.status, error: msg.error }
+        : m)))
+      if (terminal) {
+        stopResumePolling()
+        if (sendingRef.current?.streamId === streamId) {
+          if (msg.status === 'stopped' || msg.status === 'failed') {
+            // 终态 stopped/failed：保留气泡展示错误/已停止
+            const errText = msg.error || (msg.status === 'stopped' ? '已停止生成' : '生成失败')
+            sendingRef.current = { ...sendingRef.current, stopped: true, error: errText, manual: false, status: msg.status }
+            setSending(prev => (prev && prev.streamId === streamId) ? { ...prev, stopped: true, error: errText, manual: false, status: msg.status } : prev)
+          } else {
+            // done：清空 sending（消息已更新为终态）
+            sendingRef.current = null
+            setSending(prev => (prev && prev.streamId === streamId) ? null : prev)
+            refreshSessions()
+          }
+        }
+      }
+    }, 2000)
+  }, [refreshSessions, stopResumePolling])
+  startResumePollingRef.current = startResumePolling
+
+  // 历史加载完成后扫描 streaming 消息并恢复生成状态：
+  // 优先 task_id 缓存续传订阅（同页面发送→切走→切回）；缺失则退化轮询兜底。
+  useEffect(() => {
+    if (messagesLoading || !activeId || !messages.length) return
+    if (resumePollTimerRef.current) return // 兜底轮询进行中
+    const streamingMsg = messages.find(m => m.role === 'assistant' && m.status === 'streaming')
+    if (!streamingMsg) return
+    // 同页正在生成中（发送/续看）：不重复订阅
+    if (sendingRef.current && !sendingRef.current.stopped && sendingRef.current.sessionId === activeId) return
+    if (resumeSubscribedRef.current === streamingMsg.id) return
+    resumeSubscribedRef.current = streamingMsg.id
+    const streamId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    // 回填重试内容：该 assistant 消息前最近的 user 消息
+    let retryContent = ''
+    for (let i = messages.indexOf(streamingMsg) - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') { retryContent = messages[i].content || ''; break }
+    }
+    const cachedTaskId = taskIdCache.get(String(streamingMsg.id))
+    const st = {
+      streamId,
+      sessionId: activeId,
+      content: retryContent,
+      text: streamingMsg.content || '',
+      thinking: streamingMsg.thinking || '',
+      toolStatus: null,
+      citations: Array.isArray(streamingMsg.citations) ? streamingMsg.citations : [],
+      widgets: Array.isArray(streamingMsg.widgets) ? streamingMsg.widgets : [],
+      files: Array.isArray(streamingMsg.sent_files) ? streamingMsg.sent_files : [],
+      pendingImage: null,
+      stopped: false,
+      error: '',
+      manual: false,
+      status: 'streaming',
+      taskId: cachedTaskId || null,
+      assistantMessageId: String(streamingMsg.id),
+      resumed: true,
+    }
+    sendingRef.current = st
+    setSending(st)
+    // 节流缓冲/累积以历史内容为起点（回放去重按此基准跳过存量）
+    streamBufRef.current = { streamId, text: streamingMsg.content || '', thinking: streamingMsg.thinking || '' }
+    citationsRef.current = { streamId, items: [...st.citations] }
+    widgetsRef.current = { streamId, items: [...st.widgets] }
+    filesRef.current = { streamId, items: [...st.files] }
+    clearLinkTimer(); setLinkStatus(null)
+    if (streamRenderTimerRef.current) { clearTimeout(streamRenderTimerRef.current); streamRenderTimerRef.current = null }
+    if (cachedTaskId) {
+      resumeGuardRef.current = { streamId, base: st.text, acc: '', active: true }
+      subscribeTask(String(cachedTaskId), st)
+    } else {
+      // 兜底：轮询 messages 直到终态
+      startResumePolling(activeId, String(streamingMsg.id), streamId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, messagesLoading, activeId, subscribeTask, startResumePolling])
 
   // ============ 排队队列操作 ============
   const MAX_PENDING = 10
@@ -1907,7 +2135,7 @@ export default function ChatAssistantPage() {
     const userLocalId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     setMessages(prev => [...prev, { id: userLocalId, role: 'user', content: text, files: successFiles, created_at: new Date().toISOString() }])
     clearSentDocs()
-    startStream(sid, text, effortRef.current, null, userLocalId)
+    await startChatTask(sid, text, effortRef.current, null, userLocalId)
     focusInput()
   }
 
@@ -1946,8 +2174,8 @@ export default function ChatAssistantPage() {
     }
     const userLocalId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     setMessages(prev => [...prev, { id: userLocalId, role: 'user', content: item.text, files: item.files || [], created_at: new Date().toISOString() }])
-    startStream(sid, item.text, effortRef.current, null, userLocalId)
-  }, [dialog, cost, startStream, acquireSendLock, releaseSendLock, clearPending])
+    startChatTask(sid, item.text, effortRef.current, null, userLocalId)
+  }, [dialog, cost, startChatTask, acquireSendLock, releaseSendLock, clearPending])
 
   // sending 变为空闲时自动发送排队中的下一条
   useEffect(() => {
@@ -1957,11 +2185,14 @@ export default function ChatAssistantPage() {
 
   const handleSelectSession = (id) => {
     if (id === activeId) return
-    // 生成中也可切换：abort 当前流（后端会取消并退款），旧流迟到回调由 streamId 守卫丢弃
-    manualStopRef.current = true
+    // 生成中也可切换：只断开订阅连接（后台任务继续，结果落库，绝无任务取消语义）。
+    // 本地流状态直接丢弃；切回时由续看逻辑按 task_id 缓存恢复订阅。
     abortRef.current?.abort()
     sendingRef.current = null
     setSending(null)
+    resumeGuardRef.current = null
+    resumeSubscribedRef.current = null // 允许切回同一会话时重新续看
+    stopResumePolling()
     stopImagePolling() // 切会话后旧会话的后台图片任务不再补图（消息列表已切换）
     clearPendingWithNotice()
     skipMessagesLoadRef.current = null // 切换会话不再跳过加载
@@ -1973,11 +2204,13 @@ export default function ChatAssistantPage() {
     if (creatingRef.current) return // 创建中：拦截重复点击，避免连续点击产生多个空会话
     creatingRef.current = true
     setCreatingSession(true)
-    // 生成中也可新建：abort 当前流（后端会取消并退款），旧流迟到回调由 streamId 守卫丢弃
-    manualStopRef.current = true
+    // 生成中也可新建：只断开订阅连接（后台任务继续，结果落库），本地流状态丢弃
     abortRef.current?.abort()
     sendingRef.current = null
     setSending(null)
+    resumeGuardRef.current = null
+    resumeSubscribedRef.current = null // 新建会话后旧会话不续看
+    stopResumePolling()
     stopImagePolling() // 新建会话后旧会话的后台图片任务不再补图
     clearPendingWithNotice()
     try {
@@ -2014,18 +2247,36 @@ export default function ChatAssistantPage() {
     }
   }, [handleSelectSession, handleCreateSession])
 
+  // 删除会话/删除消息前：终止该会话仍在后台生成的任务（fire-and-forget，后端负责退款）。
+  // 当前会话的 streaming 消息可从 sending/messages 获知；非当前会话前端没有消息数据，
+  // 由后端在删除会话时自行清理其后台任务。
+  const stopSessionStreaming = useCallback((sessionId) => {
+    if (activeIdRef.current !== sessionId) return
+    const ids = []
+    const cur = sendingRef.current
+    if (cur && cur.assistantMessageId) ids.push(String(cur.assistantMessageId))
+    for (const m of messages) {
+      if (m.role === 'assistant' && m.status === 'streaming' && m.id) ids.push(String(m.id))
+    }
+    ids.forEach(mid => { chatAPI.stopMessage(mid).catch(() => {}) })
+  }, [messages])
+
   const handleDeleteSession = async (id) => {
     const ok = await dialog.confirm('确定删除该会话吗？删除后聊天记录将无法恢复。')
     if (!ok) return
+    // 若该会话正在生成：先显式停止后台任务（fire-and-forget）
+    stopSessionStreaming(id)
     try {
       await chatAPI.deleteSession(id)
       const next = sessions.filter(s => s.id !== id)
       setSessions(next)
       if (activeId === id) {
-        manualStopRef.current = true
         abortRef.current?.abort()
         sendingRef.current = null
         setSending(null)
+        resumeGuardRef.current = null
+        resumeSubscribedRef.current = null
+        stopResumePolling()
         clearPendingWithNotice()
         try { localStorage.removeItem('chat_active_session_id') } catch {}
         if (next.length) setActiveId(next[0].id)
@@ -2056,6 +2307,8 @@ export default function ChatAssistantPage() {
     if (!selectedIds.length) return
     const ok = await dialog.confirm(`确定删除选中的 ${selectedIds.length} 个会话吗？删除后聊天记录将无法恢复。`)
     if (!ok) return
+    // 若当前会话在选中列表中且正在生成：先显式停止后台任务（fire-and-forget）
+    if (selectedIds.includes(activeId)) stopSessionStreaming(activeId)
     try {
       const res = await chatAPI.batchDeleteSessions(selectedIds)
       const deleted = Number(res.data?.deleted) || 0
@@ -2063,10 +2316,12 @@ export default function ChatAssistantPage() {
       const next = sessions.filter(s => !delSet.has(s.id))
       setSessions(next)
       if (delSet.has(activeId)) {
-        manualStopRef.current = true
         abortRef.current?.abort()
         sendingRef.current = null
         setSending(null)
+        resumeGuardRef.current = null
+        resumeSubscribedRef.current = null
+        stopResumePolling()
         clearPendingWithNotice()
         try { localStorage.removeItem('chat_active_session_id') } catch {}
         if (next.length) {
@@ -2088,14 +2343,18 @@ export default function ChatAssistantPage() {
 
   // useCallback：仅依赖 refs/setter，引用稳定 → StreamBubble memo 不因 onStop 变化失效
   const handleStop = useCallback(() => {
-    manualStopRef.current = true
-    abortRef.current?.abort()
-    // 兜底：无论底层中断是否立即生效（abort 已释放/网络延迟），先把 UI 与发送锁
-    // 切到「已停止」状态——杜绝「卡在思考中且停止无效」的假死（stopped 后即可发新消息）
-    if (sendingRef.current && !sendingRef.current.stopped) {
-      sendingRef.current = { ...sendingRef.current, stopped: true, error: '已停止生成', manual: true }
+    const cur = sendingRef.current
+    if (!cur || cur.stopped) return
+    // 显式停止后端任务（后端负责退款，幂等）：fire-and-forget
+    if (cur.assistantMessageId) {
+      chatAPI.stopMessage(cur.assistantMessageId).catch(() => {})
     }
-    setSending(prev => (prev && !prev.stopped) ? { ...prev, stopped: true, error: '已停止生成' } : prev)
+    // 本地立即置 stopped + 断开订阅连接（订阅断开不影响任务；任务由 stopMessage 终止）
+    abortRef.current?.abort()
+    if (sendingRef.current && !sendingRef.current.stopped) {
+      sendingRef.current = { ...sendingRef.current, stopped: true, error: '已停止生成', manual: false, status: 'stopped' }
+    }
+    setSending(prev => (prev && !prev.stopped) ? { ...prev, stopped: true, error: '已停止生成', manual: false, status: 'stopped' } : prev)
   }, [])
 
   const handleReasoningEffort = (v) => {
@@ -2108,15 +2367,16 @@ export default function ChatAssistantPage() {
     try { localStorage.setItem('chat_model_id', id) } catch { /* 忽略 localStorage 异常 */ }
   }
 
-  // 用 sendingRef 读当前发送状态（与 sending state 同步），依赖仅 startStream → 引用稳定，
+  // 用 sendingRef 读当前发送状态（与 sending state 同步），依赖仅 startChatTask → 引用稳定，
   // StreamBubble memo 不因 onRetry 变化失效
   const handleRetry = useCallback(() => {
     const cur = sendingRef.current
     if (!cur) return
     const { sessionId, content } = cur
+    if (!content) { showToast('暂无可重试的原始问题', 'error'); return }
     setSending(null)
-    startStream(sessionId, content, effortRef.current)
-  }, [startStream])
+    startChatTask(sessionId, content, effortRef.current)
+  }, [startChatTask, showToast])
 
   // 「重新回答」：删除该回答分支点（对应问题消息及之后全部），再复用 send_message
   // 链路重新发送同一问题 —— 扣费/退款/落库全部走现有逻辑，积分消耗与正常发送一致。
@@ -2133,8 +2393,9 @@ export default function ChatAssistantPage() {
     if (idx < 0) return
     // 往前找对应的用户问题消息
     let userMsg = null
+    let userIdx = -1
     for (let i = idx - 1; i >= 0; i--) {
-      if (messages[i].role === 'user') { userMsg = messages[i]; break }
+      if (messages[i].role === 'user') { userMsg = messages[i]; userIdx = i; break }
     }
     if (!userMsg) { dialog.alert('找不到对应的问题消息'); return }
     if (/^(local-|err-)/.test(String(userMsg.id))) {
@@ -2144,22 +2405,28 @@ export default function ChatAssistantPage() {
     const costText = cost > 0 ? `（消耗 ${cost} 积分）` : ''
     const ok = await dialog.confirm(`重新回答将删除本条回答及其后的对话${costText}，确定吗？`)
     if (!ok) return
+    // 分支点之后若有仍在后台生成的任务：先显式停止（fire-and-forget，后端退款）
+    for (let i = userIdx + 1; i < messages.length; i++) {
+      if (messages[i].role === 'assistant' && messages[i].status === 'streaming' && messages[i].id) {
+        chatAPI.stopMessage(String(messages[i].id)).catch(() => {})
+      }
+    }
     try {
       await chatAPI.deleteMessages(sid, userMsg.id)
     } catch (err) {
       dialog.alert(err.message || '操作失败，请重试')
       return
     }
-    // 本地同步截断到问题消息之前，再重新插入该问题（新临时 id，流开始后由
-    // user_message_id 事件替换为真实 id），然后重新发送
+    // 本地同步截断到问题消息之前，再重新插入该问题（新临时 id，sendMessage 返回
+    // user_message_id 后替换为真实 id），然后重新发送
     const userLocalId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     setMessages(prev => {
       const ui = prev.findIndex(m => m.id === userMsg.id)
       if (ui < 0) return prev
       return [...prev.slice(0, ui), { ...userMsg, id: userLocalId, created_at: new Date().toISOString() }]
     })
-    startStream(sid, userMsg.content, effortRef.current, null, userLocalId)
-  }, [dialog, messages, cost, startStream])
+    startChatTask(sid, userMsg.content, effortRef.current, null, userLocalId)
+  }, [dialog, messages, cost, startChatTask])
 
   const handleCopy = useCallback(async (text) => {
     const ok = await copyText(String(text || ''))

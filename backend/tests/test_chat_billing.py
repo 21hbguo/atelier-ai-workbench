@@ -231,22 +231,20 @@ def test_compute_token_cost_no_unit_price_falls_back_per_request():
 # 场景 6: 失败退款同步标记 is_refunded
 # ---------------------------------------------------------------------------
 def test_refund_marks_usage_refunded():
-    """_refund_once 失败退款时 UPDATE is_refunded=TRUE。
+    """_refund_chat_request 失败退款时 UPDATE is_refunded=TRUE。
 
-    _refund_once 是 send_message 内的局部闭包（捕获 user_id/cost_per/req_id），
-    无法在不跑完整 HTTP 请求管线的前提下直接调用。因此：
-    1. 静态校验 send_message 源码包含正确的 UPDATE 语句（is_refunded=TRUE + WHERE request_id + is_refunded=FALSE）
-    2. 动态验证：mock DB + PointsService.refund，复制 _refund_once 的调用序列，
-       确认 cursor.execute 收到正确的 UPDATE SQL 与 (req_id,) 参数
+    1. 静态校验模块级 _refund_chat_request 源码包含正确的 UPDATE 语句
+       （is_refunded=TRUE + WHERE request_id + is_refunded=FALSE）
+    2. 动态验证：mock DB + PointsService.refund，确认 cursor.execute 收到正确的 UPDATE SQL 与 (req_id,) 参数
     """
     # 1. 静态：源码包含正确的 UPDATE 语句
-    source = inspect.getsource(chat_module.send_message)
+    source = inspect.getsource(chat_module._refund_chat_request)
     assert "UPDATE chat_usage_records SET is_refunded = TRUE" in source, \
-        "_refund_once 应将 is_refunded 置为 TRUE"
+        "_refund_chat_request 应将 is_refunded 置为 TRUE"
     assert "WHERE request_id = %s AND is_refunded = FALSE" in source, \
-        "_refund_once 应按 request_id 且仅更新未退款的记录"
+        "_refund_chat_request 应按 request_id 且仅更新未退款的记录"
 
-    # 2. 动态：mock 后复制 _refund_once 调用序列
+    # 2. 动态：mock 后按 _refund_chat_request 的调用序列执行
     req_id = "req-refund-6"
     user_id = 1
     cost_per = 10.0
@@ -257,7 +255,7 @@ def test_refund_marks_usage_refunded():
 
     with patch.object(chat_module.PointsService, "refund", return_value=90.0) as mock_refund, \
          _mock_db_conn() as conn:
-        # 复制 _refund_once 的调用序列（与 chat.py 中闭包体一致）
+        # 与 chat.py 中 _refund_chat_request 一致的调用序列
         try:
             chat_module.PointsService.refund(
                 user_id, cost_per, "AI助手回复失败退还",
@@ -272,7 +270,7 @@ def test_refund_marks_usage_refunded():
         except Exception:
             pass
 
-    # refund 被调用，参数与 _refund_once 一致
+    # refund 被调用，参数与 _refund_chat_request 一致
     mock_refund.assert_called_once_with(
         user_id, cost_per, "AI助手回复失败退还",
         request_key=f"chat_refund:{req_id}",

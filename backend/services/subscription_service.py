@@ -52,7 +52,7 @@ def _snapshot(plan: dict) -> dict:
         "grant_points": float(_points(plan.get("grant_points"))),
         "features": dict(plan.get("features") or {}),
         "allowed_models": list(plan.get("allowed_models") or []),
-        "max_concurrent_requests": int(plan.get("max_concurrent_requests") or 1),
+        "max_concurrent_requests": int(plan.get("max_concurrent_requests") or 2),
         "is_free": bool(plan.get("is_free")),
         "enabled": bool(plan.get("enabled")),
         "allow_group_buy": bool(plan.get("allow_group_buy")),
@@ -300,7 +300,7 @@ def get_entitlements_in_conn(conn, user_id: int) -> dict:
         "plan": _snapshot(plan),
         "features": features,
         "allowed_models": list(plan.get("allowed_models") or []),
-        "max_concurrent_requests": max(1, int(plan.get("max_concurrent_requests") or 1)),
+        "max_concurrent_requests": max(2, int(plan.get("max_concurrent_requests") or 2)),
         "cycle_id": state["cycle"].get("id"),
         "period_end": state["cycle"].get("period_end").isoformat() if state["cycle"].get("period_end") else None,
     }

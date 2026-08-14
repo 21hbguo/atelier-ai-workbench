@@ -14,7 +14,8 @@ from backend.services.classification_service import ClassificationService
 from backend.services.content_audit_service import ContentAuditService
 from backend.services.task_manager import TaskManager
 from backend.services.image_expiry import expiry_cleanup_loop
-from backend.routers.chat import reconcile_chat_uploads, chat_upload_cleanup_loop
+from backend.services.chat_task_manager import CHAT_TASK_MANAGER
+from backend.routers.chat import reconcile_chat_uploads, chat_upload_cleanup_loop, recover_interrupted_chat_messages
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
@@ -27,7 +28,11 @@ async def lifespan(app: FastAPI):
     await TaskManager.recover_orphaned_tasks()
     ClassificationService.resume_processing_tasks()
     ContentAuditService.resume_processing_tasks()
+    # 聊天任务制：服务重启后残留 streaming 消息标 failed + 按 req_id 幂等退款
+    await asyncio.to_thread(recover_interrupted_chat_messages)
     yield
+    # 先取消运行中的聊天生成任务（触发 stopped 分支：退款 + 标 stopped），再关 LLM/HTTP
+    await CHAT_TASK_MANAGER.cancel_all()
     t = getattr(app.state, "expiry_cleanup_task", None)
     if t:
         t.cancel()
