@@ -35,8 +35,8 @@ from backend.services.document_parser import parse_file
 from backend.services.llm_client import LLMClient, LLMError
 from backend.services.agent import AgentContext
 from backend.services.agent.loop import run_agent_stream
-from backend.services.agent.tools.image_recognize import pick_vision_model
-from backend.services.llm_model_service import get_active as get_active_model, get_all as get_all_models, get_by_model_id, has_vision, get_vision_default
+from backend.services.vision_service import VisionError, pick_vision_model, recognize_image
+from backend.services.llm_model_service import get_active as get_active_model, get_all as get_all_models, get_by_model_id, has_vision
 from backend.services.billing_service import BillingService
 from backend.services.subscription_service import get_entitlements_in_conn
 
@@ -896,11 +896,14 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                 and body.model_id != (active_model.get("model_id") or ""):
             raise HTTPException(status_code=400, detail="该模型未配置接口，请在模型档案中填写 API 地址和 Key")
 
-    # 带图状态：目标模型无视觉时自动切换；image_files 为随消息直发的图片记录
-    model_switched = False
-    image_degraded = False  # 无可用视觉模型：不硬报错，降级为自然回复（注入说明，图片不直发）
+    # 带图状态：目标模型有视觉 → 图片直发；无视觉 → 系统侧识别注入（模型不切换）；
+    # 无视觉且无可用识别引擎 → 降级说明回复（不硬报错）
+    model_switched = False  # 保留字段（恒 False），SSE 结构兼容，前端零改动
+    image_degraded = False  # 无可用识别引擎：不硬报错，降级为自然回复（注入说明，图片不直发）
+    need_recognize = False  # 主模型无视觉且识别引擎可用：系统侧识别，识别文本注入 user 消息
     image_files: list = []
     image_blocks: list = []
+    vision_notes: list = []  # [(image_id, original_name, text|None)]，单张识别失败时 text=None
 
     with get_db() as conn:
         entitlements = get_entitlements_in_conn(conn, user_id)
@@ -920,21 +923,20 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
             if len(image_files) != len(requested_ids):
                 raise HTTPException(status_code=404, detail="图片不存在或不属于当前会话")
             if not has_vision(target_model):
-                vision_default = get_vision_default()
-                if vision_default is None:
-                    # 无可用视觉模型：不硬报错（体验差），降级为自然回复——图片不直发，
-                    # 改为在消息里注入说明，让模型如实告知用户当前模型无法查看图片
+                # 主模型无视觉：不切换模型（铁律：target_model 恒为用户所选模型），
+                # 改由系统侧强制识别（vision_service），识别文本注入 user 消息；
+                # 仅当识别引擎也不可用时才降级为说明回复
+                if pick_vision_model() is None:
                     image_degraded = True
                     logger.info(
-                        "[chat/send] 无可用视觉模型，图片消息降级为说明回复 (user=%s session=%s)",
+                        "[chat/send] 无可用识别引擎，图片消息降级为说明回复 (user=%s session=%s)",
                         user_id, session_id,
                     )
                 else:
-                    target_model = vision_default
-                    model_switched = True
+                    need_recognize = True
                     logger.info(
-                        "[chat/send] 图片消息自动切换视觉模型: %s (user=%s session=%s)",
-                        target_model.get("model_id"), user_id, session_id,
+                        "[chat/send] 图片消息走系统侧识别，主模型不切换 (user=%s session=%s)",
+                        user_id, session_id,
                     )
         target_model_id = target_model.get("model_id") or body.model_id
         if allowed_models and target_model_id not in allowed_models:
@@ -949,14 +951,16 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
         if msg_cnt >= max_messages:
             raise HTTPException(status_code=400, detail=f"该会话消息已达上限（{max_messages} 条），请新建会话继续")
 
-    # 图片内容块：本地文件绝对路径，由 LLMClient 内部读文件转 base64（图片与文本同管道直发，不经 OCR）
-    for r in image_files:
-        storage_name = str(r["storage_name"] or "")
-        if storage_name.startswith("uploads/"):
-            p = user_workspace_root(user_id) / "uploads" / os.path.basename(storage_name)
-        else:
-            p = CHAT_UPLOAD_DIR / os.path.basename(storage_name)
-        image_blocks.append({"type": "image", "path": str(p)})
+    # 图片内容块：仅视觉主模型直发（base64 由 LLMClient 内部读文件转，图片与文本同管道，不经 OCR）；
+    # 无视觉主模型不直发图片，改由系统侧识别（见下）
+    if has_vision(target_model):
+        for r in image_files:
+            storage_name = str(r["storage_name"] or "")
+            if storage_name.startswith("uploads/"):
+                p = user_workspace_root(user_id) / "uploads" / os.path.basename(storage_name)
+            else:
+                p = CHAT_UPLOAD_DIR / os.path.basename(storage_name)
+            image_blocks.append({"type": "image", "path": str(p)})
 
     active_limit = entitlements["max_concurrent_requests"]
     if CHAT_TASK_MANAGER.count_active(user_id) >= active_limit:
@@ -988,6 +992,26 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
     except Exception:
         raise
 
+    # 无视觉主模型：系统侧强制识别（每张独立识别，单张失败降级不影响其余）。
+    # 放在并发检查与扣费之后：429/402 先挡掉，避免识别成本白花/请求被挂起占用资源。
+    # 识别段在扣费后、任务创建前：请求被取消（CancelledError 属 BaseException，
+    # 落库段的 except Exception 捕不到）时同步退款再抛，避免积分已扣无退款路径
+    if need_recognize:
+        try:
+            for r in image_files:
+                try:
+                    text = await recognize_image(
+                        user_id,
+                        {"id": r["id"], "original_name": r["original_name"], "storage_name": r["storage_name"]},
+                    )
+                except VisionError as e:
+                    logger.warning("[chat/send] 图片识别失败 (file_id=%s): %s", r["id"], e)
+                    text = None
+                vision_notes.append((r["id"], r["original_name"], text))
+        except BaseException:
+            _refund_chat_request(user_id, cost_per, req_id, chat_charge_mode, daily_total, target_model_id)
+            raise
+
     # 再落库用户消息（file_ids 快照会话当前已解析文件 id，前端据此显示关联文件图标）
     try:
         with get_db() as conn:
@@ -1002,9 +1026,20 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                     (session_id,),
                 ).fetchall()
             file_ids = [r["id"] for r in file_rows]
+            # 无视觉主模型的图片识别文本随 user 消息一起落库：
+            # 历史/上下文压缩/后续轮次追问天然可用（无需重新识别）；
+            # file_id 随注入文本给出，模型可据此调 image_recognize 细看/聚焦追问
+            user_content = content
+            if vision_notes:
+                note_parts = [
+                    f"[图片识别] {name} (file_id={fid})：{text}" if text
+                    else f"[图片识别] {name} (file_id={fid})：识别失败"
+                    for fid, name, text in vision_notes
+                ]
+                user_content = content + "\n\n" + "\n".join(note_parts)
             user_msg_row = conn.execute(
                 "INSERT INTO chat_messages (session_id, role, content, file_ids) VALUES (%s, 'user', %s, %s::jsonb) RETURNING id",
-                (session_id, content, json.dumps(file_ids)),
+                (session_id, user_content, json.dumps(file_ids)),
             ).fetchone()
             user_msg_id = user_msg_row["id"] if user_msg_row else None
             # assistant 占位消息：任务制下先生成 streaming 占位行（content/thinking 由后台任务增量 UPDATE），
@@ -1063,9 +1098,9 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
         tools_names.append("image_gen")
         tools_names.append("show_widget")
         tools_names.append("rename_session")  # 对话早期给默认名会话自动起名
-        # 降级场景：主模型无视觉但存在可用识别引擎 → 注册 image_recognize 工具，
-        # 主模型调用工具（内部用便宜视觉模型如 gpt-5.6-luna 识别），基于识别结果回答
-        if image_degraded and pick_vision_model() is not None:
+        # 主模型无视觉：常态注册 image_recognize 工具（系统侧已注入识别文本，
+        # 模型仍可主动调用细看/聚焦追问；注册条件不再要求 image_degraded）
+        if need_recognize:
             tools_names.append("image_recognize")
         # 熔断开关：DISABLED_TOOLS（环境变量，逗号分隔）中列出的工具直接不暴露给模型，
         # 用于紧急下线单个工具而无需改代码发版（此处过滤 + loop.py 允许列表双保险）
@@ -1297,7 +1332,9 @@ def _agent_system_prompt(ctx: "ChatGenContext") -> str:
             "2. 页面原型/mockup 可用 kind=html 产出页面片段（禁止 DOCTYPE/html/head/body/"
             "script/iframe，可含 <style>）；\n"
             "3. 一次调用产出 1 个图，复杂系统可拆成多次调用分别绘制；\n"
-            "4. 调用后附一句简短说明即可，不要把 code 内容粘贴进回复。"
+            "4. 调用后附一句简短说明即可，不要把 code 内容粘贴进回复；\n"
+            "5. 关键：用户要求画图（含\"重新画/再画一次\"）时，必须先调用 show_widget 真正产出图，"
+            "再附说明；不得只描述画面内容而不调用工具。"
         )
     if "send_file" in tools_names:
         agent_system += (
@@ -1426,7 +1463,9 @@ async def run_generation(ctx: ChatGenContext) -> None:
                 system_prompt=agent_system, override=ctx.override,
             )
             if ctx.image_degraded:
-                messages = _attach_image_note(messages, [r["id"] for r in ctx.image_files])
+                # 识别引擎不可用：工具必然未注册/必失败，note 不给 file_ids，
+                # 让模型如实告知用户当前模型无法查看图片（避免误导调用必失败的 image_recognize）
+                messages = _attach_image_note(messages)
             else:
                 messages = _attach_image_blocks(messages, ctx.image_blocks)
             async for event in run_agent_stream(

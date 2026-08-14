@@ -4,8 +4,10 @@
 1. 图片上传成功写入 chat_files（status=image、page_content=[image]、真实 MIME，且不调 parse_file/不 OCR）；
 2. 带 image_file_ids 发送：发给 LLM 的最后一条 user 消息 content 升级为 list 且含 image 块
    （mock LLM 调用层 ChatService.chat_stream，断言传入的 prebuilt_messages）；
-3. 目标模型无 vision：自动切换到 get_vision_default 的视觉模型（done 事件 model_switched=true）；
-4. 无 vision 且无默认视觉模型：返回明确中文错误；
+3. 目标模型无 vision + 识别引擎可用（pick_vision_model 非 None）：不切换模型（model_switched 恒 false），
+   系统侧逐张调 recognize_image，识别文本随 user 消息落库（[图片识别] 前缀），图片块不直发；
+4. 无 vision 且识别引擎不可用（pick_vision_model 为 None）：降级为说明回复（image_degraded=true，
+   图片不直发，不硬报错）；
 5. 图片不属于本会话：拒绝。
 
 不连真实数据库 / 不连真实 LLM，全部 mock（风格参照 test_chat_billing.py / test_rename_session.py）。
@@ -22,6 +24,7 @@ from backend.routers import chat as chat_module
 from backend.routers.chat import ChatSendRequest, _attach_image_blocks, _attach_image_note
 from backend.services import llm_model_service
 from backend.services.chat_task_manager import CHAT_TASK_MANAGER
+from backend.services.vision_service import VisionError
 
 # 1x1 透明 PNG 假字节（真实文件头，够写入磁盘即可）
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
@@ -115,12 +118,14 @@ class _Patches:
         return False
 
 
-def _base_patches(conn=None, active_model=None, vision_default=None):
+def _base_patches(conn=None, active_model=None, vision_engine=None):
     """send_message 全链路 mock 的公共 patch 栈；返回 (patches, conn, captured)。
 
-    默认 active_model 为视觉模型（不触发切换）；传 active_model=_no_vision_model()
-    配合 vision_default 控制切换/报错场景。LLMClient.protocol 强制返回 anthropic
-    → use_agent=False，走普通通道 ChatService.chat_stream（最小 mock 面）。
+    默认 active_model 为视觉模型（图片直发）；传 active_model=_no_vision_model()
+    配合 vision_engine 控制识别/降级场景：vision_engine 为识别引擎 dict（pick_vision_model
+    的返回值，非 None → need_recognize 系统侧识别），None → image_degraded 降级。
+    LLMClient.protocol 强制返回 anthropic → use_agent=False，走普通通道
+    ChatService.chat_stream（最小 mock 面）。
     """
     captured = {"chat_stream_calls": []}
     db_patch, conn = _mock_get_db(conn)
@@ -139,7 +144,7 @@ def _base_patches(conn=None, active_model=None, vision_default=None):
     patches = [
         db_patch,
         patch.object(chat_module, "get_active_model", return_value=active_model or _vision_model()),
-        patch.object(chat_module, "get_vision_default", return_value=vision_default),
+        patch.object(chat_module, "pick_vision_model", return_value=vision_engine),
         patch.object(chat_module, "get_llm_config", return_value={"model": "gpt-5.5"}),
         patch.object(chat_module.LLMClient, "protocol", return_value="anthropic"),  # 强制走普通通道
         patch.object(chat_module.BannedWordsService, "check", return_value=False),
@@ -187,6 +192,14 @@ async def _send_and_wait(session_id, body, user):
 def _task_events(task):
     """从任务事件环提取 [(event, data_dict), ...]（终态后任务已从管理器移除，对象引用仍可读）。"""
     return [(item["type"], item["data"]) for item in task.events]
+
+
+def _user_message_content(conn):
+    """从 conn.execute 调用记录里提取 user 消息落库的 content（含 [图片识别] 注入后的文本）。"""
+    for call in conn.execute.call_args_list:
+        if "INSERT INTO chat_messages" in str(call.args[0]) and "VALUES (%s, 'user'" in str(call.args[0]):
+            return call.args[1][1]
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -333,39 +346,117 @@ def test_attach_image_blocks_list_content_appended():
 
 
 # ---------------------------------------------------------------------------
-# 3. 模型无 vision：自动切换到默认视觉模型
+# 3. 模型无 vision + 识别引擎可用：系统侧识别注入（不切换模型）
 # ---------------------------------------------------------------------------
 
-def test_send_switches_to_vision_model_when_target_lacks_vision(tmp_path):
+def test_send_no_vision_system_recognize_injects_text(tmp_path):
+    """主模型无 vision + 识别引擎可用：不切换模型，系统侧逐张识别，
+    识别文本随 user 消息落库（[图片识别] 前缀），图片块不直发。"""
     with patch.object(chat_module.config, "USER_WORKSPACES_DIR", tmp_path):
         patches, conn, captured = _base_patches(
-            active_model=_no_vision_model(), vision_default=_vision_model("gpt-5.5"),
+            active_model=_no_vision_model(), vision_engine=_vision_model("gpt-5.6-luna"),
         )
-        with patches:
+        with patches, \
+             patch.object(chat_module, "recognize_image",
+                          new=AsyncMock(return_value="图片里有一只猫")) as mock_rec:
             result, task = _run(_send_and_wait(
                 SESSION_ID, ChatSendRequest(content="看图说话", image_file_ids=[IMAGE_FILE_ID]), USER,
             ))
 
-    # 传给 LLM 的 model 已切换为视觉模型
-    assert captured["chat_stream_calls"][0]["model"]["model_id"] == "gpt-5.5"
-    # 图片块仍在最后一条 user 消息上
+    # 系统侧识别调用 1 次，参数正确（用户 id + 图片行）
+    assert mock_rec.await_count == 1
+    assert mock_rec.await_args.args[0] == USER["user_id"]
+    assert mock_rec.await_args.args[1]["original_name"] == "photo.png"
+    # 模型未切换：发给 LLM 的仍是原无 vision 模型
+    assert len(captured["chat_stream_calls"]) == 1
+    assert captured["chat_stream_calls"][0]["model"]["model_id"] == "no-vision"
+    # 图片不直发：最后一条 user 消息没有 image 块（image_blocks 为空，content 保持原样）
     messages = captured["chat_stream_calls"][0]["messages"]
     last_user = [m for m in messages if m["role"] == "user"][-1]
-    assert any(b.get("type") == "image" for b in last_user["content"])
-    # done 事件带 model_switched=true（user_message_id 事件已移除，POST 返回 id）
-    events = _task_events(task)
-    done = [d for e, d in events if e == "done"][0]
-    assert done["model_switched"] is True
+    assert not isinstance(last_user["content"], list) or \
+        not any(b.get("type") == "image" for b in last_user["content"])
+    # 识别文本随 user 消息落库：[图片识别] 前缀 + 识别原文
+    user_content = _user_message_content(conn)
+    assert "[图片识别] photo.png (file_id=11)：图片里有一只猫" in user_content
+    # done 事件：model_switched 恒 false、非降级
+    done = [d for e, d in _task_events(task) if e == "done"][0]
+    assert done["model_switched"] is False
+    assert done["image_degraded"] is False
     assert result["user_message_id"] == 101
+
+
+def test_send_no_vision_multiple_images_recognized_in_order(tmp_path):
+    """多图识别：逐张调用 recognize_image，user 消息按序注入两条 [图片识别] 文本。"""
+    def _two_images(sql, *params):
+        cur = _execute_side_effect(sql, *params)
+        if "FROM chat_files WHERE id = ANY(%s)" in str(sql) and "status = 'image'" in str(sql):
+            cur.fetchall.return_value = [
+                {"id": IMAGE_FILE_ID, "original_name": "photo.png",
+                 "storage_name": "uploads/aaa.png", "content_type": "image/png"},
+                {"id": IMAGE_FILE_ID + 1, "original_name": "photo2.png",
+                 "storage_name": "uploads/bbb.png", "content_type": "image/png"},
+            ]
+        return cur
+
+    conn = MagicMock(name="db_conn")
+    conn.execute.side_effect = _two_images
+    with patch.object(chat_module.config, "USER_WORKSPACES_DIR", tmp_path):
+        patches, conn, captured = _base_patches(
+            conn=conn, active_model=_no_vision_model(), vision_engine=_vision_model("gpt-5.6-luna"),
+        )
+        with patches, \
+             patch.object(chat_module, "recognize_image", new=AsyncMock(side_effect=[
+                 "第一张图里有一只猫", "第二张图里有一条狗",
+             ])) as mock_rec:
+            result, task = _run(_send_and_wait(
+                SESSION_ID,
+                ChatSendRequest(content="看图说话", image_file_ids=[IMAGE_FILE_ID, IMAGE_FILE_ID + 1]),
+                USER,
+            ))
+
+    # 每张图各识别一次，按序注入
+    assert mock_rec.await_count == 2
+    user_content = _user_message_content(conn)
+    assert "[图片识别] photo.png (file_id=11)：第一张图里有一只猫" in user_content
+    assert "[图片识别] photo2.png (file_id=12)：第二张图里有一条狗" in user_content
+    assert user_content.index("photo.png") < user_content.index("photo2.png")
+    # 图片不直发
+    messages = captured["chat_stream_calls"][0]["messages"]
+    last_user = [m for m in messages if m["role"] == "user"][-1]
+    assert not isinstance(last_user["content"], list) or \
+        not any(b.get("type") == "image" for b in last_user["content"])
+
+
+def test_send_no_vision_recognize_failure_injects_failed_note(tmp_path):
+    """单张识别失败（VisionError）：user 消息注入「识别失败」文本，请求不中断、对话正常继续。"""
+    with patch.object(chat_module.config, "USER_WORKSPACES_DIR", tmp_path):
+        patches, conn, captured = _base_patches(
+            active_model=_no_vision_model(), vision_engine=_vision_model("gpt-5.6-luna"),
+        )
+        with patches, \
+             patch.object(chat_module, "recognize_image",
+                          new=AsyncMock(side_effect=VisionError("识别服务调用失败：接口超时"))):
+            result, task = _run(_send_and_wait(
+                SESSION_ID, ChatSendRequest(content="看图说话", image_file_ids=[IMAGE_FILE_ID]), USER,
+            ))
+
+    # 失败降级为「识别失败」文本注入，请求不中断
+    user_content = _user_message_content(conn)
+    assert "[图片识别] photo.png (file_id=11)：识别失败" in user_content
+    assert len(captured["chat_stream_calls"]) == 1  # 对话正常继续
+    done = [d for e, d in _task_events(task) if e == "done"][0]
+    assert done["text"] == "这是一张图"
+    assert done["model_switched"] is False
 
 
 # ---------------------------------------------------------------------------
 # 4. 无 vision 且无默认视觉模型：降级为自然回复（不硬报错）
 # ---------------------------------------------------------------------------
 
-def test_send_no_vision_and_no_default_degrades_to_note():
-    """无可用视觉模型：不报错——消息注入说明文本（图片不直发），模型自然回复，正常扣费落库。"""
-    patches, conn, captured = _base_patches(active_model=_no_vision_model(), vision_default=None)
+def test_send_no_vision_and_no_engine_degrades_to_note():
+    """无视觉且识别引擎不可用（pick_vision_model 返回 None）：不报错——消息注入说明文本
+    （图片不直发），模型自然回复，正常扣费落库。"""
+    patches, conn, captured = _base_patches(active_model=_no_vision_model(), vision_engine=None)
     with patches:
         result, task = _run(_send_and_wait(
             SESSION_ID, ChatSendRequest(content="看图说话", image_file_ids=[IMAGE_FILE_ID]), USER,
@@ -412,9 +503,55 @@ def test_attach_image_note_injects_text_block():
     assert result[0] == {"role": "user", "content": "上一轮"}  # 其它消息不动
 
 
-def test_send_no_vision_agent_channel_degrades_to_note(tmp_path, monkeypatch):
-    """agent 通道（protocol=openai → use_agent=True）降级：注册 image_recognize 工具，
-    不附图片块，注入带 file_ids 的说明引导模型调用工具识别。"""
+def test_send_no_vision_agent_channel_registers_recognize_tool(tmp_path, monkeypatch):
+    """agent 通道（protocol=openai → use_agent=True）主模型无 vision + 识别引擎可用：
+    image_recognize 常态注册（不再要求 image_degraded），且系统侧识别文本注入 user 消息。"""
+    monkeypatch.setattr(chat_module.config, "USER_WORKSPACES_DIR", tmp_path)
+    captured = {"agent_calls": []}
+
+    async def _fake_prepare(session_id, model=None, attached_docs=None, system_prompt="", override=None):
+        return [{"role": "user", "content": "看图说话"}]
+
+    async def _fake_agent_stream(**kwargs):
+        captured["agent_calls"].append({"messages": kwargs["messages"], "tools_names": kwargs["tools_names"]})
+        yield {"type": "done", "text": "我看到图里有猫", "thinking": ""}
+
+    patches, conn, _ = _base_patches(
+        active_model=_no_vision_model(), vision_engine=_vision_model("gpt-5.6-luna"),
+    )
+    with patches:
+        # 覆盖两处：LLMClient.protocol 返回 openai（use_agent=True）→ 走 agent 通道；
+        # prepare_session_messages / run_agent_stream 换成 fake；系统侧识别 mock
+        with patch.object(chat_module.LLMClient, "protocol", return_value="openai"), \
+             patch.object(chat_module.ChatService, "prepare_session_messages", new=_fake_prepare), \
+             patch.object(chat_module, "run_agent_stream", new=_fake_agent_stream), \
+             patch.object(chat_module, "recognize_image",
+                          new=AsyncMock(return_value="图片里有一只猫")):
+            result, task = _run(_send_and_wait(
+                SESSION_ID, ChatSendRequest(content="看图说话", image_file_ids=[IMAGE_FILE_ID]), USER,
+            ))
+
+    assert len(captured["agent_calls"]) == 1
+    call = captured["agent_calls"][0]
+    # 常态注册 image_recognize 工具（need_recognize，不要求 image_degraded）
+    assert "image_recognize" in call["tools_names"]
+    # 图片不直发（image_blocks 为空，content 保持原样）
+    last_user = [m for m in call["messages"] if m["role"] == "user"][-1]
+    assert not isinstance(last_user["content"], list) or \
+        not any(b.get("type") == "image" for b in last_user["content"])
+    # 系统侧识别文本随 user 消息落库
+    user_content = _user_message_content(conn)
+    assert "[图片识别] photo.png (file_id=11)：图片里有一只猫" in user_content
+    events = _task_events(task)
+    done = [d for e, d in events if e == "done"][0]
+    assert done["image_degraded"] is False
+    assert done["model_switched"] is False
+    assert done["text"] == "我看到图里有猫"
+
+
+def test_send_no_vision_agent_channel_no_engine_skips_recognize_tool(tmp_path, monkeypatch):
+    """识别引擎不可用 + agent 通道：image_degraded 降级，image_recognize 不注册，
+    注入说明（不带 file_ids，避免误导模型调用必失败的 image_recognize）。"""
     monkeypatch.setattr(chat_module.config, "USER_WORKSPACES_DIR", tmp_path)
     captured = {"agent_calls": []}
 
@@ -425,10 +562,8 @@ def test_send_no_vision_agent_channel_degrades_to_note(tmp_path, monkeypatch):
         captured["agent_calls"].append({"messages": kwargs["messages"], "tools_names": kwargs["tools_names"]})
         yield {"type": "done", "text": "我看不了图", "thinking": ""}
 
-    patches, conn, _ = _base_patches(active_model=_no_vision_model(), vision_default=None)
+    patches, conn, _ = _base_patches(active_model=_no_vision_model(), vision_engine=None)
     with patches:
-        # 覆盖两处：LLMClient.protocol 返回 openai（use_agent=True）→ 走 agent 通道；
-        # prepare_session_messages / run_agent_stream 换成 fake
         with patch.object(chat_module.LLMClient, "protocol", return_value="openai"), \
              patch.object(chat_module.ChatService, "prepare_session_messages", new=_fake_prepare), \
              patch.object(chat_module, "run_agent_stream", new=_fake_agent_stream):
@@ -438,15 +573,17 @@ def test_send_no_vision_agent_channel_degrades_to_note(tmp_path, monkeypatch):
 
     assert len(captured["agent_calls"]) == 1
     call = captured["agent_calls"][0]
-    # 注册了 image_recognize 工具（降级识别引擎可用时）
-    assert "image_recognize" in call["tools_names"]
-    # 最后一条 user 消息：说明块含 file_ids 引导，无 image 块（图片不直发）
+    # image_degraded：不注册 image_recognize（工具列表只有常规工具）
+    assert "image_recognize" not in call["tools_names"]
+    # 降级说明注入：最后一条 user 消息含说明块（不带 file_ids）、无 image 块
     last_user = [m for m in call["messages"] if m["role"] == "user"][-1]
     assert isinstance(last_user["content"], list)
     assert not any(b.get("type") == "image" for b in last_user["content"])
     note = [b for b in last_user["content"] if b.get("type") == "text" and "系统说明" in b.get("text", "")]
-    assert note and str(IMAGE_FILE_ID) in note[0]["text"]
-    assert "image_recognize" in note[0]["text"]
+    assert note and "不支持图片识别" in note[0]["text"]
+    assert str(IMAGE_FILE_ID) not in note[0]["text"]  # 不引导调用必失败的 image_recognize
+    # 未做系统侧识别：落库 user 消息无 [图片识别] 注入
+    assert _user_message_content(conn) == "看图说话"
     events = _task_events(task)
     done = [d for e, d in events if e == "done"][0]
     assert done["image_degraded"] is True
