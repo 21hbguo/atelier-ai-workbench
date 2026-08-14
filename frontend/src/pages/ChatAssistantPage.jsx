@@ -1490,12 +1490,14 @@ export default function ChatAssistantPage() {
 
   // 自动滚动到底部：仅当用户未上滚（stickToBottomRef=true）时才贴底；
   // 用户上滚回看历史时跳过赋值，滚回底部（≤80px）自动恢复跟随。
+  // 依赖含 sending?.thinking：思考阶段 text 为空不变，若缺 thinking 依赖则气泡
+  // 随思考增长超出视口时不贴底，出现「泡泡显示不全、要手动滚动才显示全」。
   // 只在「需要跟随」时写 scrollTop，避免每帧强制同步布局；直接赋值不 smooth（流式下 smooth 会卡）
   useEffect(() => {
     const el = scrollRef.current
     if (!el || !stickToBottomRef.current) return
     el.scrollTop = el.scrollHeight
-  }, [messages, messagesLoading, sending?.text, sending?.stopped, pendingQueue])
+  }, [messages, messagesLoading, sending?.text, sending?.thinking, sending?.stopped, pendingQueue])
 
   const refreshSessions = useCallback(() => {
     chatAPI.sessions().then(res => {

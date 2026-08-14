@@ -293,3 +293,37 @@ describe('ChatAssistantPage 工具调用轨迹（toolSteps）', () => {
     await waitFor(() => expect(screen.queryByText('停止生成')).not.toBeInTheDocument())
   })
 })
+
+describe('ChatAssistantPage 思考阶段贴底滚动', () => {
+  it('thinking 流式增长（text 为空）时仍触发自动滚动', async () => {
+    // 回归：自动滚动 useEffect 依赖曾缺 sending?.thinking，思考阶段气泡随
+    // thinking 增长超出视口但不贴底 →「泡泡显示不全、要手动滚动才显示全」
+    const scrollSpy = vi.spyOn(HTMLDivElement.prototype, 'scrollTop', 'set')
+    sessionsMock.mockResolvedValue(ok({ items: [{ id: 1, title: '会话一' }] }))
+    messagesMock.mockResolvedValue(ok({ items: [] }))
+
+    render(<ChatAssistantPage />)
+    await waitFor(() => expect(screen.getByText('会话一')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('会话一'))
+    await waitFor(() => expect(messagesMock).toHaveBeenCalledWith(1))
+
+    const textarea = screen.getByPlaceholderText('输入消息，Enter 发送，Shift+Enter 换行')
+    fireEvent.change(textarea, { target: { value: '测试' } })
+    fireEvent.keyDown(textarea, { key: 'Enter', code: 'Enter' })
+
+    await waitFor(() => expect(streamTaskMock).toHaveBeenCalledTimes(1))
+    const streamOptions = streamTaskMock.mock.calls[0][1]
+
+    // 发送后 sending 出现的初始贴底已发生，记录 baseline
+    await waitFor(() => expect(scrollSpy).toHaveBeenCalled())
+    const before = scrollSpy.mock.calls.length
+
+    // 思考阶段：text 始终为空（sending.text 引用不变），只有 thinking 增长
+    act(() => { streamOptions.onThinking({ text: '思考中…第一部分' }) })
+    act(() => { streamOptions.onThinking({ text: '思考中…第一部分，第二部分' }) })
+
+    // thinking 变化必须再次触发贴底滚动
+    await waitFor(() => expect(scrollSpy.mock.calls.length).toBeGreaterThan(before))
+    scrollSpy.mockRestore()
+  })
+})
