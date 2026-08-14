@@ -235,6 +235,17 @@ def test_download_outside_404(ws):
     assert exc.value.detail == "文件不存在"
 
 
+def test_download_other_user_workspace_404(ws):
+    _write(_root(ws, 456), "private.txt", "other-user-secret")
+    other_path = _root(ws, 456) / "private.txt"
+
+    with pytest.raises(HTTPException) as exc:
+        _run(workspace_router.download_workspace_file(path=str(other_path), user={"user_id": 123}))
+
+    assert exc.value.status_code == 404
+    assert exc.value.detail == "文件不存在"
+
+
 def test_download_not_found_404(ws):
     with pytest.raises(HTTPException) as exc:
         _run(workspace_router.download_workspace_file(path="missing.txt", user={"user_id": 123}))

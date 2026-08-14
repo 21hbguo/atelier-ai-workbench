@@ -101,6 +101,23 @@ def test_resolve_symlink_escape_rejected(ws):
         workspace.resolve_workspace_path(123, str(root / "link.txt"))
 
 
+def test_resolve_other_user_workspace_rejected(ws):
+    other_file = _root(ws, 456) / "private.txt"
+    other_file.parent.mkdir(parents=True)
+    other_file.write_text("other-user-secret", encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        workspace.resolve_workspace_path(123, str(other_file))
+
+
+def test_file_ops_cannot_read_other_user_workspace(ws):
+    other_file = _write(_root(ws, 456), "private.txt", "other-user-secret")
+    result = _run(fow.file_ops_read({"path": str(other_file)}, _ctx(123)))
+
+    assert "路径无效" in result
+    assert "other-user-secret" not in result
+
+
 # ---------- file_ops_read ----------
 
 def test_read_pagination(ws):

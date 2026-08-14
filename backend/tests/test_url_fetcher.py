@@ -171,6 +171,11 @@ def test_extract_urls_markdown_syntax():
     assert extract_urls(text) == ["https://example.com/docs", "https://plain.example.com/"]
 
 
+@pytest.mark.parametrize("address", ["100.64.0.1", "192.0.0.1", "224.0.0.1"])
+def test_private_ip_rejects_non_global_ranges(address):
+    assert _is_private_ip(address) is True
+
+
 # ---------------------------------------------------------------- fetch_url 成功路径
 
 def test_fetch_url_success(server):
@@ -403,5 +408,4 @@ def test_check_host_safety_public_ok_and_dns_failure():
         err = _check_host_safety("no-such-host.invalid", 80)
         assert err is not None
         assert "无法解析" in err
-
 

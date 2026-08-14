@@ -180,7 +180,16 @@ def _is_private_ip(ip_str: str) -> bool:
     # NAT64/DNS64（64:ff9b::/96）：内嵌 IPv4 同样按 IPv4 判定
     elif isinstance(ip, ipaddress.IPv6Address) and ip in _NAT64_NETWORK:
         ip = ipaddress.ip_address(ip.packed[12:16])
-    return any(ip in net for net in _PRIVATE_NETWORKS)
+    return (
+        not ip.is_global
+        or ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_unspecified
+        or ip.is_reserved
+        or ip.is_multicast
+        or any(ip in net for net in _PRIVATE_NETWORKS)
+    )
 
 
 def _resolve_host(host: str, port: int):

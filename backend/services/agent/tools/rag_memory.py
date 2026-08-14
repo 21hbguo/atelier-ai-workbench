@@ -30,19 +30,15 @@ _KEYWORD_SPLIT_RE = re.compile(r"[\s,，。.!！?？;；、/\\|]+")
 
 # ---------- 公共：会话文件查询 ----------
 
-def _query_session_files(session_id: Optional[int], user_id: Optional[int]) -> list[dict]:
+def _query_session_files(session_id: int, user_id: int) -> list[dict]:
     """查会话已解析文档（chat_files），按 id 升序。表未建/查询异常向上抛。"""
     sql = (
         "SELECT id, storage_name, original_name, content_type, page_content, char_count, "
         "status, created_at FROM chat_files WHERE session_id = %s"
     )
-    params: list[Any] = [session_id]
-    if user_id:
-        sql += " AND user_id = %s"
-        params.append(user_id)
-    sql += " AND status = 'parsed' ORDER BY id"
+    sql += " AND user_id = %s AND status = 'parsed' ORDER BY id"
     with get_db() as conn:
-        rows = conn.execute(sql, tuple(params)).fetchall()
+        rows = conn.execute(sql, (session_id, user_id)).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -181,8 +177,8 @@ async def rag_memory_search(args: dict, ctx: AgentContext) -> str:
     query = str(args.get("query") or "").strip()
     if not query:
         return "请提供检索关键词（query 参数）。"
-    if not ctx.session_id:
-        return "当前上下文缺少会话信息（session_id），无法检索文档。"
+    if ctx.session_id is None or ctx.user_id is None:
+        return "当前上下文缺少会话或用户信息，无法检索文档。"
 
     # 查会话文档（表未建/未解析时给出友好提示）
     try:

@@ -14,19 +14,15 @@ logger = logging.getLogger(__name__)
 MAX_CONTENT_CHARS = 8000
 
 
-def _query_session_files(session_id: Optional[int], user_id: Optional[int]) -> list[dict]:
+def _query_session_files(session_id: int, user_id: int) -> list[dict]:
     """查会话已解析文档（chat_files）。表未建/查询异常向上抛，由工具层兜底。"""
     sql = (
         "SELECT id, storage_name, original_name, content_type, page_content, char_count, "
         "status, created_at FROM chat_files WHERE session_id = %s"
     )
-    params: list = [session_id]
-    if user_id:
-        sql += " AND user_id = %s"
-        params.append(user_id)
-    sql += " AND status = 'parsed' ORDER BY id"
+    sql += " AND user_id = %s AND status = 'parsed' ORDER BY id"
     with get_db() as conn:
-        rows = conn.execute(sql, tuple(params)).fetchall()
+        rows = conn.execute(sql, (session_id, user_id)).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -45,8 +41,8 @@ def _fmt_datetime(value) -> str:
     parameters={"type": "object", "properties": {}},
 )
 async def document_summary_list(args: dict, ctx: AgentContext) -> str:
-    if not ctx.session_id:
-        return "当前上下文缺少会话信息（session_id），无法列出文档。"
+    if ctx.session_id is None or ctx.user_id is None:
+        return "当前上下文缺少会话或用户信息，无法列出文档。"
     try:
         files = _query_session_files(ctx.session_id, ctx.user_id)
     except Exception:
@@ -81,8 +77,8 @@ async def document_summary_summarize(args: dict, ctx: AgentContext) -> str:
     file_name = str(args.get("file_name") or "").strip()
     if not file_name:
         return "请提供 file_name 参数（文档名）。"
-    if not ctx.session_id:
-        return "当前上下文缺少会话信息（session_id），无法读取文档。"
+    if ctx.session_id is None or ctx.user_id is None:
+        return "当前上下文缺少会话或用户信息，无法读取文档。"
     try:
         files = _query_session_files(ctx.session_id, ctx.user_id)
     except Exception:
