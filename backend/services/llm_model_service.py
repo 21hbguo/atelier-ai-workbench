@@ -274,12 +274,32 @@ def _build_row(data: dict, existing: dict | None = None) -> dict:
 
 def upsert(data: dict) -> dict:
     """新增或更新模型档案。**部分更新语义**：已存在的模型只覆盖 data 中传入的字段，
-    未传字段保留原值（避免误伤）；不存在的模型用默认值创建。"""
+    未传字段保留原值（避免误伤）；不存在的模型用默认值创建。
+
+    可选字段 original_model_id：传入且 strip 后与 model_id 不同时执行**改名**——
+    原行整体保留（未覆盖字段不变），仅替换 model_id 并保持在原行位置，不留下旧 id 行；
+    原行不存在或新 id 被其它行占用时抛 ValueError。original_model_id 为空或等于
+    model_id 时行为与原来完全一致。original_model_id 仅用于定位原行，不会写入 CSV。"""
     with _write_lock:
         rows = _read_all()
         model_id = str(data.get("model_id") or "").strip()
+        original = str(data.get("original_model_id") or "").strip()
+        payload = {k: v for k, v in data.items() if k != "original_model_id"}
+        if original and original != model_id:
+            original_row = next((r for r in rows if r["model_id"] == original), None)
+            if original_row is None:
+                raise ValueError(f"原模型档案不存在：{original}")
+            if any(r["model_id"] == model_id for r in rows):
+                raise ValueError(f"模型 ID 已存在：{model_id}")
+            new_row = _build_row(payload, original_row)
+            for i, r in enumerate(rows):
+                if r["model_id"] == original:
+                    rows[i] = new_row
+                    break
+            _write_all(rows)
+            return dict(new_row)
         existing = next((r for r in rows if r["model_id"] == model_id), None)
-        new_row = _build_row(data, existing)
+        new_row = _build_row(payload, existing)
         if existing:
             for i, r in enumerate(rows):
                 if r["model_id"] == model_id:

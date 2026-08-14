@@ -934,8 +934,9 @@ export default function AdminPage() {
   }
 
   const saveLlmModel = async (payload) => {
-    await chatFetch('/api/admin/llm-models', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    const res = await chatFetch('/api/admin/llm-models', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
     fetchLlmModels()
+    return res
   }
 
   const addLlmModels = async (models) => {

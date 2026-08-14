@@ -1783,13 +1783,58 @@ async def admin_list_llm_models(admin=Depends(require_admin)):
     return {"items": get_all(), "global_model_id": str(llm_cfg.get("model") or "")}
 
 
+def _collect_llm_model_rename_refs(model_id: str) -> dict:
+    """收集旧模型 ID 被引用的情况（只读查询，供改名后提示前端手动同步）。
+
+    任一查询失败（如表不存在、字段缺失等）都容错降级为安全默认值，绝不影响改名本身。
+    """
+    refs = {"plans": [], "is_global_default": False, "price_version_count": 0}
+    try:
+        from backend.config import get_llm_config
+        if str(get_llm_config().get("model") or "").strip() == model_id:
+            refs["is_global_default"] = True
+    except Exception:
+        logger.exception("[llm_model] 检查全局默认模型引用失败")
+    try:
+        with get_db() as conn:
+            rows = conn.execute(
+                # 仅提示启用中的套餐（禁用套餐的白名单引用不影响线上，提示为尽力而为）
+                "SELECT code, name, allowed_models FROM subscription_plans WHERE enabled = TRUE"
+            ).fetchall()
+        refs["plans"] = [
+            {"code": r["code"], "name": r["name"]}
+            for r in rows
+            if isinstance(r["allowed_models"], list) and model_id in r["allowed_models"]
+        ]
+    except Exception:
+        logger.exception("[llm_model] 检查套餐白名单引用失败")
+    try:
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM model_price_versions WHERE model_id = %s",
+                (model_id,),
+            ).fetchone()
+        refs["price_version_count"] = int(row["cnt"] or 0) if row else 0
+    except Exception:
+        logger.exception("[llm_model] 检查价格版本引用失败")
+    return refs
+
+
 @router.post("/llm-models")
 async def admin_upsert_llm_model(body: dict, admin=Depends(require_admin)):
     from backend.services.llm_model_service import upsert
+    original = str(body.get("original_model_id") or "").strip()
+    new_id = str(body.get("model_id") or "").strip()
+    renaming = bool(original and original != new_id)
+    # 先 upsert 再收集引用：改名失败（冲突/原行不存在）时不做无谓查询
     try:
-        return upsert(body)
+        item = upsert(body)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if not renaming:
+        return item  # 非改名：保持原有裸 dict 契约，兼容既有调用方
+    rename_refs = _collect_llm_model_rename_refs(original)
+    return {**item, "rename_refs": rename_refs}
 
 
 @router.post("/llm-models/batch")

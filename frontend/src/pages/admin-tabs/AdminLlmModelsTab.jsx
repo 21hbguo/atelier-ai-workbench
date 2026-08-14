@@ -70,6 +70,7 @@ export default function AdminLlmModelsTab({ items, loading, globalModelId = '', 
   })
   const openEdit = (m) => { setEditing({
     isNew: false,
+    original_model_id: m.model_id,
     draft: {
       ...m,
       reasoning_efforts_text: (m.reasoning_efforts || []).join(','),
@@ -86,7 +87,8 @@ export default function AdminLlmModelsTab({ items, loading, globalModelId = '', 
     if (!efforts.length) { dialog.alert('思考档位至少填一个'); return }
     setSaving(true)
     try {
-      await onSave({
+      const res = await onSave({
+        ...(editing.original_model_id ? { original_model_id: editing.original_model_id } : {}),
         model_id: d.model_id.trim(),
         label: d.label.trim(),
         provider: d.provider?.trim() || '',
@@ -113,6 +115,14 @@ export default function AdminLlmModelsTab({ items, loading, globalModelId = '', 
         notes: d.notes || '',
       })
       setEditing(null)
+      const refs = res?.rename_refs
+      if (refs && (refs.plans?.length || refs.is_global_default || refs.price_version_count > 0)) {
+        const lines = [`模型 ID 已从 ${editing.original_model_id} 改名为 ${d.model_id.trim()}。注意：以下引用仍指向旧 ID，请手动同步：`]
+        if (refs.plans?.length) lines.push(`- 套餐白名单：${refs.plans.map(p => p.name || p.code).join('、')}`)
+        if (refs.is_global_default) lines.push('- 全局默认模型')
+        if (refs.price_version_count > 0) lines.push(`- 价格版本记录 ${refs.price_version_count} 条`)
+        dialog.alert(lines.join('\n'))
+      }
     } catch (e) { dialog.alert(e.message || '保存失败') } finally { setSaving(false) }
   }
 
@@ -411,9 +421,9 @@ export default function AdminLlmModelsTab({ items, loading, globalModelId = '', 
             <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[65vh] overflow-y-auto">
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>模型 ID *</label>
-                <input value={editing.draft.model_id} disabled={!editing.isNew} onChange={e => setDraft({ model_id: e.target.value })}
-                  placeholder="如 deepseek-v4-flash" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none disabled:opacity-50 font-mono"
-                  style={{ borderColor: 'var(--border-color)', background: editing.isNew ? 'var(--bg-primary)' : 'var(--bg-card)', color: 'var(--text-primary)' }} />
+                <input value={editing.draft.model_id} onChange={e => setDraft({ model_id: e.target.value })}
+                  placeholder="如 deepseek-v4-flash" className="w-full px-3 py-2 rounded-2xl text-sm border outline-none font-mono"
+                  style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
               </div>
               <div>
                 <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>显示名 *</label>
