@@ -4,7 +4,7 @@ import { adminAPI, configAPI } from '../../api'
 
 const FEATURE_DEFAULTS = { web_search: true, file_upload: true, file_write: true, max_chat_sessions: 100, max_chat_files: 20 }
 
-const emptyPlan = { code: '', name: '', description: '', price_rmb: 0, cycle_days: 30, grant_points: 0, features: { ...FEATURE_DEFAULTS, package_type: 'membership', daily_quota: null, original_price_rmb: '' }, allowed_models: [], max_concurrent_requests: 1, enabled: true, is_free: false, sort_order: 0 }
+const emptyPlan = { code: '', name: '', description: '', price_rmb: 0, cycle_days: 30, grant_points: 0, features: { ...FEATURE_DEFAULTS, package_type: 'membership', daily_quota: null, original_price_rmb: '' }, allowed_models: [], max_concurrent_requests: 1, enabled: true, is_free: false, sort_order: 0, allow_group_buy: false }
 
 const emptyGroupBuy = { package_id: '', group_size: 3, group_price: 0, time_limit_min: 60, virtual_members: 1, sort_order: 0, status: 1 }
 
@@ -234,6 +234,7 @@ function PlanForm({ draft, setDraft, freeDailyQuota }) {
       <Field label="并发数" hint="同时进行的对话请求数"><input type="number" min="1" value={draft.max_concurrent_requests ?? ''} onChange={e => set('max_concurrent_requests', e.target.value)} className={inputCls} style={inputStyle} /></Field>
       <Field label="排序" hint="数值小的靠前"><input type="number" value={draft.sort_order ?? ''} onChange={e => set('sort_order', e.target.value)} className={inputCls} style={inputStyle} /></Field>
       <Field label="在售状态" hint="取消勾选 = 用户端显示暂售罄"><label className="flex h-[38px] items-center gap-1.5 text-xs" style={{ color: 'var(--text-secondary)' }}><input type="checkbox" checked={Boolean(draft.enabled)} onChange={e => set('enabled', e.target.checked)} /> 在售</label></Field>
+      <Field label="拼团功能" hint="开启后可为该套餐创建拼团活动（默认关闭）"><label className="flex h-[38px] items-center gap-1.5 text-xs" style={{ color: 'var(--text-secondary)' }}><input type="checkbox" checked={Boolean(draft.allow_group_buy)} onChange={e => set('allow_group_buy', e.target.checked)} /> 允许拼团</label></Field>
       <Field label="允许模型" hint="逗号分隔，空 = 全部可用"><input value={draft.allowed_models ?? ''} onChange={e => set('allowed_models', e.target.value)} className={inputCls} style={inputStyle} /></Field>
       <div className="md:col-span-4 flex flex-wrap gap-4 text-xs" style={{ color: 'var(--text-secondary)' }}>
         {[['web_search', '联网搜索'], ['file_upload', '文件上传'], ['file_write', '文件写入']].map(([key, label]) => <label key={key} className="flex items-center gap-1.5"><input type="checkbox" checked={Boolean(f[key])} onChange={e => setFeature(key, e.target.checked)} /> {label}</label>)}
@@ -255,11 +256,12 @@ function GroupBuyForm({ draft, setDraft, plans }) {
   const set = (key, value) => setDraft(v => ({ ...v, [key]: value }))
   return (
     <div className="grid gap-2 md:grid-cols-2">
-      <Field label="套餐" wide hint="从现有套餐中选择">
+      <Field label="套餐" wide hint="仅显示已开启拼团的套餐">
         <select value={draft.package_id ?? ''} onChange={e => set('package_id', e.target.value)} className={inputCls} style={inputStyle}>
           <option value="">请选择套餐</option>
-          {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          {plans.filter(p => p.allow_group_buy || String(p.id) === String(draft.package_id)).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
+        {plans.length > 0 && !plans.some(p => p.allow_group_buy) && <div className="text-[11px] mt-1" style={{ color: 'var(--color-warning)' }}>暂无开启拼团的套餐，请在「套餐管理」编辑套餐时勾选「允许拼团」</div>}
       </Field>
       <Field label="团人数" hint="几人成团"><input type="number" min="2" value={draft.group_size ?? ''} onChange={e => set('group_size', e.target.value)} className={inputCls} style={inputStyle} /></Field>
       <Field label="拼团价（元）"><input type="number" min="0" step="0.01" value={draft.group_price ?? ''} onChange={e => set('group_price', e.target.value)} className={inputCls} style={inputStyle} /></Field>

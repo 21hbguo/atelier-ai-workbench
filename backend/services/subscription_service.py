@@ -55,6 +55,7 @@ def _snapshot(plan: dict) -> dict:
         "max_concurrent_requests": int(plan.get("max_concurrent_requests") or 1),
         "is_free": bool(plan.get("is_free")),
         "enabled": bool(plan.get("enabled")),
+        "allow_group_buy": bool(plan.get("allow_group_buy")),
     }
 
 

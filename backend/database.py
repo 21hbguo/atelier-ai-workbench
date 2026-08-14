@@ -859,6 +859,9 @@ def init_db():
                 conn.execute("ALTER TABLE recharge_requests ADD COLUMN invite_code VARCHAR(32) DEFAULT ''")
             if not _column_exists(conn, "recharge_requests", "plan_id"):
                 conn.execute("ALTER TABLE recharge_requests ADD COLUMN plan_id INTEGER REFERENCES subscription_plans(id)")
+            # 套餐级拼团开关：默认关闭，admin 在套餐编辑中开启后才能创建拼团活动
+            if not _column_exists(conn, "subscription_plans", "allow_group_buy"):
+                conn.execute("ALTER TABLE subscription_plans ADD COLUMN allow_group_buy BOOLEAN NOT NULL DEFAULT FALSE")
             if not _column_exists(conn, "recharge_requests", "submit_ip"):
                 conn.execute("ALTER TABLE recharge_requests ADD COLUMN submit_ip VARCHAR(45) DEFAULT ''")
             if not _column_exists(conn, "recharge_requests", "inviter_user_id"):

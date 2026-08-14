@@ -532,7 +532,7 @@ def test_admin_create_group_buy_requires_valid_package(admin_client):
 
 def test_admin_create_group_buy_validates_size(admin_client):
     conn = MagicMock()
-    conn.execute.side_effect = [_row(id=7)]
+    conn.execute.side_effect = [_row(id=7, allow_group_buy=True)]
 
     admin_client.app.dependency_overrides[get_current_user] = lambda: {"user_id": 1, "is_admin": True}
     with _mock_get_db(subs_module, conn):
@@ -542,6 +542,21 @@ def test_admin_create_group_buy_validates_size(admin_client):
         })
     assert resp.status_code == 400
     assert "成团人数" in resp.json()["detail"]
+
+
+def test_admin_create_group_buy_requires_allow_group_buy(admin_client):
+    """套餐未开启拼团 → 400（套餐编辑里的「允许拼团」开关控制）。"""
+    conn = MagicMock()
+    conn.execute.side_effect = [_row(id=7, allow_group_buy=False)]
+
+    admin_client.app.dependency_overrides[get_current_user] = lambda: {"user_id": 1, "is_admin": True}
+    with _mock_get_db(subs_module, conn):
+        resp = admin_client.post("/api/admin/group-buys", json={
+            "package_id": 7, "group_size": 3, "group_price": 9.9,
+            "time_limit_min": 1440, "virtual_members": 1, "sort_order": 1, "status": 1,
+        })
+    assert resp.status_code == 400
+    assert "未开启拼团" in resp.json()["detail"]
 
 
 def test_admin_group_buys_requires_login(admin_client):

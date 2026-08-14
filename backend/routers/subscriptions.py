@@ -160,9 +160,13 @@ async def admin_create_group_buy(body: dict, admin=Depends(require_admin)):
     if not package_id:
         raise HTTPException(status_code=400, detail="package_id 不能为空")
     with get_db() as conn:
-        package = conn.execute("SELECT id FROM subscription_plans WHERE id = %s", (package_id,)).fetchone()
+        package = conn.execute(
+            "SELECT id, allow_group_buy FROM subscription_plans WHERE id = %s", (package_id,)
+        ).fetchone()
         if not package:
             raise HTTPException(status_code=404, detail="套餐不存在")
+        if not bool(package.get("allow_group_buy")):
+            raise HTTPException(status_code=400, detail="该套餐未开启拼团，请在套餐编辑中开启")
         group_size = int(body.get("group_size") or 0)
         group_price = float(body.get("group_price") or 0)
         time_limit_min = int(body.get("time_limit_min") or 1440)
@@ -237,9 +241,9 @@ async def admin_create_plan(body: dict, admin=Depends(require_admin)):
         try:
             row = conn.execute(
                 """INSERT INTO subscription_plans
-                   (code, name, description, price_rmb, cycle_days, grant_points, features, allowed_models, max_concurrent_requests, enabled, is_free, sort_order)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s, %s) RETURNING *""",
-                (str(body["code"]).strip(), str(body["name"]).strip(), str(body.get("description") or ""), float(body.get("price_rmb") or 0), int(body.get("cycle_days") or 30), Decimal(str(body.get("grant_points") or 0)), json.dumps(body.get("features") or {}), json.dumps(body.get("allowed_models") or []), int(body.get("max_concurrent_requests") or 1), bool(body.get("enabled", True)), bool(body.get("is_free", False)), int(body.get("sort_order") or 0)),
+                   (code, name, description, price_rmb, cycle_days, grant_points, features, allowed_models, max_concurrent_requests, enabled, is_free, sort_order, allow_group_buy)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s, %s, %s) RETURNING *""",
+                (str(body["code"]).strip(), str(body["name"]).strip(), str(body.get("description") or ""), float(body.get("price_rmb") or 0), int(body.get("cycle_days") or 30), Decimal(str(body.get("grant_points") or 0)), json.dumps(body.get("features") or {}), json.dumps(body.get("allowed_models") or []), int(body.get("max_concurrent_requests") or 1), bool(body.get("enabled", True)), bool(body.get("is_free", False)), int(body.get("sort_order") or 0), bool(body.get("allow_group_buy", False))),
             ).fetchone()
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"套餐保存失败: {exc}")
@@ -249,7 +253,7 @@ async def admin_create_plan(body: dict, admin=Depends(require_admin)):
 
 @admin_router.patch("/subscription-plans/{plan_id}")
 async def admin_update_plan(plan_id: int, body: dict, admin=Depends(require_admin)):
-    allowed = {"name", "description", "price_rmb", "cycle_days", "grant_points", "features", "allowed_models", "max_concurrent_requests", "enabled", "is_free", "sort_order"}
+    allowed = {"name", "description", "price_rmb", "cycle_days", "grant_points", "features", "allowed_models", "max_concurrent_requests", "enabled", "is_free", "sort_order", "allow_group_buy"}
     fields = [(key, value) for key, value in body.items() if key in allowed]
     if not fields:
         raise HTTPException(status_code=400, detail="没有可更新字段")
