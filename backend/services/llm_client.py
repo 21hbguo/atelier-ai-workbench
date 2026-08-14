@@ -2,7 +2,8 @@
 
 支持两种主流协议，业务代码无需关心 HTTP 细节：
 - OpenAI 兼容协议（DeepSeek / OpenAI / 各种中转站）: POST {base_url}/chat/completions, Authorization: Bearer
-  - 思考强度：body["thinking"] = {"type": "enabled", "reasoning_effort": low|medium|high|max|xhigh}
+  - 思考强度：DeepSeek 官方端点发顶层 body["thinking"] = {"type": "enabled"} + 顶层 body["reasoning_effort"] = 档位（官方规范）；
+    其余 OpenAI 兼容端点（中转代理等）发顶层 body["reasoning_effort"] = 档位（实测 proxy.example.test 代理只认顶层，嵌套被忽略）
 - Anthropic 协议: POST {base_url}/v1/messages, x-api-key + anthropic-version
   - 思考强度：body["thinking"] = {"type": "enabled", "budget_tokens": N}（按档位映射预算）
 
@@ -225,7 +226,14 @@ class LLMClient:
                     for t in tools
                 ]
             if reasoning_effort and reasoning_effort != "auto":
-                body["thinking"] = {"type": "enabled", "reasoning_effort": reasoning_effort}
+                if "deepseek" in base:
+                    # DeepSeek 官方 API：顶层 thinking 开关 + 顶层 reasoning_effort 并列（官方规范，
+                    # 见 api-docs.deepseek.com/guides/thinking_mode）
+                    body["thinking"] = {"type": "enabled"}
+                    body["reasoning_effort"] = reasoning_effort
+                else:
+                    # OpenAI 原生/中转代理：顶层 reasoning_effort（代理可能忽略嵌套 thinking）
+                    body["reasoning_effort"] = reasoning_effort
         if temperature is not None:
             body["temperature"] = temperature
         body.update(extra_body)
