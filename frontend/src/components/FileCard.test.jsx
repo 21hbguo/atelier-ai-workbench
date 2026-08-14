@@ -1,6 +1,11 @@
-import { render, screen, cleanup } from '@testing-library/react'
-import { describe, it, expect, beforeEach } from 'vitest'
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import FileCard, { formatFileSize } from './FileCard'
+import { imageAPI } from '../api'
+import * as downloadUtils from '../utils/download'
+
+vi.mock('../api', () => ({ imageAPI: { getBlobByUrl: vi.fn() } }))
+vi.mock('../utils/download', () => ({ saveBlob: vi.fn(), getDownloadFilename: vi.fn(() => 'download') }))
 
 beforeEach(() => cleanup())
 
@@ -34,16 +39,16 @@ describe('FileCard', () => {
     expect(screen.getByText('2.0 KB')).toBeInTheDocument()
   })
 
-  it('download link points to url and has download attribute', () => {
+  it('download button fetches blob via authed API and saves', async () => {
+    imageAPI.getBlobByUrl.mockResolvedValue({ data: new Blob(['pdf']), headers: {} })
+    downloadUtils.saveBlob.mockResolvedValue(true)
     render(<FileCard files={files} />)
-    const links = screen.getAllByText('下载')
-    expect(links.length).toBe(2)
-    const pdfLink = links[0].closest('a')
-    expect(pdfLink.getAttribute('href')).toBe('/api/files/report.pdf')
-    expect(pdfLink.getAttribute('download')).toBe('报告.pdf')
-    const csvLink = links[1].closest('a')
-    expect(csvLink.getAttribute('href')).toBe('/api/files/data.csv')
-    expect(csvLink.getAttribute('download')).toBe('data.csv')
+    const buttons = screen.getAllByText('下载')
+    expect(buttons.length).toBe(2)
+    fireEvent.click(buttons[0])
+    await waitFor(() => expect(imageAPI.getBlobByUrl).toHaveBeenCalledWith('/api/files/report.pdf'))
+    await waitFor(() => expect(downloadUtils.saveBlob).toHaveBeenCalled())
+    expect(screen.getByText('已保存')).toBeInTheDocument()
   })
 
   it('returns null when files is empty or undefined', () => {
