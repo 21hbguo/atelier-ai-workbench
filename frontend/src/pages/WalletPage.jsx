@@ -828,11 +828,13 @@ export default function WalletPage() {
                   const orig = Number(plan.features?.original_price_rmb)
                   const price = Number(plan.price_rmb)
                   const showOrig = Number.isFinite(orig) && orig > price
+                  const soldOut = !plan.enabled
                   const cycleText = plan.features?.package_type === 'credits' ? '永久有效' : (plan.cycle_days >= 36500 ? '长期有效' : `${plan.cycle_days} 天有效`)
                   return (
                     <div key={plan.id} className="flex flex-col rounded-2xl border p-4 transition-all duration-200 hover:-translate-y-0.5" style={{ borderColor: 'color-mix(in srgb, var(--accent) 18%, var(--border-color))', background: 'linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, var(--bg-card)), var(--bg-card) 60%)', boxShadow: 'var(--shadow-sm)' }}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{plan.name}</div>
+                        {soldOut && <div className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: 'color-mix(in srgb, var(--color-warning) 12%, transparent)', color: 'var(--color-warning)' }}>暂售罄</div>}
                         <div className="shrink-0 text-right">
                           <div className="text-lg font-bold leading-none tabular-nums" style={{ color: 'var(--accent)' }}>¥{plan.price_rmb}</div>
                           {showOrig && <div className="mt-0.5 text-[10px] tabular-nums line-through" style={{ color: 'var(--text-secondary)' }}>¥{orig}</div>}
@@ -850,8 +852,8 @@ export default function WalletPage() {
                         </div>
                       </div>
                       {!plan.is_free && (
-                        <button disabled={subscriptionSubmitting} onClick={() => handleSubscriptionOrder(plan)} className="mt-4 flex h-10 w-full items-center justify-center rounded-xl text-sm font-medium text-white transition-all duration-150 hover:brightness-105 active:scale-[0.98] disabled:opacity-50" style={{ background: 'linear-gradient(135deg, var(--accent), var(--accent-hover))', boxShadow: '0 6px 16px color-mix(in srgb, var(--accent) 25%, transparent)' }}>
-                          {subscriptionSubmitting ? '提交中...' : '购买 / 续费'}
+                        <button disabled={subscriptionSubmitting || soldOut} onClick={() => handleSubscriptionOrder(plan)} className="mt-4 flex h-10 w-full items-center justify-center rounded-xl text-sm font-medium text-white transition-all duration-150 hover:brightness-105 active:scale-[0.98] disabled:opacity-50" style={soldOut ? { border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-secondary)', cursor: 'not-allowed' } : { background: 'linear-gradient(135deg, var(--accent), var(--accent-hover))', boxShadow: '0 6px 16px color-mix(in srgb, var(--accent) 25%, transparent)' }}>
+                          {subscriptionSubmitting ? '提交中...' : soldOut ? '暂售罄' : '购买 / 续费'}
                         </button>
                       )}
                     </div>

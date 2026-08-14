@@ -311,10 +311,11 @@ def get_entitlements(user_id: int) -> dict:
         return get_entitlements_in_conn(conn, user_id)
 
 
-def list_enabled_plans() -> list[dict]:
+def list_plans() -> list[dict]:
+    """用户端套餐列表：返回全部套餐（含 enabled 字段），由前端把 enabled=false 渲染为「暂售罄」。"""
     from backend.database import get_db
     with get_db() as conn:
-        rows = conn.execute("SELECT * FROM subscription_plans WHERE enabled = TRUE ORDER BY sort_order ASC, id ASC").fetchall()
+        rows = conn.execute("SELECT * FROM subscription_plans ORDER BY sort_order ASC, id ASC").fetchall()
     return [_snapshot(_plan_dict(row)) for row in rows]
 
 

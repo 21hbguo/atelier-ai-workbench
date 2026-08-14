@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from backend.auth import get_current_user, get_client_ip, require_admin
 from backend.database import get_db
 from backend.services.subscription_service import (
-    create_order, get_current_state, get_usage, list_enabled_plans, approve_order, reject_order,
+    create_order, get_current_state, get_usage, list_plans, approve_order, reject_order,
     update_order_proof, refund_order, list_subscriptions, grant_subscription, extend_subscription,
     set_subscription_status,
 )
@@ -48,7 +48,7 @@ def _clean_row(row):
 
 @router.get("/plans")
 async def subscription_plans(user=Depends(get_current_user)):
-    return {"items": list_enabled_plans()}
+    return {"items": list_plans()}
 
 
 @router.get("/me")

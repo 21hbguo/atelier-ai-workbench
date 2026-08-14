@@ -207,6 +207,7 @@ export default function SubscriptionDialog({ open, onClose }) {
                     <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
                       {section.plans.map(plan => {
                         const isCurrent = hasPlan && plan.id === subscription.plan.id
+                        const soldOut = !plan.enabled
                         const orig = Number(plan.features?.original_price_rmb)
                         const price = Number(plan.price_rmb)
                         const showOrig = Number.isFinite(orig) && orig > price
@@ -235,6 +236,7 @@ export default function SubscriptionDialog({ open, onClose }) {
                             )}
                             <div className="flex items-start justify-between gap-2">
                               <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{plan.name}</span>
+                              {soldOut && <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: 'color-mix(in srgb, var(--color-warning) 12%, transparent)', color: 'var(--color-warning)' }}>暂售罄</span>}
                               {discount && <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: 'color-mix(in srgb, var(--accent) 12%, transparent)', color: 'var(--accent)' }}>{discount}</span>}
                             </div>
                             <div className="mt-1 text-xs leading-5" style={{ color: 'var(--text-secondary)' }}>{plan.description || '按周期发放积分和功能权益'}</div>
@@ -259,13 +261,16 @@ export default function SubscriptionDialog({ open, onClose }) {
                             </div>
                             <button
                               type="button"
+                              disabled={soldOut}
                               onClick={() => startPay(plan)}
-                              className={`mt-4 flex h-10 w-full items-center justify-center rounded-xl text-sm font-medium transition-all duration-150 active:scale-[0.98] ${isCurrent ? '' : 'hover:brightness-105'}`}
-                              style={isCurrent
-                                ? { border: '1px solid color-mix(in srgb, var(--accent) 35%, var(--border-color))', color: 'var(--accent)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)' }
-                                : { background: 'linear-gradient(135deg, var(--accent), var(--accent-hover))', color: '#fff', boxShadow: '0 6px 16px color-mix(in srgb, var(--accent) 25%, transparent)' }}
+                              className={`mt-4 flex h-10 w-full items-center justify-center rounded-xl text-sm font-medium transition-all duration-150 active:scale-[0.98] ${isCurrent && !soldOut ? '' : soldOut ? '' : 'hover:brightness-105'}`}
+                              style={soldOut
+                                ? { border: '1px solid var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-card)', cursor: 'not-allowed' }
+                                : isCurrent
+                                  ? { border: '1px solid color-mix(in srgb, var(--accent) 35%, var(--border-color))', color: 'var(--accent)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)' }
+                                  : { background: 'linear-gradient(135deg, var(--accent), var(--accent-hover))', color: '#fff', boxShadow: '0 6px 16px color-mix(in srgb, var(--accent) 25%, transparent)' }}
                             >
-                              {plan.is_free ? '免费使用' : isCurrent ? '当前套餐' : '购买'}
+                              {plan.is_free ? '免费使用' : isCurrent ? '当前套餐' : soldOut ? '暂售罄' : '购买'}
                             </button>
                           </div>
                         )
