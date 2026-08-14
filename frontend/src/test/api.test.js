@@ -747,4 +747,37 @@ describe('chatAPI.streamTask SSE events', () => {
     await p
     expect(onError).not.toHaveBeenCalled()
   })
+
+  it('reports network recovery when stream closes without any terminal event', async () => {
+    // 终态帧（done/error/stopped）在送达前被代理/网络截断：流 EOF 但无终态 →
+    // 必须按网络异常上报（isNetwork=true），由调用方转兜底轮询，避免界面卡死
+    global.fetch = vi.fn(() => Promise.resolve(sseResponse([
+      ['chunk', { text: '部分内容' }],
+    ])))
+    const onError = vi.fn()
+    const onDone = vi.fn()
+    await api.chatAPI.streamTask('task-1', { onError, onDone })
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError.mock.calls[0][1]).toBe(true)
+    expect(onDone).not.toHaveBeenCalled()
+  })
+
+  it('does not report network error when done closes the stream', async () => {
+    global.fetch = vi.fn(() => Promise.resolve(sseResponse([
+      ['done', { text: 'ok' }],
+    ])))
+    const onError = vi.fn()
+    await api.chatAPI.streamTask('task-1', { onError })
+    expect(onError).not.toHaveBeenCalled()
+  })
+
+  it('does not double-report when error event closes the stream', async () => {
+    global.fetch = vi.fn(() => Promise.resolve(sseResponse([
+      ['error', { detail: '积分不足' }],
+    ])))
+    const onError = vi.fn()
+    await api.chatAPI.streamTask('task-1', { onError })
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError.mock.calls[0][1]).not.toBe(true)
+  })
 })

@@ -234,6 +234,7 @@ export const chatAPI = {
       const reader = resp.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
+      let receivedTerminal = false
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -256,12 +257,16 @@ export const chatAPI = {
             else if (eventType === 'file') onFile?.(data)
             else if (eventType === 'image_task') onImageTask?.(data)
             else if (eventType === 'heartbeat') onHeartbeat?.(data)
-            else if (eventType === 'done') onDone?.(data)
-            else if (eventType === 'error') onError?.(data.detail)
-            else if (eventType === 'stopped') onStopped?.(data)
+            else if (eventType === 'done') { receivedTerminal = true; onDone?.(data) }
+            else if (eventType === 'error') { receivedTerminal = true; onError?.(data.detail) }
+            else if (eventType === 'stopped') { receivedTerminal = true; onStopped?.(data) }
           }
         }
       }
+      // 流正常关闭但未收到任何终态事件（done/error/stopped）：终态帧可能在送达前
+      // 被代理/网络截断（双层反代 + CDN 链路偶发尾帧丢失），任务仍在后台继续且结果
+      // 已/将落库——按网络异常语义上报，由调用方转兜底轮询续看，避免界面永久卡在生成中。
+      if (!receivedTerminal) onError?.('连接中断，正在恢复…', true)
       // 流正常关闭（done 后服务端关闭）：静默结束。未收到 done 也视为订阅结束——
       // 任务仍在后台继续，结果由历史接口呈现，不在此补 onDone/onError（避免误判失败）。
     } catch (e) {
