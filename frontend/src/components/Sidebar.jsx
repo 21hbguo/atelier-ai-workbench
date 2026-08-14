@@ -19,6 +19,7 @@ const formatDate = ts => {
 const navItems = [
   { path: '/chat', icon: MessageCircle, label: 'AI 助手', shortLabel: '助手' },
   { path: '/draw', icon: Sparkles, label: 'AI 绘画', shortLabel: '绘画' },
+  { path: '/notifications', icon: Bell, label: '通知', shortLabel: '通知' },
 ]
 
 const subNavItems = [
@@ -26,10 +27,9 @@ const subNavItems = [
   { path: '/works', icon: Image, label: '我的作品' },
   { path: '/square', icon: Globe, label: '广场' },
   { path: '/prompts', icon: BookOpen, label: '我的提示词' },
-  { path: '/notifications', icon: Bell, label: '通知' },
 ]
 
-const SUB_NAV_PATHS = ['/draw', '/works', '/square', '/prompts', '/notifications']
+const SUB_NAV_PATHS = ['/draw', '/works', '/square', '/prompts']
 
 export default function Sidebar({ open, onClose }) {
   const dialog = useAppDialog()
@@ -46,7 +46,8 @@ export default function Sidebar({ open, onClose }) {
   const [rechargePendingCount, setRechargePendingCount] = useState(0)
   const [unreadNoticeCount, setUnreadNoticeCount] = useState(0)
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('nav-collapsed') === '1')
-  const [subscription, setSubscription] = useState(null)
+  const [subscription, setSubscription] = useState(() => subscriptionAPI.cachedMe?.() || null)
+  const [subscriptionReady, setSubscriptionReady] = useState(() => Boolean(subscriptionAPI.cachedMe?.()))
   const [subOpen, setSubOpen] = useState(false)
 
   useEffect(() => {
@@ -67,21 +68,25 @@ export default function Sidebar({ open, onClose }) {
     }).catch(() => {})
     Promise.allSettled([notificationAPI.unreadCount(), announcementAPI.getUnread()]).then(([noticeRes, annRes])=>setUnreadNoticeCount((noticeRes.status==='fulfilled'?(noticeRes.value.data.count||0):0)+(annRes.status==='fulfilled'?((annRes.value.data.items||[]).length):0))).catch(() => {})
     if (isAdmin) fetch('/api/admin/recharge-requests?page=1&size=1&status=pending',{ credentials:'include' }).then(r=>r.ok?r.json():null).then(data=>setRechargePendingCount(data?.total||0)).catch(()=>{})
-    subscriptionAPI.me().then(res => setSubscription(res.data)).catch(() => {})
+    subscriptionAPI.me().then(res => { setSubscription(res.data); setSubscriptionReady(true) }).catch(() => {})
 
     const handleUpdate = () => {
       const u = readUser()
       if (u) setPoints(u.points ?? 0)
       pointsAPI.balance().then(res => { setDailyRemaining(res.data?.ai_daily_remaining === null ? null : Number(res.data?.ai_daily_remaining || 0)); setDailyTotal(res.data?.ai_daily_total === null ? null : Number(res.data?.ai_daily_total || 0)) }).catch(() => {})
     }
-    const handleSubscriptionUpdate = () => subscriptionAPI.me().then(res => setSubscription(res.data)).catch(() => {})
+    const handleSubscriptionUpdate = () => subscriptionAPI.me(true).then(res => { setSubscription(res.data); setSubscriptionReady(true) }).catch(() => {})
     const handleNoticeUpdate = () => Promise.allSettled([notificationAPI.unreadCount(),announcementAPI.getUnread()]).then(([noticeRes,annRes])=>setUnreadNoticeCount((noticeRes.status==='fulfilled'?(noticeRes.value.data.count||0):0)+(annRes.status==='fulfilled'?((annRes.value.data.items||[]).length):0))).catch(() => {})
     const handleRechargeUpdate = e => setRechargePendingCount(Number(e?.detail?.pending)||0)
+    const handleVisibilityChange = () => { if (document.visibilityState === 'visible') handleSubscriptionUpdate() }
     window.addEventListener('points-updated', handleUpdate)
     window.addEventListener('subscriptions-updated', handleSubscriptionUpdate)
     window.addEventListener('notifications-updated', handleNoticeUpdate)
     window.addEventListener('admin-recharge-updated', handleRechargeUpdate)
-    return () => { window.removeEventListener('points-updated', handleUpdate); window.removeEventListener('subscriptions-updated', handleSubscriptionUpdate); window.removeEventListener('notifications-updated', handleNoticeUpdate); window.removeEventListener('admin-recharge-updated', handleRechargeUpdate) }
+    window.addEventListener('focus', handleSubscriptionUpdate)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    const subscriptionTimer = window.setInterval(handleSubscriptionUpdate, 30000)
+    return () => { window.removeEventListener('points-updated', handleUpdate); window.removeEventListener('subscriptions-updated', handleSubscriptionUpdate); window.removeEventListener('notifications-updated', handleNoticeUpdate); window.removeEventListener('admin-recharge-updated', handleRechargeUpdate); window.removeEventListener('focus', handleSubscriptionUpdate); document.removeEventListener('visibilitychange', handleVisibilityChange); window.clearInterval(subscriptionTimer) }
   }, [isAdmin])
 
   const handleCheckIn = async () => {
@@ -128,14 +133,14 @@ export default function Sidebar({ open, onClose }) {
           <nav className="flex-1 px-2 py-2 space-y-0.5 overflow-y-auto">
             {navItems.map(({ path, icon: Icon, label, shortLabel }) => {
               const active = location.pathname === path
-              // 「AI 绘画」仅在绘画相关子页面（/works、/square、/prompts、/notifications 等）保持组高亮；/chat 属于 AI 助手，不应高亮 AI 绘画
+              // 「AI 绘画」仅在绘画相关子页面（/works、/square、/prompts 等）保持组高亮；/chat 属于 AI 助手、/notifications 为独立 tab，均不应高亮 AI 绘画
               const groupActive = path === '/draw' && SUB_NAV_PATHS.includes(location.pathname) && !active
               return (
                 <Link key={path} to={path}
                   className={`sidebar-nav-link ${collapsed ? 'flex-col items-center !h-auto !gap-0.5 !py-1 text-center' : ''} ${(active || groupActive) ? 'bg-accent/10' : 'hover:bg-bg-hover'}`}
                   style={{ color: (active || groupActive) ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: (active || groupActive) ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined }}
                   onClick={() => onClose?.()}>
-                  <Icon size={16} className="sidebar-nav-icon" /><span className={`sidebar-nav-text ${collapsed ? 'text-[10px] leading-none truncate max-w-full' : ''}`}>{collapsed ? shortLabel : label}</span>
+                  <Icon size={16} className="sidebar-nav-icon" /><span className={`sidebar-nav-text ${collapsed ? 'text-[10px] leading-none truncate max-w-full' : ''}`}>{collapsed ? shortLabel : label}</span>{path === '/notifications' && unreadNoticeCount > 0 && <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{ background: 'var(--accent)' }}>{unreadNoticeCount > 99 ? '99+' : unreadNoticeCount}</span>}
                 </Link>
               )
             })}
@@ -160,10 +165,11 @@ export default function Sidebar({ open, onClose }) {
             {/* 套餐入口卡片：参考 app-sidebar 底部「开通套餐」卡（登录与否均显示） */}
             {(() => {
               const hasPlan = subscription?.plan && !subscription.plan.is_free
+              const planLabel = hasPlan ? subscription.plan.name : (collapsed ? '免费版' : '免费版 · 开通套餐')
               return (
                 <button
                   type="button"
-                  title={hasPlan ? `${subscription.plan.name} · 点击管理套餐` : '免费版 · 开通套餐'}
+                  title={!subscriptionReady ? '套餐信息加载中' : hasPlan ? `${subscription.plan.name} · 点击管理套餐` : '免费版 · 开通套餐'}
                   className={`group flex flex-col w-full rounded-xl border transition-all hover:bg-bg-hover cursor-pointer text-left ${collapsed ? 'items-center justify-center py-2' : 'px-2 py-2'}`}
                   style={{ borderColor: 'color-mix(in srgb, var(--accent) 25%, transparent)' }}
                   onClick={() => setSubOpen(true)}
@@ -171,12 +177,12 @@ export default function Sidebar({ open, onClose }) {
                   <div className={`flex items-center gap-1.5 ${collapsed ? 'flex-col' : ''}`}>
                     {hasPlan && <Crown size={12} className="shrink-0" style={{ color: 'var(--accent)' }} />}
                     <span className={`font-semibold truncate max-w-full ${collapsed ? 'text-[10px] leading-none text-center' : 'text-[11px]'}`} style={{ color: 'var(--text-primary)' }}>
-                      {hasPlan ? subscription.plan.name : (collapsed ? '免费版' : '免费版 · 开通套餐')}
+                      {subscriptionReady ? planLabel : <span aria-label="套餐加载中" className="block h-3 w-20 rounded-full animate-pulse" style={{ background: 'var(--bg-hover)' }} />}
                     </span>
                   </div>
                   {!collapsed && (
                     <div className="text-[10px] leading-snug mt-1" style={{ color: 'var(--text-secondary)' }}>
-                      <div className="truncate">{dailyTotal === null ? '不限次' : dailyTotal > 0 ? `今日已用 ${Math.max(0, dailyTotal - dailyRemaining)}/${dailyTotal} 次` : (hasPlan ? (subscription.plan.features?.package_type === 'credits' ? '永久积分' : `周期至 ${formatDate(subscription.cycle?.period_end)}`) : '解锁更多模型')}</div>
+                      <div className="truncate">{subscriptionReady ? (dailyTotal === null ? '不限次' : dailyTotal > 0 ? `今日已用 ${Math.max(0, dailyTotal - dailyRemaining)}/${dailyTotal} 次` : (hasPlan ? (subscription.plan.features?.package_type === 'credits' ? '永久积分' : `周期至 ${formatDate(subscription.cycle?.period_end)}`) : '解锁更多模型')) : <span aria-label="套餐权益加载中" className="block h-2.5 w-24 rounded-full animate-pulse" style={{ background: 'var(--bg-hover)' }} />}</div>
                       <div className="truncate">{points} 积分</div>
                     </div>
                   )}
@@ -232,7 +238,7 @@ export default function Sidebar({ open, onClose }) {
             ) : (
             <>
             <div className="flex-1 min-h-0 overflow-y-auto py-2 px-2 space-y-0.5">
-              {subNavItems.filter(item => item.path !== '/notifications' || isAdmin).map(({ path, icon: Icon, label }) => {
+              {subNavItems.map(({ path, icon: Icon, label }) => {
                 const active = location.pathname === path
                 const linkClass = `sidebar-nav-link ${active ? 'bg-accent/10' : 'hover:bg-bg-hover'}`
                 const linkStyle = { color: active ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: active ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined }
@@ -245,7 +251,7 @@ export default function Sidebar({ open, onClose }) {
                 }
                 return (
                   <Link key={path} to={path} className={linkClass} style={linkStyle} onClick={() => onClose?.()}>
-                    <Icon size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">{label}</span>{path==='/notifications'&&unreadNoticeCount>0&&<span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{background:'var(--accent)'}}>{unreadNoticeCount>99?'99+':unreadNoticeCount}</span>}
+                    <Icon size={16} className="sidebar-nav-icon" /><span className="sidebar-nav-text">{label}</span>
                   </Link>
                 )
               })}

@@ -3,7 +3,6 @@ import { Link, useLocation } from 'react-router-dom'
 import { Menu } from 'lucide-react'
 import Sidebar from './Sidebar'
 import { announcementAPI, notificationAPI } from '../api'
-import { readUser } from '../auth'
 
 const quickNavItems = [
   { label: '助手', path: '/chat' },
@@ -17,7 +16,6 @@ export default function MainLayout({ children, dragProps }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [unreadNoticeCount, setUnreadNoticeCount] = useState(0)
   const location = useLocation()
-  const isAdmin = Boolean(readUser()?.is_admin)
   useEffect(()=>{
     let timer=0;
     const load=()=>Promise.allSettled([
@@ -32,6 +30,19 @@ export default function MainLayout({ children, dragProps }) {
     return()=>{window.clearTimeout(timer);window.removeEventListener('notifications-updated',load)}
   },[])
 
+  // 手机端抽屉打开时推入一条历史记录：系统返回键/返回手势触发 popstate 即关闭抽屉，而不是退出应用或回退页面
+  useEffect(() => {
+    if (!sidebarOpen) return
+    window.history.pushState({ atelierSidebar: 'open' }, '')
+    const handlePopState = () => setSidebarOpen(false)
+    window.addEventListener('popstate', handlePopState)
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+      // 若当前栈顶仍是自己推入的记录（经遮罩/链接等途径关闭），回退收回，避免残留多余历史
+      if (window.history.state?.atelierSidebar === 'open') window.history.back()
+    }
+  }, [sidebarOpen])
+
   return (
     <div className="flex h-[100dvh] overflow-hidden safe-area-bottom" {...dragProps}>
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
@@ -40,7 +51,7 @@ export default function MainLayout({ children, dragProps }) {
           <div className="mobile-topbar-inner">
             <button onClick={() => setSidebarOpen(true)} className="mobile-topbar-menu" style={{ color: 'var(--text-primary)' }}><Menu size={20} className="block" /></button>
             <div className="mobile-topbar-links scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
-            {quickNavItems.filter(item => item.path !== '/notifications' || isAdmin).map(item => {
+            {quickNavItems.map(item => {
               const isActive = item.path === '/' ? location.pathname === '/' : location.pathname.startsWith(item.path)
               return (
                 <Link key={item.path} to={item.path} className="mobile-topbar-link" style={{ color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', borderBottomColor: isActive ? 'var(--accent)' : 'transparent' }}>

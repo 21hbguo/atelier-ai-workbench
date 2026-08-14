@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-library/react'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 
 const {
@@ -119,11 +119,11 @@ describe('MainLayout', () => {
     expect(labels).toEqual(['助手', '绘画', '作品', '广场', '通知'])
   })
 
-  it('hides notification link in topbar for regular users', () => {
+  it('shows notification link in topbar for regular users', () => {
     renderLayout()
     const topbarLinks = document.querySelectorAll('.mobile-topbar-link-text')
     const labels = [...topbarLinks].map(el => el.textContent)
-    expect(labels).toEqual(['助手', '绘画', '作品', '广场'])
+    expect(labels).toEqual(['助手', '绘画', '作品', '广场', '通知'])
   })
 
   it('opens sidebar when menu button is clicked', () => {
@@ -132,6 +132,32 @@ describe('MainLayout', () => {
     fireEvent.click(menuBtn)
     const sidebar = document.querySelector('aside')
     expect(sidebar.parentElement.className).toContain('translate-x-0')
+  })
+
+  it('pushes history marker when sidebar opens', () => {
+    renderLayout()
+    fireEvent.click(document.querySelector('.mobile-topbar-menu'))
+    expect(window.history.state?.atelierSidebar).toBe('open')
+    window.history.replaceState(null, '')
+  })
+
+  it('closes sidebar on system back (popstate)', () => {
+    renderLayout()
+    fireEvent.click(document.querySelector('.mobile-topbar-menu'))
+    act(() => { window.dispatchEvent(new PopStateEvent('popstate')) })
+    const sidebar = document.querySelector('aside')
+    expect(sidebar.parentElement.className).toContain('-translate-x-full')
+    window.history.replaceState(null, '')
+  })
+
+  it('goes back to clean up pushed history when closing via overlay', () => {
+    const backSpy = vi.spyOn(window.history, 'back').mockImplementation(() => {})
+    renderLayout()
+    fireEvent.click(document.querySelector('.mobile-topbar-menu'))
+    const overlay = document.querySelector('[class*="fixed"][class*="inset-0"][class*="bg-black"]')
+    fireEvent.click(overlay)
+    expect(backSpy).toHaveBeenCalledTimes(1)
+    backSpy.mockRestore()
   })
 
   it('fetches unread counts on mount', async () => {

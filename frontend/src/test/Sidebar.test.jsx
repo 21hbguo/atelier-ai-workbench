@@ -139,7 +139,6 @@ describe('Sidebar', () => {
     expect(screen.getByText('我的作品')).toBeInTheDocument()
     expect(screen.getByText('广场')).toBeInTheDocument()
     expect(screen.getByText('我的提示词')).toBeInTheDocument()
-    expect(screen.getByText('通知')).toBeInTheDocument()
     expect(screen.getByText('切换为网格')).toBeInTheDocument()
     expect(screen.getByText('桌面列数 3列')).toBeInTheDocument()
   })
@@ -160,6 +159,13 @@ describe('Sidebar', () => {
     // 左下角用户行显示账户名（昵称优先）
     expect(screen.getByText('测试员')).toBeInTheDocument()
     expect(screen.queryByText('今日已用')).not.toBeInTheDocument()
+  })
+
+  it('does not show the free plan before the subscription request resolves', () => {
+    subscriptionMeMock.mockImplementation(() => new Promise(() => {}))
+    renderSidebar()
+    expect(screen.getByLabelText('套餐加载中')).toBeInTheDocument()
+    expect(screen.queryByText('免费版 · 开通套餐')).not.toBeInTheDocument()
   })
 
   it('shows first char of display name in avatar circle', () => {
@@ -234,11 +240,11 @@ describe('Sidebar', () => {
     await waitFor(() => expect(screen.getByText('99+')).toBeInTheDocument())
   })
 
-  it('hides notification item for regular users', () => {
+  it('shows notification item in main nav for all users', () => {
     mockLocation = { pathname: '/draw', search: '' }
     renderSidebar()
     expect(screen.getByText('我的作品')).toBeInTheDocument()
-    expect(screen.queryByText('通知')).not.toBeInTheDocument()
+    expect(screen.getByText('通知').closest('a')).toHaveAttribute('href', '/notifications')
   })
 
   it('renders mobile overlay when open and closes on overlay click', () => {
