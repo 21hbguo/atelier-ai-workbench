@@ -753,7 +753,8 @@ async def list_messages(session_id: int, user=Depends(get_current_user)):
     wanted: set[int] = set()
     for r in rows:
         try:
-            fids = json.loads(r["file_ids"]) if r["file_ids"] else []
+            # psycopg3 会把 jsonb 自动反序列化为 list/dict，此时 json.loads 会抛 TypeError，需兼容
+            fids = r["file_ids"] if isinstance(r["file_ids"], list) else (json.loads(r["file_ids"]) if r["file_ids"] else [])
         except (TypeError, ValueError):
             fids = []
         for fid in fids:
@@ -778,7 +779,7 @@ async def list_messages(session_id: int, user=Depends(get_current_user)):
         files = []
         if r["file_ids"]:
             try:
-                fids = json.loads(r["file_ids"])
+                fids = r["file_ids"] if isinstance(r["file_ids"], list) else json.loads(r["file_ids"])
             except (TypeError, ValueError):
                 fids = []
             for fid in fids:
@@ -791,19 +792,19 @@ async def list_messages(session_id: int, user=Depends(get_current_user)):
         citations = []
         if r["citations"]:
             try:
-                citations = json.loads(r["citations"])
+                citations = r["citations"] if isinstance(r["citations"], list) else json.loads(r["citations"])
             except (TypeError, ValueError):
                 citations = []
         widgets = []
         if r["widgets"]:
             try:
-                widgets = json.loads(r["widgets"])
+                widgets = r["widgets"] if isinstance(r["widgets"], list) else json.loads(r["widgets"])
             except (TypeError, ValueError):
                 widgets = []
         sent_files = []
         if r["files"]:
             try:
-                sent_files = json.loads(r["files"])
+                sent_files = r["files"] if isinstance(r["files"], list) else json.loads(r["files"])
             except (TypeError, ValueError):
                 sent_files = []
         items.append({
