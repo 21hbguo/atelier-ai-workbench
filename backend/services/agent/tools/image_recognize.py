@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 # 单次识别图片上限（与聊天 image_file_ids 上限一致）
 MAX_IMAGES = 4
+# 单图大小上限：与聊天上传 MAX_FILE_SIZE 一致（20MB），防超大文件直发 OOM
+MAX_IMAGE_BYTES = 20 * 1024 * 1024
 # 返回描述文本长度上限（工具结果预算保护）
 MAX_DESCRIPTION_CHARS = 2000
 # 识别调用超时（秒）：图片识别比纯文本慢，给足时间
