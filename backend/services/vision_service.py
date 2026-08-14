@@ -1,8 +1,8 @@
 """图片识别核心服务：给不具备视觉能力的主模型当「眼睛」用。
 
 系统侧强制识别（chat.py 带图请求）与 image_recognize 工具共用这一套实现，
-避免两套识别逻辑漂移。识别引擎优先 gpt-5.6-luna（便宜，约 $0.001/张），
-不可用时回退第一个启用的视觉模型（get_vision_default()）。
+避免两套识别逻辑漂移。识别引擎固定 gpt-5.6-luna（便宜，约 $0.001/张），
+不可用时由调用方降级（不自动换其它视觉模型）。
 
 成本参考：单张图约 5500 输入 tokens，gpt-5.6-luna 输入 $0.2/M tokens，
 一次识别约 $0.001（不到 1 分钱人民币），远低于主模型盲猜/多轮试错。
@@ -18,7 +18,7 @@ from pathlib import Path
 from backend.config import CHAT_UPLOAD_DIR
 from backend.services.agent.workspace import user_workspace_root
 from backend.services.llm_client import LLMClient, LLMError
-from backend.services.llm_model_service import get_by_model_id, get_vision_default
+from backend.services.llm_model_service import get_by_model_id
 
 logger = logging.getLogger(__name__)
 
@@ -45,11 +45,11 @@ def _resolve_secret(value: str) -> str:
 
 
 def pick_vision_model() -> dict | None:
-    """识别引擎选择：优先 gpt-5.6-luna（便宜），否则回退第一个启用的视觉模型。"""
+    """识别引擎选择：固定 gpt-5.6-luna（便宜）。不可用（禁用/未配置接口）返回 None，由调用方降级。"""
     m = get_by_model_id(VISION_MODEL_ID)
     if m and m.get("enabled") and (m.get("base_url") or m.get("api_key")):
         return m
-    return get_vision_default()
+    return None
 
 
 def _image_path(user_id: int, storage_name: str) -> Path:

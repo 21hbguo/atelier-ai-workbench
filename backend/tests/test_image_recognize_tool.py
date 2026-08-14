@@ -109,32 +109,28 @@ def test_recognize_images_not_in_session_returns_error():
 def test_recognize_no_vision_model_returns_error():
     """识别引擎不可用（pick_vision_model 返回 None）：VisionError 包装为工具错误文本。"""
     with _mock_get_db([{"id": 23, "original_name": "a.png", "storage_name": "uploads/a.png"}]), \
-         patch.object(vision_svc, "get_by_model_id", return_value=None), \
-         patch.object(vision_svc, "get_vision_default", return_value=None):
+         patch.object(vision_svc, "get_by_model_id", return_value=None):
         result = _run(tool.image_recognize({"file_ids": [23]}, _ctx()))
     assert "没有可用的图片识别模型" in result
 
 
-def test_recognize_falls_back_to_vision_default(tmp_path, monkeypatch):
-    """luna 不可用时回退 get_vision_default()（vision_service 内选择）。"""
+# luna 不可用即报错，不再回退其它视觉模型（2026-08-14 决策：识别引擎固定 luna）
+
+
+def test_recognize_luna_disabled_returns_error(tmp_path, monkeypatch):
+    """luna 档案禁用（enabled=False）→ pick_vision_model 返回 None → 工具报错，不回退。"""
     (tmp_path / "uploads").mkdir(exist_ok=True)
-    img = tmp_path / "uploads" / "c.png"
-    img.write_bytes(b"png")
+    (tmp_path / "uploads" / "c.png").write_bytes(b"png")
     monkeypatch.setenv("ATELIER_PROXY_API_KEY", "sk-test-123")
     monkeypatch.setattr(vision_svc, "user_workspace_root", lambda uid: tmp_path)
     rows = [{"id": 25, "original_name": "c.png", "storage_name": "uploads/c.png"}]
-    fallback = _vision_model("gpt-5.6-terra")
-
-    async def _fake_complete(**kwargs):
-        assert kwargs["override"]["model"] == "gpt-5.6-terra"
-        return "识别结果"
+    luna_disabled = _vision_model("gpt-5.6-luna")
+    luna_disabled["enabled"] = False
 
     with _mock_get_db(rows), \
-         patch.object(vision_svc, "get_by_model_id", return_value=None), \
-         patch.object(vision_svc, "get_vision_default", return_value=fallback), \
-         patch.object(vision_svc.LLMClient, "complete", new=_fake_complete):
+         patch.object(vision_svc, "get_by_model_id", return_value=luna_disabled):
         result = _run(tool.image_recognize({"file_ids": [25]}, _ctx()))
-    assert result == "识别结果"
+    assert "没有可用的图片识别模型" in result
 
 
 def test_recognize_file_missing_returns_error(tmp_path, monkeypatch):
