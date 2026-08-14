@@ -39,6 +39,13 @@ from backend.services.subscription_service import get_entitlements_in_conn
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
+
+def _apply_tool_blacklist(tools_names: list[str] | None) -> list[str] | None:
+    """按 DISABLED_TOOLS（环境变量，逗号分隔）过滤工具列表；未配置时原样返回。"""
+    if not tools_names or not config.DISABLED_TOOLS:
+        return tools_names
+    return [name for name in tools_names if name not in config.DISABLED_TOOLS]
+
 # 每用户每分钟发送次数限制（内存滑动窗口，进程重启重置，够防刷）
 _rate_buckets: dict[int, deque] = {}
 _active_chat_requests: dict[int, int] = {}
@@ -84,17 +91,27 @@ def _attach_image_blocks(messages: list[dict], image_blocks: list[dict]) -> list
     return messages
 
 
-def _attach_image_note(messages: list[dict]) -> list[dict]:
-    """无可用视觉模型时的降级注入：不附加图片块，改为在最后一条 user 消息追加说明文本，
-    让模型自然回复"当前模型无法查看图片"，而不是给用户硬报错。
+def _attach_image_note(messages: list[dict], file_ids: list[int] | None = None) -> list[dict]:
+    """无可用视觉模型时的降级注入：不附加图片块，改为在最后一条 user 消息追加说明文本。
+
+    - file_ids 非空（agent 通道）：说明里给出图片 id 并引导主模型调用 image_recognize
+      工具识别（工具内部用便宜视觉模型识别，主模型基于识别结果回答）；
+    - file_ids 为空（无工具通道）：仅告知模型无法查看图片，让模型如实回复用户。
 
     仅影响真正发给 LLM 的 messages，历史消息与落库内容不动。
     """
-    note = (
-        "【系统说明】用户刚刚上传了一张图片，但当前模型不支持图片识别（未配置视觉能力），"
-        "你无法看到该图片内容。请如实告知用户：本模型无法查看图片，"
-        "建议切换到支持视觉的模型（如 GPT-5.6 系列）后重新发送图片。"
-    )
+    if file_ids:
+        note = (
+            f"【系统说明】用户上传了图片（chat_files id: {file_ids}），但当前模型不支持图片识别，"
+            "你看不到图片内容。请调用 image_recognize 工具识别这些图片（把上述 id 作为 file_ids "
+            "参数传入），基于识别结果回答用户；若工具不可用，则如实告知用户当前模型无法查看图片。"
+        )
+    else:
+        note = (
+            "【系统说明】用户刚刚上传了一张图片，但当前模型不支持图片识别（未配置视觉能力），"
+            "你无法看到该图片内容。请如实告知用户：本模型无法查看图片，"
+            "建议切换到支持视觉的模型（如 GPT-5.6 系列）后重新发送图片。"
+        )
     for i in range(len(messages) - 1, -1, -1):
         msg = messages[i]
         if msg.get("role") != "user":
@@ -1056,6 +1073,13 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
         tools_names.append("image_gen")
         tools_names.append("show_widget")
         tools_names.append("rename_session")  # 对话早期给默认名会话自动起名
+        # 降级场景：主模型无视觉且存在可用识别引擎 → 注册 image_recognize 工具，
+        # 主模型调用工具（内部用便宜视觉模型如 gpt-5.6-luna 识别），基于识别结果回答
+        if image_degraded and (get_by_model_id("gpt-5.6-luna") or get_vision_default()):
+            tools_names.append("image_recognize")
+        # 熔断开关：DISABLED_TOOLS（环境变量，逗号分隔）中列出的工具直接不暴露给模型，
+        # 用于紧急下线单个工具而无需改代码发版（此处过滤 + loop.py 允许列表双保险）
+        tools_names = _apply_tool_blacklist(tools_names)
 
     def _refund_once() -> None:
         # refund 幂等（request_key 唯一），重复调用安全
@@ -1223,7 +1247,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                         system_prompt=agent_system, override=override,
                     )
                     if image_degraded:
-                        messages = _attach_image_note(messages)
+                        messages = _attach_image_note(messages, [r["id"] for r in image_files])
                     else:
                         messages = _attach_image_blocks(messages, image_blocks)
                     async for event in run_agent_stream(

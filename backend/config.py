@@ -30,6 +30,9 @@ ALLOWED_EXTENSIONS = set(os.getenv("ALLOWED_EXTENSIONS", "png,jpg,jpeg,webp").sp
 # 频率限制
 RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", 60))
 
+# 工具熔断开关：逗号分隔的 agent 工具名，配置后这些工具不暴露给模型（紧急下线单个工具用，无需发版）
+DISABLED_TOOLS = [t.strip() for t in os.getenv("DISABLED_TOOLS", "").split(",") if t.strip()]
+
 # PostgreSQL
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost:5432/app_db")
 PG_POOL_MIN = int(os.getenv("PG_POOL_MIN", "5"))
