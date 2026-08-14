@@ -84,6 +84,32 @@ def _attach_image_blocks(messages: list[dict], image_blocks: list[dict]) -> list
     return messages
 
 
+def _attach_image_note(messages: list[dict]) -> list[dict]:
+    """无可用视觉模型时的降级注入：不附加图片块，改为在最后一条 user 消息追加说明文本，
+    让模型自然回复"当前模型无法查看图片"，而不是给用户硬报错。
+
+    仅影响真正发给 LLM 的 messages，历史消息与落库内容不动。
+    """
+    note = (
+        "【系统说明】用户刚刚上传了一张图片，但当前模型不支持图片识别（未配置视觉能力），"
+        "你无法看到该图片内容。请如实告知用户：本模型无法查看图片，"
+        "建议切换到支持视觉的模型（如 GPT-5.6 系列）后重新发送图片。"
+    )
+    for i in range(len(messages) - 1, -1, -1):
+        msg = messages[i]
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content")
+        if isinstance(content, str):
+            messages[i] = {**msg, "content": [{"type": "text", "text": content}, {"type": "text", "text": note}]}
+        elif isinstance(content, list):
+            messages[i] = {**msg, "content": list(content) + [{"type": "text", "text": note}]}
+        else:
+            messages[i] = {**msg, "content": [{"type": "text", "text": str(content or "")}, {"type": "text", "text": note}]}
+        break
+    return messages
+
+
 class ChatRenameRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=50)
 
@@ -827,6 +853,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
 
     # 带图状态：目标模型无视觉时自动切换；image_files 为随消息直发的图片记录
     model_switched = False
+    image_degraded = False  # 无可用视觉模型：不硬报错，降级为自然回复（注入说明，图片不直发）
     image_files: list = []
     image_blocks: list = []
 
@@ -850,13 +877,20 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
             if not has_vision(target_model):
                 vision_default = get_vision_default()
                 if vision_default is None:
-                    raise HTTPException(status_code=400, detail="当前模型不支持图片识别，且没有可用的视觉模型")
-                target_model = vision_default
-                model_switched = True
-                logger.info(
-                    "[chat/send] 图片消息自动切换视觉模型: %s (user=%s session=%s)",
-                    target_model.get("model_id"), user_id, session_id,
-                )
+                    # 无可用视觉模型：不硬报错（体验差），降级为自然回复——图片不直发，
+                    # 改为在消息里注入说明，让模型如实告知用户当前模型无法查看图片
+                    image_degraded = True
+                    logger.info(
+                        "[chat/send] 无可用视觉模型，图片消息降级为说明回复 (user=%s session=%s)",
+                        user_id, session_id,
+                    )
+                else:
+                    target_model = vision_default
+                    model_switched = True
+                    logger.info(
+                        "[chat/send] 图片消息自动切换视觉模型: %s (user=%s session=%s)",
+                        target_model.get("model_id"), user_id, session_id,
+                    )
         target_model_id = target_model.get("model_id") or body.model_id
         if allowed_models and target_model_id not in allowed_models:
             raise HTTPException(status_code=403, detail="当前套餐不支持该模型")
@@ -1045,7 +1079,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
         try:
             # 先回传用户消息的真实 id：前端用它替换本地临时 id，
             # 使「重新回答」能定位刚发送的问题消息（删除分支点需要数据库 id）
-            yield f"event: user_message_id\ndata: {json.dumps({'message_id': user_msg_id, 'model_switched': model_switched, 'image_files': [{'id': r['id'], 'original_name': r['original_name'], 'content_type': r['content_type']} for r in image_files]}, ensure_ascii=False)}\n\n"
+            yield f"event: user_message_id\ndata: {json.dumps({'message_id': user_msg_id, 'model_switched': model_switched, 'image_degraded': image_degraded, 'image_files': [{'id': r['id'], 'original_name': r['original_name'], 'content_type': r['content_type']} for r in image_files]}, ensure_ascii=False)}\n\n"
             if use_agent:
                 # 会话有上传文档：agent 工具循环（流式多轮；自动模式无需前端指定）
                 try:
@@ -1188,7 +1222,10 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                         session_id, target_model, attached_docs,
                         system_prompt=agent_system, override=override,
                     )
-                    messages = _attach_image_blocks(messages, image_blocks)
+                    if image_degraded:
+                        messages = _attach_image_note(messages)
+                    else:
+                        messages = _attach_image_blocks(messages, image_blocks)
                     async for event in run_agent_stream(
                         system=agent_system,
                         messages=messages,
@@ -1242,7 +1279,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                                 model_cfg=target_model, usage=event.get("usage"),
                                 req_id=req_id, pre_charged=cost_per, pre_balance=balance_after, pre_allocation=precharge,
                             )
-                            yield f"event: done\ndata: {json.dumps({'text': text, 'thinking': thinking, 'points_balance': float(final_balance), 'message_id': new_msg_id, 'ai_daily_remaining': chat_free_remaining, 'model_switched': model_switched}, ensure_ascii=False)}\n\n"
+                            yield f"event: done\ndata: {json.dumps({'text': text, 'thinking': thinking, 'points_balance': float(final_balance), 'message_id': new_msg_id, 'ai_daily_remaining': chat_free_remaining, 'model_switched': model_switched, 'image_degraded': image_degraded}, ensure_ascii=False)}\n\n"
                 except LLMError as e:
                     refunded = True
                     _refund_once()
@@ -1322,7 +1359,10 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                     web_inject = ""
                 if web_inject:
                     messages.insert(inject_idx, {"role": "user", "content": web_inject})
-            messages = _attach_image_blocks(messages, image_blocks)
+            if image_degraded:
+                messages = _attach_image_note(messages)
+            else:
+                messages = _attach_image_blocks(messages, image_blocks)
             async for event in ChatService.chat_stream([], body.reasoning_effort, model=target_model, attached_docs=attached_docs, prebuilt_messages=messages):
                 if event["type"] == "chunk":
                     _append_assistant_delta(text=str(event["text"] or ""))
@@ -1340,7 +1380,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                         model_cfg=target_model, usage=event.get("usage"),
                         req_id=req_id, pre_charged=cost_per, pre_balance=balance_after, pre_allocation=precharge,
                     )
-                    yield f"event: done\ndata: {json.dumps({'text': event['text'], 'thinking': event.get('thinking', ''), 'points_balance': float(final_balance), 'message_id': new_msg_id, 'ai_daily_remaining': chat_free_remaining, 'model_switched': model_switched}, ensure_ascii=False)}\n\n"
+                    yield f"event: done\ndata: {json.dumps({'text': event['text'], 'thinking': event.get('thinking', ''), 'points_balance': float(final_balance), 'message_id': new_msg_id, 'ai_daily_remaining': chat_free_remaining, 'model_switched': model_switched, 'image_degraded': image_degraded}, ensure_ascii=False)}\n\n"
                 elif event["type"] == "error":
                     refunded = True
                     _refund_once()

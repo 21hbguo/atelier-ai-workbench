@@ -19,7 +19,7 @@ import pytest
 from fastapi import HTTPException
 
 from backend.routers import chat as chat_module
-from backend.routers.chat import ChatSendRequest, _attach_image_blocks
+from backend.routers.chat import ChatSendRequest, _attach_image_blocks, _attach_image_note
 from backend.services import llm_model_service
 
 # 1x1 透明 PNG 假字节（真实文件头，够写入磁盘即可）
@@ -348,21 +348,91 @@ def test_send_switches_to_vision_model_when_target_lacks_vision(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# 4. 无 vision 且无默认视觉模型：明确报错（扣费前拒绝）
+# 4. 无 vision 且无默认视觉模型：降级为自然回复（不硬报错）
 # ---------------------------------------------------------------------------
 
-def test_send_no_vision_and_no_default_raises_clear_error():
+def test_send_no_vision_and_no_default_degrades_to_note():
+    """无可用视觉模型：不报错——消息注入说明文本（图片不直发），模型自然回复，正常扣费落库。"""
+    patches, conn, captured = _base_patches(active_model=_no_vision_model(), vision_default=None)
+    with patches:
+        resp = _run(chat_module.send_message(
+            SESSION_ID, ChatSendRequest(content="看图说话", image_file_ids=[IMAGE_FILE_ID]), USER,
+        ))
+        events = _consume_sse(resp)  # event_generator 惰性执行，必须在 patch 生效期内消费
+
+    # 发给 LLM 的消息：最后一条 user 消息是 list，含说明文本块、无 image 块（图片不直发）
+    assert len(captured["chat_stream_calls"]) == 1
+    messages = captured["chat_stream_calls"][0]["messages"]
+    last_user = [m for m in messages if m["role"] == "user"][-1]
+    assert isinstance(last_user["content"], list)
+    assert last_user["content"][0] == {"type": "text", "text": "看图说话"}
+    assert last_user["content"][1]["type"] == "text"
+    assert "不支持图片识别" in last_user["content"][1]["text"]
+    assert not any(b.get("type") == "image" for b in last_user["content"])
+    # 模型未切换（仍是原模型）
+    assert captured["chat_stream_calls"][0]["model"]["model_id"] == "no-vision"
+
+    # SSE：done / user_message_id 事件带 image_degraded=true、model_switched=false
+    umi = [d for e, d in events if e == "user_message_id"][0]
+    assert umi["image_degraded"] is True
+    assert umi["model_switched"] is False
+    done = [d for e, d in events if e == "done"][0]
+    assert done["image_degraded"] is True
+    assert done["text"] == "这是一张图"  # 正常得到回复（fake chat_stream 返回）
+    # 正常落库：INSERT chat_messages 已执行（user 消息 + assistant 消息）
+    insert_calls = [c for c in conn.execute.call_args_list if "INSERT INTO chat_messages" in str(c.args[0])]
+    assert len(insert_calls) >= 1
+
+
+def test_attach_image_note_injects_text_block():
+    """降级注入：最后一条 user 消息追加说明文本块；content 为 str 时升级为 list。"""
+    messages = [
+        {"role": "user", "content": "上一轮"},
+        {"role": "assistant", "content": "回答"},
+        {"role": "user", "content": "看图"},
+    ]
+    result = _attach_image_note(messages)
+    assert result[2]["content"] == [
+        {"type": "text", "text": "看图"},
+        {"type": "text", "text": "【系统说明】用户刚刚上传了一张图片，但当前模型不支持图片识别（未配置视觉能力），"
+         "你无法看到该图片内容。请如实告知用户：本模型无法查看图片，"
+         "建议切换到支持视觉的模型（如 GPT-5.6 系列）后重新发送图片。"},
+    ]
+    assert "不支持图片识别" in result[2]["content"][1]["text"]
+    assert result[0] == {"role": "user", "content": "上一轮"}  # 其它消息不动
+
+
+def test_send_no_vision_agent_channel_degrades_to_note(tmp_path, monkeypatch):
+    """agent 通道（protocol=openai → use_agent=True）降级：不附图片块，注入说明文本。"""
+    monkeypatch.setattr(chat_module.config, "USER_WORKSPACES_DIR", tmp_path)
+    captured = {"agent_calls": []}
+
+    async def _fake_prepare(session_id, model=None, attached_docs=None, system_prompt="", override=None):
+        return [{"role": "user", "content": "看图说话"}]
+
+    async def _fake_agent_stream(**kwargs):
+        captured["agent_calls"].append(kwargs["messages"])
+        yield {"type": "done", "text": "我看不了图", "thinking": ""}
+
     patches, conn, _ = _base_patches(active_model=_no_vision_model(), vision_default=None)
     with patches:
-        with pytest.raises(HTTPException) as ei:
-            _run(chat_module.send_message(
+        # 覆盖两处：LLMClient.protocol 返回 openai（use_agent=True）→ 走 agent 通道；
+        # prepare_session_messages / run_agent_stream 换成 fake
+        with patch.object(chat_module.LLMClient, "protocol", return_value="openai"), \
+             patch.object(chat_module.ChatService, "prepare_session_messages", new=_fake_prepare), \
+             patch.object(chat_module, "run_agent_stream", new=_fake_agent_stream):
+            resp = _run(chat_module.send_message(
                 SESSION_ID, ChatSendRequest(content="看图说话", image_file_ids=[IMAGE_FILE_ID]), USER,
             ))
-    assert ei.value.status_code == 400
-    assert "当前模型不支持图片识别" in ei.value.detail
-    # 报错发生在扣费/落库之前：INSERT chat_messages 未执行
-    insert_calls = [c for c in conn.execute.call_args_list if "INSERT INTO chat_messages" in str(c.args[0])]
-    assert insert_calls == []
+            events = _consume_sse(resp)
+
+    assert len(captured["agent_calls"]) == 1
+    last_user = [m for m in captured["agent_calls"][0] if m["role"] == "user"][-1]
+    assert isinstance(last_user["content"], list)
+    assert not any(b.get("type") == "image" for b in last_user["content"])
+    assert any(b.get("type") == "text" and "不支持图片识别" in b.get("text", "") for b in last_user["content"])
+    done = [d for e, d in events if e == "done"][0]
+    assert done["image_degraded"] is True
 
 
 # ---------------------------------------------------------------------------
