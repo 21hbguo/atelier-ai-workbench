@@ -56,6 +56,9 @@ vi.mock('../api', async () => {
           points_cost_per_image_extend: 2,
         }),
     },
+    groupBuyAPI: {
+      active: () => ok({ items: [] }),
+    },
     taskAPI: {
       list: () => ok([]),
       activeSummary: () =>

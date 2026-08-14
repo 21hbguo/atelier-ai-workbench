@@ -130,6 +130,104 @@ async def admin_list_plans(admin=Depends(require_admin)):
     return {"items": [_clean_row(row) for row in rows]}
 
 
+# ============ 拼团活动管理 ============
+
+_GROUP_BUY_CREATE_FIELDS = ("package_id", "group_size", "group_price", "time_limit_min", "virtual_members", "sort_order", "status")
+_GROUP_BUY_UPDATE_FIELDS = ("group_size", "group_price", "time_limit_min", "virtual_members", "sort_order", "status")
+
+
+@admin_router.get("/group-buys")
+async def admin_list_group_buys(page: int = Query(1, ge=1), size: int = Query(20, ge=1, le=100), admin=Depends(require_admin)):
+    offset = (page - 1) * size
+    with get_db() as conn:
+        total = conn.execute("SELECT COUNT(*) AS cnt FROM group_buys").fetchone()["cnt"]
+        rows = conn.execute(
+            """SELECT gb.*, p.name AS package_name, p.price_rmb AS original_price,
+                      (SELECT COUNT(*) FROM group_buy_teams t WHERE t.group_buy_id = gb.id AND t.status = 0) AS ongoing_teams,
+                      (SELECT COUNT(*) FROM group_buy_teams t WHERE t.group_buy_id = gb.id AND t.status = 1) AS completed_teams
+               FROM group_buys gb
+               JOIN subscription_plans p ON p.id = gb.package_id
+               ORDER BY gb.sort_order ASC, gb.id ASC
+               LIMIT %s OFFSET %s""",
+            (size, offset),
+        ).fetchall()
+    return {"items": [dict(row) for row in rows], "total": total, "page": page, "size": size}
+
+
+@admin_router.post("/group-buys")
+async def admin_create_group_buy(body: dict, admin=Depends(require_admin)):
+    package_id = body.get("package_id")
+    if not package_id:
+        raise HTTPException(status_code=400, detail="package_id 不能为空")
+    with get_db() as conn:
+        package = conn.execute("SELECT id FROM subscription_plans WHERE id = %s", (package_id,)).fetchone()
+        if not package:
+            raise HTTPException(status_code=404, detail="套餐不存在")
+        group_size = int(body.get("group_size") or 0)
+        group_price = float(body.get("group_price") or 0)
+        time_limit_min = int(body.get("time_limit_min") or 1440)
+        virtual_members = int(body.get("virtual_members") or 0)
+        if group_size < 2:
+            raise HTTPException(status_code=400, detail="成团人数至少为 2")
+        if group_price <= 0:
+            raise HTTPException(status_code=400, detail="拼团价必须大于 0")
+        if time_limit_min <= 0:
+            raise HTTPException(status_code=400, detail="拼团时限必须大于 0")
+        if virtual_members < 0 or virtual_members >= group_size:
+            raise HTTPException(status_code=400, detail="虚拟成员数需大于等于 0 且小于成团人数")
+        row = conn.execute(
+            """INSERT INTO group_buys (package_id, group_size, group_price, time_limit_min, virtual_members, status, sort_order)
+               VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+            (package_id, group_size, group_price, time_limit_min, virtual_members,
+             int(body.get("status", 1)) if int(body.get("status", 1)) in (0, 1) else 1,
+             int(body.get("sort_order") or 0)),
+        ).fetchone()
+        conn.execute(
+            "INSERT INTO billing_audit_logs (admin_id, action, target_type, target_id, reason, new_state) VALUES (%s, 'group_buy_create', 'group_buy', %s, %s, %s::jsonb)",
+            (admin["user_id"], str(row["id"]), str(body.get("reason") or "创建拼团活动"), json.dumps(dict(row), default=str)),
+        )
+    return dict(row)
+
+
+@admin_router.patch("/group-buys/{group_buy_id}")
+async def admin_update_group_buy(group_buy_id: int, body: dict, admin=Depends(require_admin)):
+    fields = [(key, value) for key, value in body.items() if key in _GROUP_BUY_UPDATE_FIELDS]
+    if not fields:
+        raise HTTPException(status_code=400, detail="没有可更新字段")
+    set_parts = []
+    params = []
+    for key, value in fields:
+        if key in ("group_size", "time_limit_min", "virtual_members", "sort_order", "status"):
+            set_parts.append(f"{key} = %s")
+            params.append(int(value))
+        elif key == "group_price":
+            set_parts.append("group_price = %s")
+            params.append(float(value))
+    params.append(group_buy_id)
+    with get_db() as conn:
+        old = conn.execute("SELECT * FROM group_buys WHERE id = %s FOR UPDATE", (group_buy_id,)).fetchone()
+        if not old:
+            raise HTTPException(status_code=404, detail="拼团活动不存在")
+        # 更新后整体校验（group_size/virtual_members/group_price 关联约束）
+        group_size = int(body.get("group_size", old["group_size"]) or 0)
+        virtual_members = int(body.get("virtual_members", old["virtual_members"]) or 0)
+        group_price = float(body.get("group_price", old["group_price"]) or 0)
+        if group_size < 2:
+            raise HTTPException(status_code=400, detail="成团人数至少为 2")
+        if group_price <= 0:
+            raise HTTPException(status_code=400, detail="拼团价必须大于 0")
+        if int(body.get("time_limit_min", old["time_limit_min"]) or 0) <= 0:
+            raise HTTPException(status_code=400, detail="拼团时限必须大于 0")
+        if virtual_members < 0 or virtual_members >= group_size:
+            raise HTTPException(status_code=400, detail="虚拟成员数需大于等于 0 且小于成团人数")
+        row = conn.execute(f"UPDATE group_buys SET {', '.join(set_parts)} WHERE id = %s RETURNING *", params).fetchone()
+        conn.execute(
+            "INSERT INTO billing_audit_logs (admin_id, action, target_type, target_id, reason, old_state, new_state) VALUES (%s, 'group_buy_update', 'group_buy', %s, %s, %s::jsonb, %s::jsonb)",
+            (admin["user_id"], str(group_buy_id), str(body.get("reason") or "更新拼团活动"), json.dumps(dict(old), default=str), json.dumps(dict(row), default=str)),
+        )
+    return dict(row)
+
+
 @admin_router.post("/subscription-plans")
 async def admin_create_plan(body: dict, admin=Depends(require_admin)):
     required = ["code", "name"]

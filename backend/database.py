@@ -696,6 +696,43 @@ def init_db():
                 report JSONB NOT NULL DEFAULT '{}'::jsonb,
                 applied_at TIMESTAMP DEFAULT NOW()
             )""",
+            """CREATE TABLE IF NOT EXISTS group_buys (
+                id SERIAL PRIMARY KEY,
+                package_id INTEGER NOT NULL REFERENCES subscription_plans(id),
+                group_size INTEGER NOT NULL DEFAULT 5,
+                group_price NUMERIC(10,2) NOT NULL,
+                time_limit_min INTEGER NOT NULL DEFAULT 1440,
+                virtual_members INTEGER NOT NULL DEFAULT 2,
+                status INTEGER NOT NULL DEFAULT 1,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
+            """CREATE TABLE IF NOT EXISTS group_buy_teams (
+                id SERIAL PRIMARY KEY,
+                group_buy_id INTEGER NOT NULL REFERENCES group_buys(id),
+                creator_user_id INTEGER NOT NULL REFERENCES users(id),
+                status INTEGER NOT NULL DEFAULT 0,
+                expire_at TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )""",
+            """CREATE TABLE IF NOT EXISTS group_buy_members (
+                id SERIAL PRIMARY KEY,
+                team_id INTEGER NOT NULL REFERENCES group_buy_teams(id),
+                user_id INTEGER REFERENCES users(id),
+                status VARCHAR(16) NOT NULL DEFAULT 'pending',
+                is_virtual BOOLEAN NOT NULL DEFAULT FALSE,
+                virtual_nickname VARCHAR(64) DEFAULT '',
+                virtual_avatar VARCHAR(255) DEFAULT '',
+                paid_amount NUMERIC(10,2) DEFAULT 0,
+                recharge_request_id INTEGER REFERENCES recharge_requests(id),
+                created_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(team_id, user_id)
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_group_buy_teams_group_buy_status ON group_buy_teams(group_buy_id, status)",
+            "CREATE INDEX IF NOT EXISTS idx_group_buy_teams_expire_at ON group_buy_teams(expire_at)",
+            "CREATE INDEX IF NOT EXISTS idx_group_buy_members_team ON group_buy_members(team_id)",
+            "CREATE INDEX IF NOT EXISTS idx_group_buy_members_user ON group_buy_members(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_group_buy_members_recharge ON group_buy_members(recharge_request_id)",
         ]
             for sql in statements:
                 conn.execute(sql)
@@ -840,6 +877,8 @@ def init_db():
                 conn.execute("ALTER TABLE recharge_requests ADD COLUMN confirmed_at TIMESTAMP")
             if not _column_exists(conn, "recharge_requests", "discount"):
                 conn.execute("ALTER TABLE recharge_requests ADD COLUMN discount NUMERIC(4,2) DEFAULT 0")
+            if not _column_exists(conn, "recharge_requests", "group_buy_team_id"):
+                conn.execute("ALTER TABLE recharge_requests ADD COLUMN group_buy_team_id INTEGER REFERENCES group_buy_teams(id)")
             # 昵称允许重名（账号 username 仍唯一），历史唯一索引幂等移除
             conn.execute("DROP INDEX IF EXISTS idx_users_nickname_unique")
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite_code_unique ON users(invite_code) WHERE invite_code IS NOT NULL AND invite_code<>''")

@@ -942,6 +942,8 @@ async def approve_recharge_request(request_id: int, body: dict, admin=Depends(re
     points = 0
     user_id = None
     invite_result = None
+    group_notify = None
+    group_result = None
     with get_db() as conn:
         row = conn.execute("SELECT * FROM recharge_requests WHERE id = %s", (request_id,)).fetchone()
         if not row:
@@ -962,14 +964,35 @@ async def approve_recharge_request(request_id: int, body: dict, admin=Depends(re
             plan = get_plan_in_conn(conn, item["plan_id"])
             if not plan or not plan.get("enabled") or plan.get("is_free"):
                 raise HTTPException(status_code=400, detail="套餐不可用")
-            activation = activate_plan_in_conn(conn, user_id, plan)
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            conn.execute(
-                "UPDATE recharge_requests SET status = 'approved', review_note = %s, reviewed_at = %s, reviewed_by = %s WHERE id = %s",
-                (review_note or f"套餐审核通过，已激活「{plan['name']}」", now, admin["user_id"], request_id),
-            )
-            plan_name = plan["name"]
-            logger.info(f"[audit.recharge.approve] request={request_id} admin={admin['user_id']} user={user_id} plan={plan['name']} activation={activation}")
+            group_result = None
+            if item.get("group_buy_team_id"):
+                # 拼团支付审核：到账处理在 group_buy_service.on_payment_success 内完成
+                # （member 置 paid / 成团批量激活 / 过期升级激活），不在此单独 activate
+                from backend.services.group_buy_service import on_payment_success, PAYMENT_RESULT_NOTES
+                group_result = on_payment_success(conn, item)
+            if group_result is not None:
+                note = PAYMENT_RESULT_NOTES.get(group_result, "拼团支付已到账")
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                conn.execute(
+                    "UPDATE recharge_requests SET status = 'approved', review_note = %s, reviewed_at = %s, reviewed_by = %s WHERE id = %s",
+                    (f"{note}（管理员审核）", now, admin["user_id"], request_id),
+                )
+                if group_result == "group_buy_pending":
+                    group_notify = ("subscription_approved", "拼团支付成功", "你的拼团款已审核到账，成团后套餐将自动激活", str(request_id))
+                elif group_result == "group_buy_completed":
+                    group_notify = ("subscription_approved", "拼团成功", f"恭喜！你的「{plan['name']}」套餐已随成团激活", str(request_id))
+                elif group_result == "group_buy_upgrade_activated":
+                    group_notify = ("subscription_approved", "拼团升级成功", f"你的「{plan['name']}」套餐已激活", str(request_id))
+                logger.info(f"[audit.recharge.approve] request={request_id} admin={admin['user_id']} user={user_id} plan={plan['name']} group_result={group_result}")
+            else:
+                activation = activate_plan_in_conn(conn, user_id, plan)
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                conn.execute(
+                    "UPDATE recharge_requests SET status = 'approved', review_note = %s, reviewed_at = %s, reviewed_by = %s WHERE id = %s",
+                    (review_note or f"套餐审核通过，已激活「{plan['name']}」", now, admin["user_id"], request_id),
+                )
+                plan_name = plan["name"]
+                logger.info(f"[audit.recharge.approve] request={request_id} admin={admin['user_id']} user={user_id} plan={plan['name']} activation={activation}")
         else:
             while True:
                 code = secrets.token_urlsafe(8).upper()
@@ -991,14 +1014,20 @@ async def approve_recharge_request(request_id: int, body: dict, admin=Depends(re
             logger.info(f"[audit.recharge.approve] request={request_id} admin={admin['user_id']} user={user_id} points={points} amount={item['amount']}")
     # 事务外发通知：避免通知 INSERT 的外键锁与激活/加积分的 users 行锁死锁
     try:
-        if plan_name:
+        if group_notify:
+            NotificationService.create(user_id, *group_notify)
+        elif plan_name:
             NotificationService.create(user_id, "subscription_approved", "套餐已生效", f"你的「{plan_name}」套餐已激活，周期积分已发放", str(request_id))
+        elif group_result == "group_buy_duplicate":
+            pass  # 拼团重复回调：不重复发通知
         else:
             NotificationService.create(user_id, "recharge_approved", "充值审核通过", f"你的充值凭证已通过审核，已发放 {points} 积分", str(request_id))
             if item.get("inviter_user_id") and invite_result and invite_result.get("rebate_points", 0) > 0:
                 NotificationService.create(item["inviter_user_id"], "invite_recharge_rebate", "邀请返利到账", f"你收到 {invite_result['rebate_points']} 积分返利", str(request_id))
     except Exception:
         pass
+    if group_result is not None:
+        return {"message": "审核通过", "group_buy_result": group_result}
     if plan_name:
         return {"message": "审核通过，套餐已生效", "plan": plan_name, "activation": activation}
     return {"message": "审核通过，积分已发放", "code": code, "points": points}

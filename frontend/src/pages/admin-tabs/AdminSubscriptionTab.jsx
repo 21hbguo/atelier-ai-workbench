@@ -6,6 +6,8 @@ const FEATURE_DEFAULTS = { web_search: true, file_upload: true, file_write: true
 
 const emptyPlan = { code: '', name: '', description: '', price_rmb: 0, cycle_days: 30, grant_points: 0, features: { ...FEATURE_DEFAULTS, package_type: 'membership', daily_quota: null, original_price_rmb: '' }, allowed_models: [], max_concurrent_requests: 1, enabled: true, is_free: false, sort_order: 0 }
 
+const emptyGroupBuy = { package_id: '', group_size: 3, group_price: 0, time_limit_min: 60, virtual_members: 1, sort_order: 0, status: 1 }
+
 const inputCls = 'w-full px-3 py-2 rounded-2xl text-xs border outline-none'
 const inputStyle = { borderColor: 'var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }
 
@@ -13,6 +15,10 @@ const num = (v, def) => (v === '' || v == null ? def : Number(v))
 
 export default function AdminSubscriptionTab() {
   const [plans, setPlans] = useState([])
+  const [groupBuys, setGroupBuys] = useState([])
+  const [gbDraft, setGbDraft] = useState(emptyGroupBuy)
+  const [gbEditId, setGbEditId] = useState(null)
+  const [gbModalOpen, setGbModalOpen] = useState(false)
   const [orders, setOrders] = useState([])
   const [subscriptions, setSubscriptions] = useState([])
   const [usage, setUsage] = useState(null)
@@ -33,6 +39,8 @@ export default function AdminSubscriptionTab() {
       setUsage(u.data)
       setPrices(m.data?.items || [])
       setFreeDailyQuota(Number(c.data?.ai_daily_free_quota ?? 5))
+      // 拼团活动独立加载：接口异常不阻塞其他数据
+      adminAPI.groupBuys.list().then(res => setGroupBuys(res.data?.items || [])).catch(() => setGroupBuys([]))
     } finally { setLoading(false) }
   }
   useEffect(() => { Promise.resolve().then(load) }, [])
@@ -91,6 +99,23 @@ export default function AdminSubscriptionTab() {
     else await adminAPI.extendSubscription(item.user_id, { days: Number(amount), reason })
     load()
   }
+  const saveGroupBuy = async () => {
+    if (!gbDraft.package_id) { window.alert('请选择套餐'); return }
+    const data = {
+      package_id: Number(gbDraft.package_id),
+      group_size: num(gbDraft.group_size, 3),
+      group_price: num(gbDraft.group_price, 0),
+      time_limit_min: num(gbDraft.time_limit_min, 60),
+      virtual_members: num(gbDraft.virtual_members, 0),
+      sort_order: num(gbDraft.sort_order, 0),
+      status: gbDraft.status ? 1 : 0,
+    }
+    if (gbEditId) await adminAPI.groupBuys.update(gbEditId, data)
+    else await adminAPI.groupBuys.create(data)
+    setGbModalOpen(false); setGbEditId(null); setGbDraft(emptyGroupBuy); load()
+  }
+  const openGbEdit = gb => { setGbEditId(gb.id); setGbDraft({ ...gb }); setGbModalOpen(true) }
+  const toggleGbStatus = async gb => { await adminAPI.groupBuys.update(gb.id, { status: gb.status === 1 ? 0 : 1 }); load() }
   if (loading) return <div className="py-16 text-center text-sm" style={{ color: 'var(--text-secondary)' }}>加载中...</div>
   return <div className="space-y-4">
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -109,6 +134,13 @@ export default function AdminSubscriptionTab() {
       </div>
     )}
     <Section title="套餐管理"><Table headers={['名称', '类型', '价格', '原价', '积分', '次数/权益', '状态', '操作']} rows={plans.map(plan => [plan.name, plan.features?.package_type === 'credits' ? '积分包' : (plan.features?.package_type === 'membership' ? '会员' : '其他'), `¥${plan.price_rmb}`, plan.features?.original_price_rmb ? `¥${plan.features.original_price_rmb}` : '-', plan.grant_points, <RightsCell key="rights" plan={plan} freeDailyQuota={freeDailyQuota} />, <span key="status" style={{ color: plan.enabled ? 'var(--color-success)' : 'var(--color-warning)' }}>{plan.enabled ? '在售' : '暂售罄'}</span>, <div className="flex gap-2" key="ops"><button onClick={() => openEdit(plan)}>编辑</button>{plan.enabled ? <button onClick={() => adminAPI.disableSubscriptionPlan(plan.id).then(load)}>下架</button> : <button onClick={() => adminAPI.updateSubscriptionPlan(plan.id, { enabled: true }).then(load)}>上架</button>}</div>])} /></Section>
+    <Section title="拼团活动">
+      <div className="flex items-center justify-between gap-2 border-b px-4 py-2.5" style={{ borderColor: 'var(--border-color)' }}>
+        <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>管理进行中的拼团活动（成团人数 / 拼团价 / 时限 / 虚拟成员）</span>
+        <button onClick={() => { setGbEditId(null); setGbDraft(emptyGroupBuy); setGbModalOpen(true) }} className="shrink-0 px-3 py-1.5 rounded-2xl text-xs text-white" style={{ background: 'var(--accent)' }}>新增拼团</button>
+      </div>
+      <Table headers={['套餐', '团人数', '团价', '时限（分）', '虚拟人数', '排序', '状态', '操作']} rows={groupBuys.map(gb => [gb.package_name || gb.package_id, gb.group_size, `¥${gb.group_price}`, gb.time_limit_min, gb.virtual_members, gb.sort_order, <span key="st" style={{ color: gb.status === 1 ? 'var(--color-success)' : 'var(--color-warning)' }}>{gb.status === 1 ? '进行中' : '已下线'}</span>, <div className="flex gap-2" key="ops"><button onClick={() => openGbEdit(gb)}>编辑</button>{gb.status === 1 ? <button onClick={() => toggleGbStatus(gb)}>下线</button> : <button onClick={() => toggleGbStatus(gb)}>上线</button>}</div>])} />
+    </Section>
     <Section title="订阅订单"><Table headers={['订单', '用户', '套餐', '金额', '状态', '操作']} rows={orders.map(order => [order.order_no, order.username || order.user_id, order.plan_name, `¥${order.amount_rmb}`, order.status, <div className="flex gap-2" key="ops">{order.status === 'pending' && <><button onClick={() => review(order, 'approve')}>通过</button><button onClick={() => review(order, 'reject')}>驳回</button></>} {order.status === 'approved' && <button onClick={() => review(order, 'refund')}>退款</button>}</div>])} /></Section>
     <Section title="用户订阅"><Table headers={['用户', '套餐', '周期积分', '到期', '状态', '操作']} rows={subscriptions.map(item => [item.username || item.user_id, item.plan_name, `${item.remaining_points ?? 0} / ${item.granted_points ?? 0}`, item.plan_package_type === 'credits' ? '永久' : (item.period_end ? new Date(item.period_end).toLocaleString('zh-CN') : '-'), item.status, <div className="flex gap-2" key="ops"><button onClick={() => operate(item, 'grant')}>补发</button><button onClick={() => operate(item, 'extend')}>续期</button></div>])} /></Section>
     <Section title="模型价格"><Table headers={['模型', '输入积分/千 Token', '输出积分/千 Token', '版本数']} rows={prices.map(item => [item.model_id, item.points_per_1k?.input ?? '-', item.points_per_1k?.output ?? '-', item.versions?.length ?? 0])} /></Section>
@@ -129,6 +161,27 @@ export default function AdminSubscriptionTab() {
           <div className="flex justify-end gap-2 px-5 py-4 border-t shrink-0" style={{ borderColor: 'var(--border-color)' }}>
             <button onClick={closeEdit} className="px-4 py-1.5 rounded-2xl text-xs" style={{ color: 'var(--text-secondary)' }}>取消</button>
             <button onClick={savePlan} className="px-4 py-1.5 rounded-2xl text-xs text-white" style={{ background: 'var(--accent)' }}>保存</button>
+          </div>
+        </div>
+      </div>
+    )}
+    {gbModalOpen && (
+      <div className="fixed inset-0 z-[93] flex items-center justify-center p-4" onClick={() => setGbModalOpen(false)}>
+        <div className="absolute inset-0 bg-black/50" />
+        <div className="relative w-full max-w-lg max-h-[85vh] overflow-hidden rounded-2xl flex flex-col" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }} onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between px-5 py-4 border-b shrink-0" style={{ borderColor: 'var(--border-color)' }}>
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{gbEditId ? '编辑拼团' : '新增拼团'}</h2>
+              <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-secondary)' }}>{gbEditId ? `拼团 ID ${gbEditId}` : '创建新的拼团活动'}</p>
+            </div>
+            <button onClick={() => setGbModalOpen(false)} aria-label="关闭" className="p-1.5 rounded-lg hover:bg-bg-hover shrink-0" style={{ color: 'var(--text-secondary)' }}><X size={18} /></button>
+          </div>
+          <div className="overflow-y-auto p-5">
+            <GroupBuyForm draft={gbDraft} setDraft={setGbDraft} plans={plans} />
+          </div>
+          <div className="flex justify-end gap-2 px-5 py-4 border-t shrink-0" style={{ borderColor: 'var(--border-color)' }}>
+            <button onClick={() => setGbModalOpen(false)} className="px-4 py-1.5 rounded-2xl text-xs" style={{ color: 'var(--text-secondary)' }}>取消</button>
+            <button onClick={saveGroupBuy} className="px-4 py-1.5 rounded-2xl text-xs text-white" style={{ background: 'var(--accent)' }}>保存</button>
           </div>
         </div>
       </div>
@@ -195,6 +248,27 @@ function Field({ label, hint, wide, children }) {
     <span className="block text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>{label}{hint && <span className="ml-1 opacity-60">（{hint}）</span>}</span>
     {children}
   </label>
+}
+
+// 拼团活动表单（套餐下拉 + 团参数）
+function GroupBuyForm({ draft, setDraft, plans }) {
+  const set = (key, value) => setDraft(v => ({ ...v, [key]: value }))
+  return (
+    <div className="grid gap-2 md:grid-cols-2">
+      <Field label="套餐" wide hint="从现有套餐中选择">
+        <select value={draft.package_id ?? ''} onChange={e => set('package_id', e.target.value)} className={inputCls} style={inputStyle}>
+          <option value="">请选择套餐</option>
+          {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </Field>
+      <Field label="团人数" hint="几人成团"><input type="number" min="2" value={draft.group_size ?? ''} onChange={e => set('group_size', e.target.value)} className={inputCls} style={inputStyle} /></Field>
+      <Field label="拼团价（元）"><input type="number" min="0" step="0.01" value={draft.group_price ?? ''} onChange={e => set('group_price', e.target.value)} className={inputCls} style={inputStyle} /></Field>
+      <Field label="成团时限（分钟）"><input type="number" min="1" value={draft.time_limit_min ?? ''} onChange={e => set('time_limit_min', e.target.value)} className={inputCls} style={inputStyle} /></Field>
+      <Field label="虚拟成员数" hint="自动凑团人数"><input type="number" min="0" value={draft.virtual_members ?? ''} onChange={e => set('virtual_members', e.target.value)} className={inputCls} style={inputStyle} /></Field>
+      <Field label="排序" hint="数值小的靠前"><input type="number" value={draft.sort_order ?? ''} onChange={e => set('sort_order', e.target.value)} className={inputCls} style={inputStyle} /></Field>
+      <Field label="状态"><label className="flex h-[38px] items-center gap-1.5 text-xs" style={{ color: 'var(--text-secondary)' }}><input type="checkbox" checked={Boolean(draft.status)} onChange={e => set('status', e.target.checked ? 1 : 0)} /> 进行中</label></Field>
+    </div>
+  )
 }
 
 function Section({ title, children }) { return <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}><div className="px-4 py-3 text-sm font-semibold" style={{ color: 'var(--text-primary)', background: 'var(--bg-ai-bubble)' }}>{title}</div>{children}</div> }

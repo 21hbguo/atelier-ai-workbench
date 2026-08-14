@@ -73,6 +73,9 @@ vi.mock('../api', () => ({
   taskAPI: {
     get: taskGetMock,
   },
+  groupBuyAPI: {
+    active: () => Promise.resolve({ data: { items: [] } }),
+  },
 }))
 
 vi.mock('../components/AppDialogProvider', () => ({
@@ -83,6 +86,11 @@ vi.mock('../components/AppDialogProvider', () => ({
 // 本测试只关注会话行为，直接替换为透传 div。
 vi.mock('../components/MainLayout', () => ({
   default: ({ children }) => <div>{children}</div>,
+}))
+
+// 拼团横幅不在会话行为测试范围内，且其 useNavigate 需要 Router 环境，直接置空
+vi.mock('../components/GroupBuyBanner', () => ({
+  default: () => null,
 }))
 
 import ChatAssistantPage from '../pages/ChatAssistantPage'

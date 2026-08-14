@@ -24,6 +24,7 @@ const RedeemPage = lazy(() => import('./pages/RedeemPage'))
 const WalletPage = lazy(() => import('./pages/WalletPage'))
 const AccountPage = lazy(() => import('./pages/AccountPage'))
 const ChatAssistantPage = lazy(() => import('./pages/ChatAssistantPage'))
+const GroupBuyTeamPage = lazy(() => import('./pages/GroupBuyTeamPage'))
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
 const SharesPage = lazy(() => import('./pages/SharesPage'))
 
@@ -138,6 +139,7 @@ function AppContent() {
           <Route path="/account" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><AccountPage /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><SettingsPage /></ProtectedRoute>} />
           <Route path="/chat" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><ChatAssistantPage /></ProtectedRoute>} />
+          <Route path="/group-buy/team/:teamId" element={<GroupBuyTeamPage />} />
           <Route path="/notifications" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><NotificationsPage /></ProtectedRoute>} />
           <Route path="/announcements" element={<Navigate to="/notifications" replace />} />
           {/* 根路径：已登录跳 /chat，未登录跳 /login（落地页已摘除，LandingPage.jsx 仅保留源码） */}

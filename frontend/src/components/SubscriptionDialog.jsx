@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, X, Check } from 'lucide-react'
-import { configAPI, pointsAPI, subscriptionAPI } from '../api'
+import { configAPI, groupBuyAPI, pointsAPI, subscriptionAPI } from '../api'
 import { readUser } from '../auth'
 import { useAppDialog } from './AppDialogProvider'
 import RechargePayModal from './RechargePayModal'
@@ -22,6 +22,7 @@ export default function SubscriptionDialog({ open, onClose }) {
   const dialog = useAppDialog()
   const navigate = useNavigate()
   const [plans, setPlans] = useState([])
+  const [groupBuys, setGroupBuys] = useState([]) // 进行中的拼团活动（active 接口）
   const [subscription, setSubscription] = useState(() => subscriptionAPI.cachedMe?.() || null)
   const [subscriptionReady, setSubscriptionReady] = useState(() => Boolean(subscriptionAPI.cachedMe?.()))
   const [loading, setLoading] = useState(false)
@@ -50,6 +51,8 @@ export default function SubscriptionDialog({ open, onClose }) {
         setSubscriptionReady(true)
       }
     }).finally(() => setLoading(false))
+    // 加载拼团活动（失败静默，仅影响拼团入口显示）
+    groupBuyAPI.active().then(({ data }) => setGroupBuys(data?.items || [])).catch(() => setGroupBuys([]))
   }, [open])
 
   if (!open) return null
@@ -215,6 +218,8 @@ export default function SubscriptionDialog({ open, onClose }) {
                         const discount = showOrig ? `${Math.min(9.9, (price / orig) * 10).toFixed(1).replace(/\.0$/, '')}折` : null
                         const isCredit = plan.features?.package_type === 'credits'
                         const isBest = !plan.is_free && plan.id === bestId
+                        // 该套餐的进行中拼团活动（仅 membership 且已有团队）
+                        const gb = groupBuys.find(g => g.package_id === plan.id && g.package_type === 'membership' && Array.isArray(g.teams) && g.teams.length > 0)
                         const cycleText = isCredit ? '永久有效' : (plan.cycle_days >= 36500 ? '长期有效' : `${plan.cycle_days} 天有效`)
                         const rows = isCredit
                           ? [`${formatPoints(plan.grant_points)} 积分`, cycleText]
@@ -272,6 +277,16 @@ export default function SubscriptionDialog({ open, onClose }) {
                             >
                               {plan.is_free ? '免费使用' : isCurrent ? '当前套餐' : soldOut ? '暂售罄' : '购买'}
                             </button>
+                            {gb && !soldOut && (
+                              <button
+                                type="button"
+                                onClick={() => { onClose(); navigate(`/group-buy/team/${gb.teams[0].id}`) }}
+                                className="mt-2 flex h-9 w-full items-center justify-center rounded-xl text-xs font-medium transition-all duration-150 active:scale-[0.98] hover:brightness-105"
+                                style={{ border: '1px solid color-mix(in srgb, var(--accent) 40%, var(--border-color))', color: 'var(--accent)', background: 'color-mix(in srgb, var(--accent) 8%, transparent)' }}
+                              >
+                                {gb.group_size}人拼团 ¥{gb.group_price} 立省 ¥{Math.max(0, Number(gb.original_price) - Number(gb.group_price))}
+                              </button>
+                            )}
                           </div>
                         )
                       })}

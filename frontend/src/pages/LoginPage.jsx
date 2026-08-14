@@ -44,6 +44,13 @@ export default function LoginPage() {
   ]
   const location = useLocation()
   const navigate = useNavigate()
+  // 登录/注册成功后跳转目标：支持 ?redirect=/path（仅限站内相对路径，防开放重定向）
+  const redirectTarget = (() => {
+    try {
+      const r = new URLSearchParams(location.search).get('redirect')
+      return r && r.startsWith('/') ? r : null
+    } catch { return null }
+  })()
   const [mode, setMode] = useState(() => {
     const q = new URLSearchParams(location.search).get('mode')
     return q === 'register' || q === 'reset' ? q : 'login'
@@ -300,7 +307,7 @@ export default function LoginPage() {
         localStorage.setItem('just_registered', JSON.stringify({ points: data.user.points }))
       if (isRegister) try { localStorage.removeItem(REGISTER_DRAFT_KEY) } catch {}
       if (isReset) try { localStorage.removeItem(RESET_DRAFT_KEY) } catch {}
-      navigate('/chat', { replace: true })
+      navigate(redirectTarget || '/chat', { replace: true })
     } catch (err) {
       setError(err.message)
     } finally {

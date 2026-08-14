@@ -292,11 +292,14 @@ async def app_push_callback(t: str, type: str, price: str, sign: str):
     channel = "wechat" if type == "1" else "alipay"
     paid_amount = float(price)
     plan_name = None
+    group_notify = None
+    group_result = None
+    invite_result = {}
     # 按实付金额区间匹配（而非反推 discount）：套餐原价非整数（如 ¥9.9）时反推必然失配，
     # 金额匹配对整数/非整数原价均成立；随机折扣机制不受影响
     with get_db() as conn:
         row = conn.execute(
-            "SELECT * FROM recharge_requests WHERE channel = %s AND status = 'pending' AND ABS(amount - %s) < 0.01 AND created_at >= NOW() - interval '10 minutes' ORDER BY created_at ASC LIMIT 1",
+            "SELECT * FROM recharge_requests WHERE channel = %s AND status = 'pending' AND ABS(amount - %s) < 0.01 AND created_at >= NOW() - interval '10 minutes' ORDER BY user_confirmed DESC, created_at ASC LIMIT 1",
             (channel, paid_amount),
         ).fetchone()
         if not row:
@@ -322,13 +325,34 @@ async def app_push_callback(t: str, type: str, price: str, sign: str):
             if not plan or not plan.get("enabled") or plan.get("is_free"):
                 logger.warning(f"[appPush] 套餐不可用 request={request_id} plan_id={item['plan_id']}")
                 return "success"
-            activation = activate_plan_in_conn(conn, user_id, plan)
-            conn.execute(
-                "UPDATE recharge_requests SET status = 'approved', review_note = %s, reviewed_at = %s WHERE id = %s",
-                (f"VMQ自动到账 ¥{paid_amount}，已激活「{plan['name']}」", now, request_id),
-            )
-            plan_name = plan["name"]
-            logger.info(f"[appPush] 套餐自动到账 request={request_id} user={user_id} plan={plan['name']} activation={activation}")
+            activation = None
+            if item.get("group_buy_team_id"):
+                # 拼团支付：到账处理在 group_buy_service.on_payment_success 内完成
+                # （member 置 paid / 成团批量激活 / 过期升级激活），不在此单独 activate；
+                # 幂等靠 member 状态与 team 状态，不插入 point_transactions
+                from backend.services.group_buy_service import on_payment_success, PAYMENT_RESULT_NOTES
+                group_result = on_payment_success(conn, item)
+            if group_result is not None:
+                note = PAYMENT_RESULT_NOTES.get(group_result, "拼团支付已到账")
+                conn.execute(
+                    "UPDATE recharge_requests SET status = 'approved', review_note = %s, reviewed_at = %s WHERE id = %s",
+                    (f"VMQ自动到账 ¥{paid_amount}，{note}", now, request_id),
+                )
+                if group_result == "group_buy_pending":
+                    group_notify = ("subscription_approved", "拼团支付成功", "你的拼团款已到账，成团后套餐将自动激活", str(request_id))
+                elif group_result == "group_buy_completed":
+                    group_notify = ("subscription_approved", "拼团成功", f"恭喜！你的「{plan['name']}」套餐已随成团激活", str(request_id))
+                elif group_result == "group_buy_upgrade_activated":
+                    group_notify = ("subscription_approved", "拼团升级成功", f"你的「{plan['name']}」套餐已激活", str(request_id))
+                logger.info(f"[appPush] 拼团到账 request={request_id} user={user_id} plan={plan['name']} result={group_result}")
+            else:
+                activation = activate_plan_in_conn(conn, user_id, plan)
+                conn.execute(
+                    "UPDATE recharge_requests SET status = 'approved', review_note = %s, reviewed_at = %s WHERE id = %s",
+                    (f"VMQ自动到账 ¥{paid_amount}，已激活「{plan['name']}」", now, request_id),
+                )
+                plan_name = plan["name"]
+                logger.info(f"[appPush] 套餐自动到账 request={request_id} user={user_id} plan={plan['name']} activation={activation}")
         else:
             while True:
                 code = secrets.token_urlsafe(8).upper()
@@ -354,8 +378,12 @@ async def app_push_callback(t: str, type: str, price: str, sign: str):
             invite_result = InviteService.apply_recharge_rewards(conn, item, item.get("submit_ip") or "")
     # 事务外发通知：避免通知 INSERT 的外键锁与套餐激活的 users FOR UPDATE 锁死锁
     try:
-        if plan_name:
+        if group_notify:
+            NotificationService.create(user_id, *group_notify)
+        elif plan_name:
             NotificationService.create(user_id, "subscription_approved", "套餐已生效", f"你的「{plan_name}」套餐已自动激活，周期积分已发放", str(request_id))
+        elif group_result == "group_buy_duplicate":
+            pass  # 拼团重复回调：不重复发通知
         else:
             NotificationService.create(user_id, "recharge_approved", "充值成功", f"你的 ¥{paid_amount} 充值已到账，获得 {points} 积分", str(request_id))
             if item.get("inviter_user_id") and invite_result.get("rebate_points", 0) > 0:

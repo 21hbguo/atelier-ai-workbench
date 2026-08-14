@@ -380,6 +380,11 @@ export const adminAPI = {
   suspendSubscription: (userId, data) => api.post(`/admin/subscriptions/${userId}/suspend`, data),
   revokeSubscription: (userId, data) => api.post(`/admin/subscriptions/${userId}/revoke`, data),
   subscriptionUsage: (days = 30) => api.get('/admin/subscription-usage', { params: { days } }),
+  groupBuys: {
+    list: () => api.get('/admin/group-buys'),
+    create: data => api.post('/admin/group-buys', data),
+    update: (id, data) => api.patch(`/admin/group-buys/${id}`, data),
+  },
   billingConfig: () => api.get('/admin/billing-config'),
   updateBillingConfig: data => api.patch('/admin/billing-config', data),
   modelPrices: () => api.get('/admin/model-prices'),
@@ -403,6 +408,13 @@ export const pointsAPI = {
   getRechargeRequest: id => api.get(`/points/recharge/requests/${id}`),
   confirmRechargeRequest: id => api.post(`/points/recharge/requests/${id}/confirm`),
   rechargeRequests: (page = 1, size = 20) => api.get('/points/recharge/requests', { params: { page, size } }),
+}
+
+export const groupBuyAPI = {
+  active: () => api.get('/group-buys/active'),
+  team: teamId => api.get(`/group-buys/teams/${teamId}`),
+  createTeamAndPay: (id, data) => api.post(`/group-buys/${id}/create-team-and-pay`, data),
+  upgrade: (teamId, data) => api.post(`/group-buys/teams/${teamId}/upgrade`, data),
 }
 
 export const subscriptionAPI = {

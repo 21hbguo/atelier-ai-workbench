@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react'
 import { Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, PanelLeftClose, PanelLeftOpen, Brain, AlertCircle, CheckSquare, Cpu, ChevronDown, Check, Paperclip, FileText, Settings, Globe, Image as ImageIcon, Search } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
+import GroupBuyBanner from '../components/GroupBuyBanner'
 import { useAppDialog } from '../components/AppDialogProvider'
 import { chatAPI, pointsAPI, taskAPI } from '../api'
 import { readUser } from '../auth'
@@ -2248,7 +2249,10 @@ export default function ChatAssistantPage() {
               {messagesLoading ? (
                 <div className="text-center text-xs py-10" style={{ color: 'var(--text-secondary)' }}>加载中…</div>
               ) : messages.length === 0 && !sending ? (
-                <EmptyState onPick={t => { setInput(t); focusInput() }} models={selectableModels} modelId={chatModelId} onSelectModel={handleSelectModel} />
+                <>
+                  <GroupBuyBanner />
+                  <EmptyState onPick={t => { setInput(t); focusInput() }} models={selectableModels} modelId={chatModelId} onSelectModel={handleSelectModel} />
+                </>
               ) : (
                 <>
                   {messages.map(msg => <MessageItem key={msg.id} msg={msg} onCopy={handleCopy} onRegenerate={handleRegenerate} />)}
