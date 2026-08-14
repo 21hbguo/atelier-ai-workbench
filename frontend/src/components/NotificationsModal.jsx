@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
-import MainLayout from '../components/MainLayout'
-import Pagination from '../components/Pagination'
+import { X } from 'lucide-react'
+import Pagination from './Pagination'
 import { announcementAPI, notificationAPI } from '../api'
-import { useAppDialog } from '../components/AppDialogProvider'
+import { useAppDialog } from './AppDialogProvider'
 
-export default function NotificationsPage() {
+// 全局通知弹窗：任意入口 `window.dispatchEvent(new Event('notifications-open'))` 打开。
+// 支持遮罩点击 / ESC / 手机返回键（history.pushState + popstate）关闭。
+export default function NotificationsModal() {
   const dialog = useAppDialog()
+  const [open, setOpen] = useState(false)
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(1)
@@ -46,7 +49,39 @@ export default function NotificationsPage() {
     setLoading(false)
   }
 
-  useEffect(() => { fetchData(page) }, [page])
+  // 全局开关事件
+  useEffect(() => {
+    const handleOpen = () => { setPage(1); setOpen(true) }
+    window.addEventListener('notifications-open', handleOpen)
+    return () => window.removeEventListener('notifications-open', handleOpen)
+  }, [])
+
+  // 打开时加载
+  useEffect(() => {
+    if (open) fetchData(page)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, page])
+
+  // 手机返回键关闭：打开时推入历史标记，返回手势触发 popstate 即关闭
+  useEffect(() => {
+    if (!open) return
+    window.history.pushState({ atelierNotifications: 'open' }, '')
+    const handlePopState = () => setOpen(false)
+    window.addEventListener('popstate', handlePopState)
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+      // 若当前栈顶仍是自己推入的记录（经遮罩/ESC 等途径关闭），回退收回，避免残留多余历史
+      if (window.history.state?.atelierNotifications === 'open') window.history.back()
+    }
+  }, [open])
+
+  // ESC 关闭
+  useEffect(() => {
+    if (!open) return
+    const handleKey = e => { if (e.key === 'Escape') setOpen(false) }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [open])
 
   const markRead = async item => {
     try {
@@ -89,29 +124,27 @@ export default function NotificationsPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / size))
 
+  if (!open) return null
+
   return (
-    <MainLayout>
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>通知中心</h1>
-            <div className="flex gap-2">
-              <button
-                onClick={markAll}
-                className="px-3 py-1.5 rounded-2xl text-sm font-medium text-white"
-                style={{ background: 'var(--accent)' }}
-              >
-                全部已读
-              </button>
-              <button
-                onClick={clearRead}
-                className="px-3 py-1.5 rounded-2xl text-sm font-medium"
-                style={{ color: 'var(--text-secondary)', border: '1px solid var(--border-color)' }}
-              >
-                清除已读通知
-              </button>
-            </div>
+    <div className="fixed inset-0 z-[95] flex items-center justify-center p-4" onClick={() => setOpen(false)}>
+      <div className="absolute inset-0 bg-black/50" />
+      <div
+        className="relative w-full max-w-lg max-h-[85vh] overflow-hidden rounded-2xl flex flex-col"
+        style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* 头部 */}
+        <div className="flex items-center justify-between px-5 py-4 border-b shrink-0" style={{ borderColor: 'var(--border-color)' }}>
+          <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>通知中心</h2>
+          <div className="flex items-center gap-2">
+            <button onClick={markAll} className="px-2.5 py-1.5 rounded-2xl text-xs font-medium text-white" style={{ background: 'var(--accent)' }}>全部已读</button>
+            <button onClick={clearRead} className="px-2.5 py-1.5 rounded-2xl text-xs font-medium" style={{ color: 'var(--text-secondary)', border: '1px solid var(--border-color)' }}>清除已读</button>
+            <button onClick={() => setOpen(false)} aria-label="关闭" className="p-1.5 rounded-lg hover:bg-bg-hover shrink-0" style={{ color: 'var(--text-secondary)' }}><X size={18} /></button>
           </div>
+        </div>
+        {/* 内容 */}
+        <div className="overflow-y-auto p-5 flex-1 min-h-0">
           {loading ? (
             <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>加载中...</div>
           ) : items.length === 0 ? (
@@ -131,7 +164,7 @@ export default function NotificationsPage() {
                           {n.title}
                         </div>
                         <span
-                          className="px-1.5 py-0.5 rounded-full text-[10px] font-medium"
+                          className="px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0"
                           style={{
                             background: n._kind === 'announcement'
                               ? 'color-mix(in srgb, var(--color-warning) 12%, transparent)'
@@ -152,7 +185,7 @@ export default function NotificationsPage() {
                     {!n.is_read && (
                       <button
                         onClick={() => markRead(n)}
-                        className="px-2 py-1 rounded-lg text-xs"
+                        className="px-2 py-1 rounded-lg text-xs shrink-0"
                         style={{ color: 'var(--accent)' }}
                       >
                         标为已读
@@ -163,9 +196,12 @@ export default function NotificationsPage() {
               ))}
             </div>
           )}
+        </div>
+        {/* 分页 */}
+        <div className="shrink-0 border-t" style={{ borderColor: 'var(--border-color)' }}>
           <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </div>
       </div>
-    </MainLayout>
+    </div>
   )
 }

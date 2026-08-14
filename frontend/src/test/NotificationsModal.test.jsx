@@ -40,10 +40,6 @@ vi.mock('../api', () => ({
   },
 }))
 
-vi.mock('../components/MainLayout', () => ({
-  default: ({ children }) => <div data-testid="main-layout">{children}</div>,
-}))
-
 vi.mock('../components/Pagination', () => ({
   default: ({ page, totalPages, onPageChange }) => (
     <div data-testid="pagination">
@@ -54,7 +50,7 @@ vi.mock('../components/Pagination', () => ({
   ),
 }))
 
-import NotificationsPage from '../pages/NotificationsPage'
+import NotificationsModal from '../components/NotificationsModal'
 
 const ok = data => Promise.resolve({ data })
 
@@ -76,6 +72,11 @@ const makeAnnouncement = (id, overrides = {}) => ({
   ...overrides,
 })
 
+const openModal = () => {
+  render(<NotificationsModal />)
+  fireEvent(window, new Event('notifications-open'))
+}
+
 beforeEach(() => {
   cleanup()
   alertMock.mockReset()
@@ -94,23 +95,30 @@ beforeEach(() => {
   announcementMarkReadMock.mockResolvedValue(ok({}))
 })
 
-describe('NotificationsPage', () => {
+describe('NotificationsModal', () => {
+  it('is closed initially and opens on notifications-open event', async () => {
+    render(<NotificationsModal />)
+    expect(screen.queryByText('通知中心')).not.toBeInTheDocument()
+    fireEvent(window, new Event('notifications-open'))
+    await waitFor(() => expect(screen.getByText('通知中心')).toBeInTheDocument())
+  })
+
   it('shows loading state initially', () => {
     notificationListMock.mockReturnValue(new Promise(() => {}))
     announcementListMock.mockReturnValue(new Promise(() => {}))
-    render(<NotificationsPage />)
+    openModal()
     expect(screen.getByText('加载中...')).toBeInTheDocument()
   })
 
   it('shows empty state when no items', async () => {
-    render(<NotificationsPage />)
+    openModal()
     await waitFor(() => expect(screen.getByText('暂无通知')).toBeInTheDocument())
   })
 
   it('renders notification and announcement items with correct badges', async () => {
     notificationListMock.mockResolvedValue(ok({ items: [makeNotification(1)] }))
     announcementListMock.mockResolvedValue(ok({ items: [makeAnnouncement(2)] }))
-    render(<NotificationsPage />)
+    openModal()
     await screen.findByText('通知1')
     expect(screen.getByText('公告2')).toBeInTheDocument()
     expect(screen.getByText('通知')).toBeInTheDocument()
@@ -121,7 +129,7 @@ describe('NotificationsPage', () => {
     notificationListMock.mockResolvedValue(ok({
       items: [makeNotification(1), makeNotification(2, { is_read: true })],
     }))
-    render(<NotificationsPage />)
+    openModal()
     await screen.findByText('通知1')
     const markBtns = screen.getAllByText('标为已读')
     expect(markBtns).toHaveLength(1)
@@ -129,7 +137,7 @@ describe('NotificationsPage', () => {
 
   it('calls correct API when marking a single notification as read', async () => {
     notificationListMock.mockResolvedValue(ok({ items: [makeNotification(1)] }))
-    render(<NotificationsPage />)
+    openModal()
     await screen.findByText('通知1')
     fireEvent.click(screen.getByText('标为已读'))
     await waitFor(() => expect(notificationMarkReadMock).toHaveBeenCalledWith(1))
@@ -138,7 +146,7 @@ describe('NotificationsPage', () => {
 
   it('calls correct API when marking a single announcement as read', async () => {
     announcementListMock.mockResolvedValue(ok({ items: [makeAnnouncement(5)] }))
-    render(<NotificationsPage />)
+    openModal()
     await screen.findByText('公告5')
     fireEvent.click(screen.getByText('标为已读'))
     await waitFor(() => expect(announcementMarkReadMock).toHaveBeenCalledWith(5))
@@ -149,7 +157,7 @@ describe('NotificationsPage', () => {
     notificationListMock.mockResolvedValue(ok({ items: [makeNotification(1)] }))
     const handler = vi.fn()
     window.addEventListener('notifications-updated', handler)
-    render(<NotificationsPage />)
+    openModal()
     await screen.findByText('通知1')
     fireEvent.click(screen.getByText('标为已读'))
     await waitFor(() => expect(handler).toHaveBeenCalled())
@@ -161,7 +169,7 @@ describe('NotificationsPage', () => {
     announcementListMock.mockResolvedValue(ok({
       items: [makeAnnouncement(10), makeAnnouncement(11, { is_read: true })],
     }))
-    render(<NotificationsPage />)
+    openModal()
     await screen.findByText('通知1')
     fireEvent.click(screen.getByText('全部已读'))
     await waitFor(() => expect(notificationMarkAllReadMock).toHaveBeenCalled())
@@ -172,23 +180,23 @@ describe('NotificationsPage', () => {
   it('clear read succeeds and refetches', async () => {
     notificationClearReadMock.mockResolvedValue(ok({ deleted: 3 }))
     notificationListMock.mockResolvedValue(ok({ items: [makeNotification(1)] }))
-    render(<NotificationsPage />)
+    openModal()
     await screen.findByText('通知1')
-    fireEvent.click(screen.getByText('清除已读通知'))
+    fireEvent.click(screen.getByText('清除已读'))
     await waitFor(() => expect(notificationClearReadMock).toHaveBeenCalled())
   })
 
   it('clear read shows alert when nothing to clear', async () => {
     notificationClearReadMock.mockResolvedValue(ok({ deleted: 0 }))
-    render(<NotificationsPage />)
+    openModal()
     await waitFor(() => expect(screen.getByText('暂无通知')).toBeInTheDocument())
-    fireEvent.click(screen.getByText('清除已读通知'))
+    fireEvent.click(screen.getByText('清除已读'))
     await waitFor(() => expect(alertMock).toHaveBeenCalledWith('没有已读通知可清除'))
   })
 
   it('shows error alert on API failure', async () => {
     notificationListMock.mockRejectedValue(new Error('网络错误'))
-    render(<NotificationsPage />)
+    openModal()
     await waitFor(() => expect(alertMock).toHaveBeenCalledWith('网络错误'))
   })
 
@@ -199,7 +207,7 @@ describe('NotificationsPage', () => {
     announcementListMock.mockResolvedValue(ok({
       items: [makeAnnouncement(2, { created_at: '2026-05-05T12:00:00+08:00' })],
     }))
-    render(<NotificationsPage />)
+    openModal()
     await screen.findByText('公告2')
     const items = screen.getAllByText(/^(公告|通知)\d$/)
     expect(items[0]).toHaveTextContent('公告2')
@@ -215,7 +223,7 @@ describe('NotificationsPage', () => {
     )
     notificationListMock.mockResolvedValue(ok({ items: notifications }))
     announcementListMock.mockResolvedValue(ok({ items: announcements }))
-    render(<NotificationsPage />)
+    openModal()
     await screen.findByText('公告100')
     expect(screen.getByTestId('pagination')).toHaveTextContent('1/2')
   })
@@ -224,22 +232,32 @@ describe('NotificationsPage', () => {
     notificationListMock.mockResolvedValue(ok({
       items: [makeNotification(1, { created_at: '2026-05-09T14:30:00+08:00' })],
     }))
-    render(<NotificationsPage />)
+    openModal()
     await screen.findByText('通知1')
     expect(screen.getByText(/2026/)).toBeInTheDocument()
   })
 
-  it('handles time without timezone (adds +08:00)', async () => {
-    notificationListMock.mockResolvedValue(ok({
-      items: [makeNotification(1, { created_at: '2026-05-09 14:30:00' })],
-    }))
-    render(<NotificationsPage />)
-    await screen.findByText('通知1')
-    expect(screen.getByText(/2026/)).toBeInTheDocument()
+  it('closes on Escape key', async () => {
+    openModal()
+    await waitFor(() => expect(screen.getByText('通知中心')).toBeInTheDocument())
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByText('通知中心')).not.toBeInTheDocument())
   })
 
-  it('renders page title', async () => {
-    render(<NotificationsPage />)
-    expect(screen.getByText('通知中心')).toBeInTheDocument()
+  it('closes on backdrop click', async () => {
+    openModal()
+    await waitFor(() => expect(screen.getByText('通知中心')).toBeInTheDocument())
+    const backdrop = document.querySelector('.fixed.inset-0.z-\\[95\\] > .absolute')
+    expect(backdrop).not.toBeNull()
+    fireEvent.click(backdrop)
+    await waitFor(() => expect(screen.queryByText('通知中心')).not.toBeInTheDocument())
+  })
+
+  it('closes on phone back gesture (popstate)', async () => {
+    openModal()
+    await waitFor(() => expect(screen.getByText('通知中心')).toBeInTheDocument())
+    expect(window.history.state?.atelierNotifications).toBe('open')
+    fireEvent(window, new Event('popstate'))
+    await waitFor(() => expect(screen.queryByText('通知中心')).not.toBeInTheDocument())
   })
 })

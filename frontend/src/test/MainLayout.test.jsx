@@ -116,14 +116,14 @@ describe('MainLayout', () => {
     renderLayout()
     const topbarLinks = document.querySelectorAll('.mobile-topbar-link-text')
     const labels = [...topbarLinks].map(el => el.textContent)
-    expect(labels).toEqual(['助手', '绘画', '作品', '广场', '通知'])
+    expect(labels).toEqual(['助手', '绘画', '通知'])
   })
 
   it('shows notification link in topbar for regular users', () => {
     renderLayout()
     const topbarLinks = document.querySelectorAll('.mobile-topbar-link-text')
     const labels = [...topbarLinks].map(el => el.textContent)
-    expect(labels).toEqual(['助手', '绘画', '作品', '广场', '通知'])
+    expect(labels).toEqual(['助手', '绘画', '通知'])
   })
 
   it('opens sidebar when menu button is clicked', () => {

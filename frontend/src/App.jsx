@@ -9,6 +9,7 @@ import { useVersionSync } from './hooks/useVersionSync'
 import AnnouncementModal from './components/AnnouncementModal'
 import WelcomeModal from './components/WelcomeModal'
 import VersionUpdateBanner from './components/VersionUpdateBanner'
+import NotificationsModal from './components/NotificationsModal'
 import { announcementAPI, authAPI } from './api'
 import { clearUser, readUser, writeUser } from './auth'
 import ChatPage from './pages/ChatPage'
@@ -26,7 +27,6 @@ const WalletPage = lazy(() => import('./pages/WalletPage'))
 const AccountPage = lazy(() => import('./pages/AccountPage'))
 const ChatAssistantPage = lazy(() => import('./pages/ChatAssistantPage'))
 const GroupBuyTeamPage = lazy(() => import('./pages/GroupBuyTeamPage'))
-const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
 const SharesPage = lazy(() => import('./pages/SharesPage'))
 
 function ProtectedRoute({ children, authReady, user, fallback }) {
@@ -128,6 +128,7 @@ function AppContent() {
         <AnnouncementManager user={user} />
         <WelcomeModal points={welcomePoints} onClose={() => setWelcomePoints(null)} />
         <VersionUpdateBanner show={versionSync.updateAvailable} onRefresh={versionSync.reloadNow} />
+        <NotificationsModal />
         <Suspense fallback={routeFallback}><Routes>
           {/* 已登录用户访问 /login 直接跳到 /chat */}
           <Route path="/login" element={
@@ -142,8 +143,9 @@ function AppContent() {
           <Route path="/settings" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><SettingsPage /></ProtectedRoute>} />
           <Route path="/chat" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><ChatAssistantPage /></ProtectedRoute>} />
           <Route path="/group-buy/team/:teamId" element={<GroupBuyTeamPage />} />
-          <Route path="/notifications" element={<ProtectedRoute authReady={authReady} user={user} fallback={routeFallback}><NotificationsPage /></ProtectedRoute>} />
-          <Route path="/announcements" element={<Navigate to="/notifications" replace />} />
+          {/* 通知已改为全局弹窗（NotificationsModal），旧链接重定向到聊天页 */}
+          <Route path="/notifications" element={<Navigate to="/chat" replace />} />
+          <Route path="/announcements" element={<Navigate to="/chat" replace />} />
           {/* 根路径：已登录跳 /chat，未登录跳 /login（落地页已摘除，LandingPage.jsx 仅保留源码） */}
           <Route path="/" element={
             !authReady ? routeFallback :

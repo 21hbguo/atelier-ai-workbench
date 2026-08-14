@@ -226,8 +226,8 @@ describe('Sidebar', () => {
     readUserMock.mockReturnValue({ id: 1, username: 'admin', nickname: '管理员', points: 0, is_admin: true })
     renderSidebar()
     await waitFor(() => {
-      const noticeLink = screen.getByText('通知').closest('a')
-      expect(noticeLink.querySelector('span.rounded-full')).toBeNull()
+      const noticeBtn = screen.getByText('通知').closest('button')
+      expect(noticeBtn.querySelector('span.rounded-full')).toBeNull()
     })
   })
 
@@ -244,7 +244,7 @@ describe('Sidebar', () => {
     mockLocation = { pathname: '/draw', search: '' }
     renderSidebar()
     expect(screen.getByText('我的作品')).toBeInTheDocument()
-    expect(screen.getByText('通知').closest('a')).toHaveAttribute('href', '/notifications')
+    expect(screen.getByText('通知').closest('button')).not.toBeNull()
   })
 
   it('renders mobile overlay when open and closes on overlay click', () => {

@@ -145,7 +145,7 @@ export default function AccountPage() {
             </section>
 
             <QuickCard icon={ShieldCheck} label="账户状态" value="正常" sub="身份已验证" tone="var(--color-success)" />
-            <QuickCard to="/notifications" icon={Bell} label="通知" value="查看" sub="公告与消息提醒" />
+            <QuickCard onClick={() => window.dispatchEvent(new Event('notifications-open'))} icon={Bell} label="通知" value="查看" sub="公告与消息提醒" />
           </div>
 
           <div className="mt-5 mb-2 flex items-center justify-between"><h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>常用功能</h2><span className="text-xs" style={{ color: 'var(--text-secondary)' }}>快捷进入对应页面</span></div>

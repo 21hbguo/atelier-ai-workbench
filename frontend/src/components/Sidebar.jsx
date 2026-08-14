@@ -139,6 +139,17 @@ export default function Sidebar({ open, onClose }) {
               const active = location.pathname === path
               // 「AI 绘画」仅在绘画相关子页面（/works、/square、/prompts 等）保持组高亮；/chat 属于 AI 助手、/notifications 为独立 tab，均不应高亮 AI 绘画
               const groupActive = path === '/draw' && SUB_NAV_PATHS.includes(location.pathname) && !active
+              // 通知已改为全局弹窗：入口为按钮，触发 notifications-open 事件
+              if (path === '/notifications') {
+                return (
+                  <button key={path} type="button"
+                    className={`sidebar-nav-link ${collapsed ? 'flex-col items-center !h-auto !gap-0.5 !py-1 text-center' : ''} hover:bg-bg-hover w-full text-left`}
+                    style={{ color: 'var(--text-primary)' }}
+                    onClick={() => { window.dispatchEvent(new Event('notifications-open')); onClose?.() }}>
+                    <Icon size={16} className="sidebar-nav-icon" /><span className={`sidebar-nav-text ${collapsed ? 'text-[10px] leading-none truncate max-w-full' : ''}`}>{collapsed ? shortLabel : label}</span>{unreadNoticeCount > 0 && <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{ background: 'var(--accent)' }}>{unreadNoticeCount > 99 ? '99+' : unreadNoticeCount}</span>}
+                  </button>
+                )
+              }
               return (
                 <Link key={path} to={path}
                   className={`sidebar-nav-link ${collapsed ? 'flex-col items-center !h-auto !gap-0.5 !py-1 text-center' : ''} ${(active || groupActive) ? 'bg-accent/10' : 'hover:bg-bg-hover'}`}

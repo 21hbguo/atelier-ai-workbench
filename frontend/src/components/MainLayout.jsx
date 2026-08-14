@@ -7,8 +7,6 @@ import { announcementAPI, notificationAPI } from '../api'
 const quickNavItems = [
   { label: '助手', path: '/chat' },
   { label: '绘画', path: '/draw' },
-  { label: '作品', path: '/works' },
-  { label: '广场', path: '/square' },
   { label: '通知', path: '/notifications' },
 ]
 
@@ -52,6 +50,19 @@ export default function MainLayout({ children, dragProps }) {
             <button onClick={() => setSidebarOpen(true)} className="mobile-topbar-menu" style={{ color: 'var(--text-primary)' }}><Menu size={20} className="block" /></button>
             <div className="mobile-topbar-links scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
             {quickNavItems.map(item => {
+              // 通知已改为全局弹窗：入口为按钮，触发 notifications-open 事件
+              if (item.path === '/notifications') {
+                return (
+                  <button key={item.path} type="button" onClick={() => window.dispatchEvent(new Event('notifications-open'))} className="mobile-topbar-link" style={{ color: 'var(--text-secondary)' }}>
+                    <span className="relative inline-flex items-center">
+                      <span className="mobile-topbar-link-text">{item.label}</span>
+                      {unreadNoticeCount > 0 && (
+                        <span className="absolute -top-1.5 -right-2 w-2 h-2 rounded-full" style={{ background: 'var(--color-error)' }} />
+                      )}
+                    </span>
+                  </button>
+                )
+              }
               const isActive = item.path === '/' ? location.pathname === '/' : location.pathname.startsWith(item.path)
               return (
                 <Link key={item.path} to={item.path} className="mobile-topbar-link" style={{ color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', borderBottomColor: isActive ? 'var(--accent)' : 'transparent' }}>
