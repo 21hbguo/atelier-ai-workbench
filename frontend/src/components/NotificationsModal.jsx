@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import Pagination from './Pagination'
 import { announcementAPI, notificationAPI } from '../api'
@@ -9,11 +9,17 @@ import { useAppDialog } from './AppDialogProvider'
 export default function NotificationsModal() {
   const dialog = useAppDialog()
   const [open, setOpen] = useState(false)
+  const openRef = useRef(false)
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const size = 20
+
+  const close = () => {
+    openRef.current = false
+    setOpen(false)
+  }
 
   const fmtTime = value => {
     const s = String(value || '')
@@ -49,9 +55,16 @@ export default function NotificationsModal() {
     setLoading(false)
   }
 
-  // 全局开关事件
+  // 全局开关事件：同步推入历史标记（在抽屉关闭的 history.back() 之前完成，
+  // 使抽屉 cleanup 检测到栈顶标记不是自己的、不再 back，避免 popstate 误关弹窗）
   useEffect(() => {
-    const handleOpen = () => { setPage(1); setOpen(true) }
+    const handleOpen = () => {
+      if (openRef.current) return
+      openRef.current = true
+      window.history.pushState({ atelierNotifications: 'open' }, '')
+      setPage(1)
+      setOpen(true)
+    }
     window.addEventListener('notifications-open', handleOpen)
     return () => window.removeEventListener('notifications-open', handleOpen)
   }, [])
@@ -65,8 +78,7 @@ export default function NotificationsModal() {
   // 手机返回键关闭：打开时推入历史标记，返回手势触发 popstate 即关闭
   useEffect(() => {
     if (!open) return
-    window.history.pushState({ atelierNotifications: 'open' }, '')
-    const handlePopState = () => setOpen(false)
+    const handlePopState = () => close()
     window.addEventListener('popstate', handlePopState)
     return () => {
       window.removeEventListener('popstate', handlePopState)
@@ -78,7 +90,7 @@ export default function NotificationsModal() {
   // ESC 关闭
   useEffect(() => {
     if (!open) return
-    const handleKey = e => { if (e.key === 'Escape') setOpen(false) }
+    const handleKey = e => { if (e.key === 'Escape') close() }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
   }, [open])
@@ -127,7 +139,7 @@ export default function NotificationsModal() {
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-[95] flex items-center justify-center p-4" onClick={() => setOpen(false)}>
+    <div className="fixed inset-0 z-[95] flex items-center justify-center p-4" onClick={close}>
       <div className="absolute inset-0 bg-black/50" />
       <div
         className="relative w-full max-w-lg max-h-[85vh] overflow-hidden rounded-2xl flex flex-col"
@@ -140,7 +152,7 @@ export default function NotificationsModal() {
           <div className="flex items-center gap-2">
             <button onClick={markAll} className="px-2.5 py-1.5 rounded-2xl text-xs font-medium text-white" style={{ background: 'var(--accent)' }}>全部已读</button>
             <button onClick={clearRead} className="px-2.5 py-1.5 rounded-2xl text-xs font-medium" style={{ color: 'var(--text-secondary)', border: '1px solid var(--border-color)' }}>清除已读</button>
-            <button onClick={() => setOpen(false)} aria-label="关闭" className="p-1.5 rounded-lg hover:bg-bg-hover shrink-0" style={{ color: 'var(--text-secondary)' }}><X size={18} /></button>
+            <button onClick={close} aria-label="关闭" className="p-1.5 rounded-lg hover:bg-bg-hover shrink-0" style={{ color: 'var(--text-secondary)' }}><X size={18} /></button>
           </div>
         </div>
         {/* 内容 */}

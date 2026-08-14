@@ -13,6 +13,8 @@ const {
   toggleCurrentColsMock,
   clearUserMock,
   subscriptionMeMock,
+  notificationListMock,
+  announcementListMock,
 } = vi.hoisted(() => ({
   unreadCountMock: vi.fn(),
   getUnreadMock: vi.fn(),
@@ -25,6 +27,8 @@ const {
   toggleCurrentColsMock: vi.fn(),
   clearUserMock: vi.fn(),
   subscriptionMeMock: vi.fn(),
+  notificationListMock: vi.fn(),
+  announcementListMock: vi.fn(),
 }))
 
 vi.mock('../components/AppDialogProvider', () => ({
@@ -58,8 +62,8 @@ vi.mock('../api', () => ({
     checkin: vi.fn(async () => ({ data: { points: 10, message: 'ok' } })),
   },
   authAPI: { logout: authLogoutMock },
-  notificationAPI: { unreadCount: unreadCountMock },
-  announcementAPI: { getUnread: getUnreadMock },
+  notificationAPI: { unreadCount: unreadCountMock, list: notificationListMock },
+  announcementAPI: { getUnread: getUnreadMock, list: announcementListMock },
   subscriptionAPI: { me: subscriptionMeMock },
 }))
 
@@ -75,6 +79,7 @@ vi.mock('react-router-dom', async () => {
 })
 
 import MainLayout from '../components/MainLayout'
+import NotificationsModal from '../components/NotificationsModal'
 import { MemoryRouter } from 'react-router-dom'
 
 const renderLayout = (props = {}) =>
@@ -96,6 +101,8 @@ beforeEach(() => {
   authLogoutMock.mockResolvedValue({})
   unreadCountMock.mockResolvedValue({ data: { count: 0 } })
   getUnreadMock.mockResolvedValue({ data: { items: [] } })
+  notificationListMock.mockResolvedValue({ data: { items: [] } })
+  announcementListMock.mockResolvedValue({ data: { items: [] } })
   subscriptionMeMock.mockResolvedValue({ data: { plan: null } })
   global.fetch = vi.fn(async () => ({ ok: true, json: async () => ({}) }))
 })
@@ -215,5 +222,25 @@ describe('MainLayout', () => {
     await waitFor(() => {
       expect(unreadCountMock.mock.calls.length).toBeGreaterThan(before)
     }, { timeout: 3000 })
+  })
+
+  it('keeps notifications modal open when sidebar closes after clicking notification (regression)', async () => {
+    render(
+      <MemoryRouter>
+        <MainLayout><div /></MainLayout>
+        <NotificationsModal />
+      </MemoryRouter>
+    )
+    // 打开抽屉（推入 atelierSidebar 历史标记）
+    fireEvent.click(document.querySelector('.mobile-topbar-menu'))
+    await waitFor(() => expect(document.querySelector('aside').parentElement.className).toContain('translate-x-0'))
+    expect(window.history.state?.atelierSidebar).toBe('open')
+    // 点击抽屉里的「通知」（通知为 button，其余导航为 a 链接）
+    fireEvent.click(document.querySelector('aside button.sidebar-nav-link'))
+    // 抽屉关闭，但通知弹窗保持打开（抽屉 cleanup 的 history.back 不得误关弹窗）
+    await waitFor(() => expect(screen.getByText('通知中心')).toBeInTheDocument())
+    await waitFor(() => expect(document.querySelector('aside').parentElement.className).toContain('-translate-x-full'))
+    expect(screen.getByText('通知中心')).toBeInTheDocument()
+    window.history.replaceState(null, '')
   })
 })
