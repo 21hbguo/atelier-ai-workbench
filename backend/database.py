@@ -840,9 +840,8 @@ def init_db():
                 conn.execute("ALTER TABLE recharge_requests ADD COLUMN confirmed_at TIMESTAMP")
             if not _column_exists(conn, "recharge_requests", "discount"):
                 conn.execute("ALTER TABLE recharge_requests ADD COLUMN discount NUMERIC(4,2) DEFAULT 0")
-            dup_nickname = conn.execute("SELECT nickname,COUNT(*) cnt FROM users WHERE nickname IS NOT NULL AND nickname<>'' GROUP BY nickname HAVING COUNT(*)>1 LIMIT 1").fetchone()
-            if not dup_nickname:
-                conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_nickname_unique ON users(nickname) WHERE nickname IS NOT NULL AND nickname<>''")
+            # 昵称允许重名（账号 username 仍唯一），历史唯一索引幂等移除
+            conn.execute("DROP INDEX IF EXISTS idx_users_nickname_unique")
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite_code_unique ON users(invite_code) WHERE invite_code IS NOT NULL AND invite_code<>''")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_users_inviter_user_id ON users(inviter_user_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_recharge_inviter_user_id ON recharge_requests(inviter_user_id)")

@@ -194,9 +194,7 @@ async def register(req: RegisterRequest, request: Request, response: Response):
         existing = conn.execute("SELECT id FROM users WHERE username = %s", (account,)).fetchone()
         if existing:
             raise HTTPException(status_code=400, detail="账号已存在")
-        nickname_existing = conn.execute("SELECT id FROM users WHERE nickname = %s", (nickname,)).fetchone()
-        if nickname_existing:
-            raise HTTPException(status_code=400, detail="昵称已存在")
+        # 昵称允许重名，仅账号唯一
         email_existing = conn.execute("SELECT id FROM users WHERE email = %s", (email,)).fetchone()
         if email_existing:
             raise HTTPException(status_code=400, detail="邮箱已被注册")

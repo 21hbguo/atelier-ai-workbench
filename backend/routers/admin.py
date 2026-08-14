@@ -114,9 +114,7 @@ async def create_user(body: dict, admin=Depends(require_admin)):
         existing = conn.execute("SELECT id FROM users WHERE username = %s", (username,)).fetchone()
         if existing:
             raise HTTPException(status_code=400, detail="账号已存在")
-        nickname_existing = conn.execute("SELECT id FROM users WHERE nickname = %s", (nickname,)).fetchone()
-        if nickname_existing:
-            raise HTTPException(status_code=400, detail="昵称已存在")
+        # 昵称允许重名，仅账号唯一
         password_hash = await hash_password(password)
         cursor = conn.execute("INSERT INTO users (username, password_hash, nickname) VALUES (%s, %s, %s) RETURNING id, username, nickname, is_admin, is_frozen, points, created_at", (username, password_hash, nickname))
         user = dict(cursor.fetchone())
