@@ -1568,9 +1568,12 @@ async def run_generation(ctx: ChatGenContext) -> None:
                     )
                 elif event["type"] == "error":
                     if not finished:
-                        _refund()
-                        _mark_message_status(ctx.assistant_msg_id, "failed", str(event["detail"]))
-                        _finish("failed", "error", {"detail": event["detail"]})
+                        if _refund():
+                            _mark_message_status(ctx.assistant_msg_id, "failed", str(event["detail"]))
+                            _finish("failed", "error", {"detail": event["detail"]})
+                        else:
+                            # 退款失败：保持 streaming，由重启 recover 幂等重试
+                            logger.warning("[chat/send] refund failed on stream error, keep streaming: task=%s", task_id)
     except asyncio.CancelledError:
         if task.status in ("done", "failed", "stopped"):
             # 终态已由 stop_message 同步完成（未启动任务取消时本函数体不执行，
@@ -1605,12 +1608,13 @@ async def run_generation(ctx: ChatGenContext) -> None:
                 # 退款失败：保持 streaming，由重启 recover 幂等重试
                 logger.warning("[chat/send] refund failed on unexpected error, keep streaming: task=%s", task_id)
     finally:
-        # 兜底：任务结束但既未完成也未进入终态（理论不应发生）→ 退款成功才标 failed；
+        # 兜底：任务结束但既未完成也未进入终态（except 各分支退款失败时在此重试）→
+        # 退款成功才标 failed 并广播 error 终态（订阅者需要终态事件收敛）；
         # 退款失败保持 streaming（任务对象留内存），由重启 recover 幂等重试
         if not finished:
             if _refund():
                 _mark_message_status(ctx.assistant_msg_id, "failed", "回复失败，请重试")
-                CHAT_TASK_MANAGER.finish(task_id)
+                _finish("failed", "error", {"detail": "回复失败，请重试"})
 
 
 def recover_interrupted_chat_messages() -> int:

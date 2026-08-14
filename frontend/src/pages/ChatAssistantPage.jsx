@@ -1951,7 +1951,7 @@ export default function ChatAssistantPage() {
     resumePollTimerRef.current = setInterval(async () => {
       try { res = await chatAPI.messages(sessionId) } catch { return } // 失败等下一轮
       const items = res.data?.items || []
-      const msg = items.find(m => m.id === messageId)
+      const msg = items.find(m => String(m.id) === String(messageId))
       if (!msg) { stopResumePolling(); return }
       const terminal = !!(msg.status && msg.status !== 'streaming')
       // 同步最新内容到本地（sending 还在时）
@@ -1960,7 +1960,7 @@ export default function ChatAssistantPage() {
         sendingRef.current = { ...sendingRef.current, ...patch }
         setSending(prev => (prev && prev.streamId === streamId) ? { ...prev, ...patch } : prev)
       }
-      setMessages(prev => prev.map(m => (m.id === messageId
+      setMessages(prev => prev.map(m => (String(m.id) === String(messageId)
         ? { ...m, content: msg.content ?? m.content, thinking: msg.thinking ?? m.thinking, status: msg.status, error: msg.error }
         : m)))
       if (terminal) {
