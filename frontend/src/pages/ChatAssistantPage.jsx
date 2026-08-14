@@ -1986,9 +1986,8 @@ export default function ChatAssistantPage() {
       },
       onError: (msg, isNetwork) => {
         if (isNetwork) {
-          // 订阅连接断开（非主动 abort）：任务仍在后台继续，结果落库；仅提示，不取消。
+          // 订阅连接断开（非主动 abort）：任务仍在后台继续，结果落库；不提示打扰，
           // 断网期间转兜底轮询续看（每 2s 拉最新内容，消息终态自动停），避免气泡停在半成品
-          showToast('连接已断开，生成将在后台继续，返回会话可继续查看', 'error')
           const cur = sendingRef.current
           if (cur && cur.streamId === streamId && !cur.stopped && cur.assistantMessageId && cur.sessionId) {
             startResumePollingRef.current?.(cur.sessionId, cur.assistantMessageId, streamId)
