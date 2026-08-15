@@ -1675,7 +1675,9 @@ def recover_interrupted_chat_messages() -> int:
     try:
         with get_db() as conn:
             rows = conn.execute(
-                "SELECT id, user_id, req_id, charge_mode, daily_total FROM chat_messages WHERE status = 'streaming'"
+                """SELECT m.id, s.user_id, m.req_id, m.charge_mode, m.daily_total
+                   FROM chat_messages m JOIN chat_sessions s ON s.id = m.session_id
+                   WHERE m.status = 'streaming'"""
             ).fetchall()
     except Exception:
         logger.exception("[chat] recover: 查询 streaming 消息失败")

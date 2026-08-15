@@ -411,7 +411,7 @@ def test_recover_interrupted_chat_messages_marks_failed_and_refunds():
 
     def _side_effect(sql, *params):
         cur = MagicMock(name="cursor")
-        if "WHERE status = 'streaming'" in str(sql):
+        if "status = 'streaming'" in str(sql):
             cur.fetchall.return_value = rows
         else:
             cur.fetchone.return_value = None
