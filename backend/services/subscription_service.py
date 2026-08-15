@@ -190,6 +190,7 @@ def ensure_current_cycle_in_conn(conn, user_id: int, now: datetime | None = None
     )
     # 多订阅卡并存：从付费会员卡中选价格最高的一张（贵的优先；同价先购优先）。
     # 每张卡独立倒计时（各自 started_at/expires_at），卡到期后自动切换下一张有效卡；
+    # 排队/冻结卡（pending_days > 0）不消耗时长，轮到它时才建周期激活倒计时；
     # 已过期的卡也会被选入并在循环中统一清理（expire 周期 + 标记卡失效），不留垃圾行。
     # 积分包（credits）是纯积分购买，不产生订阅卡，天然排除。
     while True:
@@ -206,6 +207,38 @@ def ensure_current_cycle_in_conn(conn, user_id: int, now: datetime | None = None
         if not row:
             break
         sub = dict(row)
+        if float(sub.get("pending_days") or 0) > 0:
+            # 轮到排队/冻结卡：激活（建 cycle/bucket、pending_days 清零），贵的卡到期后自动轮到
+            plan = _get_plan(conn, plan_id=sub["plan_id"])
+            start = now
+            end = now + timedelta(days=float(sub["pending_days"]))
+            cycle = conn.execute(
+                """INSERT INTO subscription_cycles
+                   (subscription_id, plan_id, period_start, period_end, granted_points, remaining_points, entitlements_snapshot)
+                   VALUES (%s, %s, %s, %s, 0, 0, %s::jsonb) RETURNING *""",
+                (sub["id"], sub["plan_id"], start, end, json.dumps(_snapshot(plan), ensure_ascii=False)),
+            ).fetchone()
+            cycle_id = cycle["id"]
+            bucket_id = conn.execute(
+                """INSERT INTO point_buckets
+                   (user_id, bucket_type, cycle_id, granted_points, remaining_points, expires_at)
+                   VALUES (%s, 'subscription', %s, 0, 0, %s) RETURNING id""",
+                (user_id, cycle_id, end),
+            ).fetchone()["id"]
+            conn.execute(
+                "UPDATE user_subscriptions SET current_cycle_id = %s, status = 'active', expires_at = %s, pending_days = 0, updated_at = NOW() WHERE id = %s",
+                (cycle_id, end, sub["id"]),
+            )
+            # 积分：仅当该卡从未激活过（current_cycle_id IS NULL）且套餐带积分才补发；
+            # 被顶掉过的卡（current_cycle_id 指向已 expire 的 cycle）不再发，防双发
+            points = max(Decimal(0), _points(plan.get("grant_points")))
+            if sub.get("current_cycle_id") is None and points > 0:
+                from backend.services.points_service import PointsService
+                PointsService.grant_subscription_points_in_conn(
+                    conn, user_id, bucket_id, cycle_id, float(points),
+                    f"{plan['name']} 周期积分", f"subscription-grant:{cycle_id}",
+                )
+            return {"subscription": dict(conn.execute("SELECT * FROM user_subscriptions WHERE id = %s", (sub["id"],)).fetchone()), "cycle": dict(cycle), "plan": plan}
         cycle_row = conn.execute(
             "SELECT * FROM subscription_cycles WHERE id = %s FOR UPDATE", (sub.get("current_cycle_id"),)
         ).fetchone() if sub.get("current_cycle_id") else None
@@ -262,6 +295,14 @@ def get_current_state(user_id: int) -> dict:
         next_plan = _get_plan(conn, plan_id=state["subscription"].get("next_plan_id")) if state["subscription"].get("next_plan_id") else None
         cycle = state["cycle"]
         plan = _cycle_plan(cycle)
+        # 排队冻结中的会员卡（贵的先生效，便宜的排队等待，轮到才倒计时）
+        queued = conn.execute(
+            """SELECT us.plan_id, p.name AS plan_name, us.pending_days, p.price_rmb
+               FROM user_subscriptions us JOIN subscription_plans p ON p.id = us.plan_id
+               WHERE us.user_id = %s AND us.status = 'active' AND us.pending_days > 0
+               ORDER BY p.price_rmb DESC, us.id ASC""",
+            (user_id,),
+        ).fetchall()
         return {
             "subscription_id": state["subscription"]["id"],
             "status": state["subscription"].get("status", "active"),
@@ -277,6 +318,11 @@ def get_current_state(user_id: int) -> dict:
             "permanent_points": float(_points(permanent["points"])) if permanent else 0,
             "total_points": float(_points(conn.execute("SELECT points FROM users WHERE id = %s", (user_id,)).fetchone()["points"])),
             "next_plan": _snapshot(next_plan) if next_plan else None,
+            "queued_cards": [
+                {"plan_id": r["plan_id"], "plan_name": r["plan_name"],
+                 "pending_days": float(r["pending_days"]), "price_rmb": str(r["price_rmb"])}
+                for r in queued
+            ],
         }
 
 
@@ -348,10 +394,16 @@ def activate_plan_in_conn(conn, user_id: int, plan: dict, order_id=None) -> str:
     """激活订阅/积分包：供订阅订单审核与充值审核（套餐）共用，返回激活方式。
 
     - "credits": 积分包——单次购买积分，只加永久积分，完全不动订阅（不建周期、不切换套餐）
-    - "current_cycle": 会员卡——新增一张独立计时的订阅卡（每张卡各自倒计时；
-      生效时自动优先使用价格最高、未过期的卡）
+    - "extended": 会员卡——同套餐已有卡时合并：激活中的卡顺延周期，排队中的卡累加冻结时长
+    - "current_cycle": 会员卡——无任何付费卡时，新增一张独立计时的订阅卡（立即生效）
+    - "upgraded": 会员卡——新卡比当前应生效卡（激活中最贵，否则排队中最贵）更贵时立即生效，
+      顶掉当前激活卡（其剩余时长冻结排队）
+    - "queued": 会员卡——新卡不更贵时排队冻结（pending_days > 0，不建周期/不发积分，轮到才倒计时）
     """
     now = datetime.now()
+    # 锁用户行串行化激活（与 PointsService 锁序一致）：防止并发激活同套餐时
+    # 两个事务同时判定“无有效卡”而各建一张新卡（FOR UPDATE OF us 无命中行时不加 gap lock）
+    conn.execute("SELECT id FROM users WHERE id = %s FOR UPDATE", (user_id,)).fetchone()
     new_credits = (plan.get("features") or {}).get("package_type") == "credits"
     if new_credits:
         # 积分包：永久积分直接进永久桶（订阅到期/换卡都不清零），不碰 user_subscriptions/subscription_cycles
@@ -364,16 +416,111 @@ def activate_plan_in_conn(conn, user_id: int, plan: dict, order_id=None) -> str:
                 request_key=f"credits-plan-grant:{order_id or int(now.timestamp() * 1000)}",
             )
         return "credits"
-    # 会员卡：新增一行订阅（独立倒计时，不影响其他卡）
+    # 会员卡：贵的先生效，便宜的排队冻结（pending_days > 0 不消耗时长、无权益），轮到才倒计时。
+    # 激活中卡 pending_days = 0；排队/冻结卡 expires_at = NULL。
     days = max(1, int(plan.get("cycle_days") or 30))
-    end = now + timedelta(days=days)
-    sub = conn.execute(
-        """INSERT INTO user_subscriptions (user_id, plan_id, status, started_at, expires_at, last_order_id)
-           VALUES (%s, %s, 'active', %s, %s, %s) RETURNING *""",
-        (user_id, plan["id"], now, end, order_id),
-    ).fetchone()
-    _create_cycle_in_conn(conn, user_id, sub["id"], plan, now, order_id)
-    return "current_cycle"
+    # 查该用户全部付费会员卡（status='active'，排除 free/credits），价格降序、先购优先；
+    # LEFT JOIN 周期带出 period_end/cycle status（排队卡无 active 周期）；FOR UPDATE OF us 锁卡行防并发重复激活
+    pool_rows = conn.execute(
+        """SELECT us.id AS sub_id, us.plan_id, us.pending_days, us.current_cycle_id, us.started_at,
+                  p.price_rmb, c.period_end, c.status AS cycle_status
+           FROM user_subscriptions us
+           JOIN subscription_plans p ON p.id = us.plan_id
+           LEFT JOIN subscription_cycles c ON c.id = us.current_cycle_id
+           WHERE us.user_id = %s AND us.status = 'active'
+             AND p.is_free = FALSE
+             AND (p.features->>'package_type') IS DISTINCT FROM 'credits'
+           ORDER BY p.price_rmb DESC, us.started_at ASC
+           FOR UPDATE OF us""",
+        (user_id,),
+    ).fetchall()
+    pool = [dict(r) for r in pool_rows] if pool_rows else []
+    if not pool:
+        # 无任何付费会员卡：新建卡立即生效（独立倒计时）
+        end = now + timedelta(days=days)
+        sub = conn.execute(
+            """INSERT INTO user_subscriptions (user_id, plan_id, status, started_at, expires_at, last_order_id)
+               VALUES (%s, %s, 'active', %s, %s, %s) RETURNING *""",
+            (user_id, plan["id"], now, end, order_id),
+        ).fetchone()
+        _create_cycle_in_conn(conn, user_id, sub["id"], plan, now, order_id)
+        return "current_cycle"
+    # ① 同套餐合并：排队中的同套餐卡直接累加冻结时长；激活中的顺延周期（上轮 extended 语义）
+    same_plan = [c for c in pool if c["plan_id"] == plan["id"]]
+    if same_plan:
+        target = same_plan[0]
+        if float(target.get("pending_days") or 0) > 0:
+            # 排队/冻结中：不建周期，冻结时长直接累加（仍在队伍里，轮到才倒计时）
+            conn.execute(
+                "UPDATE user_subscriptions SET pending_days = pending_days + %s, last_order_id = COALESCE(%s, last_order_id), updated_at = NOW() WHERE id = %s",
+                (days, order_id, target["sub_id"]),
+            )
+        else:
+            # 激活中：顺延叠加，在现有卡当前周期到期时间上累加（已过期卡取 now 重新起算），不重复建卡、不建周期
+            new_end = max(target["period_end"], now) + timedelta(days=days)
+            conn.execute(
+                "UPDATE subscription_cycles SET period_end = %s WHERE id = %s",
+                (new_end, target["current_cycle_id"]),
+            )
+            # 订阅桶可消费期同步顺延（消费侧按 point_buckets.expires_at 过滤，不延则桶内积分白发）
+            conn.execute(
+                "UPDATE point_buckets SET expires_at = %s WHERE cycle_id = %s",
+                (new_end, target["current_cycle_id"]),
+            )
+            conn.execute(
+                "UPDATE user_subscriptions SET expires_at = %s, last_order_id = COALESCE(%s, last_order_id), updated_at = NOW() WHERE id = %s",
+                (new_end, order_id, target["sub_id"]),
+            )
+            # 补发周期积分到该卡订阅桶（未过期卡不清零，直接追加；key 不能用 subscription-grant:{cycle_id}，会被幂等跳过）
+            points = max(Decimal(0), _points(plan.get("grant_points")))
+            if points > 0:
+                from backend.services.points_service import PointsService
+                bucket = conn.execute(
+                    "SELECT id FROM point_buckets WHERE cycle_id = %s AND bucket_type = 'subscription'",
+                    (target["current_cycle_id"],),
+                ).fetchone()
+                if bucket:
+                    PointsService.grant_subscription_points_in_conn(
+                        conn, user_id, bucket["id"], target["current_cycle_id"], float(points),
+                        f"{plan['name']} 叠加续期积分",
+                        f"subscription-extend-grant:{target['current_cycle_id']}:{order_id or int(now.timestamp() * 1000)}",
+                    )
+        return "extended"
+    # ② 不同套餐：比价对象 = 池中当前"应生效"的卡（激活中最贵；无激活卡则排队中最贵，
+    #    与 ensure 调度一致：ensure 会先清理过期卡再激活排队中最贵的）。
+    #    新卡比它更贵才立即生效（顶掉激活卡），否则排队；池中无激活也无排队卡时直接生效。
+    active_top = next(
+        (c for c in pool if c.get("cycle_status") == "active" and c.get("period_end") and c["period_end"] > now),
+        None,
+    )
+    queued_top = next((c for c in pool if float(c.get("pending_days") or 0) > 0), None)
+    ref = active_top or queued_top
+    if ref is None or float(plan.get("price_rmb") or 0) > float(ref.get("price_rmb") or 0):
+        # 顶掉激活中最贵的卡（若有）：冻结其剩余时长，轮到再倒计时
+        if active_top is not None:
+            remaining = active_top["period_end"] - now
+            # 清掉被顶卡周期（桶清零 + 周期置 expired），剩余时长转 pending_days 排队冻结
+            _expire_cycle_in_conn(conn, {"id": active_top["current_cycle_id"]}, user_id, now)
+            conn.execute(
+                "UPDATE user_subscriptions SET pending_days = %s, expires_at = NULL, last_order_id = COALESCE(%s, last_order_id), updated_at = NOW() WHERE id = %s",
+                (round(remaining.total_seconds() / 86400.0, 2), order_id, active_top["sub_id"]),
+            )
+        # 新卡立即生效（独立倒计时）
+        end = now + timedelta(days=days)
+        sub = conn.execute(
+            """INSERT INTO user_subscriptions (user_id, plan_id, status, started_at, expires_at, last_order_id)
+               VALUES (%s, %s, 'active', %s, %s, %s) RETURNING *""",
+            (user_id, plan["id"], now, end, order_id),
+        ).fetchone()
+        _create_cycle_in_conn(conn, user_id, sub["id"], plan, now, order_id)
+        return "upgraded"
+    # ③ 不同套餐且新卡不更贵：排队冻结（不建 cycle/bucket、不发积分，剩余时长保留）
+    conn.execute(
+        """INSERT INTO user_subscriptions (user_id, plan_id, status, started_at, expires_at, pending_days, last_order_id)
+           VALUES (%s, %s, 'active', %s, NULL, %s, %s)""",
+        (user_id, plan["id"], now, days, order_id),
+    )
+    return "queued"
 
 
 def approve_order(order_id: int, admin_id: int, review_note: str = "") -> dict:

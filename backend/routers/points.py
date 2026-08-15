@@ -299,7 +299,7 @@ async def app_push_callback(t: str, type: str, price: str, sign: str):
     # 金额匹配对整数/非整数原价均成立；随机折扣机制不受影响
     with get_db() as conn:
         row = conn.execute(
-            "SELECT * FROM recharge_requests WHERE channel = %s AND status = 'pending' AND ABS(amount - %s) < 0.01 AND created_at >= NOW() - interval '10 minutes' ORDER BY user_confirmed DESC, created_at ASC LIMIT 1",
+            "SELECT * FROM recharge_requests WHERE channel = %s AND status = 'pending' AND ABS(amount - %s) < 0.01 AND created_at >= NOW() - interval '10 minutes' ORDER BY user_confirmed DESC, created_at ASC LIMIT 1 FOR UPDATE",
             (channel, paid_amount),
         ).fetchone()
         if not row:
@@ -346,7 +346,7 @@ async def app_push_callback(t: str, type: str, price: str, sign: str):
                     group_notify = ("subscription_approved", "拼团升级成功", f"你的「{plan['name']}」套餐已激活", str(request_id))
                 logger.info(f"[appPush] 拼团到账 request={request_id} user={user_id} plan={plan['name']} result={group_result}")
             else:
-                activation = activate_plan_in_conn(conn, user_id, plan)
+                activation = activate_plan_in_conn(conn, user_id, plan, order_id=request_id)
                 conn.execute(
                     "UPDATE recharge_requests SET status = 'approved', review_note = %s, reviewed_at = %s WHERE id = %s",
                     (f"VMQ自动到账 ¥{paid_amount}，已激活「{plan['name']}」", now, request_id),

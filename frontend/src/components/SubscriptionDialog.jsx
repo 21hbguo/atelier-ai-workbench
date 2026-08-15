@@ -129,6 +129,22 @@ export default function SubscriptionDialog({ open, onClose }) {
                   ? `当前套餐：${subscription.plan.name}${subscription.plan.features?.package_type !== 'credits' && subscription.cycle?.period_end ? ` · 周期至 ${formatDate(subscription.cycle.period_end)}` : ''}`
                   : '当前为免费套餐，升级解锁更多权益'}
             </p>
+            {/* 排队中的卡：用户同时持有多张会员卡时，除当前生效套餐外其余卡冻结排队，不消耗时长 */}
+            {!selectedPlan && Array.isArray(subscription?.queued_cards) && subscription.queued_cards.length > 0 && (
+              <div className="mt-1.5 rounded-lg px-2 py-1.5 space-y-1" style={{ background: 'var(--bg-hover)' }}>
+                {subscription.queued_cards.map((card, idx) => {
+                  const qName = card?.plan_name || '未知套餐'
+                  const qDays = Number(card?.pending_days)
+                  const qText = qDays >= 1 ? `剩余 ${Math.round(qDays)} 天` : '不足 1 天'
+                  return (
+                    <div key={card?.plan_id ?? `queued-${idx}`} className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                      <span className="size-1.5 shrink-0 rounded-full" style={{ background: 'color-mix(in srgb, var(--accent) 50%, transparent)' }} />
+                      <span className="truncate">{qName} · 排队中（{qText}）</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
           <button onClick={onClose} aria-label="关闭" className="p-1.5 rounded-lg hover:bg-bg-hover shrink-0" style={{ color: 'var(--text-secondary)' }}><X size={18} /></button>
         </div>

@@ -945,7 +945,7 @@ async def approve_recharge_request(request_id: int, body: dict, admin=Depends(re
     group_notify = None
     group_result = None
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM recharge_requests WHERE id = %s", (request_id,)).fetchone()
+        row = conn.execute("SELECT * FROM recharge_requests WHERE id = %s FOR UPDATE", (request_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="充值申请不存在")
         item = dict(row)
@@ -985,7 +985,7 @@ async def approve_recharge_request(request_id: int, body: dict, admin=Depends(re
                     group_notify = ("subscription_approved", "拼团升级成功", f"你的「{plan['name']}」套餐已激活", str(request_id))
                 logger.info(f"[audit.recharge.approve] request={request_id} admin={admin['user_id']} user={user_id} plan={plan['name']} group_result={group_result}")
             else:
-                activation = activate_plan_in_conn(conn, user_id, plan)
+                activation = activate_plan_in_conn(conn, user_id, plan, order_id=request_id)
                 now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 conn.execute(
                     "UPDATE recharge_requests SET status = 'approved', review_note = %s, reviewed_at = %s, reviewed_by = %s WHERE id = %s",

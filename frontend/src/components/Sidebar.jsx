@@ -206,6 +206,9 @@ export default function Sidebar({ open, onClose }) {
                           <span className="shrink-0 font-semibold tabular-nums" style={{ color: quotaColor }}>{quotaPct}%</span>
                         </span>
                       ) : (hasPlan ? (subscription.plan.features?.package_type === 'credits' ? '永久积分' : `周期至 ${formatDate(subscription.cycle?.period_end)}`) : '解锁更多模型')) : <span aria-label="套餐权益加载中" className="block h-2.5 w-24 rounded-full animate-pulse" style={{ background: 'var(--bg-hover)' }} />}</div>
+                      {subscription?.queued_cards?.length > 0 && (
+                        <div className="truncate" style={{ color: 'var(--accent)' }}>另有 {subscription.queued_cards.length} 张卡排队中</div>
+                      )}
                       <div className="truncate">积分剩余 {Math.round(Number(points))}</div>
                     </div>
                   )}

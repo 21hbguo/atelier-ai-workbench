@@ -55,7 +55,7 @@ async def vmq_notify(
             return {"status": "ok", "reason": "已处理过"}
 
         row = conn.execute(
-            "SELECT * FROM recharge_requests WHERE channel = %s AND status = 'pending' AND ABS(amount - %s) < 0.01 AND created_at >= NOW() - interval '10 minutes' ORDER BY created_at ASC LIMIT 1",
+            "SELECT * FROM recharge_requests WHERE channel = %s AND status = 'pending' AND ABS(amount - %s) < 0.01 AND created_at >= NOW() - interval '10 minutes' ORDER BY created_at ASC LIMIT 1 FOR UPDATE",
             (channel, amount),
         ).fetchone()
 
@@ -75,7 +75,7 @@ async def vmq_notify(
             plan = get_plan_in_conn(conn, item["plan_id"])
             if not plan or not plan.get("enabled") or plan.get("is_free"):
                 raise HTTPException(status_code=400, detail="套餐不可用")
-            activation = activate_plan_in_conn(conn, user_id, plan)
+            activation = activate_plan_in_conn(conn, user_id, plan, order_id=request_id)
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             conn.execute(
                 "UPDATE recharge_requests SET status = 'approved', review_note = %s, reviewed_at = %s WHERE id = %s",

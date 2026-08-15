@@ -1,4 +1,5 @@
 import re
+from datetime import datetime
 from backend.db.engine import init_pool
 from backend.db.session import get_db
 
@@ -1013,6 +1014,50 @@ def init_db():
                    WHERE status = 'active'
                      AND plan_id IN (SELECT id FROM subscription_plans WHERE features->>'package_type' = 'credits')"""
             )
+            # 会员卡排队冻结：pending_days > 0 表示排队/冻结中（不消耗时长、无权益、expires_at 置 NULL），
+            # 轮到（贵的到期）才激活倒计时；激活中卡 pending_days = 0。
+            conn.execute(
+                "ALTER TABLE user_subscriptions ADD COLUMN IF NOT EXISTS pending_days NUMERIC(10,2) NOT NULL DEFAULT 0"
+            )
+            # 存量多卡冻结（幂等：WHERE pending_days = 0 保证重跑不重复处理）：每用户保留最贵一张
+            # 继续生效，其余卡若有未过期周期则冻结剩余时长（周期 expire、桶清零、卡保留 active），
+            # 周期已耗尽的卡直接标记 expired。
+            cards = conn.execute(
+                """SELECT us.id AS sub_id, us.user_id, us.current_cycle_id,
+                          c.status AS cycle_status, c.period_end
+                   FROM user_subscriptions us
+                   JOIN subscription_plans p ON p.id = us.plan_id
+                   LEFT JOIN subscription_cycles c ON c.id = us.current_cycle_id
+                   WHERE us.status = 'active' AND us.pending_days = 0
+                     AND p.is_free = FALSE
+                     AND (p.features->>'package_type') IS DISTINCT FROM 'credits'
+                   ORDER BY us.user_id, p.price_rmb DESC, us.started_at ASC"""
+            ).fetchall()
+            grouped = {}
+            for card in cards:
+                grouped.setdefault(card["user_id"], []).append(card)
+            for user_cards in grouped.values():
+                for card in user_cards[1:]:  # 每组第一张是最贵的（当前生效），其余卡冻结排队
+                    if card["cycle_status"] == "active" and card["period_end"] and card["period_end"] > datetime.now():
+                        remaining = card["period_end"] - datetime.now()
+                        conn.execute(
+                            "UPDATE subscription_cycles SET status = 'expired', remaining_points = 0 WHERE id = %s",
+                            (card["current_cycle_id"],),
+                        )
+                        conn.execute(
+                            "UPDATE point_buckets SET remaining_points = 0, status = 'expired' WHERE cycle_id = %s",
+                            (card["current_cycle_id"],),
+                        )
+                        # 保留 current_cycle_id 指向已 expire 的周期便于审计；轮到激活时重新建周期
+                        conn.execute(
+                            "UPDATE user_subscriptions SET pending_days = %s, expires_at = NULL, current_cycle_id = %s WHERE id = %s",
+                            (round(remaining.total_seconds() / 86400.0, 2), card["current_cycle_id"], card["sub_id"]),
+                        )
+                    else:
+                        conn.execute(
+                            "UPDATE user_subscriptions SET status = 'expired' WHERE id = %s",
+                            (card["sub_id"],),
+                        )
 
         # 初始化默认分类
             count = conn.execute("SELECT COUNT(*) AS cnt FROM categories").fetchone()["cnt"]
