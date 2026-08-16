@@ -182,3 +182,20 @@
     border-right-color: var(--border);
   }
 }
+
+/* 全局会话搜索：命中消息定位后的 2s 高亮渐隐动画（ChatAssistantPage 的 scrollToPendingMessage 添加/移除） */
+.search-flash {
+  border-radius: 14px;
+  animation: search-flash 2s ease-out;
+}
+
+@keyframes search-flash {
+  0% {
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  100% {
+    background: transparent;
+    box-shadow: none;
+  }
+}

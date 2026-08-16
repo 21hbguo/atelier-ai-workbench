@@ -3,6 +3,8 @@ import { Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, PanelLeftClose,
 import MainLayout from '../components/MainLayout'
 import GroupBuyBanner from '../components/GroupBuyBanner'
 import { useAppDialog } from '../components/AppDialogProvider'
+import SearchInput from '../components/SearchInput'
+import Pagination from '../components/Pagination'
 import { chatAPI, pointsAPI, subscriptionAPI, taskAPI } from '../api'
 import { readUser } from '../auth'
 import { mdToHtml } from '../utils/markdown'
@@ -181,7 +183,8 @@ const tableToCsv = (table) => {
 // ============ 会话列表 ============
 function SessionList({ sessions, activeId, loading, sending, creating, renaming, renamingValue,
   onSelect, onCreate, onDelete, onTogglePin, onStartRename, onRenamingChange, onRenamingCommit, onRenamingCancel,
-  batchMode, selectedIds, onEnterBatch, onSelectAll, onToggleSelect, onBatchDelete, onExitBatch, onToggleCollapse }) {
+  batchMode, selectedIds, onEnterBatch, onSelectAll, onToggleSelect, onBatchDelete, onExitBatch, onToggleCollapse,
+  searchQuery, onSearchQueryChange, searchResults, searchTotal, searchPage, searchLoading, onSearchPageChange, onSearchSelect }) {
   const renderActions = (s) => (
     <>
       <button onClick={(e) => { e.stopPropagation(); onTogglePin(s) }}
@@ -265,6 +268,35 @@ function SessionList({ sessions, activeId, loading, sending, creating, renaming,
       </div>
     )
   }
+  // 搜索结果条目：kind=message 显示问/答标签 + snippet + 时间；kind=session 显示标题 + 时间
+  const renderSearchResult = (item) => {
+    const isMsg = item.kind === 'message'
+    return (
+      <div key={`${item.kind}-${isMsg ? item.message_id : item.session_id}`}
+        onClick={() => onSearchSelect(item)}
+        className="group relative rounded-xl px-3 py-2 cursor-pointer transition-colors hover:bg-bg-hover">
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm font-medium truncate flex-shrink-0 max-w-[55%]" style={{ color: 'var(--text-primary)' }}>
+            {item.session_title || '新对话'}
+          </span>
+          <span className="flex-shrink-0 text-[10px] leading-none px-1.5 py-0.5 rounded-full"
+            style={{
+              background: isMsg ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'color-mix(in srgb, var(--text-secondary) 14%, transparent)',
+              color: isMsg ? 'var(--accent)' : 'var(--text-secondary)',
+            }}>
+            {isMsg ? (item.role === 'user' ? '问' : '答') : '标题'}
+          </span>
+          <span className="flex-1 min-w-0 text-[11px] text-right flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>
+            {formatTime(item.ts)}
+          </span>
+        </div>
+        <div className={`text-xs mt-1 break-words leading-relaxed ${isMsg ? '' : 'truncate'}`} style={{ color: 'var(--text-secondary)' }}>
+          {item.snippet}
+        </div>
+      </div>
+    )
+  }
+  const searchTotalPages = Math.max(1, Math.ceil(searchTotal / 20))
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="p-3 pb-2 flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
@@ -310,8 +342,27 @@ function SessionList({ sessions, activeId, loading, sending, creating, renaming,
             )}
           </div>
         )}
+        {/* 搜索入口：复用 SearchInput（自带 300ms 防抖 + 清空 + 移动端展开）；批量模式下隐藏 */}
+        {!batchMode && (
+          <div className="mt-2 flex items-center">
+            <SearchInput value={searchQuery} onChange={onSearchQueryChange} placeholder="搜索会话与消息" />
+          </div>
+        )}
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1">
+        {searchQuery ? (
+          searchLoading ? (
+            <div className="text-xs text-center py-8" style={{ color: 'var(--text-secondary)' }}>搜索中…</div>
+          ) : searchResults.length === 0 ? (
+            <div className="text-xs text-center py-8" style={{ color: 'var(--text-secondary)' }}>未找到相关会话或消息</div>
+          ) : (
+            <>
+              {searchResults.map(renderSearchResult)}
+              <Pagination page={searchPage} totalPages={searchTotalPages} onPageChange={onSearchPageChange} />
+            </>
+          )
+        ) : (
+        <>
         {loading && <div className="text-xs text-center py-8" style={{ color: 'var(--text-secondary)' }}>加载中…</div>}
         {!loading && sessions.length === 0 && (
           <div className="text-xs text-center py-8" style={{ color: 'var(--text-secondary)' }}>
@@ -323,6 +374,8 @@ function SessionList({ sessions, activeId, loading, sending, creating, renaming,
         )}
         {pinnedList.map(renderRow)}
         {normalList.map(renderRow)}
+        </>
+        )}
       </div>
     </div>
   )
@@ -418,7 +471,8 @@ const MessageItem = memo(function MessageItem({ msg, onCopy, onRegenerate }) {
     [msg.content, isUser, msg.error]
   )
   return (
-    <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} mb-4 animate-fade-in-up group`}>
+    // id=msg-{id}：全局会话搜索的定位锚点（scrollIntoView + 高亮），仅用于定位不影响渲染
+    <div id={`msg-${msg.id}`} className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} mb-4 animate-fade-in-up group`}>
       <div className="relative max-w-[85%] sm:max-w-[78%] rounded-2xl px-4 py-3"
         style={{ background: isUser ? 'var(--bg-user-bubble)' : 'var(--bg-ai-bubble)', boxShadow: isUser ? 'none' : 'var(--shadow-md)' }}>
         {isUser ? (
@@ -1234,6 +1288,14 @@ export default function ChatAssistantPage() {
   const [activeId, setActiveId] = useState(null)
   const [messages, setMessages] = useState([])
   const [messagesLoading, setMessagesLoading] = useState(false)
+  // 全局会话搜索态：searchQuery 非空时侧边栏切换为搜索结果列表（空 = 正常会话列表模式）
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState([])
+  const [searchTotal, setSearchTotal] = useState(0)
+  const [searchPage, setSearchPage] = useState(1)
+  const [searchLoading, setSearchLoading] = useState(false)
+  const searchSeqRef = useRef(0)                        // 请求竞态序号：只应用最后一次响应的结果
+  const pendingScrollMessageIdRef = useRef(null)        // 待定位消息 id（搜索结果点击，跨消息加载生效）
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(null) // { sessionId, content, text, thinking, toolStatus, citations, widgets, files, pendingImage, stopped, error, manual }
   // 链接抓取状态（SSE url_status 事件）：{ status: 'fetching'|'ok'|'failed', url, error } | null
@@ -1432,6 +1494,27 @@ export default function ChatAssistantPage() {
     try { localStorage.setItem('chat_active_session_id', String(activeId)) } catch {}
   }, [activeId])
 
+  // 滚动到「待定位消息」并高亮（搜索结果点击跳转）。rAF 等本轮渲染完成后定位；
+  // 消息仍在加载（DOM 未就绪）时短暂重试 3 次后静默放弃（目标消息已删除时也不报错）
+  const scrollToPendingMessage = useCallback(() => {
+    const mid = pendingScrollMessageIdRef.current
+    if (mid == null) return
+    pendingScrollMessageIdRef.current = null
+    let attempts = 0
+    const tryScroll = () => {
+      const el = document.getElementById(`msg-${mid}`)
+      if (el) {
+        // 可选调用：jsdom 等无 scrollIntoView 的环境（单测）不中断高亮逻辑
+        el.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
+        el.classList.add('search-flash')
+        setTimeout(() => el.classList.remove('search-flash'), 2000)
+        return
+      }
+      if (attempts < 3) { attempts += 1; setTimeout(tryScroll, 250) }
+    }
+    requestAnimationFrame(tryScroll)
+  }, [])
+
   // 切换会话时加载消息
   useEffect(() => {
     // 切换会话/首次加载：整个消息列表替换，重置为跟随贴底
@@ -1442,12 +1525,40 @@ export default function ChatAssistantPage() {
     let active = true
     setMessagesLoading(true)
     chatAPI.messages(activeId).then(res => {
-      if (active) setMessages(res.data?.items || [])
+      if (!active) return
+      setMessages(res.data?.items || [])
+      // 搜索结果跳转：消息列表就绪后定位命中消息并高亮（DOM 未渲染时由 scrollToPendingMessage 内部重试）
+      scrollToPendingMessage()
     }).catch(err => {
       if (active) dialog.alert(err.message || '加载消息失败')
     }).finally(() => { if (active) setMessagesLoading(false) })
     return () => { active = false }
-  }, [activeId, dialog])
+  }, [activeId, dialog, scrollToPendingMessage])
+
+  // 全局会话搜索：SearchInput 已内置 300ms 防抖；这里只负责发请求 + 竞态序号（只应用最后一次响应）。
+  // 空查询不发请求，直接重置搜索态恢复会话列表
+  useEffect(() => {
+    const q = (searchQuery || '').trim()
+    const seq = ++searchSeqRef.current
+    if (!q) {
+      setSearchResults([])
+      setSearchTotal(0)
+      setSearchPage(1)
+      setSearchLoading(false)
+      return
+    }
+    setSearchLoading(true)
+    chatAPI.search(q, searchPage, 20).then(res => {
+      if (searchSeqRef.current !== seq) return
+      setSearchResults(res.data?.items || [])
+      setSearchTotal(res.data?.total || 0)
+    }).catch(err => {
+      if (searchSeqRef.current !== seq) return
+      dialog.alert(err.message || '搜索失败')
+    }).finally(() => {
+      if (searchSeqRef.current === seq) setSearchLoading(false)
+    })
+  }, [searchQuery, searchPage, dialog])
 
   // 公式点击复制：dangerouslySetInnerHTML 注入的内容无法绑 React 事件，用全局事件委托
   useEffect(() => {
@@ -1530,6 +1641,11 @@ export default function ChatAssistantPage() {
   const refreshSessions = useCallback(() => {
     chatAPI.sessions().then(res => {
       setSessions(res.data?.items || [])
+      // 会话数据已变化（新消息/删除等）：搜索结果可能过期，清空搜索态回到会话列表
+      setSearchQuery('')
+      setSearchResults([])
+      setSearchTotal(0)
+      setSearchPage(1)
       window.dispatchEvent(new Event('chat-sessions-updated'))
     }).catch(() => {})
   }, [])
@@ -2392,7 +2508,11 @@ export default function ChatAssistantPage() {
   }, [sending, sendQueuedNext])
 
   const handleSelectSession = (id) => {
-    if (id === activeId) return
+    if (id === activeId) {
+      // 同一会话（搜索结果点击命中当前会话）：不重复切换，仅执行消息定位
+      if (pendingScrollMessageIdRef.current != null) scrollToPendingMessage()
+      return
+    }
     // 生成中也可切换：只断开订阅连接（后台任务继续，结果落库，绝无任务取消语义）。
     // 本地流状态直接丢弃；切回时由续看逻辑按 task_id 缓存恢复订阅。
     abortRef.current?.abort()
@@ -2406,6 +2526,13 @@ export default function ChatAssistantPage() {
     skipMessagesLoadRef.current = null // 切换会话不再跳过加载
     setActiveId(id)
     setSessionListOpen(false)
+  }
+
+  // 搜索结果点击：复用 handleSelectSession 切换链路；kind=message 记录待定位消息 id
+  // （消息加载完成后 scrollIntoView + 高亮），kind=session 仅切会话（定位到会话顶部即可）
+  const handleSearchSelect = (item) => {
+    pendingScrollMessageIdRef.current = item?.kind === 'message' ? item.message_id : null
+    handleSelectSession(item.session_id)
   }
 
   const handleCreateSession = async () => {
@@ -2700,7 +2827,11 @@ export default function ChatAssistantPage() {
               onEnterBatch={handleEnterBatch} onSelectAll={handleSelectAll}
               onToggleSelect={handleToggleSelect} onBatchDelete={handleBatchDelete}
               onExitBatch={handleExitBatch}
-              onToggleCollapse={() => setChatListCollapsed(true)} />
+              onToggleCollapse={() => setChatListCollapsed(true)}
+              searchQuery={searchQuery} onSearchQueryChange={setSearchQuery}
+              searchResults={searchResults} searchTotal={searchTotal} searchPage={searchPage}
+              searchLoading={searchLoading} onSearchPageChange={setSearchPage}
+              onSearchSelect={handleSearchSelect} />
           )}
         </aside>
 
@@ -2727,7 +2858,11 @@ export default function ChatAssistantPage() {
                   batchMode={batchMode} selectedIds={selectedIds}
                   onEnterBatch={handleEnterBatch} onSelectAll={handleSelectAll}
                   onToggleSelect={handleToggleSelect} onBatchDelete={handleBatchDelete}
-                  onExitBatch={handleExitBatch} />
+                  onExitBatch={handleExitBatch}
+                  searchQuery={searchQuery} onSearchQueryChange={setSearchQuery}
+                  searchResults={searchResults} searchTotal={searchTotal} searchPage={searchPage}
+                  searchLoading={searchLoading} onSearchPageChange={setSearchPage}
+                  onSearchSelect={handleSearchSelect} />
               </div>
             </div>
           </div>
