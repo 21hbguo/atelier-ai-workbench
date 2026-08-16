@@ -37,6 +37,7 @@ from backend.services.agent.tools.web_search import (
     _ddg_html,
     _enhance_query,
     _extract_days_ago,
+    _http_get,
     _mojeek_html,
     _parse_bing_html,
     _parse_ddg_html,
@@ -152,7 +153,7 @@ def _run(coro):
 
 
 class _Handler(http.server.BaseHTTPRequestHandler):
-    """本地样例页：/bing、/ddg、/mojeek 返回对应最小结果页，其余 404。"""
+    """本地样例页：/bing、/ddg、/mojeek 返回对应最小结果页，/redirect 301 到 /bing，其余 404。"""
 
     def do_GET(self):  # noqa: N802 - http.server 协议方法名
         if self.path.startswith("/bing"):
@@ -161,6 +162,11 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self._respond(200, DDG_HTML.encode("utf-8"), "text/html; charset=utf-8")
         elif self.path.startswith("/mojeek"):
             self._respond(200, MOJEEK_HTML.encode("utf-8"), "text/html; charset=utf-8")
+        elif self.path.startswith("/redirect"):
+            self.send_response(301)
+            self.send_header("Location", "/bing")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
         else:
             self._respond(404, b"not found", "text/plain")
 
@@ -301,6 +307,8 @@ def test_bing_html_requests_and_parses():
     assert headers.get("accept-language") == "zh-CN,zh;q=0.9,en;q=0.8"
     # 响应体大小上限参数生效（2MB）
     assert m.await_args.kwargs.get("max_bytes") == 2 * 1024 * 1024
+    # 跟随重定向（cn.bing.com 在非 CN 网络 301 到 www.bing.com，生产环境实测）
+    assert m.await_args.kwargs.get("follow_redirects") is True
     assert len(results) == 2
     assert results[0]["url"] == "https://example.com/article-1"
 
@@ -313,6 +321,7 @@ def test_ddg_html_requests_and_parses():
     assert url.startswith("https://html.duckduckgo.com/html/?q=")
     assert "pytest 免费搜索" in urllib.parse.unquote(url)
     assert m.await_args.kwargs.get("max_bytes") == 2 * 1024 * 1024
+    assert m.await_args.kwargs.get("follow_redirects") is True
     assert len(results) == 2
     assert results[1]["url"] == "https://ddg.example.org/news/2"
 
@@ -329,6 +338,7 @@ def test_mojeek_html_requests_and_parses():
     assert headers.get("referer") == "https://www.mojeek.com/"
     assert headers.get("accept-language") == "zh-CN,zh;q=0.9,en;q=0.8"
     assert m.await_args.kwargs.get("max_bytes") == 2 * 1024 * 1024
+    assert m.await_args.kwargs.get("follow_redirects") is True
     assert len(results) == 3
     assert results[0]["url"] == "https://mojeek.example.com/a"
 
@@ -346,6 +356,19 @@ def test_parse_real_html_from_local_server(server):
     results = _parse_ddg_html(resp.text, 10)
     assert len(results) == 2
     assert results[1]["description"] == "第二条摘要：含 & 实体。"
+
+
+def test_http_get_follows_redirects(server):
+    """真实端到端：301 重定向在 follow_redirects=True 时被跟随并拿到目标页。
+
+    对应生产环境实测：非 CN 网络下 cn.bing.com 301 到 www.bing.com，
+    html 引擎必须跟随重定向才能拿到结果页。
+    """
+    data = _run(_http_get(server.base + "/redirect", max_bytes=1024 * 1024, follow_redirects=True))
+    assert "示例文章一" in data.get("html", "")
+    # 不跟随时 301 直接抛 HTTPStatusError（_bing_html 等显式传 True 才跟随）
+    with pytest.raises(httpx.HTTPStatusError):
+        _run(_http_get(server.base + "/redirect", max_bytes=1024 * 1024))
 
     resp = httpx.get(server.base + "/mojeek")
     assert resp.status_code == 200
