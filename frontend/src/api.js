@@ -181,6 +181,8 @@ export const chatAPI = {
   renameSession: (id, title) => api.patch(`/chat/sessions/${id}`, { title }),
   deleteSession: id => api.delete(`/chat/sessions/${id}`),
   batchDeleteSessions: ids => api.post('/chat/sessions/batch-delete', { ids }),
+  pinSession: id => api.post(`/chat/sessions/${id}/pin`),
+  unpinSession: id => api.delete(`/chat/sessions/${id}/pin`),
   messages: id => api.get(`/chat/sessions/${id}/messages`),
   // 删除指定消息及其后所有消息（「重新回答」的重置分支点）
   deleteMessages: (sessionId, messageId) => api.delete(`/chat/sessions/${sessionId}/messages/${messageId}`),
