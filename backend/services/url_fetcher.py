@@ -197,12 +197,47 @@ def _resolve_host(host: str, port: int):
     return socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
 
 
+# 公共 DoH 兜底（思路移植自 @deepseek-ai/dsh-web-search-html dns.ts）：系统 DNS
+# 被污染（TUN fake-IP、劫持解析器等）返回内网/保留地址时，走公共 DoH 复核域名
+# 的真实公网地址；仅当 DoH 结果全部为公网 IP 时才放行，且连接仍固定到该校验后的
+# IP（_pin_host），SSRF 防线不因兜底而变弱。
+_DOH_ENDPOINT = "https://1.1.1.1/dns-query"
+_DOH_TIMEOUT = 5.0
+
+
+def _doh_resolve_a(host: str) -> list[str]:
+    """走公共 DoH（Cloudflare 1.1.1.1，dns-json 协议）解析 A 记录。
+
+    返回解析出的 IPv4 地址列表；请求失败 / DNS 状态非 0 / 无 A 记录时返回 []。
+    调用方拿到的地址仍需自行过 _is_private_ip 校验（本函数不做安全判定）。
+    """
+    try:
+        resp = httpx.get(
+            _DOH_ENDPOINT,
+            params={"name": host, "type": "A"},
+            headers={"accept": "application/dns-json"},
+            timeout=_DOH_TIMEOUT,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:  # noqa: BLE001 - DoH 兜底失败不致命，由调用方按内网拒绝处理
+        return []
+    if data.get("Status") != 0:
+        return []
+    return [ans["data"] for ans in (data.get("Answer") or [])
+            if ans.get("type") == 1 and isinstance(ans.get("data"), str)]
+
+
 def _resolve_safe_ip(host: str, port: int) -> tuple[str | None, str | None]:
     """解析 host 并校验全部 IP；返回 (首个安全 IP, 错误信息)。
 
     所有解析出的 IP 都必须不在 SSRF 黑名单内（任一命中即拒绝），
     否则返回 (None, 中文错误)。DNS rebinding 防护的关键：调用方必须
     使用返回的 IP 发起连接（见 _pin_host），而不是让 httpx 自行二次解析。
+
+    系统 DNS 返回内网/保留地址时（TUN fake-IP / 劫持解析器场景）走公共 DoH
+    复核（_doh_resolve_a）：DoH 结果存在且全部为公网地址才放行（返回首个 DoH
+    IP），否则仍按内网拒绝——系统 DNS 不可信时以 DoH 的答案为准。
     """
     try:
         infos = _resolve_host(host, port)
@@ -212,11 +247,13 @@ def _resolve_safe_ip(host: str, port: int) -> tuple[str | None, str | None]:
         return None, f"域名解析失败：{e}"
     if not infos:
         return None, f"无法解析域名：{host}"
-    for info in infos:
-        ip_str = info[4][0]
-        if _is_private_ip(ip_str):
-            return None, "不允许访问内网地址"
-    return infos[0][4][0], None
+    if not any(_is_private_ip(info[4][0]) for info in infos):
+        return infos[0][4][0], None
+    # 系统 DNS 含内网/保留地址 → 走公共 DoH 复核真实公网地址
+    doh_ips = _doh_resolve_a(host)
+    if not doh_ips or any(_is_private_ip(ip) for ip in doh_ips):
+        return None, "不允许访问内网地址"
+    return doh_ips[0], None
 
 
 def _check_host_safety(host: str, port: int) -> str | None:

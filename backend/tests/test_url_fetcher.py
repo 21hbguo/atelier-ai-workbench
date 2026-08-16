@@ -14,12 +14,14 @@ import http.server
 import socket
 import socketserver
 import threading
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 from backend.services.url_fetcher import (
     _check_host_safety,
+    _doh_resolve_a,
     _is_private_ip,
     _resolve_safe_ip,
     extract_links_from_html,
@@ -390,12 +392,13 @@ def test_check_host_safety_rejects_localhost():
 
 
 def test_check_host_safety_checks_all_resolved_ips():
-    # 多个解析结果中只要有一个是内网 IP 就必须拒绝
+    # 多个解析结果中只要有一个是内网 IP 就必须拒绝（DoH 兜底不可用时同样拒绝）
     infos = [
         (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 80)),
         (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 80)),
     ]
-    with patch("backend.services.url_fetcher._resolve_host", return_value=infos):
+    with patch("backend.services.url_fetcher._resolve_host", return_value=infos), \
+         patch("backend.services.url_fetcher._doh_resolve_a", return_value=[]):
         assert "内网" in _check_host_safety("evil.example.com", 80)
 
 
@@ -408,4 +411,79 @@ def test_check_host_safety_public_ok_and_dns_failure():
         err = _check_host_safety("no-such-host.invalid", 80)
         assert err is not None
         assert "无法解析" in err
+
+
+# ---------------------------------------------------------------- DoH DNS 兜底
+
+def _fake_doh_response(status=0, answers=None):
+    """构造 _doh_resolve_a 的 httpx.get 假响应（含 raise_for_status / json）。"""
+    resp = MagicMock()
+    resp.raise_for_status = MagicMock()
+    resp.json = MagicMock(return_value={"Status": status, "Answer": answers or []})
+    return resp
+
+
+def test_doh_resolve_a_parses_a_records():
+    answers = [
+        {"name": "example.com", "type": 1, "TTL": 60, "data": "93.184.216.34"},
+        {"name": "example.com", "type": 1, "TTL": 60, "data": "1.2.3.4"},
+        {"name": "example.com", "type": 5, "TTL": 60, "data": "alias.example.com"},  # CNAME 过滤
+        {"name": "example.com", "type": 1, "data": 12345},  # 非 str data 过滤
+    ]
+    with patch("backend.services.url_fetcher.httpx.get",
+               return_value=_fake_doh_response(answers=answers)) as m:
+        ips = _doh_resolve_a("example.com")
+    # 请求参数：dns-json 端点 + name/type=A + accept 头
+    assert m.call_args.args[0] == "https://1.1.1.1/dns-query"
+    assert m.call_args.kwargs["params"] == {"name": "example.com", "type": "A"}
+    assert m.call_args.kwargs["headers"]["accept"] == "application/dns-json"
+    assert ips == ["93.184.216.34", "1.2.3.4"]
+
+
+def test_doh_resolve_a_failures_return_empty():
+    with patch("backend.services.url_fetcher.httpx.get", side_effect=httpx.ConnectError("网络不通")):
+        assert _doh_resolve_a("example.com") == []
+    with patch("backend.services.url_fetcher.httpx.get",
+               return_value=_fake_doh_response(status=3)):  # DNS 状态非 0（NXDOMAIN）
+        assert _doh_resolve_a("no-such.invalid") == []
+    with patch("backend.services.url_fetcher.httpx.get",
+               return_value=_fake_doh_response()):  # 无 Answer
+        assert _doh_resolve_a("example.com") == []
+
+
+def test_resolve_safe_ip_public_no_doh_call():
+    """系统 DNS 全公网 → 直接放行，不触发 DoH。"""
+    infos = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 80))]
+    with patch("backend.services.url_fetcher._resolve_host", return_value=infos), \
+         patch("backend.services.url_fetcher._doh_resolve_a") as m:
+        ip, err = _resolve_safe_ip("example.com", 80)
+    assert err is None and ip == "93.184.216.34"
+    m.assert_not_called()
+
+
+def test_resolve_safe_ip_doh_fallback_accepts_public():
+    """系统 DNS 被污染（TUN fake-IP 返回内网）→ DoH 复核出公网地址 → 放行 DoH 结果。"""
+    infos = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 80))]
+    with patch("backend.services.url_fetcher._resolve_host", return_value=infos), \
+         patch("backend.services.url_fetcher._doh_resolve_a", return_value=["93.184.216.34"]):
+        ip, err = _resolve_safe_ip("example.com", 80)
+    assert err is None and ip == "93.184.216.34"
+
+
+def test_resolve_safe_ip_doh_fallback_rejects_internal():
+    """DoH 复核结果仍含内网地址 → 拒绝（以 DoH 答案为准，不放过）。"""
+    infos = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 80))]
+    with patch("backend.services.url_fetcher._resolve_host", return_value=infos), \
+         patch("backend.services.url_fetcher._doh_resolve_a", return_value=["169.254.169.254"]):
+        ip, err = _resolve_safe_ip("example.com", 80)
+    assert ip is None and "内网" in err
+
+
+def test_resolve_safe_ip_doh_fallback_empty_rejects():
+    """系统 DNS 内网 + DoH 不可用/空结果 → 按内网拒绝（不降级放行）。"""
+    infos = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.1.1", 80))]
+    with patch("backend.services.url_fetcher._resolve_host", return_value=infos), \
+         patch("backend.services.url_fetcher._doh_resolve_a", return_value=[]):
+        ip, err = _resolve_safe_ip("example.com", 80)
+    assert ip is None and "内网" in err
 
