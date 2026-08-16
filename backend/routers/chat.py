@@ -666,6 +666,98 @@ async def list_sessions(user=Depends(get_current_user)):
     }
 
 
+def _escape_like(q: str) -> str:
+    """转义 LIKE/ILIKE 通配符与转义符本身（先转义符后通配符），防注入 + 防通配符误匹配。
+
+    用户搜「50% 折扣」「a_b」「C:\\tmp」时按字面匹配；配合 SQL 显式 ESCAPE '\\'。
+    """
+    return q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _make_snippet(content: str, q: str, window: int = 50) -> str:
+    """截取命中位置前后 window 字符的匹配片段；找不到命中点则取头部。
+
+    命中点按小写折半查找（与 ILIKE 大小写不敏感语义一致）；片段前后用 … 标记截断。
+    """
+    low = content.lower()
+    i = low.find(q.lower())
+    if i < 0:
+        i = 0
+    start = max(0, i - window)
+    end = min(len(content), i + len(q) + window)
+    prefix = "…" if start > 0 else ""
+    suffix = "…" if end < len(content) else ""
+    return f"{prefix}{content[start:end]}{suffix}"
+
+
+@router.get("/search")
+async def search_chat(
+    q: str = Query(..., min_length=1, max_length=100),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=50),
+    user=Depends(get_current_user),
+):
+    """全局会话搜索：会话标题 + 消息内容（ILIKE 连续子串），仅本人数据。
+
+    - 消息内容命中 → kind=message（含 message_id/role，可定位到消息）；
+    - 仅标题命中 → kind=session（message_id/role 为 null，定位到会话即可）；
+    - 标题与消息同时命中时分别出两条记录，total 为二者之和；
+    - 按命中时间 ts 倒序分页；snippet 由后端截断，不返回完整 content；
+    - 关键词中的 % _ \\ 已转义（ESCAPE '\\'），按字面匹配，无注入面。
+    """
+    user_id = user["user_id"]
+    like_pattern = f"%{_escape_like(q)}%"
+    with get_db() as conn:
+        total_row = conn.execute(
+            """
+            SELECT
+              (SELECT COUNT(*) FROM chat_messages m
+                 JOIN chat_sessions s ON s.id = m.session_id
+                WHERE s.user_id = %s AND m.content ILIKE %s ESCAPE '\\')
+              + (SELECT COUNT(*) FROM chat_sessions s
+                  WHERE s.user_id = %s AND s.title ILIKE %s ESCAPE '\\')
+              AS total
+            """,
+            (user_id, like_pattern, user_id, like_pattern),
+        ).fetchone()
+        rows = conn.execute(
+            """
+            SELECT * FROM (
+                SELECT 'message' AS kind, m.id AS message_id, s.id AS session_id,
+                       s.title AS session_title, m.role AS role,
+                       m.content AS raw_content, m.created_at AS ts
+                  FROM chat_messages m
+                  JOIN chat_sessions s ON s.id = m.session_id
+                 WHERE s.user_id = %s AND m.content ILIKE %s ESCAPE '\\'
+                UNION ALL
+                SELECT 'session' AS kind, NULL::int AS message_id, s.id AS session_id,
+                       s.title AS session_title, NULL::varchar AS role,
+                       s.title AS raw_content, COALESCE(s.updated_at, s.created_at) AS ts
+                  FROM chat_sessions s
+                 WHERE s.user_id = %s AND s.title ILIKE %s ESCAPE '\\'
+            ) u
+            ORDER BY u.ts DESC
+            LIMIT %s OFFSET %s
+            """,
+            (user_id, like_pattern, user_id, like_pattern, size, (page - 1) * size),
+        ).fetchall()
+    return {
+        "total": total_row["total"] or 0,
+        "items": [
+            {
+                "kind": r["kind"],
+                "session_id": r["session_id"],
+                "session_title": r["session_title"] or "新对话",
+                "message_id": r["message_id"],
+                "role": r["role"],
+                "snippet": _make_snippet(r["raw_content"], q),
+                "ts": r["ts"].isoformat() if r["ts"] else None,
+            }
+            for r in rows
+        ],
+    }
+
+
 @router.post("/sessions")
 async def create_session(user=Depends(get_current_user)):
     user_id = user["user_id"]
