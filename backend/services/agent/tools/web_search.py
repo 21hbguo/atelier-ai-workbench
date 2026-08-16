@@ -153,10 +153,11 @@ def _unconfigured_message() -> str:
 
 
 async def _http_get(url: str, *, headers: dict | None = None, params: dict | None = None,
-                  max_bytes: int | None = None) -> dict:
+                  max_bytes: int | None = None, follow_redirects: bool = False) -> dict:
     h = dict(headers or {})
     h.setdefault("User-Agent", _BROWSER_UA)
-    async with httpx.AsyncClient(timeout=_SEARCH_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=_SEARCH_TIMEOUT,
+                                 follow_redirects=follow_redirects) as client:
         if max_bytes is not None:
             # HTML 结果页：流式读取并限制响应体大小（超过 max_bytes 即截断，
             # 防止上游返回超大页面占用内存/带宽），返回 {"html": 文本} 供解析
@@ -360,6 +361,8 @@ async def _bing_html(query: str, n: int) -> list[dict]:
     """抓取 Bing 搜索结果页并解析（cn.bing.com：CN 可达且返回 raw URL，_bing_real_url 的 ck/a 解码仍保留作兜底）。
 
     count 参数按 N=min(max(n*2,10),30) 扩大候选池，给后处理重排留空间；解析上限取 count。
+    follow_redirects=True：非 CN 网络下 cn.bing.com 会 301 到 www.bing.com（带 mkt=zh-CN），
+    跟随后页面链接为 ck/a 跳转形态，由 _bing_real_url 解回真实 URL（生产环境实测发现）。
     _http_get 已带浏览器 UA 与超时；max_bytes 限制响应体。
     """
     count = min(max(n * 2, 10), 30)
@@ -368,15 +371,16 @@ async def _bing_html(query: str, n: int) -> list[dict]:
         url,
         headers={"accept-language": "zh-CN,zh;q=0.9,en;q=0.8"},
         max_bytes=_HTML_MAX_BYTES,
+        follow_redirects=True,
     )
     html_text = data.get("html") if isinstance(data, dict) else str(data)
     return _parse_bing_html(html_text, count)
 
 
 async def _ddg_html(query: str, n: int) -> list[dict]:
-    """抓取 DuckDuckGo HTML 结果页并解析（_http_get 已带浏览器 UA 与超时；max_bytes 限制响应体）。"""
+    """抓取 DuckDuckGo HTML 结果页并解析（_http_get 已带浏览器 UA 与超时；max_bytes 限制响应体；跟随重定向）。"""
     url = "https://html.duckduckgo.com/html/?q=" + quote(query)
-    data = await _http_get(url, max_bytes=_HTML_MAX_BYTES)
+    data = await _http_get(url, max_bytes=_HTML_MAX_BYTES, follow_redirects=True)
     html_text = data.get("html") if isinstance(data, dict) else str(data)
     return _parse_ddg_html(html_text, n)
 
@@ -426,13 +430,14 @@ def _parse_mojeek_html(html_text: str, n: int) -> list[dict]:
 async def _mojeek_html(query: str, n: int) -> list[dict]:
     """抓取 Mojeek 搜索结果页并解析（免 key 独立索引；referer + accept-language 头）。
 
-    _http_get 已带浏览器 UA 与超时；max_bytes 限制响应体。
+    _http_get 已带浏览器 UA 与超时；max_bytes 限制响应体；跟随重定向（与 DSH redirect: follow 一致）。
     """
     url = "https://www.mojeek.com/search?q=" + quote(query)
     data = await _http_get(
         url,
         headers={"accept-language": "zh-CN,zh;q=0.9,en;q=0.8", "referer": "https://www.mojeek.com/"},
         max_bytes=_HTML_MAX_BYTES,
+        follow_redirects=True,
     )
     html_text = data.get("html") if isinstance(data, dict) else str(data)
     return _parse_mojeek_html(html_text, n)
