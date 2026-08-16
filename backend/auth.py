@@ -125,7 +125,7 @@ def revoke_refresh_token(token: str):
 def rotate_refresh_token(token: str, ip: str = "", user_agent: str = "") -> Optional[dict]:
     if not token:
         return None
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now()
     with get_db() as conn:
         row = conn.execute(
             "SELECT rt.*,u.username,u.nickname,u.is_admin,u.points,u.is_frozen FROM auth_refresh_tokens rt JOIN users u ON rt.user_id=u.id WHERE rt.token_hash = %s AND rt.revoked_at IS NULL",
@@ -134,7 +134,14 @@ def rotate_refresh_token(token: str, ip: str = "", user_agent: str = "") -> Opti
         if not row:
             return None
         item = dict(row)
-        if item["is_frozen"] or str(item["expires_at"]) < now:
+        # 过期判断用 datetime 比较（原 str(expires_at) < str(now) 依赖「无微秒」格式巧合，格式一变即静默失效）
+        expires_at = item["expires_at"]
+        if isinstance(expires_at, str):
+            try:
+                expires_at = datetime.strptime(expires_at, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                expires_at = None
+        if item["is_frozen"] or (expires_at is not None and expires_at < now):
             conn.execute("UPDATE auth_refresh_tokens SET revoked_at = %s WHERE id = %s AND revoked_at IS NULL", (now, item["id"]))
             return None
         conn.execute("UPDATE auth_refresh_tokens SET revoked_at = %s WHERE id = %s AND revoked_at IS NULL", (now, item["id"]))
@@ -154,7 +161,7 @@ def _optional_user_from_refresh(request: Optional[Request]) -> Optional[dict]:
     refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
     if not refresh_token:
         return None
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now()
     with get_db() as conn:
         row = conn.execute(
             "SELECT rt.user_id,u.username,u.nickname,u.is_admin,u.is_frozen,u.points,rt.expires_at FROM auth_refresh_tokens rt JOIN users u ON rt.user_id=u.id WHERE rt.token_hash=%s AND rt.revoked_at IS NULL",
@@ -163,7 +170,13 @@ def _optional_user_from_refresh(request: Optional[Request]) -> Optional[dict]:
         if not row:
             return None
         item = dict(row)
-        if item["is_frozen"] or str(item["expires_at"]) < now:
+        expires_at = item["expires_at"]
+        if isinstance(expires_at, str):
+            try:
+                expires_at = datetime.strptime(expires_at, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                expires_at = None
+        if item["is_frozen"] or (expires_at is not None and expires_at < now):
             return None
         return {"user_id": item["user_id"], "account": item["username"], "username": item["username"], "nickname": item["nickname"], "is_admin": bool(item["is_admin"]), "points": item["points"]}
 
