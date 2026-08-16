@@ -20,6 +20,8 @@ const {
   sendMessageMock,
   streamTaskMock,
   stopMessageMock,
+  pinSessionMock,
+  unpinSessionMock,
   balanceMock,
   taskGetMock,
   alertMock,
@@ -40,6 +42,8 @@ const {
   const sendMessageMock = vi.fn()
   const streamTaskMock = vi.fn()
   const stopMessageMock = vi.fn()
+  const pinSessionMock = vi.fn()
+  const unpinSessionMock = vi.fn()
   const balanceMock = vi.fn()
   const taskGetMock = vi.fn()
   const alertMock = vi.fn()
@@ -50,7 +54,8 @@ const {
   return {
     modelMock, modelsMock, costMock, sessionsMock, messagesMock, createSessionMock,
     renameSessionMock, deleteSessionMock, batchDeleteSessionsMock, deleteMessagesMock,
-    uploadDocMock, sendMessageMock, streamTaskMock, stopMessageMock, balanceMock, taskGetMock,
+    uploadDocMock, sendMessageMock, streamTaskMock, stopMessageMock,
+    pinSessionMock, unpinSessionMock, balanceMock, taskGetMock,
     alertMock, confirmMock, dialogStable,
   }
 })
@@ -73,6 +78,8 @@ vi.mock('../api', () => ({
     sendMessage: sendMessageMock,
     streamTask: streamTaskMock,
     stopMessage: stopMessageMock,
+    pinSession: pinSessionMock,
+    unpinSession: unpinSessionMock,
   },
   pointsAPI: {
     balance: balanceMock,
@@ -139,6 +146,8 @@ beforeEach(() => {
   sendMessageMock.mockReset().mockResolvedValue(ok({ task_id: 'task-1', assistant_message_id: 'a-1', user_message_id: 'u-1' }))
   streamTaskMock.mockReset().mockImplementation(() => new Promise(() => {}))
   stopMessageMock.mockReset().mockResolvedValue(ok({ ok: true }))
+  pinSessionMock.mockReset().mockResolvedValue(ok({ ok: true, pinned: true }))
+  unpinSessionMock.mockReset().mockResolvedValue(ok({ ok: true, pinned: false }))
   balanceMock.mockReset().mockResolvedValue(ok({ points: 100, ai_daily_total: 10, ai_daily_remaining: 10 }))
   taskGetMock.mockReset().mockResolvedValue(ok({}))
   alertMock.mockReset()
@@ -325,5 +334,105 @@ describe('ChatAssistantPage 思考阶段贴底滚动', () => {
     // thinking 变化必须再次触发贴底滚动
     await waitFor(() => expect(scrollSpy.mock.calls.length).toBeGreaterThan(before))
     scrollSpy.mockRestore()
+  })
+})
+
+describe('ChatAssistantPage 会话置顶（Pin）', () => {
+  // 会话行存在两套操作按钮（移动端常显 + 桌面 hover），取第一套点击
+  const clickPin = (title) => fireEvent.click(screen.getAllByTitle(title)[0])
+
+  it('点击置顶：乐观更新立即进「已置顶」组首，随后调用 pinSession', async () => {
+    sessionsMock.mockResolvedValue(ok({
+      items: [
+        { id: 1, title: '会话一', updated_at: '2026-08-15T10:00:00' },
+        { id: 2, title: '会话二', updated_at: '2026-08-16T10:00:00' },
+      ],
+    }))
+
+    const { container } = render(<ChatAssistantPage />)
+    await waitFor(() => expect(screen.getByText('会话二')).toBeInTheDocument())
+    // 初始无置顶 → 无分组标题
+    expect(screen.queryByText('已置顶')).not.toBeInTheDocument()
+
+    clickPin('置顶')
+
+    // 乐观更新：无需等待网络，立即出现「已置顶」分组且会话二跳到组首
+    await waitFor(() => expect(screen.getByText('已置顶')).toBeInTheDocument())
+    expect(pinSessionMock).toHaveBeenCalledWith(2)
+    const rows = [...container.querySelectorAll('.group.relative.rounded-xl')]
+    expect(rows[0].textContent).toContain('会话二') // 置顶组最上
+    expect(rows[1].textContent).toContain('会话一')
+    // 按钮态切换：置顶 → 取消置顶
+    expect(screen.getAllByTitle('取消置顶').length).toBeGreaterThan(0)
+  })
+
+  it('点击取消置顶：回活动时间序、分组标题消失，随后调用 unpinSession', async () => {
+    sessionsMock.mockResolvedValue(ok({
+      items: [
+        { id: 1, title: '会话一', pinned: true, pinned_at: '2026-08-16T10:00:00', updated_at: '2026-08-15T10:00:00' },
+        { id: 2, title: '会话二', updated_at: '2026-08-16T11:00:00' },
+      ],
+    }))
+
+    const { container } = render(<ChatAssistantPage />)
+    await waitFor(() => expect(screen.getByText('已置顶')).toBeInTheDocument())
+    const rows0 = [...container.querySelectorAll('.group.relative.rounded-xl')]
+    expect(rows0[0].textContent).toContain('会话一') // 固定组在上
+
+    clickPin('取消置顶')
+
+    await waitFor(() => expect(screen.queryByText('已置顶')).not.toBeInTheDocument())
+    expect(unpinSessionMock).toHaveBeenCalledWith(1)
+    const rows1 = [...container.querySelectorAll('.group.relative.rounded-xl')]
+    expect(rows1[0].textContent).toContain('会话二') // 回到活动时间序
+    expect(rows1[1].textContent).toContain('会话一')
+  })
+
+  it('置顶失败：本地状态回滚 + 错误提示', async () => {
+    let rejectFn
+    pinSessionMock.mockImplementation(() => new Promise((_, reject) => { rejectFn = reject }))
+    sessionsMock.mockResolvedValue(ok({
+      items: [
+        { id: 1, title: '会话一', updated_at: '2026-08-15T10:00:00' },
+        { id: 2, title: '会话二', updated_at: '2026-08-16T10:00:00' },
+      ],
+    }))
+
+    render(<ChatAssistantPage />)
+    await waitFor(() => expect(screen.getByText('会话二')).toBeInTheDocument())
+
+    clickPin('置顶')
+    // 乐观更新先生效
+    await waitFor(() => expect(screen.getByText('已置顶')).toBeInTheDocument())
+    // 请求失败 → 回滚 + alert
+    act(() => { rejectFn(new Error('网络错误')) })
+    await waitFor(() => expect(alertMock).toHaveBeenCalledWith('网络错误'))
+    expect(screen.queryByText('已置顶')).not.toBeInTheDocument()
+    expect(screen.getAllByTitle('置顶').length).toBeGreaterThan(0) // 按钮恢复「置顶」态
+  })
+
+  it('置顶会话重命名后仍固定（排序不受影响）', async () => {
+    sessionsMock.mockResolvedValue(ok({
+      items: [
+        { id: 1, title: '会话一', pinned: true, pinned_at: '2026-08-16T10:00:00', updated_at: '2026-08-15T10:00:00' },
+      ],
+    }))
+    renameSessionMock.mockResolvedValue(ok({ ok: true }))
+
+    const { container } = render(<ChatAssistantPage />)
+    await waitFor(() => expect(screen.getByText('会话一')).toBeInTheDocument())
+
+    // 重命名：点铅笔 → 输入 → 回车
+    fireEvent.click(screen.getAllByTitle('重命名')[0])
+    const input = screen.getByPlaceholderText('输入新标题')
+    fireEvent.change(input, { target: { value: '固定会话改名' } })
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
+
+    await waitFor(() => expect(screen.getByText('固定会话改名')).toBeInTheDocument())
+    // 重命名后仍固定：分组标题保留、图钉标识保留、仍在组首
+    expect(screen.getByText('已置顶')).toBeInTheDocument()
+    const rows = [...container.querySelectorAll('.group.relative.rounded-xl')]
+    expect(rows[0].textContent).toContain('固定会话改名')
+    expect(screen.getAllByTitle('取消置顶').length).toBeGreaterThan(0)
   })
 })
