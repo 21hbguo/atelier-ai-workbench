@@ -637,16 +637,19 @@ async def list_sessions(user=Depends(get_current_user)):
     with get_db() as conn:
         rows = conn.execute(
             """
-            SELECT s.id, s.title, s.created_at, s.updated_at,
+            SELECT s.id, s.title, s.created_at, s.updated_at, s.pinned, s.pinned_at,
                    (SELECT COUNT(*) FROM chat_messages m WHERE m.session_id = s.id) AS message_count,
                    (SELECT content FROM chat_messages m WHERE m.session_id = s.id ORDER BY m.id DESC LIMIT 1) AS last_message,
                    (SELECT created_at FROM chat_messages m WHERE m.session_id = s.id ORDER BY m.id DESC LIMIT 1) AS last_message_at
             FROM chat_sessions s
             WHERE s.user_id = %s
-            ORDER BY COALESCE(
-                (SELECT created_at FROM chat_messages m WHERE m.session_id = s.id ORDER BY m.id DESC LIMIT 1),
-                s.updated_at, s.created_at
-            ) DESC
+            ORDER BY s.pinned DESC,
+                     s.pinned_at DESC NULLS LAST,
+                     COALESCE(
+                         (SELECT created_at FROM chat_messages m WHERE m.session_id = s.id ORDER BY m.id DESC LIMIT 1),
+                         s.updated_at, s.created_at
+                     ) DESC,
+                     s.id DESC
             """,
             (user_id,),
         ).fetchall()
@@ -660,6 +663,8 @@ async def list_sessions(user=Depends(get_current_user)):
                 "last_message_at": r["last_message_at"].isoformat() if r["last_message_at"] else None,
                 "message_count": r["message_count"] or 0,
                 "last_message": r["last_message"] or "",
+                "pinned": bool(r["pinned"]),
+                "pinned_at": r["pinned_at"].isoformat() if r["pinned_at"] else None,
             }
             for r in rows
         ]
@@ -676,10 +681,12 @@ async def create_session(user=Depends(get_current_user)):
         # 空会话复用（防恶意/重复点击新建产生海量垃圾会话）：若该用户已存在
         # 无任何消息的会话，直接返回最早那个空会话，不再 INSERT——空会话无限点击
         # 也只会得到同一个会话，数据库零增长。用户删除空会话后才真正新建。
+        # 固定（置顶）的空会话不参与复用：用户主动保留的会话不被"新建对话"污染。
         row = conn.execute(
             """SELECT s.id, s.title, s.created_at, s.updated_at
                FROM chat_sessions s
                WHERE s.user_id = %s
+                 AND s.pinned = FALSE
                  AND NOT EXISTS (SELECT 1 FROM chat_messages m WHERE m.session_id = s.id)
                ORDER BY s.id LIMIT 1""",
             (user_id,),
@@ -754,6 +761,32 @@ async def batch_delete_sessions(body: ChatBatchDeleteRequest, user=Depends(get_c
         CHAT_TASK_MANAGER.cancel_by_message_id(r["id"])
     _remove_chat_uploads(user_id, storage_names)
     return {"deleted": deleted}
+
+
+@router.post("/sessions/{session_id}/pin")
+async def pin_session(session_id: int, user=Depends(get_current_user)):
+    """置顶会话（幂等：已置顶再置顶仅刷新 pinned_at，升到固定组最上）。"""
+    user_id = user["user_id"]
+    with get_db() as conn:
+        _owns_session(conn, session_id, user_id)
+        conn.execute(
+            "UPDATE chat_sessions SET pinned = TRUE, pinned_at = NOW() WHERE id = %s",
+            (session_id,),
+        )
+    return {"ok": True, "pinned": True}
+
+
+@router.delete("/sessions/{session_id}/pin")
+async def unpin_session(session_id: int, user=Depends(get_current_user)):
+    """取消置顶（幂等：未置顶再取消无副作用）。"""
+    user_id = user["user_id"]
+    with get_db() as conn:
+        _owns_session(conn, session_id, user_id)
+        conn.execute(
+            "UPDATE chat_sessions SET pinned = FALSE, pinned_at = NULL WHERE id = %s",
+            (session_id,),
+        )
+    return {"ok": True, "pinned": False}
 
 
 @router.get("/sessions/{session_id}/messages")
