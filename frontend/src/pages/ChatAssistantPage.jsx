@@ -342,10 +342,10 @@ function SessionList({ sessions, activeId, loading, sending, creating, renaming,
             )}
           </div>
         )}
-        {/* 搜索入口：复用 SearchInput（自带 300ms 防抖 + 清空 + 移动端展开）；批量模式下隐藏 */}
+        {/* 搜索入口：常驻完整输入框（alwaysExpanded），自带 300ms 防抖 + 清空；批量模式下隐藏 */}
         {!batchMode && (
           <div className="mt-2 flex items-center">
-            <SearchInput value={searchQuery} onChange={onSearchQueryChange} placeholder="搜索会话与消息" />
+            <SearchInput value={searchQuery} onChange={onSearchQueryChange} placeholder="搜索会话与消息" alwaysExpanded />
           </div>
         )}
       </div>

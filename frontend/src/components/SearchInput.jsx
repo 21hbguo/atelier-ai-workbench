@@ -3,7 +3,7 @@ import { Search, X } from 'lucide-react'
 
 const isMobile = () => window.innerWidth < 640
 
-export default function SearchInput({ value, onChange, placeholder = '搜索...', debounceMs = 300 }) {
+export default function SearchInput({ value, onChange, placeholder = '搜索...', debounceMs = 300, alwaysExpanded = false }) {
   const [local, setLocal] = useState(value)
   const [expanded, setExpanded] = useState(false)
   const timer = useRef(null)
@@ -79,7 +79,7 @@ export default function SearchInput({ value, onChange, placeholder = '搜索...'
   const close = useCallback(() => setExpanded(false), [])
   const hasValue = !!local
   const preview = hasValue ? `${local.slice(0, 1)}…` : ''
-  if (!expanded) {
+  if (!alwaysExpanded && !expanded) {
     return (
       <div className="flex items-center gap-1.5 flex-shrink-0">
         <button type="button" onClick={open} className={`flex h-8 items-center rounded-lg border transition-colors hover:bg-bg-hover ${hasValue ? 'gap-1 px-2' : 'w-8 justify-center'}`} style={{ borderColor: hasValue ? 'color-mix(in srgb, var(--accent) 35%, var(--border-color))' : 'var(--border-color)', background: 'var(--bg-ai-bubble)', color: hasValue ? 'var(--accent)' : 'var(--text-secondary)' }} title={hasValue ? local : '搜索'}>
@@ -97,8 +97,9 @@ export default function SearchInput({ value, onChange, placeholder = '搜索...'
         ref={inputRef}
         value={local}
         onChange={e => handleChange(e.target.value)}
-        onBlur={close}
+        onBlur={alwaysExpanded ? undefined : close}
         onKeyDown={e => {
+          if (alwaysExpanded) return
           if (e.key === 'Enter' || e.key === 'Escape') {
             inputRef.current?.blur()
             setExpanded(false)

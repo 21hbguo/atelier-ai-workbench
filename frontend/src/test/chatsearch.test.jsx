@@ -127,9 +127,8 @@ beforeEach(() => {
   taskGetMock.mockReset().mockResolvedValue(ok({}))
 })
 
-// 打开搜索框（桌面端图标 → 展开输入框）并输入关键词
+// 搜索框常驻展开（alwaysExpanded）：直接定位输入框并输入关键词
 async function openSearchAndType(text) {
-  fireEvent.click(screen.getByTitle('搜索'))
   const input = screen.getByPlaceholderText('搜索会话与消息')
   fireEvent.change(input, { target: { value: text } })
   return input
