@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react'
-import { Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, PanelLeftClose, PanelLeftOpen, Brain, AlertCircle, CheckSquare, Cpu, ChevronDown, Check, Paperclip, FileText, Settings, Globe, Image as ImageIcon, Search } from 'lucide-react'
+import { Plus, Trash2, Pencil, X, Send, Square, RefreshCw, Copy, PanelLeftClose, PanelLeftOpen, Brain, AlertCircle, CheckSquare, Cpu, ChevronDown, Check, Paperclip, FileText, Settings, Globe, Image as ImageIcon, Search, Pin, PinOff } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
 import GroupBuyBanner from '../components/GroupBuyBanner'
 import { useAppDialog } from '../components/AppDialogProvider'
@@ -106,6 +106,22 @@ function parseDate(s) {
   return isNaN(d.getTime()) ? null : d
 }
 
+// 会话排序 comparator：语义与后端 GET /sessions 的 ORDER BY 严格对齐——
+// 置顶 > 置顶时间倒序（最近置顶在上）> 活动时间倒序 > id 倒序（tie-break）。
+// 前端拿到后端已排序列表后再次排序，两者必须一致，否则置顶顺序会被前端排序破坏。
+const sortSessions = (list) => [...list].sort((a, b) => {
+  const act = (s) => parseDate(s.last_message_at || s.updated_at || s.created_at)?.getTime() || 0
+  if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1
+  if (a.pinned && b.pinned) {
+    const pa = parseDate(a.pinned_at)?.getTime() || 0
+    const pb = parseDate(b.pinned_at)?.getTime() || 0
+    if (pa !== pb) return pb - pa
+  }
+  const d = act(b) - act(a)
+  if (d !== 0) return d
+  return (b.id || 0) - (a.id || 0)
+})
+
 function formatTime(s) {
   const d = parseDate(s)
   if (!d) return ''
@@ -164,10 +180,15 @@ const tableToCsv = (table) => {
 
 // ============ 会话列表 ============
 function SessionList({ sessions, activeId, loading, sending, creating, renaming, renamingValue,
-  onSelect, onCreate, onDelete, onStartRename, onRenamingChange, onRenamingCommit, onRenamingCancel,
+  onSelect, onCreate, onDelete, onTogglePin, onStartRename, onRenamingChange, onRenamingCommit, onRenamingCancel,
   batchMode, selectedIds, onEnterBatch, onSelectAll, onToggleSelect, onBatchDelete, onExitBatch, onToggleCollapse }) {
   const renderActions = (s) => (
     <>
+      <button onClick={(e) => { e.stopPropagation(); onTogglePin(s) }}
+        className="p-1 rounded-md hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }}
+        title={s.pinned ? '取消置顶' : '置顶'}>
+        {s.pinned ? <PinOff size={13} /> : <Pin size={13} />}
+      </button>
       <button onClick={(e) => { e.stopPropagation(); onStartRename(s) }}
         className="p-1 rounded-md hover:bg-bg-hover" style={{ color: 'var(--text-secondary)' }} title="重命名">
         <Pencil size={13} />
@@ -178,12 +199,72 @@ function SessionList({ sessions, activeId, loading, sending, creating, renaming,
       </button>
     </>
   )
-  // 按最后问答时间倒序（最新在上），无消息时回退到会话更新时间/创建时间
-  const sortedSessions = [...sessions].sort((a, b) => {
-    const ta = parseDate(a.last_message_at || a.updated_at || a.created_at)?.getTime() || 0
-    const tb = parseDate(b.last_message_at || b.updated_at || b.created_at)?.getTime() || 0
-    return tb - ta
-  })
+  // 排序与后端 ORDER BY 同语义（见 sortSessions）：置顶组在最上、组内按置顶时间倒序，
+  // 未固定组按活动时间倒序；分组渲染「已置顶」标题。
+  const sortedSessions = sortSessions(sessions)
+  const pinnedList = sortedSessions.filter(s => s.pinned)
+  const normalList = sortedSessions.filter(s => !s.pinned)
+  const renderRow = (s) => {
+    const active = s.id === activeId
+    const isRenaming = renaming && renaming.id === s.id
+    const checked = selectedIds.includes(s.id)
+    const isStreaming = sending && sending.sessionId === s.id && !sending.stopped // 该会话正在生成中（已停止/失败则不再显示旋转标记）
+    return (
+      <div key={s.id}
+        className={`group relative rounded-xl px-3 py-2 cursor-pointer transition-colors ${active && !batchMode ? '' : 'hover:bg-bg-hover'} ${isStreaming ? 'opacity-80' : ''}`}
+        style={{
+          background: (active && !batchMode) ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : (batchMode && checked ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent'),
+          border: `1px solid ${batchMode && checked ? 'color-mix(in srgb, var(--accent) 45%, var(--border-color))' : (active && !batchMode ? 'color-mix(in srgb, var(--accent) 25%, var(--border-color))' : 'transparent')}`,
+        }}
+        onClick={() => {
+          if (batchMode) onToggleSelect(s.id)
+          else onSelect(s.id)
+        }}>
+        {isRenaming && !batchMode ? (
+          <input autoFocus value={renamingValue}
+            onChange={e => onRenamingChange(e.target.value)}
+            onClick={e => e.stopPropagation()}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.preventDefault(); onRenamingCommit() }
+              else if (e.key === 'Escape') onRenamingCancel()
+            }}
+            onBlur={onRenamingCommit}
+            placeholder="输入新标题"
+            className="w-full text-sm rounded-lg px-2 py-1 outline-none"
+            style={{ background: 'var(--bg-input)', color: 'var(--text-primary)', border: '1px solid var(--accent)' }} />
+        ) : (
+          <>
+            {batchMode && (
+              <span className="absolute left-2.5 top-2.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                <input type="checkbox" checked={checked} onChange={() => onToggleSelect(s.id)}
+                  className="w-3.5 h-3.5 cursor-pointer"
+                  style={{ accentColor: 'var(--accent)' }} />
+              </span>
+            )}
+            <div className={`flex items-center gap-1.5 ${batchMode ? 'pl-6' : 'pr-9'}`}>
+              <span className="text-sm font-medium truncate" style={{ color: (active && !batchMode) ? 'var(--accent)' : 'var(--text-primary)' }}>
+                {s.title || '新对话'}
+              </span>
+              {s.pinned && (
+                <Pin size={12} className="flex-shrink-0" style={{ color: 'var(--accent)' }} fill="currentColor" title="已置顶" />
+              )}
+              {isStreaming && (
+                <RefreshCw size={12} className="animate-spin flex-shrink-0" style={{ color: 'var(--accent)' }} title="回复生成中" />
+              )}
+            </div>
+            {!batchMode && (
+              <>
+                {/* 移动端常显操作按钮 */}
+                <div className="absolute right-1.5 top-1.5 flex gap-0.5 lg:hidden">{renderActions(s)}</div>
+                {/* 桌面端 hover 显示操作按钮 */}
+                <div className="absolute right-1.5 top-1.5 hidden lg:flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">{renderActions(s)}</div>
+              </>
+            )}
+          </>
+        )}
+      </div>
+    )
+  }
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="p-3 pb-2 flex-shrink-0" style={{ borderColor: 'var(--border-color)' }}>
@@ -237,64 +318,11 @@ function SessionList({ sessions, activeId, loading, sending, creating, renaming,
             {batchMode ? '没有可删除的会话' : '暂无会话，点击上方新建对话'}
           </div>
         )}
-        {sortedSessions.map(s => {
-          const active = s.id === activeId
-          const isRenaming = renaming && renaming.id === s.id
-          const checked = selectedIds.includes(s.id)
-          const isStreaming = sending && sending.sessionId === s.id && !sending.stopped // 该会话正在生成中（已停止/失败则不再显示旋转标记）
-          return (
-            <div key={s.id}
-              className={`group relative rounded-xl px-3 py-2 cursor-pointer transition-colors ${active && !batchMode ? '' : 'hover:bg-bg-hover'} ${isStreaming ? 'opacity-80' : ''}`}
-              style={{
-                background: (active && !batchMode) ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : (batchMode && checked ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent'),
-                border: `1px solid ${batchMode && checked ? 'color-mix(in srgb, var(--accent) 45%, var(--border-color))' : (active && !batchMode ? 'color-mix(in srgb, var(--accent) 25%, var(--border-color))' : 'transparent')}`,
-              }}
-              onClick={() => {
-                if (batchMode) onToggleSelect(s.id)
-                else onSelect(s.id)
-              }}>
-              {isRenaming && !batchMode ? (
-                <input autoFocus value={renamingValue}
-                  onChange={e => onRenamingChange(e.target.value)}
-                  onClick={e => e.stopPropagation()}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') { e.preventDefault(); onRenamingCommit() }
-                    else if (e.key === 'Escape') onRenamingCancel()
-                  }}
-                  onBlur={onRenamingCommit}
-                  placeholder="输入新标题"
-                  className="w-full text-sm rounded-lg px-2 py-1 outline-none"
-                  style={{ background: 'var(--bg-input)', color: 'var(--text-primary)', border: '1px solid var(--accent)' }} />
-              ) : (
-                <>
-                  {batchMode && (
-                    <span className="absolute left-2.5 top-2.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                      <input type="checkbox" checked={checked} onChange={() => onToggleSelect(s.id)}
-                        className="w-3.5 h-3.5 cursor-pointer"
-                        style={{ accentColor: 'var(--accent)' }} />
-                    </span>
-                  )}
-                  <div className={`flex items-center gap-1.5 ${batchMode ? 'pl-6' : 'pr-9'}`}>
-                    <span className="text-sm font-medium truncate" style={{ color: (active && !batchMode) ? 'var(--accent)' : 'var(--text-primary)' }}>
-                      {s.title || '新对话'}
-                    </span>
-                    {isStreaming && (
-                      <RefreshCw size={12} className="animate-spin flex-shrink-0" style={{ color: 'var(--accent)' }} title="回复生成中" />
-                    )}
-                  </div>
-                  {!batchMode && (
-                    <>
-                      {/* 移动端常显操作按钮 */}
-                      <div className="absolute right-1.5 top-1.5 flex gap-0.5 lg:hidden">{renderActions(s)}</div>
-                      {/* 桌面端 hover 显示操作按钮 */}
-                      <div className="absolute right-1.5 top-1.5 hidden lg:flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">{renderActions(s)}</div>
-                    </>
-                  )}
-                </>
-              )}
-            </div>
-          )
-        })}
+        {pinnedList.length > 0 && (
+          <div className="px-2 pt-2 pb-1 text-[10px] font-medium" style={{ color: 'var(--text-secondary)' }}>已置顶</div>
+        )}
+        {pinnedList.map(renderRow)}
+        {normalList.map(renderRow)}
       </div>
     </div>
   )
@@ -2632,6 +2660,24 @@ export default function ChatAssistantPage() {
   }
   const cancelRename = () => { renamingRef.current = null; setRenaming(null) }
 
+  // 置顶/取消置顶：乐观更新（反馈是位置跳动，等网络往返会明显卡顿），失败回滚 + 提示。
+  // 与 commitRename 的「API 成功后再改本地」不同：pinned_at 本地取当前时间与后端排序键同语义。
+  const handleTogglePin = async (s) => {
+    const nextPinned = !s.pinned
+    const prev = sessions
+    setSessions(prevList => sortSessions(prevList.map(x => x.id === s.id
+      ? { ...x, pinned: nextPinned, pinned_at: nextPinned ? new Date().toISOString() : null }
+      : x)))
+    window.dispatchEvent(new Event('chat-sessions-updated')) // 移动端子导航即时同步
+    try {
+      if (nextPinned) await chatAPI.pinSession(s.id)
+      else await chatAPI.unpinSession(s.id)
+    } catch (err) {
+      setSessions(prev) // 失败回滚到操作前状态
+      dialog.alert(err.message || '操作失败')
+    }
+  }
+
   useEffect(() => {
     localStorage.setItem('chat-list-collapsed', chatListCollapsed ? '1' : '0')
   }, [chatListCollapsed])
@@ -2647,6 +2693,7 @@ export default function ChatAssistantPage() {
               sessions={sessions} activeId={activeId} loading={sessionsLoading} sending={sending} creating={creatingSession}
               renaming={renaming} renamingValue={renaming?.title || ''}
               onSelect={handleSelectSession} onCreate={handleCreateSession} onDelete={handleDeleteSession}
+              onTogglePin={handleTogglePin}
               onStartRename={startRename} onRenamingChange={changeRename}
               onRenamingCommit={commitRename} onRenamingCancel={cancelRename}
               batchMode={batchMode} selectedIds={selectedIds}
@@ -2674,6 +2721,7 @@ export default function ChatAssistantPage() {
                   sessions={sessions} activeId={activeId} loading={sessionsLoading} sending={sending} creating={creatingSession}
                   renaming={renaming} renamingValue={renaming?.title || ''}
                   onSelect={handleSelectSession} onCreate={handleCreateSession} onDelete={handleDeleteSession}
+                  onTogglePin={handleTogglePin}
                   onStartRename={startRename} onRenamingChange={changeRename}
                   onRenamingCommit={commitRename} onRenamingCancel={cancelRename}
                   batchMode={batchMode} selectedIds={selectedIds}

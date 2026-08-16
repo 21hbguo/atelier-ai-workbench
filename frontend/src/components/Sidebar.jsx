@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useLocation, Link, useNavigate } from 'react-router-dom'
-import { Sun, Moon, BookOpen, Sparkles, Image, X, Globe, LogOut, Shield, Crown, Wallet, Settings, LayoutGrid, MessageCircle, Bell, PanelLeftClose, PanelLeftOpen, MessageSquare, Plus } from 'lucide-react'
+import { Sun, Moon, BookOpen, Sparkles, Image, X, Globe, LogOut, Shield, Crown, Wallet, Settings, LayoutGrid, MessageCircle, Bell, PanelLeftClose, PanelLeftOpen, MessageSquare, Plus, Pin } from 'lucide-react'
 import { useTheme } from '../ThemeContext'
 import { useLayoutMode } from '../LayoutModeContext'
 import { announcementAPI, authAPI, chatAPI, pointsAPI, notificationAPI, subscriptionAPI } from '../api'
@@ -356,7 +356,9 @@ function ChatSessionNav({ onClose }) {
             const linkStyle = { color: active ? 'var(--accent)' : 'var(--text-primary)', backgroundColor: active ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined }
             return (
               <button key={s.id} onClick={() => selectSession(s.id)} className={`${linkClass} w-full text-left`} style={linkStyle}>
-                <MessageSquare size={16} className="sidebar-nav-icon flex-shrink-0" /><span className="sidebar-nav-text truncate">{s.title}</span>
+                <MessageSquare size={16} className="sidebar-nav-icon flex-shrink-0" />
+                {s.pinned && <Pin size={12} className="flex-shrink-0" style={{ color: 'var(--accent)' }} fill="currentColor" />}
+                <span className="sidebar-nav-text truncate">{s.title}</span>
               </button>
             )
           })
