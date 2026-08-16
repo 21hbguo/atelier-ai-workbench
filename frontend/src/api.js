@@ -184,6 +184,9 @@ export const chatAPI = {
   messages: id => api.get(`/chat/sessions/${id}/messages`),
   // 删除指定消息及其后所有消息（「重新回答」的重置分支点）
   deleteMessages: (sessionId, messageId) => api.delete(`/chat/sessions/${sessionId}/messages/${messageId}`),
+  // 编辑已发送的用户消息：后端单事务截断该消息之后的全部消息 + 原位更新内容，
+  // 截断范围内 streaming 消息同步停止+退款（失败 500 回滚）。返回 { ok, message_id }
+  editMessage: (sessionId, messageId, { content }) => api.patch(`/chat/sessions/${sessionId}/messages/${messageId}`, { content }),
   model: () => api.get('/chat/model'),
   models: () => api.get('/chat/models'),
   // 上传聊天文档（txt/md/csv/pdf/docx/xlsx/pptx 等，解析后注入对话上下文）
@@ -199,13 +202,15 @@ export const chatAPI = {
   },
   // 创建聊天任务：不再返回 SSE 流，返回 JSON { task_id, assistant_message_id, user_message_id }。
   // 非 2xx（含 429 并发限制）由 axios 拦截器统一转为 Error（detail 已翻译为中文），调用方 catch 展示。
-  sendMessage: (sessionId, content, { reasoning_effort = 'auto', model_id = '', web_search = false, image_file_ids = [] } = {}) =>
+  // edit_message_id：编辑重发时传目标用户消息 id，后端不新插入 user 消息、原位更新该消息并作为本条提问。
+  sendMessage: (sessionId, content, { reasoning_effort = 'auto', model_id = '', web_search = false, image_file_ids = [], edit_message_id = null } = {}) =>
     api.post(`/chat/sessions/${sessionId}/messages`, {
       content,
       reasoning_effort,
       ...(model_id ? { model_id } : {}),
       ...(web_search ? { web_search: true } : {}),
       ...(image_file_ids?.length ? { image_file_ids } : {}),
+      ...(edit_message_id != null ? { edit_message_id } : {}),
     }),
   // 显式停止生成（后端负责退款，幂等）：POST /api/chat/messages/{message_id}/stop → { ok }
   stopMessage: messageId => api.post(`/chat/messages/${messageId}/stop`),
