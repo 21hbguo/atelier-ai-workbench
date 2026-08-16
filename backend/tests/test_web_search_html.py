@@ -230,6 +230,33 @@ def test_parse_bing_html_limit_n():
     assert _parse_bing_html(BING_HTML, 1)[0]["url"] == "https://example.com/article-1"
 
 
+def test_parse_bing_html_cleans_nbsp_url_tail():
+    """生产实测：bing 结果页 href 尾部带不换行空格（%C2%A0 编码或字面 \u00a0），必须剥除。"""
+    html = (
+        '<li class="b_algo"><h2><a href="https://example.com/a%C2%A0">编码空格</a></h2>'
+        '<p>摘要</p></li>'
+        '<li class="b_algo"><h2><a href="https://example.com/b\u00a0">字面空格</a></h2>'
+        '<p>摘要</p></li>'
+        '<li class="b_algo"><h2><a href="https://example.com/c">干净链接</a></h2><p>摘要</p></li>'
+    )
+    results = _parse_bing_html(html, 10)
+    urls = [r["url"] for r in results]
+    assert urls == ["https://example.com/a", "https://example.com/b", "https://example.com/c"]
+
+
+def test_parse_bing_html_cleans_nbsp_after_ck_decode():
+    """ck/a 解码出的真实 URL 带 %C2%A0 尾部时同样被清洗。"""
+    import base64
+    real = "https://example.com/fifa2026\u00a0"
+    enc = base64.urlsafe_b64encode(real.encode("utf-8")).decode("utf-8").rstrip("=")
+    html = (
+        f'<li class="b_algo"><h2><a href="https://www.bing.com/ck/a?u={enc}">标题</a></h2>'
+        "<p>摘要</p></li>"
+    )
+    results = _parse_bing_html(html, 10)
+    assert results[0]["url"] == "https://example.com/fifa2026"
+
+
 def test_parse_bing_html_bad_input():
     assert _parse_bing_html("", 10) == []
     assert _parse_bing_html("<html>无结果结构</html>", 10) == []
