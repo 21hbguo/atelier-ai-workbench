@@ -298,6 +298,18 @@ def _bing_real_url(href: str) -> str:
     return href
 
 
+def _clean_result_url(url: str) -> str:
+    """清理结果 URL 尾部污染（生产实测：bing 结果页 href 常以 %C2%A0 结尾）。
+
+    不换行空格（&nbsp;/\u00a0）被编进 href 尾部的形式有 %C2%A0 与字面 \u00a0 两种，
+    均剥除；顺带去尾部常规空白。只动尾部，不影响 URL 其他部分语义。
+    """
+    url = (url or "").strip().rstrip("\u00a0").rstrip()
+    while url.endswith("%C2%A0"):
+        url = url[:-6]
+    return url
+
+
 def _parse_bing_html(html_text: str, n: int) -> list[dict]:
     """解析 Bing 搜索结果页（cn.bing.com/search?q=）：识别 <li class="b_algo"> 结果块。
 
@@ -310,7 +322,7 @@ def _parse_bing_html(html_text: str, n: int) -> list[dict]:
         m = _BING_TITLE_RE.search(block)
         if not m:
             continue  # 广告块或无 h2 标题的块
-        href = _bing_real_url(m.group(1))
+        href = _clean_result_url(_bing_real_url(m.group(1)))
         if not href.startswith(("http://", "https://")):
             continue
         dm = _BING_DESC_RE.search(block)
@@ -342,7 +354,7 @@ def _parse_ddg_html(html_text: str, n: int) -> list[dict]:
     out: list[dict] = []
     si = 0
     for tm in title_matches:
-        href = tm.group(1)
+        href = _clean_result_url(tm.group(1))
         if not href.startswith(("http://", "https://")):
             continue
         while si < len(snippet_matches) and snippet_matches[si].start() < tm.end():
@@ -412,7 +424,7 @@ def _parse_mojeek_html(html_text: str, n: int) -> list[dict]:
             m = _MOJEEK_TITLE_RE.search(li) or _MOJEEK_H2_TITLE_RE.search(li)
             if not m:
                 continue
-            href = m.group(1)
+            href = _clean_result_url(m.group(1))
             if not href.startswith(("http://", "https://")) or href in seen:
                 continue
             seen.add(href)
