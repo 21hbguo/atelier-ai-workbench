@@ -478,6 +478,12 @@ def init_db():
             # summary_text = 当前合并后的摘要文本（不含包裹标签）。
             "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS summary_until INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS summary_text TEXT",
+            # 迁移：会话固定（置顶）。pinned=TRUE 置顶；pinned_at=置顶时间（NULL=未置顶），
+            # 固定组内按置顶时间倒序（最近置顶在上），新消息不改变固定组内顺序。
+            "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS pinned BOOLEAN NOT NULL DEFAULT FALSE",
+            "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMP",
+            # 部分索引：仅覆盖置顶行，固定组快速过滤（成本极低）
+            "CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_pinned ON chat_sessions(user_id, pinned) WHERE pinned",
             """CREATE TABLE IF NOT EXISTS chat_messages (
                 id SERIAL PRIMARY KEY,
                 session_id INTEGER NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
