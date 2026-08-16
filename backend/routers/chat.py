@@ -1825,10 +1825,78 @@ async def stream_task(task_id: str, user=Depends(get_current_user)):
     )
 
 
+def _stop_streaming_messages(message_ids: list[int], user_id: int) -> list[int]:
+    """停止指定 assistant 消息的后台任务并同步退款（幂等，可重复调用）。
+
+    对每条仍为 streaming 的消息（终态消息自动跳过）：
+    - 任务在内存 → cancel_by_message_id + 按任务字段退款 + 标 stopped + 广播 + finish；
+    - 任务不在内存（重启清理前的窗口）→ 按落库 req_id/charge_mode/daily_total 退款后标 stopped。
+
+    无论任务是否已开始执行，都由这里同步完成 stopped 终态：未启动任务（create_task 后
+    立即停止）取消时协程函数体不会执行，不能依赖其 except CancelledError 分支清理；
+    协程 except 对已终态幂等兜底（见 run_generation 1626-1629）。
+
+    退款失败保持 streaming（不标终态），由重启 recover 幂等重试兜底——
+    避免「先标终态后退款失败」永久漏退（recover 1690-1691 注释铁律）。
+
+    返回退款失败（保持 streaming）的消息 id 列表，供调用方决定回滚（编辑端点 500 回滚）。
+    """
+    failed: list[int] = []
+    if not message_ids:
+        return failed
+    with get_db() as conn:
+        rows = conn.execute(
+            """SELECT m.id, m.req_id, m.charge_mode, m.daily_total
+               FROM chat_messages m JOIN chat_sessions s ON s.id = m.session_id
+               WHERE m.id = ANY(%s) AND s.user_id = %s AND m.status = 'streaming'""",
+            (list(message_ids), user_id),
+        ).fetchall()
+    for r in rows:
+        message_id = int(r["id"])
+        task = CHAT_TASK_MANAGER.get_by_message_id(message_id)
+        if task is not None:
+            CHAT_TASK_MANAGER.cancel_by_message_id(message_id)
+            refund_ok = _refund_chat_request(
+                task.user_id, task.cost_per, task.req_id,
+                task.charge_mode, task.daily_total, task.model_id,
+            )
+            if not refund_ok:
+                # 退款失败：不标终态（保持 streaming），已启动任务的协程 except 会重试并兜底
+                # （未启动任务则留待重启 recover 幂等重试），避免「先标终态后退款失败」永久漏退
+                logger.warning("[chat/stop] refund failed, keep streaming: msg=%s", message_id)
+                failed.append(message_id)
+                continue
+            task.status = "stopped"
+            _mark_message_status(message_id, "stopped", None)
+            CHAT_TASK_MANAGER.broadcast(task.task_id, "stopped", {"detail": "生成已停止"})
+            CHAT_TASK_MANAGER.finish(task.task_id)
+        else:
+            # 防御：消息 streaming 但任务不在内存（重启清理前的窗口）→ 先退款（幂等）后标 stopped
+            logger.warning("[chat/stop] streaming message without in-memory task: msg=%s", message_id)
+            req_id = str(r["req_id"] or "")
+            charge_mode = str(r["charge_mode"] or "paid")
+            daily_total = r["daily_total"]
+            if req_id:
+                refund_ok = _refund_chat_request(
+                    user_id, _chat_cost_per_request(None), req_id, charge_mode, daily_total, "",
+                )
+            else:
+                refund_ok = False
+            if refund_ok:
+                with get_db() as conn:
+                    conn.execute(
+                        "UPDATE chat_messages SET status = 'stopped', error = NULL WHERE id = %s AND status = 'streaming'",
+                        (message_id,),
+                    )
+            else:
+                failed.append(message_id)
+    return failed
+
+
 @router.post("/messages/{message_id}/stop")
 async def stop_message(message_id: int, user=Depends(get_current_user)):
     """停止生成（幂等）：消息已终态 → 直接 {ok}；
-    status='streaming' → 取消对应后台任务（CancelledError 分支：退款 + 标 stopped + 广播）。"""
+    status='streaming' → 走共享停止 helper（取消任务 + 同步退款 + 标 stopped + 广播）。"""
     user_id = user["user_id"]
     with get_db() as conn:
         row = conn.execute(
@@ -1841,54 +1909,8 @@ async def stop_message(message_id: int, user=Depends(get_current_user)):
         status = row["status"] or "done"
     if status != "streaming":
         return {"ok": True}
-    task = CHAT_TASK_MANAGER.get_by_message_id(message_id)
-    if task is not None:
-        # 无论任务是否已开始执行，都由本端点同步完成 stopped 终态：
-        # 未启动任务（create_task 后立即 stop）取消时协程函数体不会执行，
-        # 不能依赖其 except CancelledError 分支清理；协程 except 对已终态幂等兜底。
-        CHAT_TASK_MANAGER.cancel_by_message_id(message_id)
-        refund_ok = _refund_chat_request(
-            task.user_id, task.cost_per, task.req_id,
-            task.charge_mode, task.daily_total, task.model_id,
-        )
-        if not refund_ok:
-            # 退款失败：不标终态（保持 streaming），已启动任务的协程 except 会重试并兜底
-            # （未启动任务则留待重启 recover 幂等重试），避免「先标终态后退款失败」永久漏退
-            logger.warning("[chat/stop] refund failed, keep streaming: msg=%s", message_id)
-            return {"ok": True}
-        task.status = "stopped"
-        _mark_message_status(message_id, "stopped", None)
-        CHAT_TASK_MANAGER.broadcast(task.task_id, "stopped", {"detail": "生成已停止"})
-        CHAT_TASK_MANAGER.finish(task.task_id)
-        return {"ok": True}
-    # 防御：消息 streaming 但任务不在内存（重启清理前的窗口）→ 先退款（幂等）后标 stopped；
-    # 退款失败保持 streaming，由重启 recover 幂等重试兜底，避免「先标终态后退款失败」永久漏退。
-    logger.warning("[chat/stop] streaming message without in-memory task: msg=%s", message_id)
-    req_id = ""
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT req_id, charge_mode, daily_total FROM chat_messages WHERE id = %s",
-            (message_id,),
-        ).fetchone()
-        if row:
-            req_id = str(row["req_id"] or "")
-            charge_mode = str(row["charge_mode"] or "paid")
-            daily_total = row["daily_total"]
-        else:
-            charge_mode = "paid"
-            daily_total = None
-    if req_id:
-        refund_ok = _refund_chat_request(
-            user_id, _chat_cost_per_request(None), req_id, charge_mode, daily_total, "",
-        )
-    else:
-        refund_ok = False
-    if refund_ok:
-        with get_db() as conn:
-            conn.execute(
-                "UPDATE chat_messages SET status = 'stopped', error = NULL WHERE id = %s AND status = 'streaming'",
-                (message_id,),
-            )
+    # 退款失败时保持 streaming（由重启 recover 幂等重试），端点仍返回 ok（幂等语义）
+    _stop_streaming_messages([message_id], user_id)
     return {"ok": True}
 
 

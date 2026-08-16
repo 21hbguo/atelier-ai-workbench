@@ -326,6 +326,8 @@ def test_stop_message_sync_terminal_when_task_not_started():
     conn = MagicMock(name="db_conn")
     conn.execute.return_value = MagicMock(name="cursor")
     conn.execute.return_value.fetchone.return_value = {"status": "streaming"}
+    # 共享 helper 会批量查询仍为 streaming 的消息行（含 req_id/charge_mode/daily_total）
+    conn.execute.return_value.fetchall.return_value = [{"id": 1, "req_id": "req-1", "charge_mode": "paid", "daily_total": None}]
     with _mock_get_db(conn)[0], \
             patch.object(chat_module, "_refund_chat_request") as mock_refund:
         result = _run(chat_module.stop_message(1, USER))
@@ -358,6 +360,8 @@ def test_stop_message_cancel_background_task_not_started_idempotent():
         conn = MagicMock(name="db_conn")
         conn.execute.return_value = MagicMock(name="cursor")
         conn.execute.return_value.fetchone.return_value = {"status": "streaming"}
+        # 共享 helper 会批量查询仍为 streaming 的消息行（含 req_id/charge_mode/daily_total）
+        conn.execute.return_value.fetchall.return_value = [{"id": 2, "req_id": "req-2", "charge_mode": "paid", "daily_total": None}]
         with _mock_get_db(conn)[0], \
                 patch.object(chat_module, "_refund_chat_request"):
             result = await chat_module.stop_message(2, USER)
