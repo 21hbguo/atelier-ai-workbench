@@ -5,12 +5,19 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from backend.auth import get_current_user, verify_password, hash_password, REFRESH_COOKIE_NAME
 from backend.database import get_db
+from backend.services.banned_words import BannedWordsService
 
 router = APIRouter(prefix="/api/account", tags=["account"])
 
 class ChangePasswordRequest(BaseModel):
     old_password: str = Field(..., min_length=6, max_length=50)
     new_password: str = Field(..., min_length=6, max_length=50)
+
+# 自定义指令（用户级长期指令）上限：对齐聊天消息内容上限 ChatSendRequest.content max_length=2000
+CUSTOM_INSTRUCTIONS_MAX_LEN = 2000
+
+class CustomInstructionsRequest(BaseModel):
+    custom_instructions: str = Field("", max_length=CUSTOM_INSTRUCTIONS_MAX_LEN)
 
 @router.post("/change-password")
 async def change_password(req: ChangePasswordRequest, user=Depends(get_current_user)):
@@ -53,3 +60,33 @@ async def security_sessions(request: Request, page: int = Query(1, ge=1), size: 
             risk = "low"
         items.append({"id": r["id"], "ip": ip or "", "user_agent": ua or "", "created_at": created_at, "last_seen_at": revoked_at or created_at, "is_current": bool(is_current), "risk_level": risk, "revoked": bool(revoked_at)})
     return {"total": total, "items": items, "page": page, "size": size}
+
+@router.get("/custom-instructions")
+async def get_custom_instructions(user=Depends(get_current_user)) -> dict:
+    """读取用户自定义指令（未设置返回空串；指令注入聊天 system prompt，见 chat_service）。"""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT COALESCE(custom_instructions, '') AS ci FROM users WHERE id = %s",
+            (user["user_id"],),
+        ).fetchone()
+    return {"custom_instructions": row["ci"] if row else ""}
+
+@router.put("/custom-instructions")
+async def update_custom_instructions(req: CustomInstructionsRequest,
+                                    user=Depends(get_current_user)) -> dict:
+    """保存用户自定义指令。校验顺序固定：长度（pydantic 422）→ trim → 敏感词（400）→ UPDATE。
+
+    空串/纯空白 = 停用（存 NULL，与未设置等价）。
+    """
+    text = req.custom_instructions.strip()
+    if len(text) > CUSTOM_INSTRUCTIONS_MAX_LEN:  # 双保险（pydantic 已拦，防绕过）
+        raise HTTPException(status_code=422, detail="自定义指令最多 2000 个字符")
+    hit = BannedWordsService.check(text)
+    if hit:
+        raise HTTPException(status_code=400, detail="内容包含违规词汇，请修改后重试")
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE users SET custom_instructions = %s WHERE id = %s",
+            (text or None, user["user_id"]),  # 空串存 NULL
+        )
+    return {"message": "保存成功"}
