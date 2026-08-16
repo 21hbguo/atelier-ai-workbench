@@ -177,6 +177,8 @@ export const promptOptimizeAPI = {
 export const chatAPI = {
   cost: (modelId = '') => api.get(`/chat/cost${modelId ? `?model_id=${encodeURIComponent(modelId)}` : ''}`),
   sessions: () => api.get('/chat/sessions'),
+  // 全局会话搜索（会话标题 + 消息内容，仅本人数据）：返回 { total, items }，items 含 kind=message|session
+  search: (q, page = 1, size = 20) => api.get('/chat/search', { params: { q, page, size } }),
   createSession: () => api.post('/chat/sessions'),
   renameSession: (id, title) => api.patch(`/chat/sessions/${id}`, { title }),
   deleteSession: id => api.delete(`/chat/sessions/${id}`),
