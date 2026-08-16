@@ -270,6 +270,30 @@ def test_edit_message_rolls_back_500_when_stop_refund_fails():
     assert [c for c in conn.execute.call_args_list if "summary_until = 0" in str(c.args[0])] == []
 
 
+def test_edit_message_unblocks_when_streaming_msg_has_no_req_id():
+    """存量数据无 req_id 的 streaming 消息：无预扣流水可退（recover 同语义），
+    直接标 stopped，编辑不被永久阻塞（防御路径视为退款成功）。"""
+    conn = _make_conn({
+        _SQL_OWN_SESSION: ({"id": 1, "title": "t"}, _UNSET),
+        _SQL_TARGET: ({"id": 5, "role": "user", "status": "done"}, _UNSET),
+        _SQL_STREAMING_RANGE: (_UNSET, [{"id": 11}]),
+        # 防御路径：任务不在内存 + req_id 为空
+        "AND m.status = 'streaming'": (_UNSET, [{"id": 11, "req_id": None, "charge_mode": "paid", "daily_total": None}]),
+        _SQL_SUMMARY: ({"summary_until": 0}, _UNSET),
+    })
+    with _mock_get_db(conn)[0], _patch_banned(), \
+            patch.object(chat_module, "_refund_chat_request") as mock_refund:
+        result = _run(chat_module.edit_message(1, 5, ChatEditRequest(content="新问题"), USER))
+    assert result == {"ok": True, "message_id": 5}
+    mock_refund.assert_not_called()  # 无可退（无 req_id 预扣流水）
+    # 消息被标 stopped（防御路径 UPDATE）
+    stops = [c for c in conn.execute.call_args_list
+             if "SET status = 'stopped', error = NULL WHERE id = %s AND status = 'streaming'" in str(c.args[0])]
+    assert len(stops) == 1 and stops[0].args[1] == (11,)
+    # 截断照常执行
+    assert len([c for c in conn.execute.call_args_list if _SQL_DELETE in str(c.args[0])]) == 1
+
+
 # ---------------------------------------------------------------------------
 # 5. 压缩状态修复
 # ---------------------------------------------------------------------------

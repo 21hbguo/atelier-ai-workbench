@@ -2006,7 +2006,9 @@ def _stop_streaming_messages(message_ids: list[int], user_id: int) -> list[int]:
                     user_id, _chat_cost_per_request(None), req_id, charge_mode, daily_total, "",
                 )
             else:
-                refund_ok = False
+                # 旧数据无 req_id：无预扣流水可退（recover 对空 req_id 同样直接标终态），
+                # 视为退款成功仅标 stopped，避免编辑/删除被存量数据永久阻塞
+                refund_ok = True
             if refund_ok:
                 with get_db() as conn:
                     conn.execute(
