@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
-import { ShieldAlert, KeyRound } from 'lucide-react'
+import { ShieldAlert, KeyRound, ListChecks } from 'lucide-react'
 import MainLayout from '../components/MainLayout'
 import Pagination from '../components/Pagination'
 import { accountAPI, configAPI } from '../api'
 import { useAppDialog } from '../components/AppDialogProvider'
+
+const CI_MAX_LEN = 2000
 
 export default function SettingsPage() {
   const dialog = useAppDialog()
@@ -16,6 +18,11 @@ export default function SettingsPage() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
+  // 自定义指令（用户级长期指令，注入每次 AI 对话的 system prompt）
+  const [ci, setCi] = useState('')
+  const [savedCi, setSavedCi] = useState('')
+  const [ciLoading, setCiLoading] = useState(false)
+  const [ciSaving, setCiSaving] = useState(false)
   const size = 10
 
   const fetchSessions = async (p = 1) => {
@@ -36,6 +43,22 @@ export default function SettingsPage() {
     configAPI.get().then(({ data }) => setShowLoginSessions(Boolean(data?.show_login_sessions))).catch(() => {})
   }, [])
 
+  // 挂载时回填已保存的自定义指令（失败提示但不阻断其他区块）
+  useEffect(() => {
+    let cancelled = false
+    setCiLoading(true)
+    accountAPI.getCustomInstructions()
+      .then(({ data }) => {
+        if (cancelled) return
+        const text = data?.custom_instructions || ''
+        setCi(text)
+        setSavedCi(text)
+      })
+      .catch(e => { if (!cancelled) dialog.alert(e.message || '加载失败') })
+      .finally(() => { if (!cancelled) setCiLoading(false) })
+    return () => { cancelled = true }
+  }, [])
+
   const onChangePassword = async () => {
     if (!oldPassword || !newPassword) return
     setSubmitting(true)
@@ -49,6 +72,20 @@ export default function SettingsPage() {
     }
     setSubmitting(false)
   }
+
+  const onSaveCi = async () => {
+    setCiSaving(true)
+    try {
+      await accountAPI.updateCustomInstructions({ custom_instructions: ci.trim() })
+      setSavedCi(ci.trim())
+      dialog.alert('保存成功')
+    } catch (e) {
+      dialog.alert(e.message || '保存失败')
+    }
+    setCiSaving(false)
+  }
+
+  const onResetCi = () => setCi(savedCi)
 
   const hasRisk = sessions.some(v => v.risk_level === 'high')
 
@@ -94,6 +131,53 @@ export default function SettingsPage() {
               >
                 {submitting ? '提交中...' : '确认修改'}
               </button>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-2xl border" style={{ background: 'var(--bg-ai-bubble)', borderColor: 'var(--border-color)' }}>
+            <div className="flex items-center gap-2 mb-2">
+              <ListChecks size={16} style={{ color: 'var(--accent)' }} />
+              <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>自定义指令</span>
+            </div>
+            <div className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>
+              将附加到每次 AI 对话的系统提示中，用于长期偏好（语气/格式/固定要求），修改后立即生效；
+              对 AI 绘画、提示词优化不生效。
+            </div>
+            <textarea
+              value={ci}
+              onChange={e => setCi(e.target.value)}
+              maxLength={CI_MAX_LEN}
+              rows={5}
+              placeholder="例：请用简洁口语化风格回复，避免啰嗦；涉及代码时给出可直接使用的完整代码。"
+              className="w-full px-3 py-2 rounded-2xl text-sm border outline-none resize-y"
+              style={{
+                background: 'var(--bg-primary)',
+                borderColor: 'var(--border-color)',
+                color: 'var(--text-primary)',
+              }}
+            />
+            <div className="flex items-center justify-between mt-2">
+              <span className="text-xs" style={{ color: ci.length > CI_MAX_LEN ? 'var(--color-error)' : 'var(--text-secondary)' }}>
+                {ciLoading ? '读取中...' : `${ci.length}/${CI_MAX_LEN}`}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={onResetCi}
+                  disabled={ciLoading || ci === savedCi}
+                  className="flex-shrink-0 px-4 py-1.5 rounded-2xl text-sm border disabled:opacity-50"
+                  style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                >
+                  重置
+                </button>
+                <button
+                  onClick={onSaveCi}
+                  disabled={ciSaving || ciLoading || ci.length > CI_MAX_LEN}
+                  className="flex-shrink-0 px-4 py-1.5 rounded-2xl text-sm font-medium text-white disabled:opacity-50"
+                  style={{ background: 'var(--accent)' }}
+                >
+                  {ciSaving ? '保存中...' : '保存'}
+                </button>
+              </div>
             </div>
           </div>
 

@@ -1,12 +1,14 @@
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 
-const { sessionsMock, changePasswordMock, alertMock, confirmMock, configGetMock } = vi.hoisted(() => ({
+const { sessionsMock, changePasswordMock, alertMock, confirmMock, configGetMock, getCiMock, updateCiMock } = vi.hoisted(() => ({
   sessionsMock: vi.fn(),
   changePasswordMock: vi.fn(),
   alertMock: vi.fn(),
   confirmMock: vi.fn(async () => true),
   configGetMock: vi.fn(),
+  getCiMock: vi.fn(),
+  updateCiMock: vi.fn(),
 }))
 
 vi.mock('../components/AppDialogProvider', () => ({
@@ -14,7 +16,12 @@ vi.mock('../components/AppDialogProvider', () => ({
 }))
 
 vi.mock('../api', () => ({
-  accountAPI: { sessions: sessionsMock, changePassword: changePasswordMock },
+  accountAPI: {
+    sessions: sessionsMock,
+    changePassword: changePasswordMock,
+    getCustomInstructions: getCiMock,
+    updateCustomInstructions: updateCiMock,
+  },
   configAPI: { get: configGetMock },
   notificationAPI: { unreadCount: vi.fn(async () => ({ data: { count: 0 } })) },
   announcementAPI: { getUnread: vi.fn(async () => ({ data: { items: [] } })) },
@@ -51,6 +58,10 @@ beforeEach(() => {
   changePasswordMock.mockReset()
   configGetMock.mockReset()
   configGetMock.mockResolvedValue({ data: { show_login_sessions: false } })
+  getCiMock.mockReset()
+  getCiMock.mockResolvedValue({ data: { custom_instructions: '' } })
+  updateCiMock.mockReset()
+  updateCiMock.mockResolvedValue({})
   mockSessions([])
 })
 
@@ -167,5 +178,52 @@ describe('SettingsPage', () => {
     await waitFor(() => expect(sessionsMock).toHaveBeenCalled())
     expect(screen.queryByText('最近登录会话')).not.toBeInTheDocument()
     expect(screen.queryByText(/检测到近24小时存在多IP/)).not.toBeInTheDocument()
+  })
+
+  describe('自定义指令', () => {
+    const ciInput = () => screen.getByPlaceholderText(/例：请用简洁口语化风格回复/)
+
+    it('renders card and backfills saved instructions', async () => {
+      getCiMock.mockResolvedValue({ data: { custom_instructions: '请用简洁风格回复' } })
+      renderPage()
+      expect(screen.getByText('自定义指令')).toBeInTheDocument()
+      await waitFor(() => expect(screen.getByText('8/2000')).toBeInTheDocument())
+      expect(ciInput().value).toBe('请用简洁风格回复')
+    })
+
+    it('saves trimmed instructions and shows success', async () => {
+      renderPage()
+      await waitFor(() => expect(getCiMock).toHaveBeenCalled())
+      fireEvent.change(ciInput(), { target: { value: '  请用中文  ' } })
+      fireEvent.click(screen.getByText('保存'))
+      await waitFor(() => expect(updateCiMock).toHaveBeenCalledWith({ custom_instructions: '请用中文' }))
+      await waitFor(() => expect(alertMock).toHaveBeenCalledWith('保存成功'))
+    })
+
+    it('shows error dialog on save failure', async () => {
+      updateCiMock.mockRejectedValue(new Error('内容包含违规词汇，请修改后重试'))
+      renderPage()
+      await waitFor(() => expect(getCiMock).toHaveBeenCalled())
+      fireEvent.change(ciInput(), { target: { value: 'bad' } })
+      fireEvent.click(screen.getByText('保存'))
+      await waitFor(() => expect(alertMock).toHaveBeenCalledWith('内容包含违规词汇，请修改后重试'))
+    })
+
+    it('disables save when longer than 2000 chars', async () => {
+      renderPage()
+      await waitFor(() => expect(getCiMock).toHaveBeenCalled())
+      fireEvent.change(ciInput(), { target: { value: 'x'.repeat(2001) } })
+      expect(screen.getByText('2001/2000')).toBeInTheDocument()
+      expect(screen.getByText('保存')).toBeDisabled()
+    })
+
+    it('reset restores saved content', async () => {
+      getCiMock.mockResolvedValue({ data: { custom_instructions: '已保存内容' } })
+      renderPage()
+      await waitFor(() => expect(screen.getByText('5/2000')).toBeInTheDocument())
+      fireEvent.change(ciInput(), { target: { value: '临时修改' } })
+      fireEvent.click(screen.getByText('重置'))
+      expect(ciInput().value).toBe('已保存内容')
+    })
   })
 })

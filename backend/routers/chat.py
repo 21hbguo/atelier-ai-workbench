@@ -1147,6 +1147,13 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
         if not entitlements["active"]:
             raise HTTPException(status_code=403, detail="当前订阅已暂停或撤销")
         allowed_models = entitlements["allowed_models"]
+        # 自定义指令：与 entitlements 同事务窗口读一次 users 列，随 ChatGenContext 传给
+        # run_generation（agent/普通双通道注入 system prompt，见 chat_service._build_system_prompt）
+        ci_row = conn.execute(
+            "SELECT COALESCE(custom_instructions, '') AS ci FROM users WHERE id = %s",
+            (user_id,),
+        ).fetchone()
+        custom_instructions = ci_row["ci"] if ci_row else ""
         # 带图校验：图片必须属于本会话；目标模型无视觉时自动切换到可用的视觉模型
         if body.image_file_ids:
             # 去重（重复传同一张图视为一张），且仅接受 status='image' 的记录，
@@ -1384,6 +1391,7 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
         chat_free_remaining=chat_free_remaining, daily_total=daily_total,
         user_msg_id=user_msg_id, assistant_msg_id=assistant_msg_id,
         balance_after=balance_after, precharge=precharge,
+        custom_instructions=custom_instructions,
     )
     task.asyncio_task = asyncio.create_task(run_generation(ctx))
     logger.info(
@@ -1445,6 +1453,7 @@ class ChatGenContext:
     assistant_msg_id: int | None
     balance_after: Decimal
     precharge: dict
+    custom_instructions: str = ""
 
 
 def _refund_chat_request(user_id: int, cost_per: float, req_id: str, charge_mode: str,
@@ -1520,7 +1529,7 @@ def _mark_message_status(assistant_msg_id: int | None, status: str, error: str |
 
 def _agent_system_prompt(ctx: "ChatGenContext") -> str:
     """agent 通道 system 提示词组装（含各工具使用指南 + 当天日期；固定指南保持前缀稳定）。"""
-    agent_system = build_system_prompt(ctx.target_model)
+    agent_system = build_system_prompt(ctx.target_model, ctx.custom_instructions)
     # 兼容旧版系统提示词文件（data/prompts/chat_system.md）中的「引导去 AI 绘画页」
     # 文案：agent 链路已可直接调用 image_gen 生图，无需引导用户跳转
     agent_system = agent_system.replace(
@@ -1813,7 +1822,7 @@ async def run_generation(ctx: ChatGenContext) -> None:
                     _emit("url_status", {"url": url, "status": "failed", "error": err})
             messages = await ChatService.prepare_session_messages(
                 ctx.session_id, ctx.target_model, ctx.attached_docs,
-                system_prompt=build_system_prompt(ctx.target_model), override=ctx.override,
+                system_prompt=build_system_prompt(ctx.target_model, ctx.custom_instructions), override=ctx.override,
             )
             if web_inject:
                 # 插到最后一条 user 消息之前（通常是当前用户问题），让模型先读到网页正文
@@ -1827,7 +1836,7 @@ async def run_generation(ctx: ChatGenContext) -> None:
                 # 避免把已压缩到预算内的会话顶出上下文窗口导致 API 拒绝。
                 try:
                     budget = ChatService._resolve_budget(ctx.target_model)
-                    system_chars = len(build_system_prompt(ctx.target_model) or "")
+                    system_chars = len(build_system_prompt(ctx.target_model, ctx.custom_instructions) or "")
                     used = system_chars + sum(len(m.get("content") or "") for m in messages)
                     avail = int(budget) - used
                     if avail <= 0:
@@ -1852,6 +1861,7 @@ async def run_generation(ctx: ChatGenContext) -> None:
             async for event in ChatService.chat_stream(
                 [], ctx.reasoning_effort, model=ctx.target_model,
                 attached_docs=ctx.attached_docs, prebuilt_messages=messages,
+                custom_instructions=ctx.custom_instructions,
             ):
                 if event["type"] == "chunk":
                     _append_assistant_delta(ctx.assistant_msg_id, text=str(event["text"] or ""))

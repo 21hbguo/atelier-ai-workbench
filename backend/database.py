@@ -514,6 +514,9 @@ def init_db():
             # 迁移：聊天消息增加 daily_total（免费用户每日次数总额，free 模式退款封顶按它计算；
             # 落库避免重启恢复时用「当前套餐」重算导致换档后多退/少退）
             "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS daily_total INT",
+            # 迁移：用户自定义指令（用户级长期指令，注入每次 AI 对话的 system prompt；
+            # TEXT 无 DB 层长度限制，应用层限 2000 字符；NULL/空串 = 未设置）
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS custom_instructions TEXT",
             """CREATE TABLE IF NOT EXISTS llm_models (
                 id SERIAL PRIMARY KEY,
                 model_id VARCHAR(128) NOT NULL UNIQUE,
