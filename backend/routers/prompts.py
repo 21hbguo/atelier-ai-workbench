@@ -36,6 +36,17 @@ def _bg_task(coro):
     except Exception:logger.exception("后台任务创建失败")
 
 
+def _resolve_within_root(root, rel_path):
+    """把 rel_path 拼到 root 下并解析，校验目标仍在 root 内；越界返回 None（调用方按 404 处理）。"""
+    import os
+    from pathlib import Path
+    root_resolved = Path(root).resolve()
+    candidate = (root_resolved / rel_path).resolve()
+    if candidate == root_resolved or str(candidate).startswith(str(root_resolved) + os.sep):
+        return candidate
+    return None
+
+
 def _check_ownership(prompt_id: int, user: dict):
     p = PromptService.get_by_id(prompt_id)
     if not p:
@@ -159,10 +170,11 @@ async def serve_evo_thumbnail(path: str, size: int = Query(400)):
     from fastapi.responses import FileResponse
     from backend.config import EVO_IMAGES_DIR, EVO_THUMBS_DIR, EVO_IMPORTED_DIR
 
-    source = EVO_IMPORTED_DIR / path
-    if not source.exists():
-        source = EVO_IMAGES_DIR / path
-    if not source.exists():
+    # 路径穿越防护：先按各自根目录拼接并校验包含关系，再判断存在性（保持原有 imported→images 回退语义）
+    source = _resolve_within_root(EVO_IMPORTED_DIR, path)
+    if source is None or not source.exists():
+        source = _resolve_within_root(EVO_IMAGES_DIR, path)
+    if source is None or not source.exists():
         raise HTTPException(status_code=404, detail="图片不存在")
 
     thumb_name = f"{size}_{hashlib.md5(path.encode()).hexdigest()}.webp"
@@ -188,8 +200,9 @@ async def serve_evo_thumbnail(path: str, size: int = Query(400)):
 async def serve_prompt_image(storage_name: str):
     from backend.config import UPLOAD_DIR
     from fastapi.responses import FileResponse
-    path = UPLOAD_DIR / storage_name
-    if not path.exists():
+    # 路径穿越防护：拼接后校验目标仍在 UPLOAD_DIR 内，越界按不存在处理（404）
+    path = _resolve_within_root(UPLOAD_DIR, storage_name)
+    if path is None or not path.exists():
         raise HTTPException(status_code=404, detail="图片不存在")
     return FileResponse(str(path))
 
@@ -256,7 +269,6 @@ async def _auto_prompt_postprocess(prompt_id:str, prompt:str, name:str, category
             NotificationService.create(user_id, "prompt_auto_high_risk", "提示词高风险", f"提示词“{name or prompt[:20]}”命中高风险，已自动冻结", prompt_id)
     except Exception:
         logger.exception("提示词自动审核失败")
-        NotificationService.create(user_id, "prompt_auto_audit_failed", "提示词自动审核失败", f"提示词“{name or prompt[:20]}”自动审核失败，已保留原记录", prompt_id)
         NotificationService.create(user_id, "prompt_auto_audit_failed", "提示词自动审核失败", f"提示词“{name or prompt[:20]}”自动审核失败，已保留原记录", prompt_id)
 
 

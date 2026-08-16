@@ -4,7 +4,7 @@ import psutil
 from fastapi import APIRouter, Depends
 
 from backend.services.stats_service import StatsService
-from backend.auth import get_current_user
+from backend.auth import require_admin
 from backend.database import get_db
 
 router = APIRouter(prefix="/api", tags=["stats"])
@@ -13,17 +13,17 @@ _server_start_time = time.time()
 
 
 @router.get("/stats")
-async def get_stats(user=Depends(get_current_user)):
+async def get_stats(admin=Depends(require_admin)):
     return StatsService.get_stats()
 
 
 @router.get("/stats/daily")
-async def get_daily_stats(user=Depends(get_current_user)):
+async def get_daily_stats(admin=Depends(require_admin)):
     return StatsService.get_daily_stats()
 
 
 @router.get("/stats/system")
-async def get_system_stats(user=Depends(get_current_user)):
+async def get_system_stats(admin=Depends(require_admin)):
     from backend.routers.auth import get_rate_limit_stats
     from backend.config import DATA_DIR, get_limit_config
 
@@ -81,7 +81,7 @@ async def get_system_stats(user=Depends(get_current_user)):
 
 
 @router.get("/stats/users")
-async def get_user_stats(user=Depends(get_current_user)):
+async def get_user_stats(admin=Depends(require_admin)):
     with get_db() as conn:
         rows = conn.execute(
             """

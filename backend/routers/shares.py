@@ -43,14 +43,21 @@ async def revoke_share(share_id: int, user=Depends(get_current_user)):
 
 @router.get("/s/{token}")
 async def access_shared_file(token: str):
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now()
     with get_db() as conn:
         row = conn.execute("SELECT filename,expires_at,is_revoked FROM share_links WHERE token = %s", (token,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="分享不存在")
     if row["is_revoked"]:
         raise HTTPException(status_code=410, detail="分享已撤销")
-    if str(row["expires_at"]) < now:
+    # 过期判断改为 datetime 比较（原实现 str(expires_at) < str(now) 是字符串比较，容易误判）
+    expires_at = row["expires_at"]
+    if isinstance(expires_at, str):
+        try:
+            expires_at = datetime.strptime(expires_at, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            expires_at = None
+    if expires_at is not None and expires_at < now:
         raise HTTPException(status_code=410, detail="分享已过期")
     image_path = GENERATED_IMAGES_DIR / row["filename"]
     if not image_path.exists():
