@@ -66,6 +66,15 @@ class ChatSendRequest(BaseModel):
         max_length=4,
         description="随本条消息发送给视觉模型的图片 chat_files id（须属于本会话，图片与文本同管道直发，不经 OCR；最多 4 张）",
     )
+    edit_message_id: int | None = Field(
+        None,
+        description="编辑重发：传目标用户消息 id 时不新插入 user 消息，改为原位更新该消息内容并作为本条提问（与 PATCH 编辑端点配合）",
+    )
+
+
+class ChatEditRequest(BaseModel):
+    """编辑消息请求体：内容约束与 ChatSendRequest.content 一致。"""
+    content: str = Field(..., min_length=1, max_length=2000)
 
 
 def _attach_image_blocks(messages: list[dict], image_blocks: list[dict]) -> list[dict]:
@@ -978,7 +987,10 @@ async def delete_message(session_id: int, message_id: int, user=Depends(get_curr
 
     前端「重新回答」流程：先删除对应 user 消息及之后全部（含旧回答），
     再复用 send_message 链路重新发送同一问题 → 正常扣费/退款/落库。
-    删除范围含 streaming 消息时先取消其后台任务（触发退款 + 标 stopped）。
+    删除范围含 streaming 消息时先同步停止 + 退款（共享 helper，含未启动任务——
+    修复「任务未被事件循环调度时协程不执行导致漏退」的边角），再删行。
+    分支点位于已压缩区域（id <= summary_until）时重置会话压缩状态，
+    避免摘要继续引用已被删除的旧问答。
     """
     user_id = user["user_id"]
     with get_db() as conn:
@@ -989,18 +1001,110 @@ async def delete_message(session_id: int, message_id: int, user=Depends(get_curr
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="消息不存在")
-        # 删除范围（本消息及之后）内的 streaming 任务先取消：走 stopped 分支退款
+        # 删除范围（本消息及之后）内的 streaming 任务先同步停止+退款（见下）
         streaming_rows = conn.execute(
             "SELECT id FROM chat_messages WHERE session_id = %s AND id >= %s AND status = 'streaming'",
             (session_id, message_id),
         ).fetchall()
+        # 行锁：与 ChatService 上下文压缩串行化，防止压缩推进 summary_until 竞态
+        conn.execute("SELECT id FROM chat_sessions WHERE id = %s FOR UPDATE", (session_id,))
+        summary_row = conn.execute(
+            "SELECT summary_until FROM chat_sessions WHERE id = %s", (session_id,)
+        ).fetchone()
+        if summary_row and int(summary_row["summary_until"] or 0) >= message_id:
+            # 分支点落在已压缩区域：摘要会继续引用被删的旧问答 → 重置压缩状态，
+            # 剩余消息回到未压缩区（下次发送超预算时重新压缩，无信息丢失）
+            conn.execute(
+                "UPDATE chat_sessions SET summary_until = 0, summary_text = NULL WHERE id = %s",
+                (session_id,),
+            )
+    # 先同步停止 + 退款（含未启动任务），再删行——行被删后 req_id 随之消失，
+    # 任何延迟退款都不可能，故必须赶在 DELETE 之前完成退款尝试
+    _stop_streaming_messages([r["id"] for r in streaming_rows], user_id)
+    with get_db() as conn:
         conn.execute(
             "DELETE FROM chat_messages WHERE session_id = %s AND id >= %s",
             (session_id, message_id),
         )
-    for r in streaming_rows:
-        CHAT_TASK_MANAGER.cancel_by_message_id(r["id"])
     return {"ok": True}
+
+
+@router.patch("/sessions/{session_id}/messages/{message_id}")
+async def edit_message(session_id: int, message_id: int, body: ChatEditRequest, user=Depends(get_current_user)):
+    """编辑已发送的用户消息：截断其后全部消息 + 原位更新内容，并触发重新生成。
+
+    语义（对齐 ChatGPT 与「重新回答」的计费规则）：
+    1. 校验全部前置（归属 / role=user / 非 streaming / 内容非空 / 违禁词）——
+       任一失败无任何副作用（不截断不更新）；
+    2. 截断范围内 streaming 消息先同步停止 + 退款（共享 helper，含未启动任务）；
+       退款失败 → 整端点 500 回滚（不截断），避免「行被删后 req_id 消失」永久漏退；
+    3. 单事务：截断 id > message_id（保留编辑消息自身，id/file_ids/created_at 稳定）
+       + 压缩状态修复（编辑点落在已压缩区域则重置 summary_until/summary_text）
+       + 原位更新 content；
+    4. 重新生成由前端复用 send_message（body.edit_message_id 原位 UPDATE 分支）完成，
+       预扣/流式/落库/退款全部走现有逻辑；被截断的已完成轮次不退款（与重新回答一致）。
+    """
+    user_id = user["user_id"]
+    content = body.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="消息内容不能为空")
+
+    if BannedWordsService.check(content):
+        raise HTTPException(status_code=400, detail="内容包含违规词汇，请修改后重试")
+
+    # 事务一：校验（全部前置，失败无副作用）+ 查截断范围内 streaming 消息。
+    # 行锁与 send_message / ChatService 上下文压缩串行化，防止截断期间压缩推进 summary_until
+    with get_db() as conn:
+        _owns_session(conn, session_id, user_id)
+        conn.execute("SELECT id FROM chat_sessions WHERE id = %s FOR UPDATE", (session_id,))
+        row = conn.execute(
+            "SELECT id, role, status FROM chat_messages WHERE id = %s AND session_id = %s",
+            (message_id, session_id),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="消息不存在")
+        if row["role"] != "user":
+            raise HTTPException(status_code=400, detail="只能编辑用户消息")
+        if (row["status"] or "done") == "streaming":
+            # 防御：user 消息理论恒非 streaming（status 状态机只用于 assistant 占位消息）
+            raise HTTPException(status_code=409, detail="消息正在生成中，请先停止")
+        streaming_rows = conn.execute(
+            "SELECT id FROM chat_messages WHERE session_id = %s AND id > %s AND status = 'streaming'",
+            (session_id, message_id),
+        ).fetchall()
+
+    # 截断范围内 streaming 消息：先同步停止 + 退款（幂等；流式消息 append-only 恒在会话末尾，
+    # 编辑点之前不可能存在 streaming 消息，helper 按集合处理天然安全）。
+    # 退款失败 → 整体回滚（事务一已提交但未做任何删除/更新，无副作用），前端可重试
+    failed = _stop_streaming_messages([r["id"] for r in streaming_rows], user_id)
+    if failed:
+        logger.error("[chat/edit] stop streaming refund failed, rollback: session=%s msg=%s failed=%s", session_id, message_id, failed)
+        raise HTTPException(status_code=500, detail="停止生成退款失败，请稍后重试")
+
+    # 事务二：截断 + 压缩修复 + 原位更新（同一事务；再次加行锁与并发压缩/发送串行化）
+    with get_db() as conn:
+        conn.execute("SELECT id FROM chat_sessions WHERE id = %s FOR UPDATE", (session_id,))
+        summary_row = conn.execute(
+            "SELECT summary_until FROM chat_sessions WHERE id = %s", (session_id,)
+        ).fetchone()
+        if summary_row and int(summary_row["summary_until"] or 0) >= message_id:
+            # 编辑点落在已压缩区域：被删消息含摘要覆盖的轮次，摘要会继续引用被删的
+            # 旧问答（模型看到「上下文里有过一次提问但对话里没有」的割裂）→ 重置压缩
+            # 状态，剩余消息回到未压缩区（下次发送超预算时重新压缩，无信息丢失）
+            conn.execute(
+                "UPDATE chat_sessions SET summary_until = 0, summary_text = NULL WHERE id = %s",
+                (session_id,),
+            )
+        conn.execute(
+            "DELETE FROM chat_messages WHERE session_id = %s AND id > %s",
+            (session_id, message_id),
+        )
+        conn.execute(
+            "UPDATE chat_messages SET content = %s WHERE id = %s",
+            (content, message_id),
+        )
+    logger.info("[chat/edit] edited session=%s msg=%s user=%s streaming_stopped=%s", session_id, message_id, user_id, len(streaming_rows))
+    return {"ok": True, "message_id": message_id}
 
 
 @router.post("/sessions/{session_id}/messages")
@@ -1170,11 +1274,29 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                     for fid, name, text in vision_notes
                 ]
                 user_content = content + "\n\n" + "\n".join(note_parts)
-            user_msg_row = conn.execute(
-                "INSERT INTO chat_messages (session_id, role, content, file_ids) VALUES (%s, 'user', %s, %s::jsonb) RETURNING id",
-                (session_id, user_content, json.dumps(file_ids)),
-            ).fetchone()
-            user_msg_id = user_msg_row["id"] if user_msg_row else None
+            if body.edit_message_id:
+                # 编辑重发：不新插入 user 消息（避免重复气泡），原位更新目标消息——
+                # id/file_ids/created_at 保持稳定（锚点不失效），content 更新为编辑后内容
+                # （含无视觉模型的图片识别文本），file_ids 快照按当前会话重算
+                edit_row = conn.execute(
+                    "SELECT id, role FROM chat_messages WHERE id = %s AND session_id = %s",
+                    (body.edit_message_id, session_id),
+                ).fetchone()
+                if not edit_row:
+                    raise HTTPException(status_code=404, detail="消息不存在")
+                if edit_row["role"] != "user":
+                    raise HTTPException(status_code=400, detail="只能编辑用户消息")
+                conn.execute(
+                    "UPDATE chat_messages SET content = %s, file_ids = %s::jsonb WHERE id = %s",
+                    (user_content, json.dumps(file_ids), body.edit_message_id),
+                )
+                user_msg_id = body.edit_message_id
+            else:
+                user_msg_row = conn.execute(
+                    "INSERT INTO chat_messages (session_id, role, content, file_ids) VALUES (%s, 'user', %s, %s::jsonb) RETURNING id",
+                    (session_id, user_content, json.dumps(file_ids)),
+                ).fetchone()
+                user_msg_id = user_msg_row["id"] if user_msg_row else None
             # assistant 占位消息：任务制下先生成 streaming 占位行（content/thinking 由后台任务增量 UPDATE），
             # req_id/charge_mode/daily_total 落库供服务重启后按幂等 key 精确退款
             placeholder_row = conn.execute(
@@ -1183,8 +1305,11 @@ async def send_message(session_id: int, body: ChatSendRequest, user=Depends(get_
                 (session_id, req_id, chat_charge_mode, daily_total),
             ).fetchone()
             assistant_msg_id = placeholder_row["id"] if placeholder_row else None
-            # 首轮自动生成标题
-            if (session["title"] or "").strip() in ("", "新对话") and msg_cnt == 0:
+            # 首轮自动生成标题：新会话首条消息；编辑重发时「会话只剩该编辑消息」
+            # （PATCH 已截断其后全部，msg_cnt==1 即编辑消息为会话第一条）同样触发，
+            # 与「重新回答」对首条消息的标题更新行为一致
+            is_first_message = msg_cnt == 0 or (body.edit_message_id is not None and msg_cnt == 1)
+            if (session["title"] or "").strip() in ("", "新对话") and is_first_message:
                 conn.execute(
                     "UPDATE chat_sessions SET title = %s, updated_at = NOW() WHERE id = %s",
                     (_default_title(content), session_id),
@@ -1950,10 +2075,80 @@ async def stream_task(task_id: str, user=Depends(get_current_user)):
     )
 
 
+def _stop_streaming_messages(message_ids: list[int], user_id: int) -> list[int]:
+    """停止指定 assistant 消息的后台任务并同步退款（幂等，可重复调用）。
+
+    对每条仍为 streaming 的消息（终态消息自动跳过）：
+    - 任务在内存 → cancel_by_message_id + 按任务字段退款 + 标 stopped + 广播 + finish；
+    - 任务不在内存（重启清理前的窗口）→ 按落库 req_id/charge_mode/daily_total 退款后标 stopped。
+
+    无论任务是否已开始执行，都由这里同步完成 stopped 终态：未启动任务（create_task 后
+    立即停止）取消时协程函数体不会执行，不能依赖其 except CancelledError 分支清理；
+    协程 except 对已终态幂等兜底（见 run_generation 1626-1629）。
+
+    退款失败保持 streaming（不标终态），由重启 recover 幂等重试兜底——
+    避免「先标终态后退款失败」永久漏退（recover 1690-1691 注释铁律）。
+
+    返回退款失败（保持 streaming）的消息 id 列表，供调用方决定回滚（编辑端点 500 回滚）。
+    """
+    failed: list[int] = []
+    if not message_ids:
+        return failed
+    with get_db() as conn:
+        rows = conn.execute(
+            """SELECT m.id, m.req_id, m.charge_mode, m.daily_total
+               FROM chat_messages m JOIN chat_sessions s ON s.id = m.session_id
+               WHERE m.id = ANY(%s) AND s.user_id = %s AND m.status = 'streaming'""",
+            (list(message_ids), user_id),
+        ).fetchall()
+    for r in rows:
+        message_id = int(r["id"])
+        task = CHAT_TASK_MANAGER.get_by_message_id(message_id)
+        if task is not None:
+            CHAT_TASK_MANAGER.cancel_by_message_id(message_id)
+            refund_ok = _refund_chat_request(
+                task.user_id, task.cost_per, task.req_id,
+                task.charge_mode, task.daily_total, task.model_id,
+            )
+            if not refund_ok:
+                # 退款失败：不标终态（保持 streaming），已启动任务的协程 except 会重试并兜底
+                # （未启动任务则留待重启 recover 幂等重试），避免「先标终态后退款失败」永久漏退
+                logger.warning("[chat/stop] refund failed, keep streaming: msg=%s", message_id)
+                failed.append(message_id)
+                continue
+            task.status = "stopped"
+            _mark_message_status(message_id, "stopped", None)
+            CHAT_TASK_MANAGER.broadcast(task.task_id, "stopped", {"detail": "生成已停止"})
+            CHAT_TASK_MANAGER.finish(task.task_id)
+        else:
+            # 防御：消息 streaming 但任务不在内存（重启清理前的窗口）→ 先退款（幂等）后标 stopped
+            logger.warning("[chat/stop] streaming message without in-memory task: msg=%s", message_id)
+            req_id = str(r["req_id"] or "")
+            charge_mode = str(r["charge_mode"] or "paid")
+            daily_total = r["daily_total"]
+            if req_id:
+                refund_ok = _refund_chat_request(
+                    user_id, _chat_cost_per_request(None), req_id, charge_mode, daily_total, "",
+                )
+            else:
+                # 旧数据无 req_id：无预扣流水可退（recover 对空 req_id 同样直接标终态），
+                # 视为退款成功仅标 stopped，避免编辑/删除被存量数据永久阻塞
+                refund_ok = True
+            if refund_ok:
+                with get_db() as conn:
+                    conn.execute(
+                        "UPDATE chat_messages SET status = 'stopped', error = NULL WHERE id = %s AND status = 'streaming'",
+                        (message_id,),
+                    )
+            else:
+                failed.append(message_id)
+    return failed
+
+
 @router.post("/messages/{message_id}/stop")
 async def stop_message(message_id: int, user=Depends(get_current_user)):
     """停止生成（幂等）：消息已终态 → 直接 {ok}；
-    status='streaming' → 取消对应后台任务（CancelledError 分支：退款 + 标 stopped + 广播）。"""
+    status='streaming' → 走共享停止 helper（取消任务 + 同步退款 + 标 stopped + 广播）。"""
     user_id = user["user_id"]
     with get_db() as conn:
         row = conn.execute(
@@ -1966,54 +2161,8 @@ async def stop_message(message_id: int, user=Depends(get_current_user)):
         status = row["status"] or "done"
     if status != "streaming":
         return {"ok": True}
-    task = CHAT_TASK_MANAGER.get_by_message_id(message_id)
-    if task is not None:
-        # 无论任务是否已开始执行，都由本端点同步完成 stopped 终态：
-        # 未启动任务（create_task 后立即 stop）取消时协程函数体不会执行，
-        # 不能依赖其 except CancelledError 分支清理；协程 except 对已终态幂等兜底。
-        CHAT_TASK_MANAGER.cancel_by_message_id(message_id)
-        refund_ok = _refund_chat_request(
-            task.user_id, task.cost_per, task.req_id,
-            task.charge_mode, task.daily_total, task.model_id,
-        )
-        if not refund_ok:
-            # 退款失败：不标终态（保持 streaming），已启动任务的协程 except 会重试并兜底
-            # （未启动任务则留待重启 recover 幂等重试），避免「先标终态后退款失败」永久漏退
-            logger.warning("[chat/stop] refund failed, keep streaming: msg=%s", message_id)
-            return {"ok": True}
-        task.status = "stopped"
-        _mark_message_status(message_id, "stopped", None)
-        CHAT_TASK_MANAGER.broadcast(task.task_id, "stopped", {"detail": "生成已停止"})
-        CHAT_TASK_MANAGER.finish(task.task_id)
-        return {"ok": True}
-    # 防御：消息 streaming 但任务不在内存（重启清理前的窗口）→ 先退款（幂等）后标 stopped；
-    # 退款失败保持 streaming，由重启 recover 幂等重试兜底，避免「先标终态后退款失败」永久漏退。
-    logger.warning("[chat/stop] streaming message without in-memory task: msg=%s", message_id)
-    req_id = ""
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT req_id, charge_mode, daily_total FROM chat_messages WHERE id = %s",
-            (message_id,),
-        ).fetchone()
-        if row:
-            req_id = str(row["req_id"] or "")
-            charge_mode = str(row["charge_mode"] or "paid")
-            daily_total = row["daily_total"]
-        else:
-            charge_mode = "paid"
-            daily_total = None
-    if req_id:
-        refund_ok = _refund_chat_request(
-            user_id, _chat_cost_per_request(None), req_id, charge_mode, daily_total, "",
-        )
-    else:
-        refund_ok = False
-    if refund_ok:
-        with get_db() as conn:
-            conn.execute(
-                "UPDATE chat_messages SET status = 'stopped', error = NULL WHERE id = %s AND status = 'streaming'",
-                (message_id,),
-            )
+    # 退款失败时保持 streaming（由重启 recover 幂等重试），端点仍返回 ok（幂等语义）
+    _stop_streaming_messages([message_id], user_id)
     return {"ok": True}
 
 

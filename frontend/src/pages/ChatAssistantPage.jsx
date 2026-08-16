@@ -462,10 +462,70 @@ function CitationList({ citations = [] }) {
 }
 
 // ============ 消息气泡 ============
+// 编辑态气泡：用户消息气泡原位替换为编辑框。
+// 交互复用草稿编辑（editPending）的实现模式：autoFocus + 光标置尾 + 高度自适应（上限 160）；
+// Enter 保存 / Shift+Enter 换行 / Escape 取消（键处理对齐 ChatInputBar 829-834）。
+function EditBubble({ initial, onSave, onCancel }) {
+  const [text, setText] = useState(String(initial || ''))
+  const ref = useRef(null)
+  const autoResize = () => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 160) + 'px'
+  }
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.focus()
+    requestAnimationFrame(() => {
+      if (!el) return
+      const len = el.value.length
+      el.setSelectionRange(len, len) // 光标置尾
+      autoResize()
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault()
+      onSave(text)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      onCancel()
+    }
+  }
+  return (
+    <div className="w-full">
+      <textarea ref={ref} value={text} rows={2}
+        onChange={e => { setText(e.target.value); autoResize() }}
+        onKeyDown={handleKeyDown}
+        className="w-full resize-none outline-none rounded-xl px-3 py-2 text-sm leading-relaxed"
+        style={{ color: 'var(--text-primary)', background: 'color-mix(in srgb, var(--bg-primary) 55%, transparent)', border: '1px solid var(--border-color)', minHeight: 56, maxHeight: 160 }}
+        placeholder="修改问题…" />
+      <div className="flex items-center gap-2 mt-2">
+        <button onClick={() => onSave(text)}
+          className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium text-white transition-opacity hover:opacity-90"
+          style={{ background: 'var(--accent)' }}>
+          保存
+        </button>
+        <button onClick={onCancel}
+          className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium hover:bg-bg-hover transition-colors"
+          style={{ color: 'var(--text-secondary)' }}>
+          取消
+        </button>
+        <span className="text-[11px] hidden sm:inline" style={{ color: 'var(--text-secondary)' }}>Enter 保存 · Shift+Enter 换行 · Esc 取消</span>
+      </div>
+    </div>
+  )
+}
+
+// ============ 消息气泡 ============
 // memo：历史消息的 props（msg/onCopy/onRegenerate）在流式期间稳定，避免每帧全列表重渲染；
 // mdToHtml 用 useMemo 按 msg.content 缓存，历史消息只解析一次
-const MessageItem = memo(function MessageItem({ msg, onCopy, onRegenerate }) {
+const MessageItem = memo(function MessageItem({ msg, onCopy, onRegenerate, onEdit, onEditSave, onEditCancel, editing }) {
   const isUser = msg.role === 'user'
+  const isEditing = isUser && !!editing && String(msg.id) === String(editing.id)
   const mdHtml = useMemo(
     () => (isUser || msg.error ? null : mdToHtml(msg.content)),
     [msg.content, isUser, msg.error]
@@ -501,8 +561,12 @@ const MessageItem = memo(function MessageItem({ msg, onCopy, onRegenerate }) {
                 ))}
               </div>
             )}
-            <div className="text-sm whitespace-pre-wrap break-words" style={{ color: 'var(--text-primary)' }}
-              dangerouslySetInnerHTML={{ __html: linkifyUserText(msg.content) }} />
+            {isEditing ? (
+              <EditBubble initial={editing.content} onSave={t => onEditSave(msg, t)} onCancel={onEditCancel} />
+            ) : (
+              <div className="text-sm whitespace-pre-wrap break-words" style={{ color: 'var(--text-primary)' }}
+                dangerouslySetInnerHTML={{ __html: linkifyUserText(msg.content) }} />
+            )}
           </>
         ) : msg.error ? (
           <div className="flex items-start gap-1.5 text-sm" style={{ color: 'var(--color-error)' }}>
@@ -539,6 +603,16 @@ const MessageItem = memo(function MessageItem({ msg, onCopy, onRegenerate }) {
             className="p-1 rounded-lg hover:bg-bg-hover transition-colors"
             style={{ color: 'var(--text-secondary)' }}>
             <RefreshCw size={12} />
+          </button>
+        </div>
+      )}
+      {/* 用户消息编辑入口：桌面 hover 显示（气泡容器已有 group），移动端常显 */}
+      {isUser && onEdit && !isEditing && (
+        <div className="flex items-center gap-0.5 mt-1 mr-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+          <button onClick={() => onEdit(msg)} title="编辑"
+            className="p-1 rounded-lg hover:bg-bg-hover transition-colors"
+            style={{ color: 'var(--text-secondary)' }}>
+            <Pencil size={12} />
           </button>
         </div>
       )}
@@ -1298,6 +1372,8 @@ export default function ChatAssistantPage() {
   const pendingScrollMessageIdRef = useRef(null)        // 待定位消息 id（搜索结果点击，跨消息加载生效）
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(null) // { sessionId, content, text, thinking, toolStatus, citations, widgets, files, pendingImage, stopped, error, manual }
+  // 编辑中的用户消息 { id, content } | null（编辑态为内存态不持久化；刷新后展示 DB 现状）
+  const [editingMsg, setEditingMsg] = useState(null)
   // 链接抓取状态（SSE url_status 事件）：{ status: 'fetching'|'ok'|'failed', url, error } | null
   const [linkStatus, setLinkStatus] = useState(null)
   const linkTimerRef = useRef(null)
@@ -2171,7 +2247,9 @@ export default function ChatAssistantPage() {
   // ============ 发送链路：POST 创建任务 → 替换本地用户消息 id → 初始化 sending → 订阅 ============
   // 替代旧 startStream：发送与订阅解耦。sending 的 text/thinking 从空开始（打字机），
   // taskId/assistantMessageId 由 sendMessage 返回后写入（停止按钮依赖 assistantMessageId）。
-  const startChatTask = useCallback(async (sessionId, content, reasoningEffort = 'auto', useWeb = null, localUserMsgId = null, imageFileIds = []) => {
+  // editMessageId：编辑重发时传目标用户消息 id（sendMessage body 带 edit_message_id，后端
+  // 原位更新该消息、不新插入 user 消息）；此时 localUserMsgId 传 null，不做本地 id 交换。
+  const startChatTask = useCallback(async (sessionId, content, reasoningEffort = 'auto', useWeb = null, localUserMsgId = null, imageFileIds = [], editMessageId = null) => {
     // 新任务开始：终止上一流遗留的后台图片轮询（旧任务结果不再补进新流，防串流）
     stopImagePolling()
     // 流的唯一身份：旧流的迟到回调不会误操作新流
@@ -2197,6 +2275,7 @@ export default function ChatAssistantPage() {
         model_id: modelIdRef.current,
         web_search: useWeb === null ? webSearchRef.current : useWeb,
         image_file_ids: imageFileIds,
+        ...(editMessageId != null ? { edit_message_id: editMessageId } : {}),
       })
     } catch (err) {
       const errMsg = err?.message || '发送失败'
@@ -2522,6 +2601,7 @@ export default function ChatAssistantPage() {
     resumeSubscribedRef.current = null // 允许切回同一会话时重新续看
     stopResumePolling()
     stopImagePolling() // 切会话后旧会话的后台图片任务不再补图（消息列表已切换）
+    setEditingMsg(null) // 切换会话退出编辑态（编辑态为内存态，不跨会话）
     clearPendingWithNotice()
     skipMessagesLoadRef.current = null // 切换会话不再跳过加载
     setActiveId(id)
@@ -2547,6 +2627,7 @@ export default function ChatAssistantPage() {
     resumeSubscribedRef.current = null // 新建会话后旧会话不续看
     stopResumePolling()
     stopImagePolling() // 新建会话后旧会话的后台图片任务不再补图
+    setEditingMsg(null) // 新建会话退出编辑态
     clearPendingWithNotice()
     try {
       const res = await chatAPI.createSession()
@@ -2612,6 +2693,7 @@ export default function ChatAssistantPage() {
         resumeGuardRef.current = null
         resumeSubscribedRef.current = null
         stopResumePolling()
+        setEditingMsg(null)
         clearPendingWithNotice()
         try { localStorage.removeItem('chat_active_session_id') } catch {}
         if (next.length) setActiveId(next[0].id)
@@ -2657,6 +2739,7 @@ export default function ChatAssistantPage() {
         resumeGuardRef.current = null
         resumeSubscribedRef.current = null
         stopResumePolling()
+        setEditingMsg(null)
         clearPendingWithNotice()
         try { localStorage.removeItem('chat_active_session_id') } catch {}
         if (next.length) {
@@ -2766,6 +2849,59 @@ export default function ChatAssistantPage() {
       .map(f => Number(f.id))
     startChatTask(sid, userMsg.content, effortRef.current, null, userLocalId, retryImageIds)
   }, [dialog, messages, cost, startChatTask])
+
+  // 「编辑已发送的用户消息」：进入编辑态（气泡原位替换为编辑框，内容为内存态）
+  const handleEditStart = useCallback((msg) => {
+    if (!msg || msg.role !== 'user') return
+    if (/^(local-|err-)/.test(String(msg.id))) return // 未同步到服务器（对齐 regenerate 拦截）
+    setEditingMsg({ id: String(msg.id), content: msg.content || '' })
+  }, [])
+
+  // 取消编辑：恢复原文（编辑态为内存态，取消即丢弃未保存内容）
+  const handleEditCancel = useCallback(() => setEditingMsg(null), [])
+
+  // 「保存编辑」：停流 → PATCH（截断 + 原位更新）→ 本地截断 → 复用发送链路重新生成。
+  // 计费语义与「重新回答」一致：被截断的已完成轮次不退款；重发走 sendMessage 正常预扣。
+  const handleEditSave = useCallback(async (msg, newContent) => {
+    const text = String(newContent || '').trim()
+    if (!text) return
+    if (text === (msg.content || '')) { setEditingMsg(null); return } // 无变化：仅退出编辑态
+    if (sendingRef.current && !sendingRef.current.stopped) {
+      dialog.alert('请先停止当前生成，再编辑消息')
+      return
+    }
+    const sid = activeIdRef.current
+    if (!sid) return
+    const idx = messages.findIndex(m => m.id === msg.id)
+    if (idx < 0) { setEditingMsg(null); return }
+    // 1) 编辑点之后的 streaming 消息先停（fire-and-forget，对齐 regenerate 2588-2593；
+    //    后端 PATCH 内同步停止+退款兜底，幂等）
+    for (let i = idx + 1; i < messages.length; i++) {
+      if (messages[i].role === 'assistant' && messages[i].status === 'streaming' && messages[i].id) {
+        chatAPI.stopMessage(String(messages[i].id)).catch(() => {})
+      }
+    }
+    // 2) 截断 + 原位更新（后端单事务；失败 → alert + 保持编辑态，用户内容不丢）
+    try {
+      await chatAPI.editMessage(sid, msg.id, { content: text })
+    } catch (err) {
+      dialog.alert(err.message || '编辑失败，请重试')
+      return
+    }
+    // 3) 本地同步：保留编辑消息（更新内容），丢弃其后全部；排队队列失效清空
+    setMessages(prev => {
+      const mi = prev.findIndex(m => m.id === msg.id)
+      if (mi < 0) return prev
+      return [...prev.slice(0, mi), { ...prev[mi], content: text }]
+    })
+    clearPendingWithNotice()
+    setEditingMsg(null)
+    // 4) 重新生成：复用发送链路（计费/流式/落库全走现有逻辑；edit_message_id 原位更新不重复插入）
+    const retryImageIds = (msg.files || [])
+      .filter(f => f.kind === 'image' && f.id != null)
+      .map(f => Number(f.id))
+    startChatTask(sid, text, effortRef.current, null, null, retryImageIds, msg.id)
+  }, [dialog, messages, startChatTask, clearPendingWithNotice])
 
   const handleCopy = useCallback(async (text) => {
     const ok = await copyText(String(text || ''))
@@ -2889,7 +3025,17 @@ export default function ChatAssistantPage() {
                 </>
               ) : (
                 <>
-                  {messages.map(msg => <MessageItem key={msg.id} msg={msg} onCopy={handleCopy} onRegenerate={handleRegenerate} />)}
+                  {messages.map(msg => {
+                    // 编辑入口可见条件：用户消息、非错误、非本地临时 id（未同步到服务器）
+                    const canEdit = msg.role === 'user' && !msg.error && !/^(local-|err-)/.test(String(msg.id))
+                    return (
+                      <MessageItem key={msg.id} msg={msg} onCopy={handleCopy} onRegenerate={handleRegenerate}
+                        onEdit={canEdit ? handleEditStart : null}
+                        onEditSave={handleEditSave}
+                        onEditCancel={handleEditCancel}
+                        editing={editingMsg} />
+                    )
+                  })}
                   {sending && <StreamBubble sending={sending} onStop={handleStop} onRetry={handleRetry} />}
                   {pendingQueue.length > 0 && <PendingQueueBubbles items={pendingQueue} />}
                 </>
