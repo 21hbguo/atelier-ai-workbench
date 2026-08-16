@@ -132,7 +132,7 @@ async def _fake_prepare(session_id, model=None, attached_docs=None, system_promp
 
 
 def test_run_generation_done_path():
-    async def _fake_chat_stream(history, reasoning_effort, model=None, attached_docs=None, prebuilt_messages=None):
+    async def _fake_chat_stream(history, reasoning_effort, model=None, attached_docs=None, prebuilt_messages=None, custom_instructions=""):
         yield {"type": "chunk", "text": "你"}
         yield {"type": "chunk", "text": "好"}
         yield {"type": "done", "text": "你好", "thinking": "", "usage": None}
@@ -174,7 +174,7 @@ def test_run_generation_done_path():
 
 
 def test_run_generation_error_path():
-    async def _fake_chat_stream(history, reasoning_effort, model=None, attached_docs=None, prebuilt_messages=None):
+    async def _fake_chat_stream(history, reasoning_effort, model=None, attached_docs=None, prebuilt_messages=None, custom_instructions=""):
         yield {"type": "error", "detail": "模型调用失败"}
 
     async def _scenario():
@@ -209,7 +209,7 @@ def test_run_generation_cancelled_path_swallows_error():
     """用户 stop：取消已启动的 asyncio.Task → stopped 分支退款 + 广播；异常被吞（await 不抛）。"""
     entered = asyncio.Event()
 
-    async def _fake_chat_stream(history, reasoning_effort, model=None, attached_docs=None, prebuilt_messages=None):
+    async def _fake_chat_stream(history, reasoning_effort, model=None, attached_docs=None, prebuilt_messages=None, custom_instructions=""):
         yield {"type": "chunk", "text": "a"}
         entered.set()
         await asyncio.sleep(30)  # 取消点
@@ -375,7 +375,7 @@ def test_send_message_429_when_concurrent_limit_reached():
     """并发控制：运行中任务数 >= 套餐上限 → 429（保留旧响应格式）。"""
     conn = MagicMock(name="db_conn")
     conn.execute.return_value = MagicMock(name="cursor")
-    conn.execute.return_value.fetchone.return_value = {"id": 1, "title": "新对话", "cnt": 0}
+    conn.execute.return_value.fetchone.return_value = {"id": 1, "title": "新对话", "cnt": 0, "ci": ""}
 
     async def _scenario():
         with _mock_get_db(conn)[0], \

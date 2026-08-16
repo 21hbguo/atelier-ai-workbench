@@ -137,7 +137,7 @@ def _base_patches(conn=None, active_model=None, vision_engine=None):
             {"role": "user", "content": "看图说话"},
         ]
 
-    async def _fake_chat_stream(history, reasoning_effort, model=None, attached_docs=None, prebuilt_messages=None):
+    async def _fake_chat_stream(history, reasoning_effort, model=None, attached_docs=None, prebuilt_messages=None, custom_instructions=""):
         captured["chat_stream_calls"].append({"model": model, "messages": prebuilt_messages})
         yield {"type": "done", "text": "这是一张图", "thinking": ""}
 
