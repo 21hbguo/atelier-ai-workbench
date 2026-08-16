@@ -2734,7 +2734,11 @@ export default function ChatAssistantPage() {
       return
     }
     // 3) 本地同步：保留编辑消息（更新内容），丢弃其后全部；排队队列失效清空
-    setMessages(prev => [...prev.slice(0, idx), { ...prev[idx], content: text }])
+    setMessages(prev => {
+      const mi = prev.findIndex(m => m.id === msg.id)
+      if (mi < 0) return prev
+      return [...prev.slice(0, mi), { ...prev[mi], content: text }]
+    })
     clearPendingWithNotice()
     setEditingMsg(null)
     // 4) 重新生成：复用发送链路（计费/流式/落库全走现有逻辑；edit_message_id 原位更新不重复插入）
