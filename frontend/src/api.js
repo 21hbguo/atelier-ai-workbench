@@ -447,6 +447,8 @@ export const notificationAPI = {
 export const accountAPI = {
   changePassword: data => api.post('/account/change-password', data),
   sessions: (page = 1, size = 20) => api.get('/account/security-sessions', { params: { page, size } }),
+  getCustomInstructions: () => api.get('/account/custom-instructions'),
+  updateCustomInstructions: data => api.put('/account/custom-instructions', data),
 }
 
 export const shareAPI = {
