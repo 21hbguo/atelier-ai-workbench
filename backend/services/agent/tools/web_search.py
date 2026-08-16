@@ -12,7 +12,9 @@
 - SEARCH_API_KEY: 指定供应商时的通用 key（新配置优先用各自独立 key）
 
 内置免费搜索兜底（provider "html"）：即使一个 key 都没配置也能搜索——直接抓取
-Bing / DuckDuckGo 的免费 HTML 结果页并解析链接。它始终排在降级链最后一环，
+Bing（cn.bing.com）/ Mojeek / DuckDuckGo 的免费 HTML 结果页并解析链接，再经
+搜索质量增强栈（时效标注/过滤、重排、去重、摘要清理，移植自
+@deepseek-ai/dsh-web-search-html）提升结果质量。它始终排在降级链最后一环，
 稳定性与结果质量不如专用搜索 API。统一返回 "标题 — url\n描述" 列表文本。
 """
 from __future__ import annotations
@@ -26,7 +28,7 @@ import re
 import threading
 import time
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import quote
 
@@ -143,7 +145,7 @@ def _max_search_per_run() -> int:
 
 def _unconfigured_message() -> str:
     return (
-        "未配置任何搜索服务 API key：将使用内置免费搜索（抓取 Bing/DuckDuckGo 结果页），"
+        "未配置任何搜索服务 API key：将使用内置免费搜索（抓取 Bing/Mojeek/DuckDuckGo 结果页），"
         "其稳定性与结果质量不如专用搜索 API。建议配置 TAVILY_API_KEY（Tavily）、"
         "EXA_API_KEY（Exa）、SERPER_API_KEY（Serper）、BRAVE_API_KEY（Brave）或 "
         "SEARXNG_URL（自建 searxng 实例）以获得更稳定可靠的搜索。"
@@ -259,9 +261,10 @@ async def _searxng(query: str, base_url: str, n: int) -> list[dict]:
     return out
 
 
-# ---------- 内置免费搜索兜底（provider "html"）：抓取 Bing / DuckDuckGo 免费 HTML 结果页 ----------
+# ---------- 内置免费搜索兜底（provider "html"）：抓取 Bing / Mojeek / DuckDuckGo 免费 HTML 结果页 ----------
 # 无任何 API key 时的最后一环。页面结构随时可能变，解析失败时返回 []（外层视为该引擎失败），
-# 两引擎都失败则走主循环的"全部供应商失败"逻辑。限流/缓存/熔断由外层统一生效，这里不重复实现。
+# 三引擎都失败则走主循环的"全部供应商失败"逻辑。抓取到的原始结果会经下方「搜索质量增强栈」
+# 后处理（时效标注/过滤、重排、去重、摘要清理）。限流/缓存/熔断由外层统一生效，这里不重复实现。
 
 _HTML_MAX_BYTES = 2 * 1024 * 1024  # 抓取 HTML 结果页的响应体大小上限（约 2MB，超出截断）
 
@@ -272,7 +275,7 @@ def _strip_html_tags(s: str) -> str:
     return html_lib.unescape(s).strip()
 
 
-_BING_BLOCK_RE = re.compile(r'<li class="[^"]*\bb_algo\b[^"]*">(.*?)</li>', re.S)
+_BING_BLOCK_RE = re.compile(r'<li[^>]*\bclass="[^"]*\bb_algo\b[^"]*"[^>]*>(.*?)</li>', re.S)
 _BING_TITLE_RE = re.compile(r'<h2[^>]*>\s*<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>\s*</h2>', re.S)
 _BING_DESC_RE = re.compile(r'<p[^>]*>(.*?)</p>', re.S)
 
@@ -295,7 +298,7 @@ def _bing_real_url(href: str) -> str:
 
 
 def _parse_bing_html(html_text: str, n: int) -> list[dict]:
-    """解析 Bing 搜索结果页（www.bing.com/search?q=）：识别 <li class="b_algo"> 结果块。
+    """解析 Bing 搜索结果页（cn.bing.com/search?q=）：识别 <li class="b_algo"> 结果块。
 
     提取 title（<h2><a>…</a></h2>）、url（href，仅 http/https）、description（<p>…</p>），
     返回最多 n 条 [{"title", "url", "description"}]；广告块/无 h2 标题、非 http 链接、
@@ -354,11 +357,20 @@ def _parse_ddg_html(html_text: str, n: int) -> list[dict]:
 
 
 async def _bing_html(query: str, n: int) -> list[dict]:
-    """抓取 Bing 搜索结果页并解析（_http_get 已带浏览器 UA 与超时；max_bytes 限制响应体）。"""
-    url = "https://www.bing.com/search?q=" + quote(query)
-    data = await _http_get(url, max_bytes=_HTML_MAX_BYTES)
+    """抓取 Bing 搜索结果页并解析（cn.bing.com：CN 可达且返回 raw URL，_bing_real_url 的 ck/a 解码仍保留作兜底）。
+
+    count 参数按 N=min(max(n*2,10),30) 扩大候选池，给后处理重排留空间；解析上限取 count。
+    _http_get 已带浏览器 UA 与超时；max_bytes 限制响应体。
+    """
+    count = min(max(n * 2, 10), 30)
+    url = f"https://cn.bing.com/search?q={quote(query)}&count={count}"
+    data = await _http_get(
+        url,
+        headers={"accept-language": "zh-CN,zh;q=0.9,en;q=0.8"},
+        max_bytes=_HTML_MAX_BYTES,
+    )
     html_text = data.get("html") if isinstance(data, dict) else str(data)
-    return _parse_bing_html(html_text, n)
+    return _parse_bing_html(html_text, count)
 
 
 async def _ddg_html(query: str, n: int) -> list[dict]:
@@ -367,6 +379,221 @@ async def _ddg_html(query: str, n: int) -> list[dict]:
     data = await _http_get(url, max_bytes=_HTML_MAX_BYTES)
     html_text = data.get("html") if isinstance(data, dict) else str(data)
     return _parse_ddg_html(html_text, n)
+
+
+_MOJEEK_UL_RE = re.compile(r'<ul[^>]*class="([^"]*)"[^>]*>(.*?)</ul>', re.S)
+_MOJEEK_LI_RE = re.compile(r'<li[^>]*>(.*?)</li>', re.S)
+_MOJEEK_TITLE_RE = re.compile(
+    r'<a\b(?=[^>]*\bclass="[^"]*\btitle\b[^"]*")[^>]*\bhref="([^"]+)"[^>]*>(.*?)</a>', re.S
+)
+_MOJEEK_H2_TITLE_RE = re.compile(r'<h2[^>]*>\s*<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>\s*</h2>', re.S)
+_MOJEEK_SNIPPET_RE = re.compile(
+    r'<p\b(?=[^>]*\bclass="[^"]*\bs\b[^"]*")[^>]*>(.*?)</p>', re.S
+)
+
+
+def _parse_mojeek_html(html_text: str, n: int) -> list[dict]:
+    """解析 Mojeek 搜索结果页（www.mojeek.com/search?q=，参照 DSH parseMojeekResults）。
+
+    识别 ul.results-standard / ul.results 结果列表，每个 <li> 块取 a.title（或 h2 a）的
+    title/url、p.s 的 snippet；非 http 链接跳过、按 url 去重；返回最多 n 条
+    [{"title", "url", "description"}]，解析失败返回 []。
+    """
+    out: list[dict] = []
+    seen: set[str] = set()
+    for ul_cls, ul_body in _MOJEEK_UL_RE.findall(str(html_text or "")):
+        if not re.search(r"\bresults(?:-standard)?\b", ul_cls):
+            continue
+        for li in _MOJEEK_LI_RE.findall(ul_body):
+            m = _MOJEEK_TITLE_RE.search(li) or _MOJEEK_H2_TITLE_RE.search(li)
+            if not m:
+                continue
+            href = m.group(1)
+            if not href.startswith(("http://", "https://")) or href in seen:
+                continue
+            seen.add(href)
+            sm = _MOJEEK_SNIPPET_RE.search(li)
+            out.append({
+                "title": _strip_html_tags(m.group(2)),
+                "url": href,
+                "description": _strip_html_tags(sm.group(1)) if sm else "",
+            })
+            if len(out) >= n:
+                return out
+    return out
+
+
+async def _mojeek_html(query: str, n: int) -> list[dict]:
+    """抓取 Mojeek 搜索结果页并解析（免 key 独立索引；referer + accept-language 头）。
+
+    _http_get 已带浏览器 UA 与超时；max_bytes 限制响应体。
+    """
+    url = "https://www.mojeek.com/search?q=" + quote(query)
+    data = await _http_get(
+        url,
+        headers={"accept-language": "zh-CN,zh;q=0.9,en;q=0.8", "referer": "https://www.mojeek.com/"},
+        max_bytes=_HTML_MAX_BYTES,
+    )
+    html_text = data.get("html") if isinstance(data, dict) else str(data)
+    return _parse_mojeek_html(html_text, n)
+
+
+# ---------- 搜索质量增强栈（移植自 @deepseek-ai/dsh-web-search-html，MIT License Copyright (c) 2026 DeepSeek）----------
+# 对应 DSH 源码：search-provider.ts（postProcess/cleanSnippet/parseMojeekResults/cn.bing.com 端点）、
+# query-enhance.ts（enhanceQuery 新闻意图日期落地）、rerank.ts（tokenize/scoreQueryMatch）、
+# recency.ts（extractDaysAgo）。作用于 html provider 抓到的原始结果，顺序固定：
+# 时效标注 → 可选过期过滤 → 重排（相关性+时效分，稳定排序）→ 标题去重 → 摘要清理 → 截断 topK。
+
+_DAY_SECONDS = 86400.0
+
+_RELATIVE_DAYS_RE = re.compile(r"(\d+)\s*(?:个)?(分钟|小时|天|日|周|月|年)\s*之?前")
+_ABSOLUTE_DATE_RE = re.compile(r"(20\d{2})\s*[年./-]\s*(\d{1,2})\s*[月./-]\s*(\d{1,2})\s*日?")
+_MONTH_DAY_RE = re.compile(r"(\d{1,2})\s*月\s*(\d{1,2})\s*日")
+_UNIT_TO_DAYS = {"分钟": 1 / 1440, "小时": 1 / 24, "天": 1, "日": 1, "周": 7, "月": 30, "年": 365}
+_CJK_RE = re.compile(r"[\u4e00-\u9fff]+")
+
+
+def _extract_days_ago(text: str, now: float | None = None) -> float | None:
+    """从标题/摘要的日期线索估算「多少天前」，无线索返回 None（recency.ts extractDaysAgo 移植）。
+
+    相对时间（N 分钟/小时/天/日/周/月/年前 或 …之前，单位→天：分钟 1/1440、小时 1/24、
+    天/日 1、周 7、月 30、年 365）；绝对日期（20xx 年/./- 月/./- 日）；月日（按今年，
+    未来超过 60 天回滚一年）；关键词 今天=0/昨天=1/前天=2。now 可注入便于测试。
+    """
+    text = text or ""
+    now = time.time() if now is None else now
+    m = _RELATIVE_DAYS_RE.search(text)
+    if m:
+        days = _UNIT_TO_DAYS.get(m.group(2))
+        if days is not None:
+            return int(m.group(1)) * days
+    m = _ABSOLUTE_DATE_RE.search(text)
+    if m:
+        d = datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        return (now - d.timestamp()) / _DAY_SECONDS
+    m = _MONTH_DAY_RE.search(text)
+    if m:
+        year = datetime.fromtimestamp(now).year
+        d = datetime(year, int(m.group(1)), int(m.group(2)))
+        # 未来超过 60 天的月日多半是去年的文章仍在浮出，回滚一年
+        if d.timestamp() > now + 60 * _DAY_SECONDS:
+            d = datetime(year - 1, int(m.group(1)), int(m.group(2)))
+        return max(0.0, (now - d.timestamp()) / _DAY_SECONDS)
+    if "今天" in text:
+        return 0.0
+    if "昨天" in text:
+        return 1.0
+    if "前天" in text:
+        return 2.0
+    return None
+
+
+def _tokenize(text: str) -> list[str]:
+    """分词（rerank.ts tokenize 移植）：CJK（\\u4e00-\\u9fff）段拆单字符+相邻双字 bigram，
+    其余按 [^a-z0-9]+ 分词并转小写。"""
+    lower = (text or "").lower()
+    tokens: list[str] = []
+    for seg in _CJK_RE.findall(lower):
+        tokens.extend(seg)
+        tokens.extend(seg[i:i + 2] for i in range(len(seg) - 1))
+    rest = _CJK_RE.sub(" ", lower)
+    tokens.extend(w for w in re.split(r"[^a-z0-9]+", rest) if w)
+    return tokens
+
+
+def _score_query_match(title: str, url: str, snippet: str, query: str) -> float:
+    """相关性打分（rerank.ts scoreQueryMatch 移植），越高越相关：
+
+    query 全串 phrase 命中 title+6 / snippet+3 / url+2；title token 命中率*8 +
+    snippet token 命中率*4。query 无可匹配 token 时返回 0。
+    """
+    query_tokens = _tokenize(query)
+    if not query_tokens:
+        return 0.0
+    query_set = set(query_tokens)
+    phrase = query.lower().strip()
+    title_lower = (title or "").lower()
+    snippet_lower = (snippet or "").lower()
+    url_lower = (url or "").lower()
+    score = 0.0
+    if phrase:
+        if phrase in title_lower:
+            score += 6
+        if phrase in snippet_lower:
+            score += 3
+        if phrase in url_lower:
+            score += 2
+    title_tokens = _tokenize(title)
+    snippet_tokens = _tokenize(snippet)
+    title_hits = sum(1 for t in title_tokens if t in query_set)
+    snippet_hits = sum(1 for t in snippet_tokens if t in query_set)
+    score += (title_hits / max(len(title_tokens), 1)) * 8
+    score += (snippet_hits / max(len(snippet_tokens), 1)) * 4
+    return score
+
+
+def _clean_snippet(snippet: str) -> str:
+    """清理摘要（cleanSnippet 移植）：去掉开头「N 天前/小时前… ·|:：,，-」前缀并压缩空白。"""
+    s = re.sub(r"^\s*\d+\s*(?:分钟|小时|天|日|周|个?月|年)\s*之?前\s*[·|:：,，-]?\s*", "", snippet or "")
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _post_process_html(items: list[dict], query: str, top_k: int) -> list[dict]:
+    """html provider 结果质量后处理（search-provider.ts postProcess 移植，顺序固定）：
+
+    ① 时效标注（extractDaysAgo）→ ② 过期过滤（SEARCH_FILTER_STALE_DAYS>0 时丢弃有解析
+    年龄且超限的结果，无解析年龄的保留）→ ③ 重排（相关性分 + 时效分 max(0, 2-daysAgo/7)，
+    稳定降序，同分保持引擎原始顺序）→ ④ 标题规范化去重（lower + 去非字母数字，
+    isalnum 等价 DSH 的 \\p{L}\\p{N}，中文标题保留）→ ⑤ 摘要清理（去相对时间前缀、压缩
+    空白；清理后短于 SEARCH_MIN_SNIPPET_CHARS 的 description 置空，键保留）→ ⑥ 截断 topK。
+    返回 [{title, url, description}]（app 内部字段名是 description）。
+    """
+    # ① 时效标注
+    list_: list[dict] = []
+    for item in items:
+        days = _extract_days_ago(f"{item.get('title') or ''} {item.get('description') or ''}")
+        list_.append({**item, "_days_ago": days})
+    # ② 可选过期过滤（仅影响有解析年龄的结果）
+    try:
+        stale_days = int(os.getenv("SEARCH_FILTER_STALE_DAYS", "0") or 0)
+    except ValueError:
+        stale_days = 0
+    if stale_days > 0:
+        list_ = [it for it in list_ if it["_days_ago"] is None or it["_days_ago"] <= stale_days]
+    # ③ 重排（Python sorted 稳定 → 同分保持引擎原始顺序）
+    scored = []
+    for it in list_:
+        relevance = _score_query_match(it.get("title") or "", it.get("url") or "",
+                                       it.get("description") or "", query)
+        days = it["_days_ago"]
+        recency = 0.0 if days is None else max(0.0, 2 - days / 7)
+        scored.append((relevance + recency, it))
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    list_ = [it for _, it in scored]
+    # ④ 标题规范化去重（key 为空时保留不过滤，同 DSH）
+    seen: set[str] = set()
+    deduped: list[dict] = []
+    for it in list_:
+        key = "".join(c for c in (it.get("title") or "").lower() if c.isalnum())
+        if not key or key not in seen:
+            seen.add(key)
+            deduped.append(it)
+    list_ = deduped
+    # ⑤ 摘要清理（过短置空；_format_results 依赖 description 键存在，不能删键）
+    try:
+        min_chars = int(os.getenv("SEARCH_MIN_SNIPPET_CHARS", "10") or 10)
+    except ValueError:
+        min_chars = 10
+    cleaned: list[dict] = []
+    for it in list_:
+        desc = it.get("description") or ""
+        if desc:
+            c = _clean_snippet(desc)
+            it = {**it, "description": c if len(c) >= min_chars else ""}
+        cleaned.append(it)
+    list_ = cleaned
+    # ⑥ 截断 topK，并去掉内部标记字段
+    return [{k: v for k, v in it.items() if k != "_days_ago"} for it in list_[:top_k]]
 
 
 def _rate_limited(user_id: int) -> bool:
@@ -502,8 +729,12 @@ def _enhance_query(query: str) -> str:
 
     规则：
     1. 纯宽泛新闻词（「今天新闻」「今日热点」「最新消息」等）→ 替换为「日期+今日要闻+头条」；
-    2. 含时间敏感词（今天/今日/最新/近期等）但无具体日期 → 自动附加当天日期；
-    3. 其他查询保持原样。
+    2. 新闻意图词（新闻/资讯/快讯/日报/早报/晚报/盘点/综述）→ 相对时间词落地为具体日期：
+       今天|今日|昨日→今天日期、昨天→昨天日期、明天|明日→明天日期；替换后仍无日期
+       （20\\d{2}年 或 20\\d{2}[-/.]\\d{1,2}）→ 追加今天日期（移植自
+       @deepseek-ai/dsh-web-search-html query-enhance.ts，日期格式 YYYY年M月D日）；
+    3. 含时间敏感词（今天/今日/最新/近期等）但无具体日期 → 自动附加当天日期；
+    4. 其他查询保持原样。
     """
     q = query.strip()
     if not q:
@@ -514,6 +745,18 @@ def _enhance_query(query: str) -> str:
     bare = re.sub(r"[?？!！。，,\s]", "", q)
     if re.fullmatch(r"(今天|今日|现在|最新|实时|近期|最近)?(新闻|消息|热点|要闻|资讯|时事|头条)?(是什么|有哪些|有什么|汇总|速览|排行榜)?", bare):
         return f"{today} 今日要闻 头条"
+    # 新闻意图 → 相对时间词落地为具体日期（query-enhance.ts 移植）
+    if re.search(r"新闻|资讯|快讯|日报|早报|晚报|盘点|综述", q):
+        yesterday_dt = now - timedelta(days=1)
+        tomorrow_dt = now + timedelta(days=1)
+        yesterday = f"{yesterday_dt.year}年{yesterday_dt.month}月{yesterday_dt.day}日"
+        tomorrow = f"{tomorrow_dt.year}年{tomorrow_dt.month}月{tomorrow_dt.day}日"
+        enhanced = re.sub(r"今天|今日|昨日", today, q)
+        enhanced = re.sub(r"昨天", yesterday, enhanced)
+        enhanced = re.sub(r"明天|明日", tomorrow, enhanced)
+        if not re.search(r"20\d{2}\s*年|20\d{2}[-/.]\d{1,2}", enhanced):
+            enhanced = f"{enhanced} {today}"
+        return enhanced
     # 时间敏感但无具体日期 → 附加当天日期
     if not re.search(r"\d{4}年|\d{1,2}月\d{1,2}日", q) and re.search(r"今天|今日|现在|最新|实时|近期|最近", q):
         return f"{q} {today}"
@@ -601,15 +844,25 @@ async def web_search_search(args: dict, ctx: AgentContext) -> str:
         for provider in providers:
             try:
                 if provider == "html":
-                    # 内置免费搜索兜底（最后一环）：先 Bing，空/异常则 DuckDuckGo，
-                    # 两者皆空/失败才记入 errors 走全败逻辑
+                    # 内置免费搜索兜底（最后一环）：先 Bing，空/异常则 Mojeek，再空/异常则 DuckDuckGo，
+                    # 三引擎皆空/失败才记入 errors 走全败逻辑
+                    pool = min(max(max_results * 2, 10), 30)  # 扩大候选池给重排留空间
                     try:
                         items = await _bing_html(query, max_results)
                     except Exception as exc:
-                        logger.warning("[web_search] html(bing) 抓取失败，切换 DuckDuckGo: %s", exc)
+                        logger.warning("[web_search] html(bing) 抓取失败，切换 Mojeek: %s", exc)
                         items = []
                     if not items:
-                        items = await _ddg_html(query, max_results)
+                        try:
+                            items = await _mojeek_html(query, pool)
+                        except Exception as exc:
+                            logger.warning("[web_search] html(mojeek) 抓取失败，切换 DuckDuckGo: %s", exc)
+                            items = []
+                    if not items:
+                        items = await _ddg_html(query, pool)
+                    if items:
+                        # 搜索质量增强栈：时效标注/过滤 → 重排 → 去重 → 摘要清理 → 截断（移植自 DSH）
+                        items = _post_process_html(items, query, top_k=max_results)
                 elif provider == "searxng":
                     items = await _searxng(query, os.getenv("SEARXNG_URL") or "", max_results)
                 else:
