@@ -40,7 +40,7 @@ def _mock_get_db(rows):
 def _vision_model(model_id="gpt-5.6-luna"):
     return {
         "model_id": model_id, "label": model_id, "protocol": "openai",
-        "base_url": "http://proxy.example.test/v1", "api_key": "env:ATELIER_PROXY_API_KEY",
+        "base_url": "https://proxy.example.test/v1", "api_key": "env:ATELIER_PROXY_API_KEY",
         "reasoning_efforts": ["auto"], "default_reasoning_effort": "auto",
         "capabilities": ["vision"], "enabled": True,
     }
@@ -57,7 +57,7 @@ def test_recognize_returns_description(tmp_path, monkeypatch):
 
     async def _fake_complete(**kwargs):
         assert kwargs["override"]["model"] == "gpt-5.6-luna"  # 优先 luna
-        assert kwargs["override"]["base_url"] == "http://proxy.example.test/v1"
+        assert kwargs["override"]["base_url"] == "https://proxy.example.test/v1"
         assert "ATELIER_PROXY_API_KEY" in kwargs["override"]["api_key"] or "sk-" in str(kwargs["override"]["api_key"])
         # 消息带图片块
         content = kwargs["messages"][0]["content"]

@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${PG_USER:-app_user}
-      POSTGRES_PASSWORD: ${PG_PASSWORD:-CHANGE_ME}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?PG_PASSWORD must be set in .env}
       POSTGRES_DB: ${PG_DB:-app_db}
       TZ: Asia/Shanghai
       PGTZ: Asia/Shanghai
@@ -35,7 +35,7 @@ services:
       - "127.0.0.1:${APP_PORT:-5173}:80"
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://${PG_USER:-app_user}:${PG_PASSWORD:-CHANGE_ME}@db:5432/${PG_DB:-app_db}
+      DATABASE_URL: postgresql://${PG_USER:-app_user}:${PG_PASSWORD:?PG_PASSWORD must be set in .env}@db:5432/${PG_DB:-app_db}
       TZ: Asia/Shanghai
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}

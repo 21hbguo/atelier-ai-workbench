@@ -6,7 +6,7 @@ if [ $# -lt 1 ]; then
 fi
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 remote_host="$1"
-remote_path="${2:-PROJECT_ROOT/data/backups/}"
+remote_path="${2:?usage: $0 <remote-host> [remote-backup-path] [local-backup-path]}"
 local_dir="${3:-$project_dir/local_backup}"
 log_dir="$project_dir/local_backup"
 mkdir -p "$log_dir"

@@ -3,7 +3,7 @@
 支持两种主流协议，业务代码无需关心 HTTP 细节：
 - OpenAI 兼容协议（DeepSeek / OpenAI / 各种中转站）: POST {base_url}/chat/completions, Authorization: Bearer
   - 思考强度：DeepSeek 官方端点发顶层 body["thinking"] = {"type": "enabled"} + 顶层 body["reasoning_effort"] = 档位（官方规范）；
-    其余 OpenAI 兼容端点（中转代理等）发顶层 body["reasoning_effort"] = 档位（实测 proxy.example.test 代理只认顶层，嵌套被忽略）
+    其余 OpenAI 兼容端点（中转代理等）发顶层 body["reasoning_effort"] = 档位
 - Anthropic 协议: POST {base_url}/v1/messages, x-api-key + anthropic-version
   - 思考强度：body["thinking"] = {"type": "enabled", "budget_tokens": N}（按档位映射预算）
 

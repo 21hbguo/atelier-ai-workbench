@@ -5,6 +5,7 @@ data/images/
 data/evo_images/
 data/thumbs/
 data/evo_thumbs/
+data/
 data/tasks.json
 data/stats.json
 data/.jwt_secret
@@ -29,5 +30,8 @@ data/app_db_backup.dump
 local_backup/
 .last_*_package
 app_v1*/
+markdown/
+.pytest_cache/
+*.tar.gz
 临时/
 data/*.bak*

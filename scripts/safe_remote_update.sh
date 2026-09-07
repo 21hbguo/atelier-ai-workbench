@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-remote_host="${1:-root@proxy.example.test}"
-remote_dir="${2:-PROJECT_ROOT}"
+remote_host="${1:?usage: $0 <remote-host> [remote-dir]}"
+remote_dir="${2:-/opt/atelier-ai}"
 parent_dir="$(dirname "$project_dir")"
 project_name="$(basename "$project_dir")"
 package_path="$parent_dir/${project_name}_update.tar.gz"

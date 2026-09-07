@@ -154,8 +154,8 @@ _runtime_config = {
     "resend_sender": os.getenv("RESEND_SENDER", "onboarding@resend.dev"),
     "turnstile_site_key": os.getenv("TURNSTILE_SITE_KEY", ""),
     "turnstile_secret_key": os.getenv("TURNSTILE_SECRET_KEY", ""),
-    "llm_base_url": os.getenv("LLM_BASE_URL", "https://token-plan-cn.xiaomimimo.com/anthropic"),
-    "llm_api_key": os.getenv("LLM_API_KEY", ""),  # 密钥只从 .env 读取，禁止硬编码默认值（曾泄露旧 key REDACTED_API_KEY）
+    "llm_base_url": os.getenv("LLM_BASE_URL", ""),
+    "llm_api_key": os.getenv("LLM_API_KEY", ""),  # 密钥只从 .env 读取，禁止硬编码默认值
     "llm_model": os.getenv("LLM_MODEL", "mimo-v2.5"),
     "llm_max_tokens": int(os.getenv("LLM_MAX_TOKENS", "2000")),
     "llm_timeout_seconds": int(os.getenv("LLM_TIMEOUT_SECONDS", "300")),

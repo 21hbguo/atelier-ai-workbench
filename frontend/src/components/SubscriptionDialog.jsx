@@ -16,7 +16,7 @@ const formatDate = ts => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-const formatPoints = n => (Number(n) ?? 0).toLocaleString()
+const formatPoints = n => (Number(n) || 0).toLocaleString()
 
 export default function SubscriptionDialog({ open, onClose }) {
   const dialog = useAppDialog()

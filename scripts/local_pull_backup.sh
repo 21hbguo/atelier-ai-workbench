@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 remote_host="${1:-}"
-remote_path="${2:-PROJECT_ROOT/data/backups/}"
+remote_path="${2:?usage: $0 <remote-host> [remote-backup-path] [local-backup-path]}"
 local_dir="${3:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/local_backup}"
 if [ -z "$remote_host" ]; then
   echo "usage: $0 user@host [remote_path] [local_dir]" >&2
