@@ -33,5 +33,6 @@ app_v1*/
 markdown/
 .pytest_cache/
 *.tar.gz
+docs/assets/*-hero.png
 临时/
 data/*.bak*

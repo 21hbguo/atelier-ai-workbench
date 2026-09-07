@@ -53,7 +53,7 @@ async def lifespan(app: FastAPI):
     await ContentAuditService.close()
 
 
-app = FastAPI(title="AI Image Generator", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Atelier AI Workbench", version="1.0.0", lifespan=lifespan)
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
 ENABLE_HSTS = os.getenv("ENABLE_HSTS", "false").lower() in {"1", "true", "yes", "on"}
 

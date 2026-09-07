@@ -9,7 +9,7 @@ NC='\033[0m'
 export TZ=Asia/Shanghai
 
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}   AI 图像生成网站 - 一键部署${NC}"
+echo -e "${GREEN}   Atelier AI Workbench - 一键部署${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 

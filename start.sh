@@ -24,7 +24,7 @@ trim_log(){ local f="$1"; [ -f "$f" ] || return 0; local n; n=$(wc -l <"$f" 2>/d
 log_window_loop(){ while true; do trim_log "$BACKEND_LOG"; trim_log "$FRONTEND_LOG"; sleep "$LOG_TRIM_INTERVAL"; done; }
 
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}   AI 图像生成网站 - 一键启动${NC}"
+echo -e "${GREEN}   Atelier AI Workbench - 一键启动${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
